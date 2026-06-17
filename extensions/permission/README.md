@@ -75,4 +75,29 @@ allowed-tools:
 
 ## Neovim Integration
 
-The extension includes support for pi.nvim: edit/write tool calls present Accept/Reject choices via `ctx.ui.select`, and the nvim plugin can respond with structured JSON containing the user's decision and optionally modified file content.
+The extension includes support for pi.nvim: edit/write tool calls present Accept/Reject choices via `ctx.ui.select`, and the nvim plugin can respond with structured JSON containing the user's decision, optional modified file content, and optional review notes.
+
+pi.nvim may return:
+
+```json
+{"result":"Accepted","notes":[...]}
+{"result":"AcceptModified","content":"...","notes":[...]}
+{"result":"Rejected","notes":[...]}
+```
+
+Review notes use this shape:
+
+```ts
+type ReviewNote = {
+    path: string
+    side: "current" | "proposed"
+    line: number
+    lineText: string
+    note: string
+}
+```
+
+Rejection policy:
+
+- Rejected with notes: file unchanged, agent continues with the review notes and is instructed to address them in a follow-up edit.
+- Rejected without notes/cancel: abort the turn.

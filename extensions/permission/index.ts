@@ -77,6 +77,14 @@ interface DerivedSkillAllowState {
     sources: SkillAllowSource[]
 }
 
+type ReviewNote = {
+    path: string
+    side: "current" | "proposed"
+    line: number
+    lineText: string
+    note: string
+}
+
 // Runtime mode overrides (toggled by user during session, not persisted)
 const SessionModeOverrides = new Map<string, Mode>()
 
@@ -86,6 +94,24 @@ const STATUS_REJECTED = "[rejected]"
 
 // [pi.nvim] Track tool calls approved by the user (nvim) so we can flip isError back to false
 const approvedToolCalls = new Set<string>()
+
+function formatReviewNotes(notes: unknown): string {
+    if (!Array.isArray(notes) || notes.length === 0) return ""
+
+    return (
+        "\n\nAddress these review notes in a follow-up edit.\n\nReview notes:\n" +
+        notes
+            .map((note) => {
+                const n = note as Partial<ReviewNote>
+                const side = n.side ?? "unknown"
+                const line = typeof n.line === "number" ? n.line : "?"
+                const lineText = typeof n.lineText === "string" ? JSON.stringify(n.lineText) : '""'
+                const text = typeof n.note === "string" ? n.note : ""
+                return `- ${side}:${line} ${lineText}\n  ${text}`
+            })
+            .join("\n")
+    )
+}
 
 const LOCAL_SKILL_LOCATIONS = new Set(["user", "project", "path"])
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined
@@ -200,14 +226,22 @@ export default function (pi: ExtensionAPI) {
                                 approvedToolCalls.add(event.toolCallId)
                                 return {
                                     block: true,
-                                    reason: `${STATUS_ACCEPTED} User approved the edit. Changes applied to ${argValue} as proposed.`,
+                                    reason: `${STATUS_ACCEPTED} User approved the edit. Changes applied to ${argValue} as proposed.${formatReviewNotes(parsed.notes)}`,
                                 }
                             } else if (parsed.result === "AcceptModified") {
                                 // Nvim plugin applied user's modified version
                                 approvedToolCalls.add(event.toolCallId)
                                 return {
                                     block: true,
-                                    reason: `${STATUS_ACCEPTED} User approved with modifications. ${argValue} was updated with user's version, which differs from what you proposed. Current content of ${argValue}:\n\`\`\`\n${parsed.content}\n\`\`\``,
+                                    reason: `${STATUS_ACCEPTED} User approved with modifications. ${argValue} was updated with user's version, which differs from what you proposed. Current content of ${argValue}:\n\`\`\`\n${parsed.content}\n\`\`\`${formatReviewNotes(parsed.notes)}`,
+                                }
+                            } else if (parsed.result === "Rejected") {
+                                const reviewNotes = formatReviewNotes(parsed.notes)
+                                if (reviewNotes) {
+                                    return {
+                                        block: true,
+                                        reason: `${STATUS_REJECTED} User rejected the edit to ${argValue}. File unchanged.${reviewNotes}`,
+                                    }
                                 }
                             }
                         }
