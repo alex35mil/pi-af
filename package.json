@@ -20,7 +20,9 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

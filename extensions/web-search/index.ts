@@ -17,8 +17,8 @@
  * }
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent"
-import { Type } from "@mariozechner/pi-ai"
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { Type } from "typebox"
 
 import * as project from "../__lib/project.js"
 
@@ -155,7 +155,6 @@ export default async function (pi: ExtensionAPI) {
             ctx.ui.setWidget(`${EXTENSION}:startup`, [`Missing: BRAVE_SEARCH_API_KEY`])
         }
         pi.on("session_start", async (_event, ctx) => announceStartup(ctx))
-        pi.on("session_switch", async (_event, ctx) => announceStartup(ctx))
     }
 }
 

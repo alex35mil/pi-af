@@ -54,8 +54,13 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { getAgentDir, parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent"
-import type { TextContent, ImageContent } from "@mariozechner/pi-ai"
+import {
+    getAgentDir,
+    parseFrontmatter,
+    type ExtensionAPI,
+    type ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
+import type { TextContent, ImageContent } from "@earendil-works/pi-ai"
 
 import * as project from "../__lib/project.js"
 
@@ -133,11 +138,6 @@ export default function (pi: ExtensionAPI) {
         syncAndMarkVisible(ctx)
         announceStartup(ctx)
     })
-    pi.on("session_switch", async (_event, ctx) => {
-        syncAndMarkVisible(ctx)
-        announceStartup(ctx)
-    })
-    pi.on("session_fork", async (_event, ctx) => syncAndMarkVisible(ctx))
     pi.on("session_tree", async (_event, ctx) => syncAndMarkVisible(ctx))
     pi.on("session_compact", async () => {
         runtime.loadedRuleIds.clear()

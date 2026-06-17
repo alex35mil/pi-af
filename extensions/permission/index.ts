@@ -34,7 +34,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent"
+import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 
 import * as project from "../__lib/project.js"
 
@@ -59,9 +59,10 @@ interface ParsedRule {
 
 interface SkillCommandInfo {
     name: string
-    source: "skill"
-    location: "user" | "project"
-    path: string
+    sourceInfo: {
+        path: string
+        scope: "user" | "project" | "temporary"
+    }
 }
 
 interface SkillAllowSource {
@@ -113,7 +114,7 @@ function formatReviewNotes(notes: unknown): string {
     )
 }
 
-const LOCAL_SKILL_LOCATIONS = new Set(["user", "project", "path"])
+const LOCAL_SKILL_SCOPES = new Set(["user", "project", "temporary"])
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined
 
 export default function (pi: ExtensionAPI) {
@@ -336,7 +337,7 @@ function getSkillAllowedRules(skillPath: string): string[] {
 function buildSkillAllowCacheKey(skills: SkillCommandInfo[]): string {
     return skills
         .map((skill) => {
-            const skillPath = skill.path ?? ""
+            const skillPath = skill.sourceInfo.path ?? ""
             let stamp = "missing"
 
             if (skillPath) {
@@ -348,7 +349,7 @@ function buildSkillAllowCacheKey(skills: SkillCommandInfo[]): string {
                 }
             }
 
-            return `${skill.location ?? ""}:${skillPath}:${stamp}`
+            return `${skill.sourceInfo.scope}:${skillPath}:${stamp}`
         })
         .sort()
         .join("\n")
@@ -358,12 +359,21 @@ function getDerivedSkillAllowState(pi: ExtensionAPI): DerivedSkillAllowState {
     const skills = pi
         .getCommands()
         .filter(
-            (command): command is SkillCommandInfo =>
+            (command) =>
                 command.source === "skill" &&
-                LOCAL_SKILL_LOCATIONS.has(command.location ?? "") &&
-                typeof command.path === "string",
+                LOCAL_SKILL_SCOPES.has(command.sourceInfo.scope) &&
+                typeof command.sourceInfo.path === "string",
         )
-        .sort((a, b) => a.path.localeCompare(b.path))
+        .map(
+            (command): SkillCommandInfo => ({
+                name: command.name,
+                sourceInfo: {
+                    path: command.sourceInfo.path,
+                    scope: command.sourceInfo.scope,
+                },
+            }),
+        )
+        .sort((a, b) => a.sourceInfo.path.localeCompare(b.sourceInfo.path))
 
     const cacheKey = buildSkillAllowCacheKey(skills)
     if (cachedDerivedSkillAllowState?.cacheKey === cacheKey) {
@@ -372,11 +382,11 @@ function getDerivedSkillAllowState(pi: ExtensionAPI): DerivedSkillAllowState {
 
     const sources = skills
         .map((skill) => {
-            const rules = getSkillAllowedRules(skill.path)
+            const rules = getSkillAllowedRules(skill.sourceInfo.path)
             return {
                 skill: skill.name.replace(/^skill:/, ""),
-                location: skill.location ?? "",
-                path: skill.path,
+                location: skill.sourceInfo.scope,
+                path: skill.sourceInfo.path,
                 rules,
             }
         })

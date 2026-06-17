@@ -5,7 +5,7 @@
  * model info, context usage breakdown, tools, skills, and session stats.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 export default function (pi: ExtensionAPI) {
     pi.registerCommand("context", {
@@ -127,7 +127,8 @@ export default function (pi: ExtensionAPI) {
             if (skills.length > 0) {
                 lines.push("Skills")
                 for (const s of skills) {
-                    lines.push(`  ${s.name}${s.path ? ` — ${s.path}` : ""}`)
+                    const sourcePath = s.sourceInfo?.path
+                    lines.push(`  ${s.name}${sourcePath ? ` — ${sourcePath}` : ""}`)
                 }
                 lines.push("")
             }

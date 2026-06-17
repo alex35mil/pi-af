@@ -20,8 +20,8 @@
  * }
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent"
-import { Type } from "@mariozechner/pi-ai"
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { Type } from "typebox"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
@@ -146,7 +146,6 @@ export default async function (pi: ExtensionAPI) {
     }
 
     pi.on("session_start", async (_event, ctx) => announceStartup(ctx))
-    pi.on("session_switch", async (_event, ctx) => announceStartup(ctx))
 
     // Cleanup on session end
     pi.on("session_shutdown", async () => {
