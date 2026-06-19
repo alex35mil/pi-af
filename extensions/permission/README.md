@@ -91,8 +91,9 @@ Review notes use this shape:
 type ReviewNote = {
     path: string
     side: "current" | "proposed"
-    line: number
-    lineText: string
+    lineStart: number
+    lineEnd: number
+    lines: string[]
     note: string
 }
 ```

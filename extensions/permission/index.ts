@@ -81,8 +81,9 @@ interface DerivedSkillAllowState {
 type ReviewNote = {
     path: string
     side: "current" | "proposed"
-    line: number
-    lineText: string
+    lineStart: number
+    lineEnd: number
+    lines: string[]
     note: string
 }
 
@@ -96,19 +97,16 @@ const STATUS_REJECTED = "[rejected]"
 // [pi.nvim] Track tool calls approved by the user (nvim) so we can flip isError back to false
 const approvedToolCalls = new Set<string>()
 
-function formatReviewNotes(notes: unknown): string {
-    if (!Array.isArray(notes) || notes.length === 0) return ""
+function formatReviewNotes(notes?: ReviewNote[]): string {
+    if (!notes?.length) return ""
 
     return (
         "\n\nAddress these review notes in a follow-up edit.\n\nReview notes:\n" +
         notes
-            .map((note) => {
-                const n = note as Partial<ReviewNote>
-                const side = n.side ?? "unknown"
-                const line = typeof n.line === "number" ? n.line : "?"
-                const lineText = typeof n.lineText === "string" ? JSON.stringify(n.lineText) : '""'
-                const text = typeof n.note === "string" ? n.note : ""
-                return `- ${side}:${line} ${lineText}\n  ${text}`
+            .map((n) => {
+                const range = n.lineStart === n.lineEnd ? `${n.lineStart}` : `${n.lineStart}-${n.lineEnd}`
+
+                return [`- ${n.side}:${range}`, `  lines: ${JSON.stringify(n.lines)}`, `  note: ${n.note}`].join("\n")
             })
             .join("\n")
     )
