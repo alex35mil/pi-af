@@ -331,10 +331,29 @@ function getSkillAllowedRules(skillPath: string): string[] {
     try {
         const content = fs.readFileSync(skillPath, "utf-8")
         const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content)
-        return [...parseRuleList(frontmatter.allowed_tools), ...parseRuleList(frontmatter["allowed-tools"])]
+        const rules = [...parseRuleList(frontmatter.allowed_tools), ...parseRuleList(frontmatter["allowed-tools"])]
+        return expandSkillRelativeRules(rules, path.dirname(skillPath))
     } catch {
         return []
     }
+}
+
+function expandSkillRelativeRules(rules: string[], skillDir: string): string[] {
+    return rules.map((rule) => expandSkillRelativeRule(rule, skillDir))
+}
+
+function expandSkillRelativeRule(rule: string, skillDir: string): string {
+    const parsed = parseRule(rule)
+    if (!parsed.argPattern) return rule
+
+    const expandedArgPattern = parsed.argPattern.replace(
+        /(^|\s)(\.\/\S+)/g,
+        (_match, prefix: string, token: string) => {
+            return `${prefix}${path.resolve(skillDir, token)}`
+        },
+    )
+    if (expandedArgPattern === parsed.argPattern) return rule
+    return `${parsed.toolPattern}(${expandedArgPattern})`
 }
 
 function buildSkillAllowCacheKey(skills: SkillCommandInfo[]): string {
