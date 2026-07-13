@@ -101,12 +101,17 @@ function formatReviewNotes(notes?: ReviewNote[]): string {
     if (!notes?.length) return ""
 
     return (
-        "\n\nAddress these review notes in a follow-up edit.\n\nReview notes:\n" +
+        '\n\nUser review notes require explicit response. Before doing anything else, you MUST reply in chat to the user with every note below and your response to each one. For each note in your chat reply, quote the full note text exactly with every quoted line prefixed by `>`, then write your response below the quote. Do not respond with only a label or summary. Do not ignore, silently drop, or skip a note because you disagree. A response may be as short as "Accepted and agreed.", but every note must have an explicit response: accepted, rejected with reason, or needs clarification. If every note is fully accepted and has an obvious local resolution, do not stop after the chat response and do not wait for user approval; immediately continue with the follow-up edit/tool call. Stop and ask the user only for unclear, rejected, conflicting, scope-changing, or product/domain notes.\n\nReview notes:\n' +
         notes
-            .map((n) => {
+            .map((n, index) => {
                 const range = n.lineStart === n.lineEnd ? `${n.lineStart}` : `${n.lineStart}-${n.lineEnd}`
+                const label = `N${index + 1}`
 
-                return [`- ${n.side}:${range}`, `  lines: ${JSON.stringify(n.lines)}`, `  note: ${n.note}`].join("\n")
+                return [
+                    `- ${label}: ${n.side}:${range}`,
+                    `  lines: ${JSON.stringify(n.lines)}`,
+                    `  note: ${n.note}`,
+                ].join("\n")
             })
             .join("\n")
     )

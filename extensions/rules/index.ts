@@ -366,7 +366,7 @@ function buildRulesSystemPrompt(): string {
     if (conditionalRules.length > 0) {
         lines.push("")
         lines.push(
-            "Some rules are path-scoped and are loaded automatically when you read a matching file. Always read file using read tool before editing using write or edit tool.",
+            "Some rules are path-scoped and are loaded automatically when you read a matching file. Always read a file with the read tool before reviewing, editing, or writing it so applicable rules are loaded.",
         )
     }
 
@@ -381,7 +381,7 @@ function buildFullReminder(rules: RuleFile[]): string {
         const pathPatterns = rule.patterns.join(", ")
         lines.push("")
         lines.push(
-            `You must follow these path-scoped rules when editing or writing any file matching the following path patterns ${pathPatterns}:`,
+            `You must follow these path-scoped rules when reviewing, editing, or writing any file matching the following path patterns ${pathPatterns}:`,
         )
         lines.push("")
         lines.push(`#### Rules for paths: ${pathPatterns}`)
