@@ -18,10 +18,11 @@
  * via SKILL frontmatter: allowed_tools / allowed-tools.
  *
  * Rule format:
- *   "read"                — blanket match on tool name
- *   "mcp__playwright__*"  — glob match on tool name
- *   "bash(git *)"         — match tool "bash" where command matches "git *"
- *   "edit(/tmp/*)"        — match tool "edit" where path matches "/tmp/*"
+ *   "read"                          — blanket match on a non-MCP tool name
+ *   "mcp(playwright, *)"            — every tool from one MCP server
+ *   "mcp(*, hint: readOnly)"        — annotated read-only tools from every MCP server
+ *   "bash(git *)"                   — match tool "bash" where command matches "git *"
+ *   "edit(/tmp/*)"                  — match tool "edit" where path matches "/tmp/*"
  *
  * Evaluation order: deny > ask > allow > defaultMode (default: "ask")
  *
@@ -36,6 +37,7 @@ import * as path from "node:path"
 
 import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 
+import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog, type McpToolMetadata, validateMcpName } from "../__lib/mcp.js"
 import * as project from "../__lib/project.js"
 import { analyzeBash, type BashAnalyzer } from "./bash.js"
 
@@ -58,6 +60,17 @@ interface ParsedRule {
     toolPattern: string
     argPattern?: string
 }
+
+type PermissionList = "allow" | "ask" | "deny"
+
+type McpSelector = { type: "tool"; value: string } | { type: "hint"; value: "readOnly" }
+
+interface ParsedMcpRule {
+    server: string
+    selector: McpSelector
+}
+
+type SettingsResult = { settings: PermissionSettings } | { error: Error }
 
 interface SkillCommandInfo {
     name: string
@@ -123,8 +136,47 @@ const LOCAL_SKILL_SCOPES = new Set(["user", "project", "temporary"])
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined
 
 export default function (pi: ExtensionAPI) {
-    const initSettings = loadSettings(process.cwd())
-    const keybindings = initSettings.keybindings ?? {}
+    let mcpCatalog: McpToolCatalog = new Map()
+    const disposeMcpCatalogListener = pi.events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
+        mcpCatalog = data instanceof Map ? new Map(data as McpToolCatalog) : new Map()
+    })
+
+    const initSettings = tryLoadPermissionSettings(() => validatePermissionSettings(loadSettings(process.cwd())))
+    const keybindings = "settings" in initSettings ? (initSettings.settings.keybindings ?? {}) : {}
+    let displayedSettingsError: string | undefined
+
+    const updatePermissionSettingsErrorDisplay = (result: SettingsResult, ctx: ExtensionContext): void => {
+        if ("settings" in result) {
+            if (displayedSettingsError !== undefined && ctx.hasUI) {
+                ctx.ui.setWidget(`${EXTENSION}:invalid-settings`, undefined)
+            }
+            displayedSettingsError = undefined
+            return
+        }
+
+        const message = formatPermissionSettingsError(result.error)
+        if (message !== displayedSettingsError) {
+            console.error(`[permission] ${message}`)
+            if (ctx.hasUI) ctx.ui.notify(message, "error")
+        }
+        if (ctx.hasUI) {
+            ctx.ui.setWidget(`${EXTENSION}:invalid-settings`, [
+                "Permission settings are invalid. Agent prompts and tools are blocked.",
+                message,
+                "Fix the settings, then retry your prompt.",
+            ])
+        }
+        displayedSettingsError = message
+    }
+
+    pi.on("session_start", async (_event, ctx) => {
+        updatePermissionSettingsErrorDisplay(loadResolvedPermissionSettings(pi, ctx.cwd), ctx)
+    })
+
+    pi.on("session_shutdown", async () => {
+        disposeMcpCatalogListener()
+        mcpCatalog = new Map()
+    })
 
     if (keybindings.autoAcceptEdits) {
         pi.registerShortcut(keybindings.autoAcceptEdits as any, {
@@ -153,12 +205,19 @@ export default function (pi: ExtensionAPI) {
     pi.registerCommand("permission-settings", {
         description: "Show resolved permission settings",
         handler: async (_args, ctx) => {
+            const result = loadResolvedPermissionSettings(pi, ctx.cwd)
+            if ("error" in result) {
+                updatePermissionSettingsErrorDisplay(result, ctx)
+                await ctx.ui.editor("Invalid permission settings", formatPermissionSettingsError(result.error))
+                return
+            }
+            updatePermissionSettingsErrorDisplay(result, ctx)
+
             const derivedSkillAllowState = getDerivedSkillAllowState(pi)
-            const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules)
             const overrides = Object.fromEntries(SessionModeOverrides)
             const output = JSON.stringify(
                 {
-                    settings,
+                    settings: result.settings,
                     derivedSkillAllowRules: derivedSkillAllowState.rules,
                     skillRuleSources: derivedSkillAllowState.sources,
                     sessionOverrides: overrides,
@@ -168,6 +227,12 @@ export default function (pi: ExtensionAPI) {
             )
             await ctx.ui.editor("Resolved permission settings", output)
         },
+    })
+
+    pi.on("input", async (_event, ctx) => {
+        const result = loadResolvedPermissionSettings(pi, ctx.cwd)
+        updatePermissionSettingsErrorDisplay(result, ctx)
+        return "settings" in result ? { action: "continue" } : { action: "handled" }
     })
 
     pi.on("message_end", async (event) => {
@@ -184,10 +249,26 @@ export default function (pi: ExtensionAPI) {
     })
 
     pi.on("tool_call", async (event, ctx) => {
-        const derivedSkillAllowState = getDerivedSkillAllowState(pi)
-        const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules)
+        const settingsResult = loadResolvedPermissionSettings(pi, ctx.cwd)
+        updatePermissionSettingsErrorDisplay(settingsResult, ctx)
+        if ("error" in settingsResult) {
+            ctx.abort()
+            return {
+                block: true,
+                reason: `${STATUS_REJECTED} ${formatPermissionSettingsError(settingsResult.error)}`,
+            }
+        }
+
         const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>)
-        const mode = await resolveMode(settings, event.toolName, argValue ?? "", ctx.cwd)
+        const mode = await resolveMode(
+            settingsResult.settings,
+            event.toolName,
+            argValue ?? "",
+            ctx.cwd,
+            SessionModeOverrides,
+            analyzeBash,
+            mcpCatalog.get(event.toolName),
+        )
 
         switch (mode) {
             case "allow": {
@@ -298,6 +379,26 @@ function loadSettings(cwd: string) {
     return project.loadExtensionSettings<PermissionSettings>(EXTENSION, cwd, mergePermissions)
 }
 
+function tryLoadPermissionSettings(load: () => PermissionSettings): SettingsResult {
+    try {
+        return { settings: load() }
+    } catch (error) {
+        return { error: error instanceof Error ? error : new Error(String(error)) }
+    }
+}
+
+function loadResolvedPermissionSettings(pi: ExtensionAPI, cwd: string): SettingsResult {
+    return tryLoadPermissionSettings(() => {
+        const derivedSkillAllowState = getDerivedSkillAllowState(pi)
+        const settings = mergeSkillAllowRules(loadSettings(cwd), derivedSkillAllowState.rules)
+        return validatePermissionSettings(settings)
+    })
+}
+
+function formatPermissionSettingsError(error: Error): string {
+    return `Invalid permission settings: ${error.message}`
+}
+
 function toggleAutoAcceptEdits(ctx: ExtensionContext) {
     const editCurrent = SessionModeOverrides.get("edit")
     const writeCurrent = SessionModeOverrides.get("write")
@@ -317,27 +418,28 @@ function parseRuleList(value: unknown): string[] {
     if (Array.isArray(value)) {
         return value
             .filter((entry): entry is string => typeof entry === "string")
-            .map((entry) => entry.trim())
-            .filter((entry) => entry.length > 0)
+            .filter((entry) => entry.trim().length > 0)
     }
 
-    if (typeof value === "string") {
-        const trimmed = value.trim()
-        return trimmed ? [trimmed] : []
-    }
-
+    if (typeof value === "string") return value.trim() ? [value] : []
     return []
 }
 
 function getSkillAllowedRules(skillPath: string): string[] {
+    let rules: string[]
     try {
         const content = fs.readFileSync(skillPath, "utf-8")
         const { frontmatter } = parseFrontmatter<Record<string, unknown>>(content)
-        const rules = [...parseRuleList(frontmatter.allowed_tools), ...parseRuleList(frontmatter["allowed-tools"])]
-        return expandSkillRelativeRules(rules, path.dirname(skillPath))
+        rules = [...parseRuleList(frontmatter.allowed_tools), ...parseRuleList(frontmatter["allowed-tools"])]
     } catch {
         return []
     }
+
+    validatePermissionSettings({ allow: rules })
+    return expandSkillRelativeRules(
+        rules.map((rule) => rule.trim()),
+        path.dirname(skillPath),
+    )
 }
 
 function expandSkillRelativeRules(rules: string[], skillDir: string): string[] {
@@ -441,6 +543,57 @@ function parseRule(rule: string): ParsedRule {
     return { toolPattern: rule }
 }
 
+function validateMcpSelector(kind: "server" | "tool", value: string): void {
+    if (value !== "*") validateMcpName(kind, value)
+}
+
+function parseMcpRule(rule: string): ParsedMcpRule | undefined {
+    const trimmedRule = rule.trim()
+    if (!/^mcp\s*\(/.test(trimmedRule)) return undefined
+    if (rule !== trimmedRule) throw new Error("MCP rules cannot have leading or trailing whitespace")
+    if (!rule.startsWith("mcp(") || !rule.endsWith(")")) throw new Error("malformed MCP rule")
+
+    const parts = rule.slice(4, -1).split(",")
+    if (parts.length !== 2) throw new Error("expected mcp(server, selector)")
+
+    const server = parts[0].trim()
+    const selector = parts[1].trim()
+    validateMcpSelector("server", server)
+
+    if (selector.startsWith("hint:")) {
+        const hint = selector.slice(5).trim()
+        if (hint !== "readOnly") throw new Error(`unknown MCP hint ${JSON.stringify(hint)}`)
+        return { server, selector: { type: "hint", value: hint } }
+    }
+
+    validateMcpSelector("tool", selector)
+    return { server, selector: { type: "tool", value: selector } }
+}
+
+export function validatePermissionSettings(settings: PermissionSettings): PermissionSettings {
+    for (const list of ["deny", "ask", "allow"] as const satisfies readonly PermissionList[]) {
+        const rules: unknown = settings[list]
+        if (rules === undefined) continue
+        if (!Array.isArray(rules)) throw new Error(`Invalid permission setting ${list}: expected an array`)
+
+        for (const rule of rules) {
+            if (typeof rule !== "string") throw new Error(`Invalid permission rule in ${list}: expected a string`)
+
+            try {
+                parseMcpRule(rule)
+                if (parseRule(rule.trim()).toolPattern.startsWith("mcp__")) {
+                    throw new Error("legacy mcp__ rules are not supported; use mcp(server, selector)")
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                throw new Error(`Invalid permission rule in ${list}: ${JSON.stringify(rule)} (${message})`)
+            }
+        }
+    }
+
+    return settings
+}
+
 function matchPattern(pattern: string, value: string): boolean {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")
     // Make trailing " .*" optional so "cmd *" also matches bare "cmd"
@@ -448,8 +601,21 @@ function matchPattern(pattern: string, value: string): boolean {
     return new RegExp(`^${adjusted}$`, "s").test(value)
 }
 
-function matchesAnyRule(rules: string[], toolName: string, argValue: string): boolean {
+function matchesMcpRule(rule: ParsedMcpRule, tool: McpToolMetadata): boolean {
+    if (rule.server !== "*" && rule.server !== tool.serverName) return false
+    if (rule.selector.type === "hint") return tool.annotations?.readOnlyHint === true
+    return rule.selector.value === "*" || rule.selector.value === tool.serverToolName
+}
+
+function matchesAnyRule(rules: string[], toolName: string, argValue: string, mcpTool?: McpToolMetadata): boolean {
     return rules.some((rule) => {
+        if (mcpTool) {
+            if (rule === "*") return true
+            const parsedMcpRule = parseMcpRule(rule)
+            return parsedMcpRule ? matchesMcpRule(parsedMcpRule, mcpTool) : false
+        }
+
+        if (parseMcpRule(rule)) return false
         const parsed = parseRule(rule)
         if (!matchPattern(parsed.toolPattern, toolName)) return false
         if (parsed.argPattern) return matchPattern(parsed.argPattern, argValue)
@@ -476,11 +642,16 @@ function getMatchValue(tool: string, input: Record<string, unknown>): string | u
     }
 }
 
-function resolveSingleMode(settings: PermissionSettings, toolName: string, argValue: string): Mode {
-    if (matchesAnyRule(settings.deny ?? [], toolName, argValue)) return "deny"
-    if (matchesAnyRule(settings.ask ?? [], toolName, argValue)) return "ask"
-    if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue)) return "allow"
-    if (matchesAnyRule(settings.allow ?? [], toolName, argValue)) return "allow"
+function resolveSingleMode(
+    settings: PermissionSettings,
+    toolName: string,
+    argValue: string,
+    mcpTool?: McpToolMetadata,
+): Mode {
+    if (matchesAnyRule(settings.deny ?? [], toolName, argValue, mcpTool)) return "deny"
+    if (matchesAnyRule(settings.ask ?? [], toolName, argValue, mcpTool)) return "ask"
+    if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue, mcpTool)) return "allow"
+    if (matchesAnyRule(settings.allow ?? [], toolName, argValue, mcpTool)) return "allow"
 
     return settings.defaultMode ?? "ask"
 }
@@ -497,12 +668,13 @@ export async function resolveMode(
     cwd?: string,
     sessionOverrides: ReadonlyMap<string, Mode> = SessionModeOverrides,
     bashAnalyzer: BashAnalyzer = analyzeBash,
+    mcpTool?: McpToolMetadata,
 ): Promise<Mode> {
     const override = sessionOverrides.get(toolName)
     if (override) return override
 
     if (toolName !== "bash" || !argValue) {
-        return resolveSingleMode(settings, toolName, argValue)
+        return resolveSingleMode(settings, toolName, argValue, mcpTool)
     }
 
     let analysis

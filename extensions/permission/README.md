@@ -6,41 +6,48 @@ Controls tool execution with configurable allow/deny/ask rules. Prompts the user
 
 Settings file: `permission.settings.json` (3-tier loading):
 
-| Tier | Path |
-|------|------|
-| Global | `~/<agent-dir>/permission.settings.json` |
-| Project | `<repo-root>/.agents/permission.settings.json` |
-| Local | `<repo-root>/.agents/permission.settings.local.json` |
+| Tier    | Path                                                 |
+| ------- | ---------------------------------------------------- |
+| Global  | `~/<agent-dir>/permission.settings.json`             |
+| Project | `<repo-root>/.agents/permission.settings.json`       |
+| Local   | `<repo-root>/.agents/permission.settings.local.json` |
 
 ### Schema
 
 ```json
 {
-  "defaultMode": "ask",
-  "allow": ["read", "bash(git *)"],
-  "deny": ["bash(rm -rf *)"],
-  "ask": ["write", "edit"],
-  "keybindings": {
-    "autoAcceptEdits": "ctrl+shift+a"
-  }
+    "defaultMode": "ask",
+    "allow": ["read", "bash(git *)"],
+    "deny": ["bash(rm -rf *)"],
+    "ask": ["write", "edit"],
+    "keybindings": {
+        "autoAcceptEdits": "ctrl+shift+a"
+    }
 }
 ```
 
 ### Rule Format
 
-- `"read"` — blanket match on tool name
-- `"mcp__playwright__*"` — glob match on tool name
+- `"read"` — blanket match on a tool name
 - `"bash(git *)"` — match tool `bash` where command matches `git *`
 - `"edit(/tmp/*)"` — match tool `edit` where path matches `/tmp/*`
+- `"mcp(playwright, *)"` — match every tool from the `playwright` MCP server
+- `"mcp(github, get_issue)"` — match one server-advertised MCP tool
+- `"mcp(github, hint: readOnly)"` — match tools from `github` with `readOnlyHint: true`
+- `"mcp(*, hint: readOnly)"` — match read-only-annotated tools from every MCP server
+
+MCP selectors work in `allow`, `ask`, and `deny`. Server and tool selectors support either an exact name or the whole `*` wildcard. Names may contain only ASCII letters, digits, `_`, `.`, or `-`.
+
+Only an explicit MCP `readOnlyHint: true` matches `hint: readOnly`; missing or false values do not. **Servers tell Pi whether tools are read-only; Pi cannot verify that claim. A hint rule can therefore change a tool from the default `deny` mode to `ask`. Only use hint rules with servers you trust.**
 
 ### Argument Matching
 
-| Tool | Matched against |
-|------|----------------|
-| `bash` | each syntax-visible Bash command node, including commands nested in substitutions |
-| `edit`, `write`, `read` | file path |
-| `grep`, `find`, `ls` | path argument |
-| `fetch` | URL |
+| Tool                    | Matched against                                                                   |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| `bash`                  | each syntax-visible Bash command node, including commands nested in substitutions |
+| `edit`, `write`, `read` | file path                                                                         |
+| `grep`, `find`, `ls`    | path argument                                                                     |
+| `fetch`                 | URL                                                                               |
 
 ### Evaluation Order
 
@@ -57,8 +64,9 @@ Trusted local skills (global + project) can contribute allow rules via YAML fron
 ```yaml
 ---
 allowed-tools:
-  - "bash(ls *)"
-  - "read"
+    - "bash(ls *)"
+    - "read"
+    - "mcp(github, get_issue)"
 ---
 ```
 
@@ -73,14 +81,17 @@ allowed-tools:
 - Parser/WASM failures and trees containing `ERROR` or `MISSING` nodes are denied without fallback; this includes valid syntax unsupported by the grammar, such as `<>`
 - Bash wildcard rules match across newlines within a command node
 - Headless mode (no UI) blocks all `"ask"` calls
+- Invalid JSON, malformed MCP rules, unknown hints, invalid MCP names, and legacy MCP rules fail closed
+- With invalid settings, ordinary prompts and all agent tools are blocked; slash commands and user-entered `!` shell commands remain available for recovery
+- Interactive sessions show a persistent error widget above the editor until valid settings are loaded
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/permission-toggle-auto-accept` | Toggle auto-accept for edit/write tools in the current session |
-| `/permission-mode` | Set permission mode for a specific tool (session only) |
-| `/permission-settings` | Show resolved settings, skill-derived rules, and session overrides |
+| Command                          | Description                                                        |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `/permission-toggle-auto-accept` | Toggle auto-accept for edit/write tools in the current session     |
+| `/permission-mode`               | Set permission mode for a specific tool (session only)             |
+| `/permission-settings`           | Show resolved settings, skill-derived rules, and session overrides |
 
 ## Neovim Integration
 
