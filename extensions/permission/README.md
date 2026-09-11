@@ -37,14 +37,18 @@ Settings file: `permission.settings.json` (3-tier loading):
 
 | Tool | Matched against |
 |------|----------------|
-| `bash` | command string (each segment in pipelines checked independently) |
+| `bash` | each syntax-visible Bash command node, including commands nested in substitutions |
 | `edit`, `write`, `read` | file path |
 | `grep`, `find`, `ls` | path argument |
 | `fetch` | URL |
 
 ### Evaluation Order
 
-`deny` > `ask` > `allow` > `defaultMode` (default: `"ask"`)
+Session override > `deny` > `ask` > built-in/configured `allow` > `defaultMode` (default: `"ask"`). The strictest result across Bash command nodes wins.
+
+Session overrides are final for the whole tool call. In particular, session `allow` deliberately skips Bash parsing and redirect checks.
+
+Exact literal `true` and `false` Bash commands are built-in allow rules. Explicit session, deny, or ask rules still take precedence.
 
 ### Skill-Derived Rules
 
@@ -60,9 +64,14 @@ allowed-tools:
 
 ## Safety Features
 
-- Bash commands are split on `|`, `||`, `&&`, `;` — the strictest mode across all segments wins
-- Shell output redirections (`>`, `>>`, `&>`) escalate otherwise-allowed bash commands to `"ask"` (redirections to `/dev/null` are exempt)
-- `cd <dir> && <cmd>` prefixes are normalized before matching
+- Bash is parsed with tree-sitter; command nodes are checked across newlines, lists, pipelines, compound statements, and nested substitutions
+- Runtime indirection such as `eval`, `bash -c`, `source`, aliases, functions, and dynamic command names is checked as the outer invocation only
+- Shell-state-only assignments/declarations emit no outer command, while syntax-visible commands nested inside them are still checked
+- A leading `cd <dir> &&` is ignored only when `<dir>` resolves to the current directory
+- Writable file redirects (`>`, `>|`, `>>`, `&>`, `&>>`, and filename-targeted `>&word`) escalate otherwise-allowed Bash calls to `"ask"`
+- Exact `/dev/null` targets, input redirects, fd duplication/closing, and process-substitution targets do not add a redirect prompt; nested process-substitution commands are still checked
+- Parser/WASM failures and trees containing `ERROR` or `MISSING` nodes are denied without fallback; this includes valid syntax unsupported by the grammar, such as `<>`
+- Bash wildcard rules match across newlines within a command node
 - Headless mode (no UI) blocks all `"ask"` calls
 
 ## Commands

@@ -1,0 +1,8 @@
+{
+    "allow": [
+        "bash(npm test *)",
+        "bash(npx tsx --test *)",
+        "bash(npx tsc --noEmit)",
+        "bash(npx oxfmt --check *)"
+    ]
+}

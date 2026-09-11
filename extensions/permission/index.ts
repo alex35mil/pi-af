@@ -37,12 +37,14 @@ import * as path from "node:path"
 import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 
 import * as project from "../__lib/project.js"
+import { analyzeBash, type BashAnalyzer } from "./bash.js"
 
 const EXTENSION = "permission"
+const BUILT_IN_ALLOW_RULES = ["bash(true)", "bash(false)"]
 
-type Mode = "allow" | "ask" | "deny"
+export type Mode = "allow" | "ask" | "deny"
 
-interface PermissionSettings {
+export interface PermissionSettings {
     defaultMode?: Mode
     allow?: string[]
     deny?: string[]
@@ -185,7 +187,7 @@ export default function (pi: ExtensionAPI) {
         const derivedSkillAllowState = getDerivedSkillAllowState(pi)
         const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules)
         const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>)
-        const mode = resolveMode(settings, event.toolName, argValue ?? "", ctx.cwd)
+        const mode = await resolveMode(settings, event.toolName, argValue ?? "", ctx.cwd)
 
         switch (mode) {
             case "allow": {
@@ -443,7 +445,7 @@ function matchPattern(pattern: string, value: string): boolean {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")
     // Make trailing " .*" optional so "cmd *" also matches bare "cmd"
     const adjusted = escaped.replace(/ \.\*$/, "( .*)?")
-    return new RegExp(`^${adjusted}$`).test(value)
+    return new RegExp(`^${adjusted}$`, "s").test(value)
 }
 
 function matchesAnyRule(rules: string[], toolName: string, argValue: string): boolean {
@@ -475,11 +477,9 @@ function getMatchValue(tool: string, input: Record<string, unknown>): string | u
 }
 
 function resolveSingleMode(settings: PermissionSettings, toolName: string, argValue: string): Mode {
-    const override = SessionModeOverrides.get(toolName)
-    if (override) return override
-
     if (matchesAnyRule(settings.deny ?? [], toolName, argValue)) return "deny"
     if (matchesAnyRule(settings.ask ?? [], toolName, argValue)) return "ask"
+    if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue)) return "allow"
     if (matchesAnyRule(settings.allow ?? [], toolName, argValue)) return "allow"
 
     return settings.defaultMode ?? "ask"
@@ -487,235 +487,37 @@ function resolveSingleMode(settings: PermissionSettings, toolName: string, argVa
 
 /**
  * Resolve the permission mode for a tool call.
- * For bash commands, splits on pipes/operators and checks every segment.
+ * Bash commands are extracted from their syntax tree and evaluated separately.
  * The strictest mode wins: deny > ask > allow.
- * As an extra safety layer, otherwise-allowed bash commands that contain
- * output redirection are escalated to "ask".
  */
-function resolveMode(settings: PermissionSettings, toolName: string, argValue: string, cwd?: string): Mode {
+export async function resolveMode(
+    settings: PermissionSettings,
+    toolName: string,
+    argValue: string,
+    cwd?: string,
+    sessionOverrides: ReadonlyMap<string, Mode> = SessionModeOverrides,
+    bashAnalyzer: BashAnalyzer = analyzeBash,
+): Promise<Mode> {
+    const override = sessionOverrides.get(toolName)
+    if (override) return override
+
     if (toolName !== "bash" || !argValue) {
         return resolveSingleMode(settings, toolName, argValue)
     }
 
-    const normalized = cwd ? normalizeBashForPermission(argValue, cwd) : argValue
-    const segments = splitShellCommand(normalized)
-    let worst: Mode = "allow"
+    let analysis
+    try {
+        analysis = await bashAnalyzer(argValue, cwd)
+    } catch {
+        return "deny"
+    }
 
-    for (const segment of segments) {
-        const mode = resolveSingleMode(settings, toolName, segment)
+    let worst: Mode = analysis.writesFile ? "ask" : "allow"
+    for (const command of analysis.commands) {
+        const mode = resolveSingleMode(settings, toolName, command)
         if (mode === "deny") return "deny"
         if (mode === "ask") worst = "ask"
     }
 
-    if (worst === "allow" && hasShellOutputRedirection(normalized)) {
-        return "ask"
-    }
-
     return worst
-}
-
-function normalizeBashForPermission(command: string, cwd: string): string {
-    const start = skipWhitespace(command, 0)
-    if (!command.startsWith("cd", start)) return command
-
-    const afterCd = start + 2
-    if (afterCd < command.length && !/\s/.test(command[afterCd])) return command
-
-    const dirStart = skipWhitespace(command, afterCd)
-    const dirToken = readShellWord(command, dirStart)
-    if (!dirToken?.word) return command
-
-    const afterDir = skipWhitespace(command, dirToken.end)
-    if (command.slice(afterDir, afterDir + 2) !== "&&") return command
-
-    const rest = command.slice(afterDir + 2).trim()
-    if (!rest) return command
-
-    const currentDir = path.resolve(cwd)
-    const targetDir = path.resolve(cwd, dirToken.word)
-
-    return targetDir === currentDir ? rest : command
-}
-
-/**
- * Split a shell command on unquoted operators: |, ||, &&, ;
- * Respects single/double quotes and backslash escapes.
- */
-function splitShellCommand(command: string): string[] {
-    const segments: string[] = []
-    let current = ""
-    let inSingle = false
-    let inDouble = false
-    let escaped = false
-
-    for (let i = 0; i < command.length; i++) {
-        const char = command[i]
-
-        if (escaped) {
-            current += char
-            escaped = false
-            continue
-        }
-        if (char === "\\" && !inSingle) {
-            escaped = true
-            current += char
-            continue
-        }
-        if (char === "'" && !inDouble) {
-            inSingle = !inSingle
-            current += char
-            continue
-        }
-        if (char === '"' && !inSingle) {
-            inDouble = !inDouble
-            current += char
-            continue
-        }
-
-        if (!inSingle && !inDouble) {
-            if (char === "|" && command[i + 1] === "|") {
-                segments.push(current)
-                current = ""
-                i++
-                continue
-            }
-            if (char === "&" && command[i + 1] === "&") {
-                segments.push(current)
-                current = ""
-                i++
-                continue
-            }
-            if (char === ";") {
-                segments.push(current)
-                current = ""
-                continue
-            }
-            if (char === "|") {
-                segments.push(current)
-                current = ""
-                continue
-            }
-        }
-
-        current += char
-    }
-
-    if (current.trim()) {
-        segments.push(current)
-    }
-
-    return segments.map((s) => s.trim()).filter((s) => s.length > 0)
-}
-
-/**
- * Detect unquoted shell output redirections.
- * Escalates otherwise-allowed bash commands to "ask" for an extra confirmation.
- * Redirections to /dev/null are exempt.
- */
-function hasShellOutputRedirection(command: string): boolean {
-    let inSingle = false
-    let inDouble = false
-    let escaped = false
-
-    for (let i = 0; i < command.length; i++) {
-        const char = command[i]
-
-        if (escaped) {
-            escaped = false
-            continue
-        }
-        if (char === "\\" && !inSingle) {
-            escaped = true
-            continue
-        }
-        if (char === "'" && !inDouble) {
-            inSingle = !inSingle
-            continue
-        }
-        if (char === '"' && !inSingle) {
-            inDouble = !inDouble
-            continue
-        }
-
-        if (inSingle || inDouble) continue
-
-        if (char === "&" && command[i + 1] === ">") {
-            return true
-        }
-
-        if (char !== ">") continue
-
-        // Ignore fd duplication/closing like 2>&1, >&2, >&-
-        if (command[i + 1] === "&") continue
-        // Ignore process substitution like >(...)
-        if (command[i + 1] === "(") continue
-        // Ignore redirection to /dev/null (e.g. >/dev/null, 2>/dev/null, >>/dev/null)
-        {
-            let j = i + 1
-            if (j < command.length && command[j] === ">") j++ // skip >> second >
-            while (j < command.length && command[j] === " ") j++ // skip whitespace
-            if (command.startsWith("/dev/null", j)) continue
-        }
-
-        return true
-    }
-
-    return false
-}
-
-function skipWhitespace(command: string, index: number): number {
-    while (index < command.length && /\s/.test(command[index])) index++
-    return index
-}
-
-function readShellWord(command: string, start: number): { word: string; end: number } | undefined {
-    if (start >= command.length) return undefined
-
-    const first = command[start]
-    if (first === '"' || first === "'") {
-        const quote = first
-        let value = ""
-        let escaped = false
-
-        for (let i = start + 1; i < command.length; i++) {
-            const char = command[i]
-            if (escaped) {
-                value += char
-                escaped = false
-                continue
-            }
-            if (char === "\\" && quote === '"') {
-                escaped = true
-                continue
-            }
-            if (char === quote) {
-                return { word: value, end: i + 1 }
-            }
-            value += char
-        }
-
-        return undefined
-    }
-
-    let value = ""
-    let escaped = false
-
-    for (let i = start; i < command.length; i++) {
-        const char = command[i]
-        if (escaped) {
-            value += char
-            escaped = false
-            continue
-        }
-        if (char === "\\") {
-            escaped = true
-            continue
-        }
-        if (/\s/.test(char) || char === "&" || char === "|" || char === ";") {
-            return value ? { word: value, end: i } : undefined
-        }
-        value += char
-    }
-
-    return value ? { word: value, end: command.length } : undefined
 }
