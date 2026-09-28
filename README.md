@@ -1,4 +1,4 @@
-# agentic-af
+# pi-af
 
 My [pi](https://pi.dev) setup for coding agent workflows.
 

@@ -1,5 +1,5 @@
 {
-  "name": "agentic-af",
+  "name": "pi-af",
   "type": "module",
   "scripts": {
     "test": "tsx --test tests/*.test.ts"
