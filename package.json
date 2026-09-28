@@ -10,10 +10,12 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions",
+      "./workflows/extensions"
     ],
     "skills": [
-      "./skills"
+      "./skills",
+      "./workflows/skills"
     ],
     "prompts": [
       "./prompts"

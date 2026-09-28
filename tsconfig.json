@@ -13,6 +13,7 @@
     "include": [
         "global.d.ts",
         "extensions/**/*.ts",
+        "workflows/extensions/**/*.ts",
         "tests/**/*.ts"
     ]
 }

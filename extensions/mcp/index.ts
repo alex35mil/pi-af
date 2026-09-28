@@ -146,6 +146,7 @@ export function registerMcpServers(
                 catalog.set(toolName, {
                     serverName: server.name,
                     serverToolName: tool.name,
+                    inputSchema: structuredClone(tool.inputSchema as Record<string, unknown>),
                     annotations: tool.annotations ? { ...tool.annotations } : undefined,
                 })
             }

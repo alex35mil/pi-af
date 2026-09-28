@@ -1,0 +1,553 @@
+import assert from "node:assert/strict"
+import { describe, it } from "node:test"
+
+import { GITHUB_PROJECT_DEFAULTS, runGitHubProjectSetup } from "../workflows/extensions/project-setup/github-project.ts"
+
+interface FakeField {
+    id: string
+    name: string
+    dataType: string
+    options?: Array<{ id: string; name: string; description: string; color: string }>
+}
+interface FakeProject {
+    id: string
+    number: number
+    title: string
+    url: string
+    public: boolean
+    closed: boolean
+    itemCount: number
+    fields: FakeField[]
+    repositoryIds: string[]
+}
+
+class FakeGitHub {
+    projects: FakeProject[] = []
+    issueFields: Array<Record<string, unknown>> = []
+    issueTypes: Array<Record<string, unknown>> = []
+    authorizationHeaders: string[] = []
+    nextField = 10
+
+    readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = String(input)
+        const headers = new Headers(init?.headers)
+        this.authorizationHeaders.push(headers.get("Authorization") ?? "")
+        if (url.endsWith("/graphql")) return this.graphql(String(init?.body ?? ""))
+        if (url.endsWith("/repos/acme/example")) {
+            return json({ node_id: "repo-node", owner: { type: "Organization" } })
+        }
+        if (url.endsWith("/orgs/acme/issue-fields")) {
+            if (init?.method === "POST") {
+                const body = JSON.parse(String(init.body)) as Record<string, unknown>
+                const rawOptions = body.options as Array<Record<string, unknown>> | undefined
+                const field = {
+                    id: this.issueFields.length + 1,
+                    node_id: `issue-field-${this.issueFields.length + 1}`,
+                    name: body.name,
+                    data_type: body.data_type,
+                    options: rawOptions?.map((option, index) => ({
+                        ...option,
+                        id: index + 1,
+                        priority: index + 1,
+                    })),
+                }
+                this.issueFields.push(field)
+                return json(field)
+            }
+            return json(this.issueFields)
+        }
+        if (url.endsWith("/orgs/acme/issue-types")) {
+            if (init?.method === "POST") {
+                const body = JSON.parse(String(init.body)) as Record<string, unknown>
+                const issueType = { id: this.issueTypes.length + 1, ...body }
+                this.issueTypes.push(issueType)
+                return json(issueType)
+            }
+            return json(this.issueTypes)
+        }
+        return json({ message: `unexpected request ${init?.method ?? "GET"} ${url}` }, 404)
+    }
+
+    private graphql(rawBody: string): Response {
+        const body = JSON.parse(rawBody) as { query: string; variables: Record<string, unknown> }
+        const { query, variables } = body
+        if (query.includes("createProjectV2(")) {
+            const project: FakeProject = {
+                id: `project-${this.projects.length + 1}`,
+                number: this.projects.length + 1,
+                title: String(variables.title),
+                url: `https://github.com/users/alex/projects/${this.projects.length + 1}`,
+                public: false,
+                closed: false,
+                itemCount: 0,
+                fields: [
+                    {
+                        id: "default-status",
+                        name: "Status",
+                        dataType: "SINGLE_SELECT",
+                        options: options("Todo", "In Progress", "Done"),
+                    },
+                ],
+                repositoryIds: variables.repositoryId ? [String(variables.repositoryId)] : [],
+            }
+            this.projects.push(project)
+            return graph({ createProjectV2: { projectV2: summary(project) } })
+        }
+        if (query.includes("updateProjectV2(")) {
+            const project = this.project(String(variables.projectId))
+            project.public = variables.public === true
+            return graph({ updateProjectV2: { projectV2: { id: project.id } } })
+        }
+        if (query.includes("linkProjectV2ToRepository(")) {
+            const project = this.project(String(variables.projectId))
+            if (!project.repositoryIds.includes(String(variables.repositoryId))) {
+                project.repositoryIds.push(String(variables.repositoryId))
+            }
+            return graph({ linkProjectV2ToRepository: { repository: { id: variables.repositoryId } } })
+        }
+        if (query.includes("unlinkProjectV2FromRepository(")) {
+            const project = this.project(String(variables.projectId))
+            project.repositoryIds = project.repositoryIds.filter((id) => id !== variables.repositoryId)
+            return graph({ unlinkProjectV2FromRepository: { repository: { id: variables.repositoryId } } })
+        }
+        if (query.includes("deleteProjectV2Field(")) {
+            const project = this.projects.find((candidate) =>
+                candidate.fields.some((field) => field.id === variables.fieldId),
+            )
+            if (!project) throw new Error(`missing fake field ${String(variables.fieldId)}`)
+            project.fields = project.fields.filter((field) => field.id !== variables.fieldId)
+            return graph({ deleteProjectV2Field: { clientMutationId: null } })
+        }
+        if (query.includes("createProjectV2Field(")) {
+            const project = this.project(String(variables.projectId))
+            const rawOptions = variables.options as Array<Record<string, unknown>> | null
+            const field: FakeField = {
+                id: `field-${this.nextField++}`,
+                name: String(variables.name),
+                dataType: String(variables.dataType),
+                ...(rawOptions
+                    ? {
+                          options: rawOptions.map((option, index) => ({
+                              id: `option-${this.nextField}-${index}`,
+                              name: String(option.name),
+                              description: String(option.description),
+                              color: String(option.color),
+                          })),
+                      }
+                    : {}),
+            }
+            project.fields.push(field)
+            return graph({ createProjectV2Field: { projectV2Field: { id: field.id } } })
+        }
+        if (query.includes("repositories(first: 50")) {
+            const project = this.project(String(variables.id))
+            return graph({
+                node: {
+                    repositories: {
+                        nodes: project.repositoryIds.map((id) => ({ id })),
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                },
+            })
+        }
+        if (query.includes("node(id: $id)")) {
+            const project = this.project(String(variables.id))
+            return graph({ node: details(project) })
+        }
+        if (query.includes("projectsV2(first: 50")) {
+            const root = query.includes("organization(login") ? "organization" : "user"
+            return graph({
+                [root]: {
+                    id: root === "organization" ? "org-owner" : "user-owner",
+                    projectsV2: {
+                        nodes: this.projects.map(summary),
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                },
+            })
+        }
+        return graph(undefined, [{ message: "unexpected GraphQL operation" }])
+    }
+
+    private project(id: string): FakeProject {
+        const project = this.projects.find((candidate) => candidate.id === id)
+        if (!project) throw new Error(`missing fake Project ${id}`)
+        return project
+    }
+}
+
+function json(value: unknown, status = 200): Response {
+    return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } })
+}
+function graph(data: unknown, errors?: unknown[]): Response {
+    return json({ data, ...(errors ? { errors } : {}) })
+}
+function summary(project: FakeProject) {
+    return {
+        id: project.id,
+        number: project.number,
+        title: project.title,
+        url: project.url,
+        public: project.public,
+        closed: project.closed,
+    }
+}
+function details(project: FakeProject) {
+    return {
+        ...summary(project),
+        items: { totalCount: project.itemCount },
+        fields: {
+            nodes: project.fields.map((field) => ({
+                __typename: field.dataType === "SINGLE_SELECT" ? "ProjectV2SingleSelectField" : "ProjectV2Field",
+                ...field,
+            })),
+            pageInfo: { hasNextPage: false, endCursor: null },
+        },
+    }
+}
+function options(...names: string[]) {
+    return names.map((name, index) => ({ id: `default-${index}`, name, description: "", color: "GRAY" }))
+}
+
+function projectContained(source: Record<string, unknown>) {
+    const defaults = structuredClone(GITHUB_PROJECT_DEFAULTS)
+    return {
+        credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+        mcpServer: "github",
+        repository: { owner: "acme", repo: "example" },
+        projectOwner: { login: "alex", type: "user" },
+        project: source,
+        fields: {
+            status: defaults.status,
+            priority: { scope: "project", ...defaults.priority },
+            internalId: { scope: "project", ...defaults.internalId },
+            type: { scope: "project", ...defaults.type },
+        },
+    }
+}
+
+function organizationNative(source: Record<string, unknown>) {
+    const defaults = structuredClone(GITHUB_PROJECT_DEFAULTS)
+    return {
+        credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+        mcpServer: "github",
+        repository: { owner: "acme", repo: "example" },
+        projectOwner: { login: "acme", type: "org" },
+        project: source,
+        fields: {
+            status: defaults.status,
+            priority: {
+                scope: "issue",
+                ...defaults.priority,
+                provisionMissing: true,
+                visibility: "all",
+            },
+            internalId: {
+                scope: "issue",
+                ...defaults.internalId,
+                provisionMissing: true,
+                visibility: "organization_members_only",
+            },
+            type: {
+                scope: "issue",
+                epic: defaults.type.epic,
+                deliverableKinds: defaults.type.deliverableKinds,
+                provisionMissing: true,
+            },
+        },
+    }
+}
+
+const setupOptions = (github: FakeGitHub) => ({
+    fetch: github.fetch as typeof fetch,
+    env: { GITHUB_TOKEN_FOR_TEST: "secret-token" },
+})
+
+describe("GitHub Project setup", () => {
+    it("creates and verifies a self-contained personal Project", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Example workflow",
+            visibility: "private",
+            associateRepository: true,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "ready")
+        assert.match(String(preview.planHash), /^[a-f0-9]{64}$/)
+        assert.equal(github.projects.length, 0)
+
+        const applied = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        assert.equal(applied.state, "provisioned")
+        assert.equal(github.projects.length, 1)
+        assert.deepEqual(
+            github.projects[0].fields.map((field) => field.name),
+            ["Status", "Priority", "Internal ID", "Type"],
+        )
+        const tracker = applied.trackerConfig as Record<string, any>
+        assert.equal(tracker.project.number, 1)
+        assert.equal(tracker.fields.status.values.inReview, "In Review")
+        assert.deepEqual(tracker.fields.priority.values, ["Urgent", "High", "Medium", "Low"])
+        assert.ok(github.authorizationHeaders.every((header) => header === "Bearer secret-token"))
+        assert.doesNotMatch(JSON.stringify(applied), /secret-token/)
+    })
+
+    it("provisions explicitly approved organization issue fields and types", async () => {
+        const github = new FakeGitHub()
+        github.projects.push({
+            id: "project-1",
+            number: 1,
+            title: "Organization workflow",
+            url: "https://github.com/orgs/acme/projects/1",
+            public: false,
+            closed: false,
+            itemCount: 0,
+            fields: [
+                {
+                    id: "status",
+                    name: "Status",
+                    dataType: "SINGLE_SELECT",
+                    options: Object.values(GITHUB_PROJECT_DEFAULTS.status.options).map((option, index) => ({
+                        id: `status-${index}`,
+                        name: option.name,
+                        description: option.description,
+                        color: option.color,
+                    })),
+                },
+            ],
+            repositoryIds: [],
+        })
+        const specification = organizationNative({
+            mode: "existing",
+            number: 1,
+            visibility: "public",
+            associateRepository: true,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "ready")
+        assert.match(JSON.stringify(preview), /Change Project visibility to public/)
+        assert.match(JSON.stringify(preview), /Associate.*repository repo-node/)
+        assert.match(JSON.stringify(preview), /Create organization issue field.*Priority/)
+        assert.match(JSON.stringify(preview), /Create enabled organization issue type.*Epic/)
+
+        const applied = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        assert.equal(applied.state, "provisioned")
+        assert.equal(github.projects[0].public, true)
+        assert.deepEqual(github.projects[0].repositoryIds, ["repo-node"])
+        assert.deepEqual(
+            github.issueFields.map((field) => field.name),
+            ["Priority", "Internal ID"],
+        )
+        assert.deepEqual(
+            github.issueTypes.map((issueType) => issueType.name),
+            ["Epic", "Feature", "Bugfix", "Research", "Refactor", "Audit", "Chore"],
+        )
+        const tracker = applied.trackerConfig as Record<string, any>
+        assert.equal(tracker.fields.priority.scope, "issue")
+        assert.equal(tracker.fields.type.scope, "issue")
+    })
+
+    it("blocks incompatible existing fields and exact-title recreation", async () => {
+        const github = new FakeGitHub()
+        github.projects.push({
+            id: "project-1",
+            number: 1,
+            title: "Existing",
+            url: "https://github.com/users/alex/projects/1",
+            public: false,
+            closed: false,
+            itemCount: 3,
+            fields: [{ id: "status", name: "Status", dataType: "TEXT" }],
+            repositoryIds: [],
+        })
+        const existing = await runGitHubProjectSetup(
+            {
+                operation: "preview",
+                specification: projectContained({
+                    mode: "existing",
+                    number: 1,
+                    visibility: "private",
+                    associateRepository: false,
+                }),
+            },
+            setupOptions(github),
+        )
+        assert.equal(existing.state, "blocked")
+        assert.match(JSON.stringify(existing), /incompatible type or options/)
+
+        const duplicate = await runGitHubProjectSetup(
+            {
+                operation: "preview",
+                specification: projectContained({
+                    mode: "new",
+                    title: "Existing",
+                    visibility: "private",
+                    associateRepository: false,
+                }),
+            },
+            setupOptions(github),
+        )
+        assert.equal(duplicate.state, "blocked")
+        assert.deepEqual((duplicate.candidates as unknown[]).length, 1)
+    })
+
+    it("rejects apply when remote state changes after preview approval", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Changed remotely",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        github.projects.push({
+            id: "project-remote",
+            number: 9,
+            title: "Changed remotely",
+            url: "https://github.com/users/alex/projects/9",
+            public: false,
+            closed: false,
+            itemCount: 0,
+            fields: [],
+            repositoryIds: [],
+        })
+        await assert.rejects(
+            () =>
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    setupOptions(github),
+                ),
+            /changed after approval/,
+        )
+    })
+
+    it("preserves Status replacement eligibility for existing and resumed Projects", async () => {
+        for (const mode of ["existing", "resume-created"] as const) {
+            for (const itemCount of [0, 2]) {
+                for (const statusName of ["Status", "Workflow Status"]) {
+                    const github = new FakeGitHub()
+                    github.projects.push({
+                        id: "project-1",
+                        number: 1,
+                        title: "Resume",
+                        url: "https://github.com/users/alex/projects/1",
+                        public: false,
+                        closed: false,
+                        itemCount,
+                        repositoryIds: [],
+                        fields: [
+                            {
+                                id: "default-status",
+                                name: "Status",
+                                dataType: "SINGLE_SELECT",
+                                options: options("Todo"),
+                            },
+                        ],
+                    })
+                    const base = projectContained({
+                        mode,
+                        number: 1,
+                        visibility: "private",
+                        associateRepository: false,
+                    })
+                    const specification = {
+                        ...base,
+                        fields: { ...base.fields, status: { ...base.fields.status, field: statusName } },
+                    }
+                    const preview = await runGitHubProjectSetup(
+                        { operation: "preview", specification },
+                        setupOptions(github),
+                    )
+                    const ready = mode === "resume-created" ? itemCount === 0 : statusName !== "Status"
+                    assert.equal(preview.state, ready ? "ready" : "blocked")
+                    assert.equal(github.projects[0].fields.length, 1)
+                    if (!ready) continue
+                    await runGitHubProjectSetup(
+                        { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                        setupOptions(github),
+                    )
+                    assert.ok(github.projects[0].fields.some((field) => field.name === statusName))
+                    assert.equal(
+                        github.projects[0].fields.some((field) => field.id === "default-status"),
+                        mode === "existing",
+                    )
+                    const repeated = await runGitHubProjectSetup(
+                        { operation: "preview", specification },
+                        setupOptions(github),
+                    )
+                    assert.equal(repeated.state, "ready")
+                    assert.deepEqual(repeated.actions, [])
+                }
+            }
+        }
+    })
+
+    it("preserves organization metadata opt-in, compatibility, and mixed scopes", async () => {
+        const github = new FakeGitHub()
+        const base = organizationNative({
+            mode: "new",
+            title: "Mixed",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const specification = {
+            ...base,
+            fields: { ...base.fields, priority: { ...base.fields.priority, provisionMissing: false } },
+        }
+        const blocked = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(blocked.state, "blocked")
+        assert.equal(github.projects.length, 0)
+        github.issueFields.push({ id: 1, name: "Priority", data_type: "text" })
+        const incompatible = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(incompatible.state, "blocked")
+        github.issueFields = []
+        const mixed = {
+            ...base,
+            fields: {
+                ...base.fields,
+                priority: { scope: "project", ...structuredClone(GITHUB_PROJECT_DEFAULTS.priority) },
+            },
+        }
+        const preview = await runGitHubProjectSetup(
+            { operation: "preview", specification: mixed },
+            setupOptions(github),
+        )
+        assert.equal(preview.state, "ready")
+        await runGitHubProjectSetup(
+            { operation: "apply", specification: mixed, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        assert.deepEqual(
+            github.issueFields.map((field) => field.name),
+            ["Internal ID"],
+        )
+        assert.deepEqual(
+            github.projects[0].fields.map((field) => field.name),
+            ["Status", "Priority"],
+        )
+    })
+
+    it("requires an environment-backed credential", async () => {
+        const github = new FakeGitHub()
+        await assert.rejects(
+            () =>
+                runGitHubProjectSetup(
+                    {
+                        operation: "inspect",
+                        credentialEnv: "MISSING_TOKEN",
+                        repository: { owner: "acme", repo: "example" },
+                        projectOwner: { login: "alex", type: "user" },
+                        includeOrganizationMetadata: false,
+                    },
+                    { fetch: github.fetch as typeof fetch, env: {} },
+                ),
+            /environment variable MISSING_TOKEN is not set/,
+        )
+    })
+})

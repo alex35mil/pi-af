@@ -26,6 +26,7 @@ function metadata(serverName: string, serverToolName: string, readOnlyHint?: boo
     return {
         serverName,
         serverToolName,
+        inputSchema: { type: "object" },
         ...(readOnlyHint === undefined ? {} : { annotations: { readOnlyHint } }),
     }
 }
@@ -85,7 +86,7 @@ function createPermissionHarness(
     }
 }
 
-function createContext(cwd: string) {
+function createContext(cwd: string, approval = true) {
     const notifications: Array<{ message: string; level: string }> = []
     const widgets = new Map<string, unknown>()
     let aborts = 0
@@ -103,6 +104,9 @@ function createContext(cwd: string) {
             setWidget(key: string, content: unknown) {
                 if (content === undefined) widgets.delete(key)
                 else widgets.set(key, content)
+            },
+            async confirm() {
+                return approval
             },
         },
     } as unknown as ExtensionContext
@@ -257,6 +261,28 @@ describe("MCP permission rules", () => {
 })
 
 describe("MCP permission lifecycle", () => {
+    it("aborts MCP calls on configured denial and user rejection", async () => {
+        for (const testCase of [
+            { settings: { defaultMode: "deny" }, approval: true, reason: /Denied by permission settings/ },
+            { settings: { defaultMode: "ask" }, approval: false, reason: /Rejected by user/ },
+        ] as const) {
+            const project = createProjectSettings(JSON.stringify(testCase.settings))
+            try {
+                const harness = createPermissionHarness()
+                const context = createContext(project.cwd, testCase.approval)
+                const blocked = (await harness.handler("tool_call")(
+                    { toolName: getMcpToolName("github", "issue_write"), toolCallId: "call-1", input: {} },
+                    context.ctx,
+                )) as { block: boolean; reason: string }
+                assert.equal(blocked.block, true)
+                assert.match(blocked.reason, testCase.reason)
+                assert.equal(context.aborts(), 1)
+            } finally {
+                project.cleanup()
+            }
+        }
+    })
+
     it("replaces annotation metadata and disposes listeners across reload", async () => {
         const project = createProjectSettings(
             JSON.stringify({ defaultMode: "deny", allow: ["mcp(github, hint: readOnly)"] }),

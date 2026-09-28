@@ -9,6 +9,7 @@ const MCP_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/
 export interface McpToolMetadata {
     serverName: string
     serverToolName: string
+    inputSchema: Readonly<Record<string, unknown>>
     annotations?: ToolAnnotations
 }
 

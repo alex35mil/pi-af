@@ -123,6 +123,7 @@ describe("MCP extension lifecycle", () => {
                     {
                         serverName: "github",
                         serverToolName: "get_issue",
+                        inputSchema: { type: "object" },
                         annotations: {
                             title: "Get issue",
                             readOnlyHint: true,
