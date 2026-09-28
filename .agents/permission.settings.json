@@ -1,8 +1,21 @@
 {
+    "deny": [
+        "read(*mise.local.toml)"
+    ],
     "allow": [
         "bash(npm test *)",
         "bash(npx tsx --test *)",
         "bash(npx tsc --noEmit)",
         "bash(npx oxfmt --check *)"
+    ],
+    "ask": [
+        "write(.project/*/epic.md)",
+        "edit(.project/*/epic.md)",
+        "write(.project/*/plan.md)",
+        "edit(.project/*/plan.md)",
+        "write(.project/*/result.md)",
+        "edit(.project/*/result.md)",
+        "write(.project/*/report.md)",
+        "edit(.project/*/report.md)"
     ]
 }
