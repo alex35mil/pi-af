@@ -377,6 +377,7 @@ describe("workflow reviewer isolation", () => {
                     title: "Example",
                     authority: { kind: "workflow", priority: "not set" },
                     createdAt: "2026-01-01T00:00:00.000Z",
+                    workStage: "planning",
                     branch: {
                         state: "ready",
                         name: "GIG-01KDVDNA00-example",
@@ -392,7 +393,7 @@ describe("workflow reviewer isolation", () => {
             )
             fs.writeFileSync(
                 path.join(gigDir, ".local", "status.md"),
-                '# Status\n\n```json\n{\n  "state": "planning"\n}\n```\n',
+                '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
             )
             const deliverablePrompt = await buildDeliverableReviewPrompt(
                 { cwd: repository } as never,

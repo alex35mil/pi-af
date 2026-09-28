@@ -255,7 +255,7 @@ function createEntityArtifacts(
             : ({
                   kind: "tracker",
                   provider: environment.tracker.kind,
-                  desired: { lifecycle: "planning", priority },
+                  desired: { lifecycle: "inProgress", priority },
               } as const)
     const common = {
         id: qualifyId(input.entity, rawId),
@@ -263,10 +263,11 @@ function createEntityArtifacts(
         slug,
         title: input.title.trim(),
         createdAt: timestamp.toISOString(),
+        workStage: "planning" as const,
         branch: contract,
         integrations,
         authority,
-        ...(authority.kind === "workflow" ? { state: "planning" as const } : {}),
+        ...(authority.kind === "workflow" ? { state: "inProgress" as const } : {}),
     }
     const candidate =
         input.entity === "epic"

@@ -19,6 +19,18 @@ Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define pl
 
 Write the smallest self-contained draft that carries every settled decision needed for that entity. Entity skills define its content and review criteria.
 
+## Material replanning
+
+When an accepted `epic.md` or `plan.md` must change materially after execution began, enter planning before writing or reviewing the replacement draft:
+
+1. Reject replanning for lifecycle `done`; separately initialized work owns any later change.
+2. Restore lifecycle to `inProgress` when it is `inReview`: update `.local/status.md` for workflow authority or update and re-read the provider's native Status for tracker authority.
+3. Record `workStage: planning` in `metadata.json`.
+4. Apply the configured provider's planning projection. GitHub re-adds the exact configured Planning label while preserving unrelated labels; Linear and trackerless workflows require no additional external marker.
+5. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance records `workStage: execution` while lifecycle remains `inProgress`.
+
+Editorial changes that do not alter behavior, strategy, scope, or decomposition do not enter material replanning.
+
 ## Planning review and acceptance
 
 1. Call `review` with the exact entity, `entityDir`, and `phase: "plan"`. The tool creates `.local/reviews/plan-NNN/`, snapshots `.local/draft.md` to `candidate.md`, validates the structured reviewer report, renders canonical `review.md`, and stores request/transcript/raw diagnostics in that round directory.

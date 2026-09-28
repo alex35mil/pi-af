@@ -181,14 +181,14 @@ describe("workflow project configuration", () => {
                         statuses: {
                             issues: {
                                 backlog: "Backlog",
-                                planning: "Planning",
+                                todo: "Todo",
                                 inProgress: "In Progress",
                                 inReview: "In Review",
                                 done: "Done",
                             },
                             projects: {
                                 backlog: "Backlog",
-                                planning: "Planned",
+                                todo: "Todo",
                                 inProgress: "In Progress",
                                 inReview: "In Review",
                                 done: "Completed",

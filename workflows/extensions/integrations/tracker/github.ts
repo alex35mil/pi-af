@@ -5,6 +5,7 @@ import { type IntegrationOperation, type ToolRequirement, validateRequirements }
 export const GITHUB_TRACKER_TOOL_NAMES = {
     issueRead: "issue_read",
     issueWrite: "issue_write",
+    getLabel: "get_label",
     searchIssues: "search_issues",
     projectsList: "projects_list",
     projectsWrite: "projects_write",
@@ -32,7 +33,7 @@ const TRACKER_REQUIREMENTS: ToolRequirement[] = [
     },
     {
         name: GITHUB_TRACKER_TOOL_NAMES.issueWrite,
-        properties: ["method", "owner", "repo", "title", "body", "issue_number", "issue_fields", "type"],
+        properties: ["method", "owner", "repo", "title", "body", "issue_number", "issue_fields", "type", "labels"],
         methods: ["create", "update"],
     },
     {
@@ -108,9 +109,15 @@ export function validateGitHubTrackerCapabilities(
             : TRACKER_REQUIREMENTS
     const requirements = selected.map((requirement) =>
         artifactMode === "unversioned" && requirement.name === GITHUB_TRACKER_TOOL_NAMES.issueWrite
-            ? { ...requirement, properties: ["method", "owner", "repo", "title", "body", "issue_number"] }
+            ? { ...requirement, properties: ["method", "owner", "repo", "title", "body", "issue_number", "labels"] }
             : requirement,
     )
+    if (operation === "inspect" || operation === "initialize" || operation === "resume") {
+        requirements.push({
+            name: GITHUB_TRACKER_TOOL_NAMES.getLabel,
+            properties: ["owner", "repo", "name"],
+        })
+    }
     if (
         operation !== "artifactProjection" &&
         (config.fields.priority.scope === "issue" ||
@@ -145,6 +152,11 @@ export function buildGitHubRemoteValidationSteps(
     const steps = [
         `Use ${tools.projectsList} method=list_project_fields for ${config.project.owner} project ${config.project.number}; require exact Project fields ${projectFields.map((field) => JSON.stringify(field)).join(", ")} with compatible types and every configured Status option.${projectPriorityRequirement}${projectTypeRequirement}`,
     ]
+    if (tools.getLabel) {
+        steps.push(
+            `Use ${tools.getLabel} for ${config.repository.owner}/${config.repository.repo} label ${JSON.stringify(config.labels.planning)}; require that exact configured Planning label.`,
+        )
+    }
     if (
         config.fields.priority.scope === "issue" ||
         (artifactMode === "versioned" && config.fields.internalId.scope === "issue")

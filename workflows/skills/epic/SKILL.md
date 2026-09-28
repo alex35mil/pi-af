@@ -34,7 +34,7 @@ For resume:
 
 ## Initialize
 
-Follow approved intake in `../../references/artifacts.md`; an adopted Epic uses an explicit GitHub backlog issue or Linear backlog Project and its provider's Epic preflight. Then call `init` with `entity: "epic"`, approved values, the approved Request as `request`, slug, and matching source variant. The tool creates identity, artifacts, a repository-default start/target, and `taskTarget: epic`. Branch formats follow `../../references/setup.md`, including the read-only current Linear template/Username query for `tracker`.
+Follow approved intake in `../../references/artifacts.md`; an adopted Epic uses an explicit GitHub Backlog/Todo issue or Linear Backlog/Todo Project and its provider's Epic preflight. Then call `init` with `entity: "epic"`, approved values, the approved Request as `request`, slug, and matching source variant. The tool creates identity, artifacts, a repository-default start/target, and `taskTarget: epic`. Branch formats follow `../../references/setup.md`, including the read-only current Linear template/Username query for `tracker`.
 
 Switch to the stored branch, then call `integration_context` with `operation: "initialize"`. Except for the read-only Linear branch-settings query owned by `init`, persist workflow initialization before any provider mutation. Disabled roles remain absent; a role failure changes only its own pending record and never rolls working-tree work back.
 
@@ -85,7 +85,7 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `present_plan` targets `epic.md`. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-On acceptance, change lifecycle from `planning` to `inProgress`: update `.local/status.md` for workflow authority or follow the absolute tracker update/read-back procedure in `../../references/integrations/shared.md`. Project the accepted `epic.md` and request available forge links through the same integration steps used on resume. Stop without initializing or implementing a Task.
+On acceptance, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through the provider's absolute label read/update/read-back procedure. Project the accepted `epic.md` and request available forge links through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 
@@ -93,7 +93,7 @@ The Epic's branch identity never changes. It may be merged into its stored defau
 
 Task initialization changes its selected item once from `1. **Title** — …` to `1. [TASK-<raw-id>] **Title** — …`. That qualified ID is the permanent relation; title text and ordering are display-only and may change. Every later Epic candidate must preserve existing `[TASK-…]` markers exactly.
 
-Plan-item progress is derived by resolving each marker to its child Task lifecycle authority: read `.local/status.md` for workflow-authority Tasks and refresh native provider state for tracker-backed Tasks. No marker is prospective, a marker with a non-`done` Task is initialized, and a marker with a `done` Task is complete. Changes to the accepted initiative contract must repeat candidate review and user acceptance; implementation detail must not rewrite it.
+Plan-item progress is derived by resolving each marker to its child Task lifecycle authority: read `.local/status.md` for workflow-authority Tasks and refresh native provider state for tracker-backed Tasks. No marker is prospective, a marker with a non-`done` Task is initialized, and a marker with a `done` Task is complete. Changes to the accepted initiative contract must first enter the material-replanning transition in `../../references/planning.md`, then repeat candidate review and user acceptance; implementation detail must not rewrite it.
 
 When the user explicitly resumes the Epic and asks to complete it:
 

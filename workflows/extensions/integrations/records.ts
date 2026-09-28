@@ -337,7 +337,8 @@ export function createInitialIntegrationRecords(
                           },
                           operations: [
                               ...(exposesSystemTraces ? ["apply configured Type and Internal ID"] : []),
-                              "move Project Status to Planning",
+                              "move Project Status to In Progress",
+                              "add Planning label",
                               ...(input.entity === "task" ? ["attach Task issue to parent Epic issue"] : []),
                           ],
                       }
@@ -359,7 +360,7 @@ export function createInitialIntegrationRecords(
                                   },
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear Project to Planning",
+                                      "move Linear Project to In Progress",
                                   ],
                               }
                             : {
@@ -387,7 +388,7 @@ export function createInitialIntegrationRecords(
                                   },
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear issue to Planning",
+                                      "move Linear issue to In Progress",
                                   ],
                               }
                             : {
@@ -416,7 +417,7 @@ export function createInitialIntegrationRecords(
                                   },
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear issue to Planning",
+                                      "move Linear issue to In Progress",
                                   ],
                               }
                             : {

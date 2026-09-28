@@ -27,7 +27,7 @@ Use the shared Deliverable preparation, entity-selection, and artifact-read flow
 
 ## Initialize
 
-Follow approved intake in `../../references/artifacts.md` and the selected provider's Gig preflight when adopting backlog work; Linear requires a projectless issue. Then call `init` with `entity: "gig"`, approved values, the approved Request as `request`, slug, and matching `source` variant.
+Follow approved intake in `../../references/artifacts.md` and the selected provider's Gig preflight when adopting Backlog or Todo work; Linear requires a projectless issue. Then call `init` with `entity: "gig"`, approved values, the approved Request as `request`, slug, and matching `source` variant.
 
 The tool creates identity, artifacts, and the configured branch with repository-default start/target. Continue through the shared integration boundary, including tracker binding and `finalize_linear_branch` for a pending Linear branch, before planning.
 

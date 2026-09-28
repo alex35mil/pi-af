@@ -76,14 +76,14 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
         "statuses": {
             "issues": {
                 "backlog": "Backlog",
-                "planning": "Planning",
+                "todo": "Todo",
                 "inProgress": "In Progress",
                 "inReview": "In Review",
                 "done": "Done"
             },
             "projects": {
                 "backlog": "Backlog",
-                "planning": "Planned",
+                "todo": "Todo",
                 "inProgress": "In Progress",
                 "inReview": "In Review",
                 "done": "Completed"
@@ -93,7 +93,7 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
 }
 ```
 
-Issue and Project mappings each require all five lifecycle keys and five distinct, non-empty provider option names. `team` is non-empty. Linear Priority is native and is not configured here.
+Issue and Project mappings each require all five queue/lifecycle keys and five distinct, non-empty provider option names. A previous mapping containing `planning` instead of `todo` is invalid and requires explicit configuration migration; setup never rewrites it implicitly. `team` is non-empty. Linear Priority is native and is not configured here.
 
 During guided setup, `inspect_linear_workspace` reads the authenticated workspace, authenticated viewer, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. `viewer.name` is Full Name; `viewer.displayName` is the workspace-unique Username/Nickname and is returned as `viewer.username`. The API performs no mutation. Setup persists only the exact team and status names the user selects; provider IDs, viewer identity, branch template, and credentials remain outside workflow configuration. A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
@@ -115,12 +115,13 @@ Never hand-construct GitHub tracker configuration. Use the exact `trackerConfig`
 
 - `provider: "github"`, MCP server, and repository identity;
 - Project owner, owner type (`user` or `org`), and positive Project URL number;
-- one Project Status field with distinct non-empty mappings for `backlog`, `planning`, `inProgress`, `inReview`, and `done`;
+- one Project Status field with distinct non-empty mappings for `backlog`, `todo`, `inProgress`, `inReview`, and `done`;
+- one exact workflow-owned repository Planning label name;
 - Priority with `issue` or `project` scope, a non-empty field name, and unique non-empty values that exclude exact lowercase `not set`;
 - Internal ID with `issue` or `project` scope and a non-empty field name;
 - Type with either native issue scope or a named Project field, plus non-empty mappings for Epic and all six Deliverable kinds.
 
-All configured Project-scoped field names must be distinct. Status is always Project-scoped. Do not substitute labels, Custom Properties, or a different field scope.
+All configured Project-scoped field names must be distinct. Status is always Project-scoped. The Planning label projects active workflow planning only; it is not a lifecycle status or substitute for another field. Do not substitute other labels, Custom Properties, or a different field scope.
 
 Example returned configuration for a Project-contained tracker (use actual provisioning output, not these sample identities):
 
@@ -131,12 +132,13 @@ Example returned configuration for a Project-contained tracker (use actual provi
         "mcpServer": "github",
         "repository": { "owner": "octocat", "repo": "example" },
         "project": { "owner": "octocat", "ownerType": "user", "number": 3 },
+        "labels": { "planning": "Planning" },
         "fields": {
             "status": {
                 "field": "Status",
                 "values": {
                     "backlog": "Backlog",
-                    "planning": "Planning",
+                    "todo": "Todo",
                     "inProgress": "In Progress",
                     "inReview": "In Review",
                     "done": "Done"
@@ -150,7 +152,7 @@ Example returned configuration for a Project-contained tracker (use actual provi
             "internalId": { "scope": "project", "field": "Internal ID" },
             "type": {
                 "scope": "project",
-                "field": "Type",
+                "field": "Kind",
                 "epic": "Epic",
                 "deliverableKinds": {
                     "feature": "Feature",

@@ -17,6 +17,7 @@ import {
     RawIdSchema,
     type ReadyBranchContract,
     slugify,
+    WorkStageSchema,
 } from "./domain.js"
 import { writeTextAtomically } from "./files.js"
 import {
@@ -91,6 +92,7 @@ const baseMetadataProperties = {
     slug: OneLineSchema,
     title: OneLineSchema,
     createdAt: OneLineSchema,
+    workStage: WorkStageSchema,
     branch: BranchContractSchema,
     integrations: Type.Array(IntegrationRecordSchema),
 }
@@ -132,11 +134,7 @@ export type EntityStatus = Static<typeof EntityStatusSchema>
 
 const LocalStatusSchema = Type.Object({ state: InitializedLifecycleStateSchema }, { additionalProperties: false })
 
-const ActiveTaskLifecycleSchema = Type.Union([
-    Type.Literal("planning"),
-    Type.Literal("inProgress"),
-    Type.Literal("inReview"),
-])
+const ActiveTaskLifecycleSchema = Type.Union([Type.Literal("inProgress"), Type.Literal("inReview")])
 const ProgressTaskSchema = Type.Object(
     {
         id: OneLineSchema,
@@ -219,6 +217,14 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
     }
     if (status.id !== qualifyId(status.entity, status.rawId)) fail("qualified ID does not match entity and rawId")
     if (slugify(status.slug) !== status.slug) fail("slug is not normalized")
+    if ("state" in status) {
+        if (status.workStage === "planning" && status.state !== "inProgress") {
+            fail("planning work stage requires In Progress lifecycle")
+        }
+        if (status.state !== "inProgress" && status.workStage !== "execution") {
+            fail("In Review and Done lifecycle require execution work stage")
+        }
+    }
 
     const expectedDirectorySuffix = `.${status.id}.${status.slug}`
     if (!path.basename(entityDirectory).endsWith(expectedDirectorySuffix)) {

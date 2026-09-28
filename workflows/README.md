@@ -16,10 +16,11 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 /epic <idea or existing Epic>
 /task <details & parent Epic, or existing Task>
 /gig <details or existing Gig>
-/backlog <future work>
+/backlog <potential work>
+/todo <queued work>
 ```
 
-Only `/backlog` requires a tracker. Prospective Tasks and backlog objects do not receive workflow identity until explicitly initialized.
+Only `/backlog` and `/todo` require a tracker. Prospective Tasks and queued Backlog/Todo objects do not receive workflow identity until explicitly initialized.
 
 ## Setup
 
@@ -37,11 +38,12 @@ See the [configuration reference](references/setup.md) for exact schemas, exampl
 ## Working lifecycle
 
 ```text
-Deliverable: backlog → planning → inProgress → inReview → done
-Epic:        backlog → planning → inProgress → done
+Queue:       backlog | todo
+Deliverable: inProgress/planning → inProgress/execution → inReview/execution → done/execution
+Epic:        inProgress/planning → inProgress/execution → done/execution
 ```
 
-Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.
+Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.
 
 Accepting the final completion-artifact diff normally authorizes the final commit and, with a forge, push and PR discovery/creation. An explicit commit-only/no-push/no-PR request stops after the commit. Deliverables remain `inReview` until confirmed merged. Branch cleanup requires separate approval. [Epic guidance](skills/epic/SKILL.md) owns early-merge Task targeting and explicit Epic completion.
 
@@ -56,6 +58,7 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
 | Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md)                                                                                                                                          |
+| Backlog and Todo                                              | [Queue](references/queue.md)                                                                                                                                                      |
 | Provider-independent integration rules and Links              | [Integration roles](references/integrations/shared.md)                                                                                                                            |
 | Provider operations                                           | [GitHub tracker](references/integrations/tracker/github.md), [Linear tracker](references/integrations/tracker/linear.md), [GitHub forge](references/integrations/forge/github.md) |
 | Human-facing prose                                            | [Communication](references/communication.md)                                                                                                                                      |

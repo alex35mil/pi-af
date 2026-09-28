@@ -25,12 +25,7 @@ import { resolveGitHubForge } from "./forge/github.js"
 import { renderArtifactLinks, RenderArtifactLinksSchema, SHARED_LINK_SECTION } from "./links.js"
 import { verifyMarkdownProjection } from "./projection.js"
 import { resolveGitHubTracker } from "./tracker/github.js"
-import {
-    finalizeLinearBranch,
-    LinearBacklogReconciliationSchema,
-    reconcileLinearBacklogCandidates,
-    resolveLinearTracker,
-} from "./tracker/linear.js"
+import { finalizeLinearBranch, resolveLinearTracker } from "./tracker/linear.js"
 
 const FinalizeBranchSchema = Type.Object({ entityDir: Type.String({ minLength: 1 }) }, { additionalProperties: false })
 
@@ -44,7 +39,7 @@ const ProjectionVerificationSchema = Type.Object(
 
 const IntegrationContextSchema = Type.Union([
     Type.Object({ operation: Type.Literal("inspect") }, { additionalProperties: false }),
-    Type.Object({ operation: Type.Literal("backlog") }, { additionalProperties: false }),
+    Type.Object({ operation: Type.Literal("queueIntake") }, { additionalProperties: false }),
     Type.Object(
         {
             operation: Type.Union([
@@ -92,48 +87,42 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerCommand("backlog", {
-        description: "Add approved future work to the configured external backlog without initializing workflow work",
-        handler: async (args, ctx) => {
-            const request = args.trim()
-            if (!request) {
-                ctx.ui.notify("Usage: /backlog <future work>", "error")
-                return
-            }
-            pi.sendUserMessage(
-                [
-                    "Backlog intake:",
-                    "",
-                    request,
-                    "",
-                    "Use the backlog skill. This is future work, not Epic/Task/Gig initialization.",
-                ].join("\n"),
-            )
+    for (const queue of [
+        {
+            command: "backlog",
+            label: "Backlog",
+            usage: "potential work",
+            skill: "backlog",
+            description: "Add potential work to the configured external Backlog",
         },
-    })
-
-    pi.registerTool({
-        name: "reconcile_linear_backlog",
-        label: "reconcile_linear_backlog",
-        description:
-            "Filter uncertain Linear backlog-create candidates by exact entity/title/team/Project semantics. Always requires user confirmation and performs no remote operation.",
-        parameters: LinearBacklogReconciliationSchema,
-        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(LinearBacklogReconciliationSchema, params)
-            const loaded = loadIntegrationConfig(ctx.cwd)
-            if (loaded.state !== "enabled" || loaded.config.tracker?.provider !== "linear") {
-                throw new Error("reconcile_linear_backlog requires a configured Linear tracker")
-            }
-            if (input.team !== loaded.config.tracker.team) {
-                throw new Error("reconciliation team does not match the configured Linear tracker")
-            }
-            const result = reconcileLinearBacklogCandidates(input)
-            return {
-                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-                details: result,
-            }
+        {
+            command: "todo",
+            label: "Todo",
+            usage: "queued work",
+            skill: "todo",
+            description: "Add queued work to the configured external Todo queue",
         },
-    })
+    ] as const) {
+        pi.registerCommand(queue.command, {
+            description: `${queue.description} without initializing workflow work`,
+            handler: async (args, ctx) => {
+                const request = args.trim()
+                if (!request) {
+                    ctx.ui.notify(`Usage: /${queue.command} <${queue.usage}>`, "error")
+                    return
+                }
+                pi.sendUserMessage(
+                    [
+                        `${queue.label} intake:`,
+                        "",
+                        request,
+                        "",
+                        `Use the ${queue.skill} skill. This is external ${queue.label} intake, not Epic/Task/Gig initialization.`,
+                    ].join("\n"),
+                )
+            },
+        })
+    }
 
     pi.registerTool({
         name: "render_artifact_links",

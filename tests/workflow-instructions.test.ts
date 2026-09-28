@@ -54,12 +54,47 @@ describe("workflow instruction ownership", () => {
                 assert.ok(graph.has(`workflows/references/${reference}`), `${skill} must reach ${reference}`)
             if (skill !== "epic") assert.ok(graph.has("workflows/references/deliverable.md"))
         }
-        for (const skill of ["backlog", "project-setup"]) {
+        for (const skill of ["backlog", "todo", "project-setup"]) {
             const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
+            assert.ok(graph.has("workflows/references/queue.md") || skill === "project-setup")
             assert.ok(graph.has("workflows/references/integrations/shared.md"))
             assert.ok(graph.has("workflows/references/integrations/tracker/github.md"))
             assert.ok(graph.has("workflows/references/integrations/tracker/linear.md"))
         }
+    })
+
+    it("keeps queue intent and planning projection explicit", () => {
+        assert.match(fs.readFileSync("workflows/skills/backlog/SKILL.md", "utf-8"), /backlog it/)
+        assert.match(fs.readFileSync("workflows/skills/todo/SKILL.md", "utf-8"), /todo it/)
+        const queue = fs.readFileSync("workflows/references/queue.md", "utf-8")
+        assert.match(queue, /^# Queue$/m)
+        assert.match(queue, /Both destinations contain work that has not started/)
+        assert.match(queue, /potential work we may do later but have not committed to doing/)
+        assert.match(queue, /queued work we have committed to doing and can pick up next/)
+        assert.match(queue, /## Add work/)
+        assert.match(queue, /## If the provider response is uncertain/)
+        assert.match(queue, /retry only after confirmed absence or non-application/)
+        assert.match(queue, /Todo is never required between Backlog and In Progress/)
+        const readme = fs.readFileSync("workflows/README.md", "utf-8")
+        assert.match(readme, /\/backlog <potential work>/)
+        assert.match(readme, /\/todo <queued work>/)
+
+        const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
+        assert.match(planning, /## Material replanning/)
+        assert.match(planning, /Restore lifecycle to `inProgress` when it is `inReview`/)
+        assert.match(planning, /Record `workStage: planning` in `metadata.json`/)
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        assert.match(deliverable, /use the material-replanning transition in `\.\/planning.md`/)
+        const epic = fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8")
+        assert.match(epic, /first enter the material-replanning transition/)
+
+        const github = fs.readFileSync("workflows/references/integrations/tracker/github.md", "utf-8")
+        assert.match(github, /add the exact configured Planning label while preserving every unrelated label/)
+        assert.match(github, /workStage: execution.*remove exact configured Planning/)
+        assert.match(github, /shared material-replanning transition.*re-add Planning/)
+        const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
+        assert.match(linear, /Planning and execution both remain In Progress/)
+        assert.match(linear, /workStage.*workflow metadata/)
     })
 
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {
@@ -85,5 +120,8 @@ describe("workflow instruction ownership", () => {
             for (const tool of ["write", "edit"]) assert.ok(setup.includes(`${tool}(.project/*/${file}.md)`))
         }
         assert.ok(dependencies("workflows/references/setup.md").includes("workflows/references/artifacts.md"))
+
+        const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
+        assert.match(skill, /only when that local file already exists or is proposed/)
     })
 })

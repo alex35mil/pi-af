@@ -25,7 +25,10 @@ class FakeGitHub {
     projects: FakeProject[] = []
     issueFields: Array<Record<string, unknown>> = []
     issueTypes: Array<Record<string, unknown>> = []
+    repositoryLabels: Array<{ name: string; color: string; description: string }> = []
     authorizationHeaders: string[] = []
+    deleteProjectFieldAttempts = 0
+    loseNextProjectCreateResponse = false
     nextField = 10
 
     readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -35,6 +38,20 @@ class FakeGitHub {
         if (url.endsWith("/graphql")) return this.graphql(String(init?.body ?? ""))
         if (url.endsWith("/repos/acme/example")) {
             return json({ node_id: "repo-node", owner: { type: "Organization" } })
+        }
+        if (url.endsWith("/repos/acme/example/labels")) {
+            if (init?.method !== "POST") return json({ message: "method not allowed" }, 405)
+            const body = JSON.parse(String(init.body)) as { name: string; color: string; description: string }
+            if (this.repositoryLabels.some((label) => label.name === body.name)) {
+                return json({ message: "Validation Failed" }, 422)
+            }
+            this.repositoryLabels.push(body)
+            return json(body, 201)
+        }
+        if (url.includes("/repos/acme/example/labels/")) {
+            const name = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1))
+            const label = this.repositoryLabels.find((candidate) => candidate.name === name)
+            return label ? json(label) : json({ message: "Not Found" }, 404)
         }
         if (url.endsWith("/orgs/acme/issue-fields")) {
             if (init?.method === "POST") {
@@ -91,6 +108,10 @@ class FakeGitHub {
                 repositoryIds: variables.repositoryId ? [String(variables.repositoryId)] : [],
             }
             this.projects.push(project)
+            if (this.loseNextProjectCreateResponse) {
+                this.loseNextProjectCreateResponse = false
+                return graph(undefined, [{ message: "response lost after Project creation" }])
+            }
             return graph({ createProjectV2: { projectV2: summary(project) } })
         }
         if (query.includes("updateProjectV2(")) {
@@ -111,12 +132,24 @@ class FakeGitHub {
             return graph({ unlinkProjectV2FromRepository: { repository: { id: variables.repositoryId } } })
         }
         if (query.includes("deleteProjectV2Field(")) {
+            this.deleteProjectFieldAttempts++
+            return graph(undefined, [{ message: "Only custom fields can be deleted." }])
+        }
+        if (query.includes("updateProjectV2Field(")) {
             const project = this.projects.find((candidate) =>
                 candidate.fields.some((field) => field.id === variables.fieldId),
             )
             if (!project) throw new Error(`missing fake field ${String(variables.fieldId)}`)
-            project.fields = project.fields.filter((field) => field.id !== variables.fieldId)
-            return graph({ deleteProjectV2Field: { clientMutationId: null } })
+            const field = project.fields.find((candidate) => candidate.id === variables.fieldId)!
+            const rawOptions = variables.options as Array<Record<string, unknown>>
+            field.name = String(variables.name)
+            field.options = rawOptions.map((option, index) => ({
+                id: typeof option.id === "string" ? option.id : `updated-${this.nextField}-${index}`,
+                name: String(option.name),
+                description: String(option.description),
+                color: String(option.color),
+            }))
+            return graph({ updateProjectV2Field: { projectV2Field: { id: field.id } } })
         }
         if (query.includes("createProjectV2Field(")) {
             const project = this.project(String(variables.projectId))
@@ -217,6 +250,7 @@ function projectContained(source: Record<string, unknown>) {
         repository: { owner: "acme", repo: "example" },
         projectOwner: { login: "alex", type: "user" },
         project: source,
+        labels: defaults.labels,
         fields: {
             status: defaults.status,
             priority: { scope: "project", ...defaults.priority },
@@ -234,6 +268,7 @@ function organizationNative(source: Record<string, unknown>) {
         repository: { owner: "acme", repo: "example" },
         projectOwner: { login: "acme", type: "org" },
         project: source,
+        labels: defaults.labels,
         fields: {
             status: defaults.status,
             priority: {
@@ -285,14 +320,63 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projects.length, 1)
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
-            ["Status", "Priority", "Internal ID", "Type"],
+            ["Status", "Priority", "Internal ID", "Kind"],
         )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.project.number, 1)
+        assert.equal(tracker.fields.status.values.todo, "Todo")
         assert.equal(tracker.fields.status.values.inReview, "In Review")
+        assert.equal(tracker.labels.planning, "Planning")
         assert.deepEqual(tracker.fields.priority.values, ["Urgent", "High", "Medium", "Low"])
+        assert.deepEqual(github.repositoryLabels, [
+            { name: "Planning", color: "0969DA", description: "Work is currently being planned." },
+        ])
+        const statusOptions = github.projects[0].fields[0].options!
+        assert.equal(statusOptions.find((option) => option.name === "Todo")?.id, "default-0")
+        assert.equal(statusOptions.find((option) => option.name === "In Progress")?.id, "default-1")
+        assert.equal(statusOptions.find((option) => option.name === "Done")?.id, "default-2")
+        assert.equal(github.deleteProjectFieldAttempts, 0)
         assert.ok(github.authorizationHeaders.every((header) => header === "Bearer secret-token"))
         assert.doesNotMatch(JSON.stringify(applied), /secret-token/)
+    })
+
+    it("continues from provider state after a lost Project-create response", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Recovered creation",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        github.loseNextProjectCreateResponse = true
+        const applied = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        assert.equal(applied.state, "provisioned")
+        assert.equal(github.projects.length, 1)
+    })
+
+    it("reuses the exact Planning label and blocks conflicting label metadata", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Label validation",
+            visibility: "private",
+            associateRepository: false,
+        })
+        github.repositoryLabels.push({ name: "Planning", color: "ffffff", description: "Wrong" })
+        const blocked = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(blocked.state, "blocked")
+        assert.match(JSON.stringify(blocked.conflicts), /incompatible color or description/)
+
+        github.repositoryLabels = [
+            { name: "Planning", color: "0969DA", description: "Work is currently being planned." },
+        ]
+        const ready = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(ready.state, "ready")
+        assert.doesNotMatch(JSON.stringify(ready.actions), /create-repository-label/)
     })
 
     it("provisions explicitly approved organization issue fields and types", async () => {
@@ -427,7 +511,7 @@ describe("GitHub Project setup", () => {
         )
     })
 
-    it("preserves Status replacement eligibility for existing and resumed Projects", async () => {
+    it("updates native Status in place only for empty resumed Projects", async () => {
         for (const mode of ["existing", "resume-created"] as const) {
             for (const itemCount of [0, 2]) {
                 for (const statusName of ["Status", "Workflow Status"]) {
@@ -464,7 +548,7 @@ describe("GitHub Project setup", () => {
                         { operation: "preview", specification },
                         setupOptions(github),
                     )
-                    const ready = mode === "resume-created" ? itemCount === 0 : statusName !== "Status"
+                    const ready = mode === "resume-created" && itemCount === 0
                     assert.equal(preview.state, ready ? "ready" : "blocked")
                     assert.equal(github.projects[0].fields.length, 1)
                     if (!ready) continue
@@ -475,8 +559,9 @@ describe("GitHub Project setup", () => {
                     assert.ok(github.projects[0].fields.some((field) => field.name === statusName))
                     assert.equal(
                         github.projects[0].fields.some((field) => field.id === "default-status"),
-                        mode === "existing",
+                        true,
                     )
+                    assert.equal(github.deleteProjectFieldAttempts, 0)
                     const repeated = await runGitHubProjectSetup(
                         { operation: "preview", specification },
                         setupOptions(github),
@@ -485,6 +570,55 @@ describe("GitHub Project setup", () => {
                     assert.deepEqual(repeated.actions, [])
                 }
             }
+        }
+    })
+
+    it("renames compatible native Status only for an empty resumed Project", async () => {
+        for (const mode of ["existing", "resume-created"] as const) {
+            const github = new FakeGitHub()
+            github.projects.push({
+                id: "project-1",
+                number: 1,
+                title: "Compatible native Status",
+                url: "https://github.com/users/alex/projects/1",
+                public: false,
+                closed: false,
+                itemCount: 0,
+                repositoryIds: [],
+                fields: [
+                    {
+                        id: "default-status",
+                        name: "Status",
+                        dataType: "SINGLE_SELECT",
+                        options: Object.values(GITHUB_PROJECT_DEFAULTS.status.options).map((option, index) => ({
+                            id: `native-${index}`,
+                            name: option.name,
+                            description: option.description,
+                            color: option.color,
+                        })),
+                    },
+                ],
+            })
+            const base = projectContained({
+                mode,
+                number: 1,
+                visibility: "private",
+                associateRepository: false,
+            })
+            const specification = {
+                ...base,
+                fields: { ...base.fields, status: { ...base.fields.status, field: "Workflow Status" } },
+            }
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            assert.equal(preview.state, mode === "resume-created" ? "ready" : "blocked")
+            if (mode === "existing") continue
+            assert.match(JSON.stringify(preview.actions), /update-native-status/)
+            await runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            )
+            assert.equal(github.projects[0].fields[0].name, "Workflow Status")
+            assert.equal(github.projects[0].fields[0].id, "default-status")
         }
     })
 

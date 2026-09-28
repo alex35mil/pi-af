@@ -31,17 +31,21 @@ export const DeliverableKindSchema = Type.Union([
 ])
 export type DeliverableKind = Static<typeof DeliverableKindSchema>
 
-export const LifecycleStateSchema = Type.Union([
-    Type.Literal("backlog"),
-    Type.Literal("planning"),
+export const QueueStateSchema = Type.Union([Type.Literal("backlog"), Type.Literal("todo")])
+export type QueueState = Static<typeof QueueStateSchema>
+
+export const InitializedLifecycleStateSchema = Type.Union([
     Type.Literal("inProgress"),
     Type.Literal("inReview"),
     Type.Literal("done"),
 ])
+export type InitializedLifecycleState = Static<typeof InitializedLifecycleStateSchema>
+
+export const LifecycleStateSchema = Type.Union([QueueStateSchema, InitializedLifecycleStateSchema])
 export type LifecycleState = Static<typeof LifecycleStateSchema>
 
-export const InitializedLifecycleStateSchema = Type.Exclude(LifecycleStateSchema, Type.Literal("backlog"))
-export type InitializedLifecycleState = Static<typeof InitializedLifecycleStateSchema>
+export const WorkStageSchema = Type.Union([Type.Literal("planning"), Type.Literal("execution")])
+export type WorkStage = Static<typeof WorkStageSchema>
 
 export const PRIORITY_NOT_SET = "not set" as const
 export const PrioritySchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })

@@ -22,6 +22,7 @@ const commonMetadata = {
     slug: "example",
     title: "Example",
     createdAt: "2026-01-01T00:00:00Z",
+    workStage: "planning",
     branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
     integrations: [],
 }
@@ -42,7 +43,7 @@ describe("workflow consolidation contracts", () => {
             for (const authority of [
                 { kind: "workflow", priority: "not set" },
                 { kind: "tracker", provider: "github" },
-                { kind: "tracker", provider: "linear", desired: { lifecycle: "planning", priority: "High" } },
+                { kind: "tracker", provider: "linear", desired: { lifecycle: "inProgress", priority: "High" } },
             ]) {
                 const metadata = {
                     ...commonMetadata,
@@ -62,10 +63,13 @@ describe("workflow consolidation contracts", () => {
                     false,
                 )
                 assert.equal(Value.Check(EntityStatusSchema, metadata), authority.kind === "tracker")
-                for (const state of ["planning", "inProgress", "inReview", "done"]) {
+                for (const state of ["inProgress", "inReview", "done"]) {
                     assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state }), authority.kind === "workflow")
                 }
+                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "planning" }), false)
                 assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "backlog" }), false)
+                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "todo" }), false)
+                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, workStage: "paused" }), false)
             }
         }
     })

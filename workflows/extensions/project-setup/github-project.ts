@@ -31,10 +31,19 @@ const OptionSchema = Type.Object(
 const StatusOptionsSchema = Type.Object(
     {
         backlog: OptionSchema,
-        planning: OptionSchema,
+        todo: OptionSchema,
         inProgress: OptionSchema,
         inReview: OptionSchema,
         done: OptionSchema,
+    },
+    { additionalProperties: false },
+)
+
+const RepositoryLabelSchema = Type.Object(
+    {
+        name: OneLineSchema,
+        color: Type.String({ pattern: "^#[0-9A-Fa-f]{6}$" }),
+        description: Type.String(),
     },
     { additionalProperties: false },
 )
@@ -143,6 +152,7 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         repository: RepositorySchema,
         projectOwner: ProjectOwnerSchema,
         project: ProjectSourceSchema,
+        labels: Type.Object({ planning: RepositoryLabelSchema }, { additionalProperties: false }),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -185,14 +195,29 @@ export const GitHubProjectSetupToolSchema = Type.Union([
 export type GitHubProjectSetupToolInput = Static<typeof GitHubProjectSetupToolSchema>
 
 export const GITHUB_PROJECT_DEFAULTS = {
+    labels: {
+        planning: {
+            name: "Planning",
+            color: "#0969DA",
+            description: "Work is currently being planned.",
+        },
+    },
     status: {
         field: "Status",
         options: {
-            backlog: { name: "Backlog", description: "Approved future work not yet in planning.", color: "gray" },
-            planning: { name: "Planning", description: "Work being clarified and planned.", color: "blue" },
+            backlog: {
+                name: "Backlog",
+                description: "Potential work we may do later but have not committed to doing.",
+                color: "gray",
+            },
+            todo: {
+                name: "Todo",
+                description: "Queued work we have committed to doing and can pick up next.",
+                color: "blue",
+            },
             inProgress: {
                 name: "In Progress",
-                description: "Approved work currently being implemented.",
+                description: "Approved work currently being planned or executed.",
                 color: "yellow",
             },
             inReview: {
@@ -214,7 +239,7 @@ export const GITHUB_PROJECT_DEFAULTS = {
     },
     internalId: { field: "Internal ID" },
     type: {
-        field: "Type",
+        field: "Kind",
         epic: { name: "Epic", description: "A multi-deliverable initiative.", color: "purple" },
         deliverableKinds: {
             feature: { name: "Feature", description: "New user-visible or system capability.", color: "blue" },
@@ -271,6 +296,11 @@ interface RepositoryDetails {
     id: string
     ownerType: "user" | "org"
 }
+interface RepositoryLabel {
+    name: string
+    color: string
+    description: string
+}
 
 interface ProjectFieldDefinition {
     name: string
@@ -278,7 +308,10 @@ interface ProjectFieldDefinition {
     options?: Static<typeof OptionSchema>[]
 }
 type ProjectFieldAction = { description: string } & (
-    | { kind: "delete-project-field"; details: ProjectField }
+    | {
+          kind: "update-native-status"
+          details: { existing: ProjectField; desired: ProjectFieldDefinition }
+      }
     | { kind: "create-project-field"; details: ProjectFieldDefinition }
 )
 type OrganizationAction = { description: string } & (
@@ -295,7 +328,8 @@ type ProvisioningAction =
                     owner: Static<typeof ProjectOwnerSchema>
                 }
             }
-          | { kind: "replace-default-status"; details: ProjectFieldDefinition }
+          | { kind: "configure-native-status"; details: ProjectFieldDefinition }
+          | { kind: "create-repository-label"; details: Static<typeof RepositoryLabelSchema> }
           | { kind: "set-project-visibility"; details: { visibility: "private" | "public" } }
           | {
                 kind: "associate-repository" | "remove-repository-association"
@@ -543,12 +577,26 @@ class GitHubClient {
         )
     }
 
-    async deleteProjectField(fieldId: string): Promise<void> {
+    async updateNativeStatus(existing: ProjectField, desired: ProjectFieldDefinition): Promise<void> {
+        const existingOptions = new Map((existing.options ?? []).map((option) => [option.name, option]))
         await this.graphql(
-            `mutation($fieldId: ID!) {
-                deleteProjectV2Field(input: { fieldId: $fieldId }) { clientMutationId }
+            `mutation($fieldId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]!) {
+                updateProjectV2Field(input: {
+                    fieldId: $fieldId,
+                    name: $name,
+                    singleSelectOptions: $options
+                }) { projectV2Field { ... on ProjectV2FieldCommon { id } } }
             }`,
-            { fieldId },
+            {
+                fieldId: existing.id,
+                name: desired.name,
+                options: (desired.options ?? []).map((option) => ({
+                    ...(existingOptions.get(option.name)?.id ? { id: existingOptions.get(option.name)!.id } : {}),
+                    name: option.name,
+                    description: option.description,
+                    color: option.color.toUpperCase(),
+                })),
+            },
         )
     }
 
@@ -572,6 +620,34 @@ class GitHubClient {
                         description: option.description,
                         color: option.color.toUpperCase(),
                     })) ?? null,
+            },
+        )
+    }
+
+    async getRepositoryLabel(
+        repository: Static<typeof RepositorySchema>,
+        name: string,
+    ): Promise<RepositoryLabel | undefined> {
+        const result = await this.rest(
+            "GET",
+            `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/labels/${encodeURIComponent(name)}`,
+            undefined,
+            true,
+        )
+        return result === undefined ? undefined : repositoryLabel(result)
+    }
+
+    async createRepositoryLabel(
+        repository: Static<typeof RepositorySchema>,
+        label: Static<typeof RepositoryLabelSchema>,
+    ): Promise<void> {
+        await this.rest(
+            "POST",
+            `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/labels`,
+            {
+                name: label.name,
+                color: label.color.slice(1),
+                description: label.description,
             },
         )
     }
@@ -669,7 +745,12 @@ class GitHubClient {
         return record(root.data, "GitHub GraphQL data")
     }
 
-    private async rest(method: string, pathname: string, body?: Record<string, unknown>): Promise<unknown> {
+    private async rest(
+        method: string,
+        pathname: string,
+        body?: Record<string, unknown>,
+        allowNotFound = false,
+    ): Promise<unknown> {
         const response = await this.fetchImpl(`https://api.github.com${pathname}`, {
             method,
             headers: this.headers(),
@@ -677,6 +758,7 @@ class GitHubClient {
             signal: this.signal,
         })
         const result = response.status === 204 ? null : await responseJson(response)
+        if (allowNotFound && response.status === 404) return undefined
         if (!response.ok) throw githubError(response.status, result)
         return result
     }
@@ -730,8 +812,8 @@ async function previewGitHubProject(
                 })
             }
             actions.push({
-                kind: "replace-default-status",
-                description: `Replace the new empty Project's default Status with ${JSON.stringify(specification.fields.status.field)}`,
+                kind: "configure-native-status",
+                description: `Update the new empty Project's native Status in place as ${JSON.stringify(specification.fields.status.field)} with the complete configured options`,
                 details: desiredProjectFields(specification)[0],
             })
         }
@@ -753,6 +835,7 @@ async function previewGitHubProject(
         }
     }
 
+    await planRepositoryLabel(specification, client, actions, conflicts)
     await planOrganizationMetadata(specification, repository, client, actions, conflicts)
     if (specification.project.mode === "new" && conflicts.length === 0) {
         for (const field of desiredProjectFields(specification)) {
@@ -825,45 +908,67 @@ function planProjectField(
     desired: ProjectFieldDefinition,
     statusField: string,
     project: ProjectDetails,
-    allowStatusReplacement: boolean,
+    allowStatusUpdate: boolean,
 ) {
     const actions: ProjectFieldAction[] = []
     const conflicts: string[] = []
-    const existing = project.fields.filter((field) => field.name === desired.name)
-    const create: ProjectFieldAction = {
-        kind: "create-project-field",
-        description: describeProjectField(desired),
-        details: desired,
+    if (desired.name === statusField) {
+        const configured = project.fields.filter((field) => field.name === desired.name)
+        if (configured.length > 1) {
+            conflicts.push(`Project has multiple fields named ${JSON.stringify(desired.name)}`)
+            return { actions, conflicts }
+        }
+        const existing = configured[0] ?? project.fields.find((field) => field.name === "Status")
+        if (!existing) {
+            conflicts.push("Project native Status field is missing")
+        } else if (!compatibleProjectField(existing, desired)) {
+            if (!allowStatusUpdate || project.itemCount > 0) {
+                conflicts.push(`Project field ${JSON.stringify(existing.name)} has incompatible type or options`)
+            } else if (existing.dataType.toUpperCase() !== "SINGLE_SELECT") {
+                conflicts.push("Project native Status field is not a single-select field")
+            } else {
+                actions.push({
+                    kind: "update-native-status",
+                    description: `Update native Status field ${existing.id} in place as ${JSON.stringify(desired.name)} with the complete configured options`,
+                    details: { existing, desired },
+                })
+            }
+        }
+        return { actions, conflicts }
     }
+
+    const existing = project.fields.filter((field) => field.name === desired.name)
     if (existing.length > 1) {
         conflicts.push(`Project has multiple fields named ${JSON.stringify(desired.name)}`)
     } else if (existing.length === 0) {
-        if (desired.name === statusField && allowStatusReplacement) {
-            const defaultStatus = project.fields.find((field) => field.name === "Status")
-            if (defaultStatus) {
-                if (project.itemCount > 0) conflicts.push("cannot replace default Status in a Project containing items")
-                else
-                    actions.push({
-                        kind: "delete-project-field",
-                        description: `Delete empty Project default Status field ${defaultStatus.id}`,
-                        details: defaultStatus,
-                    })
-            }
-        }
-        actions.push(create)
+        actions.push({
+            kind: "create-project-field",
+            description: describeProjectField(desired),
+            details: desired,
+        })
     } else if (!compatibleProjectField(existing[0], desired)) {
-        if (desired.name === statusField && allowStatusReplacement && project.itemCount === 0) {
-            actions.push(
-                {
-                    kind: "delete-project-field",
-                    description: `Delete incompatible empty Project field ${JSON.stringify(desired.name)} (${existing[0].id})`,
-                    details: existing[0],
-                },
-                create,
-            )
-        } else conflicts.push(`Project field ${JSON.stringify(desired.name)} has incompatible type or options`)
+        conflicts.push(`Project field ${JSON.stringify(desired.name)} has incompatible type or options`)
     }
     return { actions, conflicts }
+}
+
+async function planRepositoryLabel(
+    specification: GitHubProjectSpecification,
+    client: GitHubClient,
+    actions: ProvisioningAction[],
+    conflicts: string[],
+): Promise<void> {
+    const desired = specification.labels.planning
+    const existing = await client.getRepositoryLabel(specification.repository, desired.name)
+    if (!existing) {
+        actions.push({
+            kind: "create-repository-label",
+            description: `Create repository label ${JSON.stringify(desired.name)} with color ${desired.color} and description ${JSON.stringify(desired.description)}`,
+            details: desired,
+        })
+    } else if (!compatibleRepositoryLabel(existing, desired)) {
+        conflicts.push(`repository label ${JSON.stringify(desired.name)} has incompatible color or description`)
+    }
 }
 
 function desiredOrganizationFields(specification: GitHubProjectSpecification) {
@@ -993,13 +1098,14 @@ async function applyGitHubProject(
             const candidates = (await client.listOwnerProjects(specification.projectOwner)).projects.filter(
                 (candidate) => candidate.title === projectSource.title,
             )
-            if (candidates.length > 0) {
+            if (candidates.length === 1) created = candidates[0]
+            else if (candidates.length === 0) throw error
+            else {
                 throw new Error(
-                    `GitHub Project creation outcome is unknown; preview again and confirm one candidate as resume-created: ${candidates.map((candidate) => `${candidate.number} ${candidate.url}`).join(", ")}`,
+                    `GitHub Project creation could not be reconciled because multiple exact-title Projects exist: ${candidates.map((candidate) => `${candidate.number} ${candidate.url}`).join(", ")}`,
                     { cause: error },
                 )
             }
-            throw error
         }
         await client.setProjectVisibility(created.id, projectSource.visibility === "public")
         project = await client.getProject(created.id)
@@ -1024,6 +1130,7 @@ async function applyGitHubProject(
         client,
         specification.project.mode === "new" || specification.project.mode === "resume-created",
     )
+    await provisionRepositoryLabel(specification, client)
     await provisionOrganizationMetadata(specification, repository, client)
 
     const verified = await client.getProject(project.id)
@@ -1031,6 +1138,7 @@ async function applyGitHubProject(
     const conflicts: string[] = []
     planProjectSettings(specification.project, verified, repository, verificationActions)
     planProjectFields(specification, verified, false, verificationActions, conflicts)
+    await planRepositoryLabel(specification, client, verificationActions, conflicts)
     await planOrganizationMetadata(specification, repository, client, verificationActions, conflicts)
     if (conflicts.length > 0 || verificationActions.length > 0) {
         throw new Error(
@@ -1058,8 +1166,8 @@ async function provisionProjectFields(
         if (decision.actions.length === 0) continue
         for (const action of decision.actions) {
             switch (action.kind) {
-                case "delete-project-field":
-                    await client.deleteProjectField(action.details.id)
+                case "update-native-status":
+                    await client.updateNativeStatus(action.details.existing, action.details.desired)
                     break
                 case "create-project-field":
                     await client.createProjectField(current.id, action.details)
@@ -1068,9 +1176,43 @@ async function provisionProjectFields(
         }
         current = await client.getProject(current.id)
         const existing = current.fields.find((field) => field.name === desired.name)
-        if (!existing || !compatibleProjectField(existing, desired)) {
+        const updatedNativeStatus = decision.actions.some((action) => action.kind === "update-native-status")
+        if (
+            !existing ||
+            !(updatedNativeStatus ? exactProjectField(existing, desired) : compatibleProjectField(existing, desired))
+        ) {
             throw new Error(`GitHub did not persist Project field ${JSON.stringify(desired.name)} exactly`)
         }
+    }
+}
+
+async function provisionRepositoryLabel(
+    specification: GitHubProjectSpecification,
+    client: GitHubClient,
+): Promise<void> {
+    const actions: ProvisioningAction[] = []
+    const conflicts: string[] = []
+    await planRepositoryLabel(specification, client, actions, conflicts)
+    if (conflicts.length > 0) throw new Error(conflicts.join("; "))
+    const action = actions.find((candidate) => candidate.kind === "create-repository-label")
+    if (action?.kind === "create-repository-label") {
+        try {
+            await client.createRepositoryLabel(specification.repository, action.details)
+        } catch (error) {
+            const existing = await client.getRepositoryLabel(specification.repository, action.details.name)
+            if (!existing) throw error
+            if (!compatibleRepositoryLabel(existing, action.details)) {
+                throw new Error(`repository label ${JSON.stringify(action.details.name)} has incompatible state`, {
+                    cause: error,
+                })
+            }
+        }
+    }
+    const verified = await client.getRepositoryLabel(specification.repository, specification.labels.planning.name)
+    if (!verified || !compatibleRepositoryLabel(verified, specification.labels.planning)) {
+        throw new Error(
+            `GitHub did not persist repository label ${JSON.stringify(specification.labels.planning.name)} exactly`,
+        )
     }
 }
 
@@ -1164,10 +1306,35 @@ function assertSpecification(specification: GitHubProjectSpecification): void {
 }
 
 function compatibleProjectField(existing: ProjectField, desired: ProjectFieldDefinition): boolean {
-    if (existing.dataType.toUpperCase() !== desired.dataType) return false
+    if (existing.name !== desired.name || existing.dataType.toUpperCase() !== desired.dataType) return false
     if (!desired.options) return true
     const names = new Set((existing.options ?? []).map((option) => option.name))
     return desired.options.every((option) => names.has(option.name))
+}
+
+function exactProjectField(existing: ProjectField, desired: ProjectFieldDefinition): boolean {
+    if (existing.name !== desired.name || existing.dataType.toUpperCase() !== desired.dataType) return false
+    if (!desired.options) return existing.options === undefined
+    const options = existing.options ?? []
+    return (
+        options.length === desired.options.length &&
+        options.every((option, index) => {
+            const expected = desired.options![index]
+            return (
+                option.name === expected.name &&
+                option.description === expected.description &&
+                option.color.toLowerCase() === expected.color
+            )
+        })
+    )
+}
+
+function compatibleRepositoryLabel(existing: RepositoryLabel, desired: Static<typeof RepositoryLabelSchema>): boolean {
+    return (
+        existing.name === desired.name &&
+        existing.color.toLowerCase() === desired.color.toLowerCase() &&
+        existing.description === desired.description
+    )
 }
 
 function compatibleIssueField(
@@ -1192,6 +1359,7 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             ownerType: specification.projectOwner.type,
             number: projectNumber,
         },
+        labels: { planning: specification.labels.planning.name },
         fields: {
             status: {
                 field: specification.fields.status.field,
@@ -1254,6 +1422,15 @@ function projectSummary(raw: unknown): ProjectSummary {
         url: text(value.url, "Project url"),
         public: value.public === true,
         closed: value.closed === true,
+    }
+}
+
+function repositoryLabel(raw: unknown): RepositoryLabel {
+    const value = record(raw, "repository label")
+    return {
+        name: text(value.name, "repository label name"),
+        color: `#${text(value.color, "repository label color")}`,
+        description: typeof value.description === "string" ? value.description : "",
     }
 }
 

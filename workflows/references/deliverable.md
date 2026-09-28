@@ -22,6 +22,10 @@ After initialization and on every resume, call `integration_context` with `initi
 
 After every accepted `plan.md` change, call tracker-only `artifactProjection` and follow `./integrations/shared.md` for lossless projection, approval, and verification. In versioned mode, check repository history after acceptance and again on resume/final verification. With a forge and a containing commit, separately call `artifactLinks` for the accepted plan and current completion artifact, render the destination-specific Links, and present permanent and target-branch links. Use the shared `available after merge` label until the target resolves. Unversioned mode exposes no artifact links; never manufacture a SHA or claim an unresolved target link works.
 
+## Material replanning
+
+When accepted Deliverable behavior, strategy, scope, or decomposition must change after execution began, use the material-replanning transition in `./planning.md` before rewriting `.local/draft.md`. This transition owns the lifecycle and `workStage` reset for every authority/provider; provider references own only their external projection. Repeat the normal review, acceptance, artifact projection, implementation, verification, and final-review flow from the corrected plan.
+
 ## Kind strategy
 
 Every Deliverable has exactly one current kind: `feature`, `bugfix`, `refactor`, `research`, `audit`, or `chore`. Match `metadata.json` exactly and follow only that branch; there is no generic fallback.
@@ -64,9 +68,9 @@ Kind is current workflow strategy, not identity. The qualified ID, directory, re
 
 ### Planning correction before execution
 
-The user may approve any target kind while lifecycle remains `planning` and execution has not started.
+The user may approve any target kind while lifecycle remains `inProgress`, `workStage` remains `planning`, and execution has not started.
 
-1. Update kind while keeping lifecycle `planning`.
+1. Update kind while keeping lifecycle `inProgress` and `workStage: planning`.
 2. Update `brief.md`, remove any stale candidate, and project Type only through a tracker/provider that supports the configured Type.
 3. Continue by target:
     - `bugfix`: use adaptive inquiry and investigation, then the shared review/acceptance flow with a root-cause-shaped `.local/draft.md`.
@@ -77,7 +81,7 @@ The user may approve any target kind while lifecycle remains `planning` and exec
 After `report.md` passes final review, the user may approve one bounded continuation to `bugfix`, `feature`, `refactor`, or `chore`.
 
 1. Preserve `report.md` and the accepted root plan.
-2. Update kind in `metadata.json` and lifecycle to `planning` together.
+2. Update kind and `workStage: planning` in `metadata.json`; set lifecycle to `inProgress` when necessary.
 3. Update `brief.md`; project Type only when supported and use native tracker Status when configured.
 4. Continue by target:
     - `bugfix`: remove the previous candidate, validate the report's causal evidence, investigate remaining gaps, then use shared review/acceptance with a root-cause-shaped `.local/draft.md`.
@@ -127,17 +131,17 @@ Write actual outcomes, not planned work or a chronological transcript. Keep the 
 
 ## Implementation and verification
 
-1. Change lifecycle from `planning` to `inProgress` when approved implementation begins: update authoritative `.local/status.md` without a tracker; with a tracker, set the absolute provider values and re-read them for confirmation. The verified provider values remain authoritative.
+1. When approved implementation begins, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through its absolute label read/update/read-back procedure. Linear and trackerless lifecycle require no transition at this point.
 2. Implement the complete approved change at its owning abstraction. Keep unrelated working-tree changes untouched.
 3. Run focused verification while developing and all plan/Project Policy verification before final review.
 4. For a Task, run the parent-synchronization flow in its skill. A Gig has no parent-synchronization step.
 5. Create or synchronize the applicable `result.md` or `report.md` with the actual implementation and verification evidence. Do not claim unrun verification.
-6. Change lifecycle to `inReview`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to the configured `inReview` value. Then call `review` with `phase: "final"`.
+6. Change lifecycle to `inReview` with `workStage: execution`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to configured `inReview`, remove GitHub Planning when applicable, and re-read. Then call `review` with `phase: "final"`.
 7. Follow `./review.md`, synchronize the completion artifact after every implementation or verification change, and repeat final subagent review until approved.
 8. Present the implementation and reviewed completion artifact together for final user review.
 9. When user review causes a change, update the implementation and verification evidence, synchronize `result.md` or `report.md`, and rerun final subagent review for every material implementation or report change. Repeat the user-review presentation with the synchronized artifact.
 10. Continue through Submission below. Keep lifecycle `inReview` through submission, pull-request review, and any required revisions.
-11. Change lifecycle to `done` only after the exact approved result is confirmed merged into the stored target. Without a tracker, update `.local/status.md`; with a tracker, update and re-read native Status/Priority. This lifecycle update never creates a repository commit.
+11. Change lifecycle to `done` with `workStage: execution` only after the exact approved result is confirmed merged into the stored target. Without a tracker, update `.local/status.md`; with a tracker, update and re-read native Status/Priority and ensure GitHub Planning is absent. This lifecycle update never creates a repository commit.
 12. After `done`, ask whether to delete the local Deliverable branch. State the branch and target, and that no remote branch will be deleted. Do not show Git commands, commits, merge evidence, or internal validation details. Wait for explicit approval.
 13. After approval, call `cleanup_delivery_branch` once. For a stored GitHub PR, supply the exact merged `pull_request_read(method: "get")` result: PR number, `head.ref`, `head.sha`, `base.ref`, `merged_at`, and `merge_commit_sha`; the tool fast-forwards the local target and verifies the provider merge commit before deletion. Without a stored PR, use Git ancestry evidence; the tool performs no remote Git operation and verifies source ancestry against the existing local target before deletion. The tool validates lifecycle, branch contract, merge evidence, and worktree safety itself. Any failure preserves the Deliverable branch; never stash, reset, clean, force checkout, delete the remote branch, or revert `done`.
 

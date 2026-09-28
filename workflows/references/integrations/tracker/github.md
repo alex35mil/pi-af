@@ -6,51 +6,62 @@ First follow `../shared.md`.
 
 Run every `roles.tracker.remoteValidation` step:
 
-1. Always validate configured Status and Priority fields/options.
+1. Always validate the configured Project Status field/options, Priority metadata, and exact repository Planning label.
 2. In versioned mode, also validate configured Internal ID and Project Type fields/options.
 3. Unversioned mode does not require or validate Internal ID/Type capabilities because it never uses them.
 
-Never substitute labels, similarly named fields, or a different scope.
+Never substitute another label, similarly named field, or different scope.
 
-## Adopt an existing Backlog issue before initialization
+## Adopt an existing queued issue before initialization
 
 Use this read-only flow only when `/epic`, `/task`, or `/gig` selects one explicit existing GitHub issue. Complete it before `init`; do not run it for new tracker work or routine resume.
 
 1. Call `integration_context` with `operation: "inspect"`; require enabled `roles.tracker` provider `github`.
-2. Call returned `issueRead` with method `get`, the configured repository, and the user-supplied issue number. Require its numeric issue ID, number, URL, title, and description.
-3. Call returned `projectsList` with method `list_project_items` for the configured Project. Require one exact item for that issue, its Project item ID, configured Backlog Status, and configured Priority. Empty Priority becomes `not set`.
-4. Supply the issue title, description, and Priority to the entity intake flow. After the user approves the exact title and Request, pass the numeric issue ID, number, URL, and Project item ID to `init`.
+2. Call returned `issueRead` with method `get`, the configured repository, and the user-supplied issue number. Require its numeric issue ID, number, URL, title, description, and labels.
+3. Call returned `projectsList` with method `list_project_items` for the configured Project. Require one exact item for that issue, its Project item ID, configured Backlog or Todo Status, and configured Priority. Empty Priority becomes `not set`.
+4. Supply the issue title, description, queue state, and Priority to entity intake. After approval, pass the numeric issue ID, number, URL, and Project item ID to `init`.
 
-Reject an absent or ambiguous issue, the wrong repository or Project, a non-Backlog Status, or an unconfigured Priority.
+Reject an absent or ambiguous issue, the wrong repository or Project, any status other than configured Backlog or Todo, or an unconfigured Priority.
 
 ## Initialize
 
-Workflow `init` creates `awaiting` for new issues or `bound-pending` for approved backlog issues.
+Workflow `init` creates `awaiting` for new issues or `bound-pending` for approved queued issues. It records `workStage: planning`; the intended tracker lifecycle is In Progress.
 
 For new work:
 
-1. Create the issue with the exact approved entity title and the exact approved Request from `brief.md` as its description. In versioned mode only, include `Internal ID: <qualified-id>`.
+1. Create the issue with the exact approved entity title and Request from `brief.md`. In versioned mode only, include `Internal ID: <qualified-id>`.
 2. Persist `issue-bound-pending` with numeric issue ID/number/URL.
 3. In versioned mode only, apply issue-scoped Type when configured.
 4. Add the issue to the Project; already-present is success.
 5. Persist `bound-pending` with Project item ID.
-6. Set Planning Status plus Priority. In versioned mode only, also set Internal ID and Type at configured scopes.
-7. For Task, attach it as a sub-issue of the bound parent Epic issue.
-8. Set `bound` only after every tracker operation succeeds.
+6. Set In Progress Status plus Priority. In versioned mode only, also set Internal ID and Type at configured scopes.
+7. Read current issue labels, add the exact configured Planning label while preserving every unrelated label, update the complete intended label set, and re-read it.
+8. For Task, attach it as a sub-issue of the bound parent Epic issue.
+9. Set `bound` only after every tracker operation succeeds.
 
-An approved backlog issue skips proven issue creation/Project addition.
+An approved Backlog or Todo issue skips proven issue creation and Project addition. It moves directly to In Progress; never force Backlog through Todo.
 
 ## Create uncertainty
 
-In versioned mode, search the exact qualified Internal ID in the configured repository before retrying. In unversioned mode, list recent exact-title issues in the configured repository and require user confirmation before selection or recreation. Never add a temporary ID or workflow marker to make reconciliation easier.
+After an uncertain create, read GitHub. In versioned mode, search the exact qualified Internal ID. In unversioned mode, search recent exact-title repository issues and require the exact repository/relationship. Continue when one exact object is confirmed, retry only after confirmed absence, and report ambiguous or inconsistent state. Never add a temporary identifier.
 
-## Lifecycle and kind
+## Lifecycle, work stage, and kind
 
-Use configured Project Status and Priority through the absolute update/read-back procedure in `../shared.md`. In versioned mode, map Epic/Deliverable kind through configured Type after persisting an approved workflow-kind transition. Unversioned mode projects only native Status/Priority/hierarchy, not Type.
+Use configured Project Status and Priority through the absolute update/read-back procedure in `../shared.md`.
 
-## Backlog
+The Planning label is an absolute projection of workflow stage:
 
-Create an ordinary issue without Internal ID/Type, explicitly add it to the Project, then set Backlog Status and approved Priority (`not set` clears it). On unknown create outcome, search recent exact-title repository issues and require user confirmation before selection or recreation. Once issue identity is known, retry only remaining updates.
+- In Progress plus `workStage: planning` — read labels, add exact configured Planning, preserve unrelated labels, update, and re-read.
+- In Progress plus `workStage: execution` — read labels, remove exact configured Planning, preserve unrelated labels, update, and re-read.
+- In Review or Done — remove exact configured Planning through the same read/update/read-back flow.
+
+After the shared material-replanning transition records In Progress plus `workStage: planning`, re-add Planning through the absolute label flow above. After accepted planning records `workStage: execution`, remove Planning without changing In Progress. Never create or use an Execution label or phase field.
+
+In versioned mode, map Epic/Deliverable kind through configured Type after persisting an approved kind transition. Unversioned mode projects only native Status/Priority/hierarchy and the Planning label, not Type.
+
+## Add to Backlog or Todo
+
+Follow `../../queue.md`. Create an ordinary issue without Internal ID, Type, or Planning label; add it to the Project; then set the selected Backlog or Todo Status and approved Priority (`not set` clears it). Recover uncertain provider results through read-back as defined there.
 
 ## Artifact projection
 

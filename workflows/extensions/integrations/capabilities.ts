@@ -2,7 +2,13 @@ import { getMcpToolName, type McpToolCatalog, type McpToolMetadata } from "../..
 
 const OPERATION_POLICIES = {
     inspect: { operation: "inspect", entity: false, tracker: "optional", forge: "optional", forgeCapabilities: true },
-    backlog: { operation: "backlog", entity: false, tracker: "required", forge: "none", forgeCapabilities: false },
+    queueIntake: {
+        operation: "queueIntake",
+        entity: false,
+        tracker: "required",
+        forge: "none",
+        forgeCapabilities: false,
+    },
     initialize: {
         operation: "initialize",
         entity: true,

@@ -56,6 +56,7 @@ function createDoneGig(root: string, withPullRequest: boolean) {
     if (status.branch.state !== "ready") assert.fail("expected ready branch")
     const metadataPath = path.join(root, gig.directory, "metadata.json")
     const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
+    metadata.workStage = "execution"
     if (withPullRequest) {
         metadata.integrations = [
             {
@@ -64,8 +65,8 @@ function createDoneGig(root: string, withPullRequest: boolean) {
                 pullRequest: { number: 7, url: "https://github.com/example/project/pull/7" },
             },
         ]
-        fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`)
     }
+    fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`)
     fs.writeFileSync(
         path.join(root, gig.directory, ".local", "status.md"),
         '# Status\n\n```json\n{\n  "state": "done"\n}\n```\n',
@@ -232,7 +233,7 @@ describe("Deliverable branch cleanup", () => {
         try {
             const gig = createDoneGig(root, false)
             const statusPath = path.join(root, gig.directory, ".local", "status.md")
-            fs.writeFileSync(statusPath, '# Status\n\n```json\n{\n  "state": "planning"\n}\n```\n')
+            fs.writeFileSync(statusPath, '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n')
             assert.throws(
                 () =>
                     runDeliveryCleanup(

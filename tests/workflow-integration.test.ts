@@ -36,7 +36,6 @@ import {
 } from "../workflows/extensions/integrations/tracker/github.ts"
 import {
     LINEAR_TOOL_NAMES,
-    reconcileLinearBacklogCandidates,
     validateLinearTrackerCapabilities,
 } from "../workflows/extensions/integrations/tracker/linear.ts"
 
@@ -44,7 +43,7 @@ const GITHUB_TOOL_NAMES = { ...GITHUB_TRACKER_TOOL_NAMES, ...GITHUB_FORGE_TOOL_N
 
 const statuses = {
     backlog: "Backlog",
-    planning: "Planning",
+    todo: "Todo",
     inProgress: "In Progress",
     inReview: "In Review",
     done: "Done",
@@ -64,6 +63,7 @@ function config(scope: "project" | "issue" = "project") {
         mcpServer: "github",
         repository: { owner: "alex", repo: "example" },
         project: { owner: "alex", ownerType: scope === "project" ? ("user" as const) : ("org" as const), number: 3 },
+        labels: { planning: "Planning" },
         fields: {
             status: { field: "Status", values: { ...statuses } },
             priority: { scope, field: "Priority", values: ["Urgent", "High", "Medium", "Low"] },
@@ -116,9 +116,10 @@ function catalog(includeOrganizationTools: boolean): McpToolCatalog {
     add(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get"])
     add(
         GITHUB_TOOL_NAMES.issueWrite,
-        ["owner", "repo", "title", "body", "issue_number", "issue_fields", "type"],
+        ["owner", "repo", "title", "body", "issue_number", "issue_fields", "type", "labels"],
         ["create", "update"],
     )
+    add(GITHUB_TOOL_NAMES.getLabel, ["owner", "repo", "name"])
     add(GITHUB_TOOL_NAMES.searchIssues, ["query", "owner", "repo", "fields", "sort", "order"])
     add(
         GITHUB_TOOL_NAMES.projectsList,
@@ -209,6 +210,7 @@ function writeTrackerlessGigEntity(cwd: string): string {
         kind: "chore",
         authority: { kind: "workflow", priority: "not set" },
         createdAt: "2026-01-02T03:05:00.000Z",
+        workStage: "planning",
         branch: { state: "ready", name: "gig-forge-only", start: "main", target: "main", source: "generated" },
         integrations: [],
     }
@@ -216,7 +218,7 @@ function writeTrackerlessGigEntity(cwd: string): string {
     fs.mkdirSync(path.join(absolute, ".local"), { recursive: true })
     fs.writeFileSync(
         path.join(absolute, ".local", "status.md"),
-        '# Status\n\n```json\n{\n  "state": "planning"\n}\n```\n',
+        '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
     )
     return directory
 }
@@ -235,6 +237,7 @@ function writeLinearGigEntity(cwd: string): string {
         kind: "chore",
         authority: { kind: "tracker", provider: "linear" },
         createdAt: "2026-01-02T03:04:00.000Z",
+        workStage: "planning",
         branch: {
             state: "ready",
             name: "alex/eng-123-mixed-provider",
@@ -343,11 +346,16 @@ describe("workflow integration configuration", () => {
         )
 
         assert.deepEqual(
-            ["inspect", "backlog", "initialize", "resume", "artifactProjection", "artifactLinks", "pullRequest"].map(
-                (operation) =>
-                    resolveIntegrationOperationPolicy(
-                        operation as Parameters<typeof resolveIntegrationOperationPolicy>[0],
-                    ),
+            [
+                "inspect",
+                "queueIntake",
+                "initialize",
+                "resume",
+                "artifactProjection",
+                "artifactLinks",
+                "pullRequest",
+            ].map((operation) =>
+                resolveIntegrationOperationPolicy(operation as Parameters<typeof resolveIntegrationOperationPolicy>[0]),
             ),
             [
                 {
@@ -357,7 +365,13 @@ describe("workflow integration configuration", () => {
                     forge: "optional",
                     forgeCapabilities: true,
                 },
-                { operation: "backlog", entity: false, tracker: "required", forge: "none", forgeCapabilities: false },
+                {
+                    operation: "queueIntake",
+                    entity: false,
+                    tracker: "required",
+                    forge: "none",
+                    forgeCapabilities: false,
+                },
                 {
                     operation: "initialize",
                     entity: true,
@@ -385,17 +399,17 @@ describe("workflow integration configuration", () => {
         )
     })
 
-    it("keeps backlog command intake external-only", async () => {
+    it("keeps Backlog and Todo command intake external-only", async () => {
         const cwd = temporaryProject()
         let sent = ""
-        let backlog: { handler: (args: string, ctx: unknown) => Promise<void> } | undefined
+        const notices: string[] = []
+        type Command = { description: string; handler: (args: string, ctx: unknown) => Promise<void> }
+        const commands = new Map<string, Command>()
         const tools: string[] = []
         const pi = {
             events: { on: () => () => {} },
             on: () => {},
-            registerCommand: (name: string, command: typeof backlog) => {
-                if (name === "backlog") backlog = command
-            },
+            registerCommand: (name: string, command: Command) => commands.set(name, command),
             registerTool: (tool: { name: string }) => tools.push(tool.name),
             sendUserMessage: (message: string) => {
                 sent = message
@@ -403,11 +417,27 @@ describe("workflow integration configuration", () => {
         } as unknown as ExtensionAPI
         try {
             registerIntegrations(pi)
-            assert.ok(backlog)
+            assert.ok(commands.has("backlog"))
+            assert.ok(commands.has("todo"))
             assert.ok(tools.includes("verify_artifact_projection"))
             assert.ok(tools.includes("finalize_linear_branch"))
-            await backlog.handler("Capture a future idea", { cwd, ui: { notify: () => {} } })
-            assert.match(sent, /future work, not Epic\/Task\/Gig initialization/)
+            assert.equal(tools.includes("reconcile_linear_backlog"), false)
+            assert.equal(
+                commands.get("backlog")!.description,
+                "Add potential work to the configured external Backlog without initializing workflow work",
+            )
+            assert.equal(
+                commands.get("todo")!.description,
+                "Add queued work to the configured external Todo queue without initializing workflow work",
+            )
+            const context = { cwd, ui: { notify: (message: string) => notices.push(message) } }
+            await commands.get("backlog")!.handler("", context)
+            await commands.get("todo")!.handler("", context)
+            assert.deepEqual(notices, ["Usage: /backlog <potential work>", "Usage: /todo <queued work>"])
+            await commands.get("backlog")!.handler("Capture a potential idea", context)
+            assert.match(sent, /Use the backlog skill.*external Backlog intake, not Epic\/Task\/Gig initialization/)
+            await commands.get("todo")!.handler("Queue committed work", context)
+            assert.match(sent, /Use the todo skill.*external Todo intake, not Epic\/Task\/Gig initialization/)
             assert.equal(fs.existsSync(path.join(cwd, ".project")), false)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -423,7 +453,7 @@ describe("workflow integration configuration", () => {
                 state: "disabled",
                 registeredMcpServers: ["github"],
             })
-            assert.throws(() => buildIntegrationContext(ctx, new Map(), "backlog"), /requires a configured tracker/)
+            assert.throws(() => buildIntegrationContext(ctx, new Map(), "queueIntake"), /requires a configured tracker/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -486,7 +516,7 @@ describe("workflow integration configuration", () => {
             assert.equal(loaded.config.tracker?.provider, "linear")
 
             const duplicateStatuses = linearConfig()
-            duplicateStatuses.statuses.issues.planning = duplicateStatuses.statuses.issues.backlog
+            duplicateStatuses.statuses.issues.todo = duplicateStatuses.statuses.issues.backlog
             fs.writeFileSync(integrationPath, JSON.stringify({ tracker: duplicateStatuses }))
             assert.throws(() => loadIntegrationConfig(cwd), /Linear issue Status mappings must use distinct options/)
 
@@ -508,7 +538,7 @@ describe("workflow integration configuration", () => {
                 fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ tracker }))
 
             const duplicateStatus = config("project")
-            duplicateStatus.fields.status.values.planning = duplicateStatus.fields.status.values.backlog
+            duplicateStatus.fields.status.values.todo = duplicateStatus.fields.status.values.backlog
             writeConfig(duplicateStatus)
             assert.throws(() => loadIntegrationConfig(cwd), /Status mappings must use distinct options/)
 
@@ -534,6 +564,23 @@ describe("workflow integration configuration", () => {
         assert.equal("listIssueTypes" in tools, false)
     })
 
+    it("requires Planning-label capability only for GitHub inspection and entity lifecycle operations", () => {
+        const withoutLabel = new Map(catalog(false))
+        withoutLabel.delete(getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.getLabel))
+        assert.throws(
+            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "inspect"),
+            /missing required tool mcp__github__get_label/,
+        )
+        assert.throws(
+            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "initialize"),
+            /missing required tool mcp__github__get_label/,
+        )
+        assert.doesNotThrow(() => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake"))
+        assert.doesNotThrow(() =>
+            validateGitHubTrackerCapabilities(withoutLabel, config("project"), "artifactProjection"),
+        )
+    })
+
     it("validates official Linear capabilities by entity and operation", () => {
         const tools = linearCatalog()
         const readOnly = new Map(tools)
@@ -542,7 +589,7 @@ describe("workflow integration configuration", () => {
         const inspected = validateLinearTrackerCapabilities(readOnly, linearConfig(), "inspect")
         assert.equal(inspected.getIssue, "mcp__linear__get_issue")
         assert.equal("saveProject" in inspected, false)
-        const all = validateLinearTrackerCapabilities(tools, linearConfig(), "backlog")
+        const all = validateLinearTrackerCapabilities(tools, linearConfig(), "queueIntake")
         assert.equal(all.saveProject, "mcp__linear__save_project")
 
         const withoutProjectWrite = new Map(tools)
@@ -564,75 +611,6 @@ describe("workflow integration configuration", () => {
             () => validateLinearTrackerCapabilities(withoutIssueWrite, linearConfig(), "initialize", "task"),
             /missing required tool mcp__linear__save_issue/,
         )
-    })
-
-    it("reconciles zero, one, and multiple Linear backlog candidates by entity", () => {
-        const projectCandidates = [
-            { projectId: "p1", title: "Exact", url: "https://linear.app/project/p1", teams: ["Engineering"] },
-            { projectId: "p2", title: "Exact", url: "https://linear.app/project/p2", teams: ["Engineering"] },
-            { projectId: "p3", title: "Other", url: "https://linear.app/project/p3", teams: ["Engineering"] },
-        ]
-        const issueCandidates = [
-            {
-                issueId: "i1",
-                identifier: "ENG-1",
-                title: "Exact",
-                url: "https://linear.app/issue/i1",
-                team: "Engineering",
-                projectId: "parent",
-            },
-            {
-                issueId: "i2",
-                identifier: "ENG-2",
-                title: "Exact",
-                url: "https://linear.app/issue/i2",
-                team: "Engineering",
-                projectId: "parent",
-            },
-            {
-                issueId: "i3",
-                identifier: "ENG-3",
-                title: "Exact",
-                url: "https://linear.app/issue/i3",
-                team: "Engineering",
-                projectId: null,
-            },
-            {
-                issueId: "i4",
-                identifier: "ENG-4",
-                title: "Exact",
-                url: "https://linear.app/issue/i4",
-                team: "Engineering",
-                projectId: null,
-            },
-        ]
-        for (const count of [0, 1, 2] as const) {
-            const epic = reconcileLinearBacklogCandidates({
-                entity: "epic",
-                title: count === 0 ? "Missing" : "Exact",
-                team: "Engineering",
-                candidates: projectCandidates.slice(0, count),
-            })
-            const task = reconcileLinearBacklogCandidates({
-                entity: "task",
-                title: count === 0 ? "Missing" : "Exact",
-                team: "Engineering",
-                parentProjectId: "parent",
-                candidates: issueCandidates.slice(0, count),
-            })
-            const gig = reconcileLinearBacklogCandidates({
-                entity: "gig",
-                title: count === 0 ? "Missing" : "Exact",
-                team: "Engineering",
-                candidates: issueCandidates.slice(2, 2 + count),
-            })
-            const expected = count === 0 ? "none" : count === 1 ? "one" : "multiple"
-            for (const result of [epic, task, gig]) {
-                assert.equal(result.outcome, expected)
-                assert.equal(result.candidates.length, count)
-                assert.equal(result.requiresUserConfirmation, true)
-            }
-        }
     })
 
     it("validates tracker and forge roles independently", () => {
@@ -669,7 +647,10 @@ describe("workflow integration configuration", () => {
             assert.equal(loadIntegrationConfig(cwd).state, "enabled")
             fs.writeFileSync(integrationPath, JSON.stringify({ forge: forgeConfig() }))
             assert.equal(loadIntegrationConfig(cwd).state, "enabled")
-            assert.throws(() => buildIntegrationContext({ cwd } as ExtensionContext, allTools, "backlog"), /tracker/)
+            assert.throws(
+                () => buildIntegrationContext({ cwd } as ExtensionContext, allTools, "queueIntake"),
+                /tracker/,
+            )
 
             fs.writeFileSync(integrationPath, JSON.stringify({ tracker: config("project"), forge: forgeConfig() }))
             const trackerAvailable = buildIntegrationContext({ cwd } as ExtensionContext, trackerTools, "inspect")
@@ -724,7 +705,7 @@ describe("workflow integration configuration", () => {
             )
             const entityDir = writeLinearGigEntity(cwd)
 
-            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, linearCatalog(), "backlog")
+            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, linearCatalog(), "queueIntake")
             if (trackerSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(trackerSide.roles.tracker?.state, "enabled")
             assert.equal(trackerSide.roles.forge, undefined)
@@ -889,15 +870,17 @@ describe("workflow integration configuration", () => {
         const projectConfig = config("project")
         const projectTools = validateGitHubTrackerCapabilities(catalog(false), projectConfig)
         const projectSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools)
-        assert.equal(projectSteps.length, 1)
+        assert.equal(projectSteps.length, 2)
         assert.match(projectSteps[0], /Project Type option mapping/)
+        assert.match(projectSteps[1], /get_label.*Planning label/)
 
         const issueConfig = config("issue")
         const issueTools = validateGitHubTrackerCapabilities(catalog(true), issueConfig)
         const issueSteps = buildGitHubRemoteValidationSteps(issueConfig, issueTools)
-        assert.equal(issueSteps.length, 3)
-        assert.match(issueSteps[1], /list_issue_fields/)
-        assert.match(issueSteps[2], /list_issue_types/)
+        assert.equal(issueSteps.length, 4)
+        assert.match(issueSteps[1], /get_label.*Planning label/)
+        assert.match(issueSteps[2], /list_issue_fields/)
+        assert.match(issueSteps[3], /list_issue_types/)
     })
 
     it("returns the official sub-issue add operation without speculative schema requirements", () => {

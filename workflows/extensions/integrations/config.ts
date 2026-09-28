@@ -76,7 +76,7 @@ export type TypeProjection = Static<typeof TypeProjectionSchema>
 const StatusValuesSchema = Type.Object(
     {
         backlog: Type.String({ minLength: 1 }),
-        planning: Type.String({ minLength: 1 }),
+        todo: Type.String({ minLength: 1 }),
         inProgress: Type.String({ minLength: 1 }),
         inReview: Type.String({ minLength: 1 }),
         done: Type.String({ minLength: 1 }),
@@ -106,6 +106,7 @@ export const GitHubTrackerSchema = Type.Object(
             },
             { additionalProperties: false },
         ),
+        labels: Type.Object({ planning: FieldNameSchema }, { additionalProperties: false }),
         fields: Type.Object(
             {
                 status: Type.Object(

@@ -22,6 +22,7 @@ My [pi](https://pi.dev) setup for coding agent workflows.
 - `/epic` — plan and maintain an initiative of prospective Tasks;
 - `/task` — initialize or resume work belonging to one Epic;
 - `/gig` — initialize or resume standalone work;
-- `/backlog` — optional integration-only future-work intake.
+- `/backlog` — optional integration-only future-work intake;
+- `/todo` — optional integration-only ready-work intake.
 
 Authoritative `.project/` artifacts use either versioned or unversioned Git policy; unversioned mode excludes them from Git and never projects workflow-system traces. Optional tracker support includes GitHub or Linear; optional forge support currently uses GitHub. Runtime provider operations use Pi-registered MCP tools through the same permission extension as every other agent. Guided setup may additionally inspect Linear and provision an explicitly approved GitHub Project through credential-isolated direct APIs. See the [workflow setup and artifact guide](workflows/README.md).

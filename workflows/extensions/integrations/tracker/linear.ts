@@ -495,86 +495,6 @@ function number(value: unknown, label: string): number {
     return value
 }
 
-const LinearProjectCandidateSchema = Type.Object(
-    {
-        projectId: Type.String({ minLength: 1 }),
-        title: Type.String({ minLength: 1 }),
-        url: Type.String({ minLength: 1 }),
-        teams: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-    },
-    { additionalProperties: false },
-)
-const LinearIssueCandidateSchema = Type.Object(
-    {
-        issueId: Type.String({ minLength: 1 }),
-        identifier: Type.String({ minLength: 1 }),
-        title: Type.String({ minLength: 1 }),
-        url: Type.String({ minLength: 1 }),
-        team: Type.String({ minLength: 1 }),
-        projectId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-    },
-    { additionalProperties: false },
-)
-
-export const LinearBacklogReconciliationSchema = Type.Union([
-    Type.Object(
-        {
-            entity: Type.Literal("epic"),
-            title: Type.String({ minLength: 1 }),
-            team: Type.String({ minLength: 1 }),
-            candidates: Type.Array(LinearProjectCandidateSchema),
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            entity: Type.Literal("task"),
-            title: Type.String({ minLength: 1 }),
-            team: Type.String({ minLength: 1 }),
-            parentProjectId: Type.String({ minLength: 1 }),
-            candidates: Type.Array(LinearIssueCandidateSchema),
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            entity: Type.Literal("gig"),
-            title: Type.String({ minLength: 1 }),
-            team: Type.String({ minLength: 1 }),
-            candidates: Type.Array(LinearIssueCandidateSchema),
-        },
-        { additionalProperties: false },
-    ),
-])
-export type LinearBacklogReconciliation = Static<typeof LinearBacklogReconciliationSchema>
-
-export function reconcileLinearBacklogCandidates(input: LinearBacklogReconciliation) {
-    const candidates = (() => {
-        switch (input.entity) {
-            case "epic":
-                return input.candidates.filter(
-                    (candidate) => candidate.title === input.title && candidate.teams.includes(input.team),
-                )
-            case "task":
-                return input.candidates.filter(
-                    (candidate) =>
-                        candidate.title === input.title &&
-                        candidate.team === input.team &&
-                        candidate.projectId === input.parentProjectId,
-                )
-            case "gig":
-                return input.candidates.filter(
-                    (candidate) =>
-                        candidate.title === input.title &&
-                        candidate.team === input.team &&
-                        candidate.projectId === null,
-                )
-        }
-    })()
-    const outcome = candidates.length === 0 ? "none" : candidates.length === 1 ? "one" : "multiple"
-    return { outcome, candidates, requiresUserConfirmation: true as const }
-}
-
 export const LINEAR_TOOL_NAMES = {
     getWorkspace: "get_workspace",
     getTeam: "get_team",
@@ -658,7 +578,7 @@ function requirementsFor(operation: IntegrationOperation, entity?: EntityStatus[
     if (operation === "inspect") {
         return [...COMMON_REQUIREMENTS, ...ISSUE_READ_REQUIREMENTS, ...PROJECT_READ_REQUIREMENTS]
     }
-    if (operation === "backlog" || !entity) {
+    if (operation === "queueIntake" || !entity) {
         return [
             ...COMMON_REQUIREMENTS,
             ...ISSUE_READ_REQUIREMENTS,

@@ -1,14 +1,14 @@
 # Integration roles
 
-`tracker` owns external work objects, backlog, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns repository links and pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
+`tracker` owns external work objects, Backlog/Todo queues, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns repository links and pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
 
 When `integration_context` returns top-level `state: enabled`, inspect each configured entry under `roles` independently:
 
 - role `state: enabled`: use only its returned provider configuration, Pi-registered MCP tools, and read-only validation steps;
 - role `state: unavailable`: report its exact capability error and preserve working-tree work plus any existing durable operation checkpoint. Continue only role-independent workflow work and the other enabled role; tracker-backed lifecycle/Priority reads, transitions, progress derivation, and completion remain blocked because no workflow-authority fallback exists;
-- tool denial/provider failure: preserve working-tree work plus any existing durable operation checkpoint, reconcile remote state, and retry only the incomplete operation without changing the other role.
+- tool denial/provider failure: preserve working-tree work plus any existing durable operation checkpoint. Read provider state, continue from confirmed presence/application, retry only after confirmed absence/non-application, and report ambiguity or inconsistency. Never let recovery alter the other role.
 
-Durable operation checkpoints are limited to non-idempotent creation/provisioning, duplicate-creation risk, or an exact user choice unavailable elsewhere. Already-bound lifecycle/Priority assignments and artifact projections create no checkpoint; recover them through a provider re-read and safe absolute retry.
+Durable operation checkpoints are limited to non-idempotent creation/provisioning, duplicate-creation risk, or an exact user choice unavailable elsewhere. Already-bound lifecycle/Priority assignments and artifact projections create no checkpoint; recover them through provider read-back and safe absolute retry.
 
 Never replace a denied or failed MCP operation with HTTP, `gh`, another client, or a provider SDK. Never let one role failure alter another role.
 
@@ -47,6 +47,6 @@ A ready branch contract contains exact `name`, `start`, `target`, and generated/
 
 ## Workflow-first updates
 
-For initialized entities, update workflow kind and artifacts first. Without a tracker, workflow authority stores Priority in `metadata.authority` and lifecycle in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. For an already-bound tracker object, re-read current provider values, set the absolute intended lifecycle/Priority values, and re-read for confirmation. An interrupted or failed assignment is safe to retry after another provider read; tracker authority never falls back to workflow authority. Project kind/type only in versioned mode; unversioned mode keeps kind in workflow artifacts. Provider failure never rolls workflow artifacts back.
+For initialized entities, update workflow kind, `workStage`, and artifacts first. Without a tracker, workflow authority stores Priority in `metadata.authority` and initialized lifecycle in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. For an already-bound tracker object, re-read current provider values, set the absolute intended lifecycle/Priority values, and re-read for confirmation. Tracker authority never falls back to workflow authority. Project kind/type only in versioned mode; unversioned mode keeps kind in workflow artifacts. Provider failure never rolls workflow artifacts back.
 
-Backlog intake is the sole exception with no workflow artifact or retry queue. It therefore uses provider-specific candidate reconciliation and user confirmation before recreating an uncertain item.
+Adding work to Backlog or Todo creates no workflow artifact or saved workflow recovery state. Follow `../queue.md`; recover uncertain provider results through read-back without a separate candidate protocol.
