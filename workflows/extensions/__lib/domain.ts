@@ -38,8 +38,15 @@ export const InitializedLifecycleStateSchema = Type.Union([
     Type.Literal("inProgress"),
     Type.Literal("inReview"),
     Type.Literal("done"),
+    Type.Literal("canceled"),
 ])
 export type InitializedLifecycleState = Static<typeof InitializedLifecycleStateSchema>
+
+export type FinishedLifecycleState = Extract<InitializedLifecycleState, "done" | "canceled">
+
+export function isFinishedLifecycleState(state: InitializedLifecycleState): state is FinishedLifecycleState {
+    return state === "done" || state === "canceled"
+}
 
 export const LifecycleStateSchema = Type.Union([QueueStateSchema, InitializedLifecycleStateSchema])
 export type LifecycleState = Static<typeof LifecycleStateSchema>

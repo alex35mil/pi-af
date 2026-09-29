@@ -93,13 +93,13 @@ The Epic's branch identity never changes. It may be merged into its stored defau
 
 Task initialization changes its selected item once from `1. **Title** — …` to `1. [TASK-<raw-id>] **Title** — …`. That qualified ID is the permanent relation; title text and ordering are display-only and may change. Every later Epic candidate must preserve existing `[TASK-…]` markers exactly.
 
-Plan-item progress is derived by resolving each marker to its child Task lifecycle authority: read `.local/status.md` for workflow-authority Tasks and refresh native provider state for tracker-backed Tasks. No marker is prospective, a marker with a non-`done` Task is initialized, and a marker with a `done` Task is complete. Changes to the accepted initiative contract must first enter the material-replanning transition in `../../references/planning.md`, then repeat candidate review and user acceptance; implementation detail must not rewrite it.
+Plan-item progress is derived by resolving each marker to its child Task lifecycle authority: read `.local/status.md` for workflow-authority Tasks and refresh native provider state for tracker-backed Tasks. No marker is prospective; In Progress/In Review is initialized, Done is complete, and Canceled is a distinct terminal canceled outcome. Changes to the accepted initiative contract must first enter the material-replanning transition in `../../references/planning.md`, then repeat candidate review and user acceptance; implementation detail must not rewrite it.
 
 When the user explicitly resumes the Epic and asks to complete it:
 
-1. Resolve every accepted Task marker through its child lifecycle authority. If any Task is not `done`, report the incomplete Tasks and stop.
-2. Reconcile completed Task outcomes against the accepted Epic contract and Project Policies. If contract drift remains, present it and stop without changing Epic lifecycle; resolve it through the existing Epic planning/acceptance flow before retrying completion.
-3. When every Task is `done` and no contract drift remains, set Epic lifecycle directly from `inProgress` to `done`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to the configured `done` value.
+1. Resolve every accepted Task marker through its child lifecycle authority. If any Task is neither `done` nor `canceled`, report the unfinished Tasks and stop.
+2. Reconcile finished Task outcomes against the accepted Epic contract and Project Policies. If contract drift remains, present it and stop without changing Epic lifecycle; resolve it through the existing Epic planning/acceptance flow before retrying completion.
+3. When every Task is `done` or `canceled` and no contract drift remains, set Epic lifecycle directly from `inProgress` to `done`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to the configured `done` value.
 4. Report the completion evidence. Do not modify any versioned artifact during this flow; Epic completion never creates a commit, push, PR, or CI run.
 
 Never implement Task work from the Epic workflow. Do not push, create a PR, merge, delete branches, or use a worktree unless the user explicitly approves the exact operation or set of operations.

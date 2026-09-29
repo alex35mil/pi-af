@@ -5,7 +5,7 @@ This is the operational source of truth for files created or changed by `/projec
 ## General rules
 
 - Every workflow-owned JSON object rejects unlisted properties, contains no credentials, and ends with a newline.
-- Current workflow-owned JSON stores only operational fields. The first incompatible migration introduces one shared top-level `schema` discriminator across all workflow-owned JSON formats.
+- Workflow-owned JSON stores only operational fields.
 - Preserve unrelated keys when merging into shared Pi settings files.
 - Omit optional workflow files instead of writing empty, disabled, or placeholder configuration.
 - Preview exact file content and exact ignore/exclude additions before writing them.
@@ -79,21 +79,23 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
                 "todo": "Todo",
                 "inProgress": "In Progress",
                 "inReview": "In Review",
-                "done": "Done"
+                "done": "Done",
+                "canceled": "Canceled"
             },
             "projects": {
                 "backlog": "Backlog",
                 "todo": "Todo",
                 "inProgress": "In Progress",
                 "inReview": "In Review",
-                "done": "Completed"
+                "done": "Completed",
+                "canceled": "Canceled"
             }
         }
     }
 }
 ```
 
-Issue and Project mappings each require all five queue/lifecycle keys and five distinct, non-empty provider option names. A previous mapping containing `planning` instead of `todo` is invalid and requires explicit configuration migration; setup never rewrites it implicitly. `team` is non-empty. Linear Priority is native and is not configured here.
+Issue and Project mappings each require all six queue/lifecycle keys and six distinct, non-empty provider option names. A previous mapping containing `planning` instead of `todo` is invalid and requires explicit configuration migration; setup never rewrites it implicitly. `team` is non-empty. Linear Priority is native and is not configured here.
 
 During guided setup, `inspect_linear_workspace` reads the authenticated workspace, authenticated viewer, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. `viewer.name` is Full Name; `viewer.displayName` is the workspace-unique Username/Nickname and is returned as `viewer.username`. The API performs no mutation. Setup persists only the exact team and status names the user selects; provider IDs, viewer identity, branch template, and credentials remain outside workflow configuration. A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
@@ -115,7 +117,7 @@ Never hand-construct GitHub tracker configuration. Use the exact `trackerConfig`
 
 - `provider: "github"`, MCP server, and repository identity;
 - Project owner, owner type (`user` or `org`), and positive Project URL number;
-- one Project Status field with distinct non-empty mappings for `backlog`, `todo`, `inProgress`, `inReview`, and `done`;
+- one Project Status field with distinct non-empty mappings for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`;
 - one exact workflow-owned repository Planning label name;
 - Priority with `issue` or `project` scope, a non-empty field name, and unique non-empty values that exclude exact lowercase `not set`;
 - Internal ID with `issue` or `project` scope and a non-empty field name;
@@ -141,7 +143,8 @@ Example returned configuration for a Project-contained tracker (use actual provi
                     "todo": "Todo",
                     "inProgress": "In Progress",
                     "inReview": "In Review",
-                    "done": "Done"
+                    "done": "Done",
+                    "canceled": "Canceled"
                 }
             },
             "priority": {

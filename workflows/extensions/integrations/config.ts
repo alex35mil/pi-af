@@ -80,6 +80,7 @@ const StatusValuesSchema = Type.Object(
         inProgress: Type.String({ minLength: 1 }),
         inReview: Type.String({ minLength: 1 }),
         done: Type.String({ minLength: 1 }),
+        canceled: Type.String({ minLength: 1 }),
     },
     { additionalProperties: false },
 )

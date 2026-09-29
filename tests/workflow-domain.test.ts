@@ -101,6 +101,7 @@ function enableLinearIntegration(
                         inProgress: "In Progress",
                         inReview: "In Review",
                         done: "Done",
+                        canceled: "Canceled",
                     },
                     projects: {
                         backlog: "Backlog",
@@ -108,6 +109,7 @@ function enableLinearIntegration(
                         inProgress: "In Progress",
                         inReview: "In Review",
                         done: "Completed",
+                        canceled: "Canceled",
                     },
                 },
             },
@@ -144,6 +146,7 @@ function enableGitHubIntegration(repository: string): void {
                             inProgress: "In Progress",
                             inReview: "In Review",
                             done: "Done",
+                            canceled: "Canceled",
                         },
                     },
                     priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
@@ -564,6 +567,14 @@ describe("workflow domain", () => {
             assert.deepEqual(readEpicTaskProgress(path.join(repository, epic.directory)).items, [
                 {
                     state: "complete",
+                    display: renamedDisplay,
+                    task: { id: task.status.id, directory: task.directory },
+                },
+            ])
+            writeStatus(repository, task.directory, { ...task.status, state: "canceled" })
+            assert.deepEqual(readEpicTaskProgress(path.join(repository, epic.directory)).items, [
+                {
+                    state: "canceled",
                     display: renamedDisplay,
                     task: { id: task.status.id, directory: task.directory },
                 },
@@ -1381,7 +1392,14 @@ describe("workflow domain", () => {
             )
             assert.throws(() => readEntityStatus(directory), /invalid local status/)
             writeStatus(repository, gig.directory, { ...gig.status, state: "inReview" })
-            assert.throws(() => readEntityStatus(directory), /planning work stage requires In Progress lifecycle/)
+            assert.throws(
+                () => readEntityStatus(directory),
+                /planning work stage requires In Progress or Canceled lifecycle/,
+            )
+            writeStatus(repository, gig.directory, { ...gig.status, state: "canceled" })
+            const canceled = readEntityStatus(directory)
+            if (!("state" in canceled)) assert.fail("expected workflow lifecycle")
+            assert.equal(canceled.state, "canceled")
             writeStatus(repository, gig.directory, { ...gig.status, state: "inReview", workStage: "execution" })
             assert.equal(readEntityStatus(directory).workStage, "execution")
             writeStatus(repository, gig.directory, gig.status)
