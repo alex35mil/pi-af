@@ -49,14 +49,14 @@ const RepositoryLabelSchema = Type.Object(
     { additionalProperties: false },
 )
 
-const DeliverableTypeOptionsSchema = Type.Object(
+const DeliverableKindLabelsSchema = Type.Object(
     {
-        feature: OptionSchema,
-        bugfix: OptionSchema,
-        research: OptionSchema,
-        refactor: OptionSchema,
-        audit: OptionSchema,
-        chore: OptionSchema,
+        feature: RepositoryLabelSchema,
+        bugfix: RepositoryLabelSchema,
+        research: RepositoryLabelSchema,
+        refactor: RepositoryLabelSchema,
+        audit: RepositoryLabelSchema,
+        chore: RepositoryLabelSchema,
     },
     { additionalProperties: false },
 )
@@ -127,25 +127,6 @@ const IssueInternalIdSchema = Type.Object(
     },
     { additionalProperties: false },
 )
-const ProjectTypeSchema = Type.Object(
-    {
-        scope: Type.Literal("project"),
-        field: OneLineSchema,
-        epic: OptionSchema,
-        deliverableKinds: DeliverableTypeOptionsSchema,
-    },
-    { additionalProperties: false },
-)
-const IssueTypeSchema = Type.Object(
-    {
-        scope: Type.Literal("issue"),
-        epic: OptionSchema,
-        deliverableKinds: DeliverableTypeOptionsSchema,
-        provisionMissing: Type.Boolean(),
-    },
-    { additionalProperties: false },
-)
-
 export const GitHubProjectSpecificationSchema = Type.Object(
     {
         credentialEnv: EnvironmentNameSchema,
@@ -153,7 +134,19 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         repository: RepositorySchema,
         projectOwner: ProjectOwnerSchema,
         project: ProjectSourceSchema,
-        labels: Type.Object({ planning: RepositoryLabelSchema }, { additionalProperties: false }),
+        labels: Type.Object(
+            {
+                planning: RepositoryLabelSchema,
+                kind: Type.Object(
+                    {
+                        epic: RepositoryLabelSchema,
+                        deliverableKinds: DeliverableKindLabelsSchema,
+                    },
+                    { additionalProperties: false },
+                ),
+            },
+            { additionalProperties: false },
+        ),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -162,7 +155,6 @@ export const GitHubProjectSpecificationSchema = Type.Object(
                 ),
                 priority: Type.Union([ProjectPrioritySchema, IssuePrioritySchema]),
                 internalId: Type.Union([ProjectInternalIdSchema, IssueInternalIdSchema]),
-                type: Type.Union([ProjectTypeSchema, IssueTypeSchema]),
             },
             { additionalProperties: false },
         ),
@@ -202,6 +194,45 @@ export const GITHUB_PROJECT_DEFAULTS = {
             color: "#0969DA",
             description: "Work is currently being planned.",
         },
+        kind: {
+            epic: {
+                name: "Kind: Epic",
+                color: "#8250DF",
+                description: "A multi-deliverable initiative.",
+            },
+            deliverableKinds: {
+                feature: {
+                    name: "Kind: Feature",
+                    color: "#0969DA",
+                    description: "New user-visible or system capability.",
+                },
+                bugfix: {
+                    name: "Kind: Bugfix",
+                    color: "#CF222E",
+                    description: "Correction of defective behavior.",
+                },
+                research: {
+                    name: "Kind: Research",
+                    color: "#1A7F37",
+                    description: "Investigation producing evidence and conclusions.",
+                },
+                refactor: {
+                    name: "Kind: Refactor",
+                    color: "#BC4C00",
+                    description: "Behavior-preserving structural improvement.",
+                },
+                audit: {
+                    name: "Kind: Audit",
+                    color: "#9A6700",
+                    description: "Evidence-based assessment and recommendations.",
+                },
+                chore: {
+                    name: "Kind: Chore",
+                    color: "#57606A",
+                    description: "Maintenance or operational work.",
+                },
+            },
+        },
     },
     status: {
         field: "Status",
@@ -240,26 +271,6 @@ export const GITHUB_PROJECT_DEFAULTS = {
         ],
     },
     internalId: { field: "Internal ID" },
-    type: {
-        field: "Kind",
-        epic: { name: "Epic", description: "A multi-deliverable initiative.", color: "purple" },
-        deliverableKinds: {
-            feature: { name: "Feature", description: "New user-visible or system capability.", color: "blue" },
-            bugfix: { name: "Bugfix", description: "Correction of defective behavior.", color: "red" },
-            research: {
-                name: "Research",
-                description: "Investigation producing evidence and conclusions.",
-                color: "green",
-            },
-            refactor: {
-                name: "Refactor",
-                description: "Behavior-preserving structural improvement.",
-                color: "orange",
-            },
-            audit: { name: "Audit", description: "Evidence-based assessment and recommendations.", color: "yellow" },
-            chore: { name: "Chore", description: "Maintenance or operational work.", color: "gray" },
-        },
-    },
 } as const
 
 interface ProjectSummary {
@@ -287,13 +298,6 @@ interface IssueField {
     dataType: string
     options?: Array<{ id: number; name: string; description?: string; color: string; priority?: number }>
 }
-interface IssueType {
-    id: number
-    name: string
-    description?: string
-    color?: string | null
-    enabled?: boolean
-}
 interface RepositoryDetails {
     id: string
     ownerType: "user" | "org"
@@ -320,10 +324,10 @@ type ProjectFieldAction = { description: string } & (
       }
     | { kind: "create-project-field"; details: ProjectFieldDefinition }
 )
-type OrganizationAction = { description: string } & (
-    | { kind: "create-issue-field"; details: ReturnType<typeof desiredOrganizationFields>[number] }
-    | { kind: "create-issue-type"; details: Static<typeof OptionSchema> }
-)
+type OrganizationAction = { description: string } & {
+    kind: "create-issue-field"
+    details: ReturnType<typeof desiredOrganizationFields>[number]
+}
 type ProvisioningAction =
     | ProjectFieldAction
     | OrganizationAction
@@ -373,10 +377,7 @@ export async function runGitHubProjectSetup(
         ])
         const organizationMetadata =
             input.includeOrganizationMetadata && repository.ownerType === "org"
-                ? {
-                      issueFields: await client.listIssueFields(input.repository.owner),
-                      issueTypes: await client.listIssueTypes(input.repository.owner),
-                  }
+                ? { issueFields: await client.listIssueFields(input.repository.owner) }
                 : undefined
         return {
             repository: { ...input.repository, ownerType: repository.ownerType },
@@ -711,29 +712,6 @@ class GitHubClient {
         })
     }
 
-    async listIssueTypes(organization: string): Promise<IssueType[]> {
-        const result = await this.rest("GET", `/orgs/${encodeURIComponent(organization)}/issue-types`)
-        return array(result, "organization issue types").map((rawType) => {
-            const issueType = record(rawType, "organization issue type")
-            return {
-                id: number(issueType.id, "issue type id"),
-                name: text(issueType.name, "issue type name"),
-                description: typeof issueType.description === "string" ? issueType.description : undefined,
-                color: typeof issueType.color === "string" ? issueType.color : null,
-                enabled: typeof issueType.is_enabled === "boolean" ? issueType.is_enabled : undefined,
-            }
-        })
-    }
-
-    async createIssueType(organization: string, option: Static<typeof OptionSchema>): Promise<void> {
-        await this.rest("POST", `/orgs/${encodeURIComponent(organization)}/issue-types`, {
-            name: option.name,
-            description: option.description,
-            color: option.color,
-            is_enabled: true,
-        })
-    }
-
     private async graphql(query: string, variables: Record<string, unknown>): Promise<Record<string, unknown>> {
         const response = await this.fetchImpl("https://api.github.com/graphql", {
             method: "POST",
@@ -972,22 +950,31 @@ function planProjectField(
     return { actions, conflicts }
 }
 
+function desiredRepositoryLabels(specification: GitHubProjectSpecification) {
+    return [
+        specification.labels.planning,
+        specification.labels.kind.epic,
+        ...Object.values(specification.labels.kind.deliverableKinds),
+    ]
+}
+
 async function planRepositoryLabel(
     specification: GitHubProjectSpecification,
     client: GitHubClient,
     actions: ProvisioningAction[],
     conflicts: string[],
 ): Promise<void> {
-    const desired = specification.labels.planning
-    const existing = await client.getRepositoryLabel(specification.repository, desired.name)
-    if (!existing) {
-        actions.push({
-            kind: "create-repository-label",
-            description: `Create repository label ${JSON.stringify(desired.name)} with color ${desired.color} and description ${JSON.stringify(desired.description)}`,
-            details: desired,
-        })
-    } else if (!compatibleRepositoryLabel(existing, desired)) {
-        conflicts.push(`repository label ${JSON.stringify(desired.name)} has incompatible color or description`)
+    for (const desired of desiredRepositoryLabels(specification)) {
+        const existing = await client.getRepositoryLabel(specification.repository, desired.name)
+        if (!existing) {
+            actions.push({
+                kind: "create-repository-label",
+                description: `Create repository label ${JSON.stringify(desired.name)} with color ${desired.color} and description ${JSON.stringify(desired.description)}`,
+                details: desired,
+            })
+        } else if (!compatibleRepositoryLabel(existing, desired)) {
+            conflicts.push(`repository label ${JSON.stringify(desired.name)} has incompatible color or description`)
+        }
     }
 }
 
@@ -1039,27 +1026,6 @@ function planOrganizationField(desired: ReturnType<typeof desiredOrganizationFie
     return { actions, conflicts }
 }
 
-function planOrganizationType(
-    desired: Static<typeof OptionSchema>,
-    existingTypes: IssueType[],
-    provisionMissing: boolean,
-) {
-    const actions: OrganizationAction[] = []
-    const conflicts: string[] = []
-    const existing = existingTypes.find((issueType) => issueType.name === desired.name)
-    if (!existing) {
-        if (provisionMissing)
-            actions.push({
-                kind: "create-issue-type",
-                description: `Create enabled organization issue type ${JSON.stringify(desired.name)}`,
-                details: desired,
-            })
-        else conflicts.push(`organization issue type ${JSON.stringify(desired.name)} is missing`)
-    } else if (existing.enabled === false)
-        conflicts.push(`organization issue type ${JSON.stringify(desired.name)} is disabled`)
-    return { actions, conflicts }
-}
-
 async function planOrganizationMetadata(
     specification: GitHubProjectSpecification,
     repository: RepositoryDetails,
@@ -1067,33 +1033,17 @@ async function planOrganizationMetadata(
     actions: ProvisioningAction[],
     conflicts: string[],
 ): Promise<void> {
-    const usesIssueFields =
-        specification.fields.priority.scope === "issue" || specification.fields.internalId.scope === "issue"
-    const usesIssueTypes = specification.fields.type.scope === "issue"
-    if (!usesIssueFields && !usesIssueTypes) return
+    const desiredFields = desiredOrganizationFields(specification)
+    if (desiredFields.length === 0) return
     if (repository.ownerType !== "org") {
-        conflicts.push("issue-scoped fields and types require a repository owned by an organization")
+        conflicts.push("issue-scoped fields require a repository owned by an organization")
         return
     }
-    const organization = specification.repository.owner
-    if (usesIssueFields) {
-        const existingFields = await client.listIssueFields(organization)
-        for (const desired of desiredOrganizationFields(specification)) {
-            const decision = planOrganizationField(desired, existingFields)
-            actions.push(...decision.actions)
-            conflicts.push(...decision.conflicts)
-        }
-    }
-    if (usesIssueTypes && specification.fields.type.scope === "issue") {
-        const existingTypes = await client.listIssueTypes(organization)
-        for (const desired of uniqueOptions([
-            specification.fields.type.epic,
-            ...Object.values(specification.fields.type.deliverableKinds),
-        ])) {
-            const decision = planOrganizationType(desired, existingTypes, specification.fields.type.provisionMissing)
-            actions.push(...decision.actions)
-            conflicts.push(...decision.conflicts)
-        }
+    const existingFields = await client.listIssueFields(specification.repository.owner)
+    for (const desired of desiredFields) {
+        const decision = planOrganizationField(desired, existingFields)
+        actions.push(...decision.actions)
+        conflicts.push(...decision.conflicts)
     }
 }
 
@@ -1223,8 +1173,8 @@ async function provisionRepositoryLabel(
     const conflicts: string[] = []
     await planRepositoryLabel(specification, client, actions, conflicts)
     if (conflicts.length > 0) throw new Error(conflicts.join("; "))
-    const action = actions.find((candidate) => candidate.kind === "create-repository-label")
-    if (action?.kind === "create-repository-label") {
+    for (const action of actions) {
+        if (action.kind !== "create-repository-label") continue
         try {
             await client.createRepositoryLabel(specification.repository, action.details)
         } catch (error) {
@@ -1237,11 +1187,11 @@ async function provisionRepositoryLabel(
             }
         }
     }
-    const verified = await client.getRepositoryLabel(specification.repository, specification.labels.planning.name)
-    if (!verified || !compatibleRepositoryLabel(verified, specification.labels.planning)) {
-        throw new Error(
-            `GitHub did not persist repository label ${JSON.stringify(specification.labels.planning.name)} exactly`,
-        )
+    for (const desired of desiredRepositoryLabels(specification)) {
+        const verified = await client.getRepositoryLabel(specification.repository, desired.name)
+        if (!verified || !compatibleRepositoryLabel(verified, desired)) {
+            throw new Error(`GitHub did not persist repository label ${JSON.stringify(desired.name)} exactly`)
+        }
     }
 }
 
@@ -1254,36 +1204,8 @@ async function provisionOrganizationMetadata(
     const organization = specification.repository.owner
     for (const desired of desiredOrganizationFields(specification)) {
         const decision = planOrganizationField(desired, await client.listIssueFields(organization))
-        await applyOrganizationActions(client, organization, decision)
-    }
-    if (specification.fields.type.scope === "issue") {
-        let current = await client.listIssueTypes(organization)
-        for (const option of uniqueOptions([
-            specification.fields.type.epic,
-            ...Object.values(specification.fields.type.deliverableKinds),
-        ])) {
-            const decision = planOrganizationType(option, current, specification.fields.type.provisionMissing)
-            await applyOrganizationActions(client, organization, decision)
-            if (decision.actions.length > 0) current = await client.listIssueTypes(organization)
-        }
-    }
-}
-
-async function applyOrganizationActions(
-    client: GitHubClient,
-    organization: string,
-    decision: { actions: OrganizationAction[]; conflicts: string[] },
-): Promise<void> {
-    if (decision.conflicts.length > 0) throw new Error(decision.conflicts.join("; "))
-    for (const action of decision.actions) {
-        switch (action.kind) {
-            case "create-issue-field":
-                await client.createIssueField(organization, action.details)
-                break
-            case "create-issue-type":
-                await client.createIssueType(organization, action.details)
-                break
-        }
+        if (decision.conflicts.length > 0) throw new Error(decision.conflicts.join("; "))
+        for (const action of decision.actions) await client.createIssueField(organization, action.details)
     }
 }
 
@@ -1306,18 +1228,6 @@ function desiredProjectFields(specification: GitHubProjectSpecification): Projec
         ...(specification.fields.internalId.scope === "project"
             ? [{ name: specification.fields.internalId.field, dataType: "TEXT" as const }]
             : []),
-        ...(specification.fields.type.scope === "project"
-            ? [
-                  {
-                      name: specification.fields.type.field,
-                      dataType: "SINGLE_SELECT" as const,
-                      options: uniqueOptions([
-                          specification.fields.type.epic,
-                          ...Object.values(specification.fields.type.deliverableKinds),
-                      ]),
-                  },
-              ]
-            : []),
     ]
 }
 
@@ -1328,6 +1238,10 @@ function assertSpecification(specification: GitHubProjectSpecification): void {
     if (new Set(priorityNames).size !== priorityNames.length)
         throw new Error("GitHub Priority option names must be distinct")
     if (priorityNames.includes("not set")) throw new Error("GitHub Priority must not contain exact option `not set`")
+    const labelNames = desiredRepositoryLabels(specification).map((label) => label.name.toLowerCase())
+    if (new Set(labelNames).size !== labelNames.length) {
+        throw new Error("GitHub Planning and Kind label names must be distinct case-insensitively")
+    }
     const projectFieldNames = desiredProjectFields(specification).map((field) => field.name)
     if (new Set(projectFieldNames).size !== projectFieldNames.length) {
         throw new Error("GitHub Project field names must be distinct")
@@ -1405,7 +1319,6 @@ function compatibleIssueField(
 }
 
 function trackerConfigFor(specification: GitHubProjectSpecification, projectNumber: number): Record<string, unknown> {
-    const type = specification.fields.type
     const config = {
         provider: "github",
         mcpServer: specification.mcpServer,
@@ -1415,7 +1328,18 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             ownerType: specification.projectOwner.type,
             number: projectNumber,
         },
-        labels: { planning: specification.labels.planning.name },
+        labels: {
+            planning: specification.labels.planning.name,
+            kind: {
+                epic: specification.labels.kind.epic.name,
+                deliverableKinds: Object.fromEntries(
+                    Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [
+                        key,
+                        label.name,
+                    ]),
+                ),
+            },
+        },
         fields: {
             status: {
                 field: specification.fields.status.field,
@@ -1432,23 +1356,6 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
                 scope: specification.fields.internalId.scope,
                 field: specification.fields.internalId.field,
             },
-            type:
-                type.scope === "project"
-                    ? {
-                          scope: "project",
-                          field: type.field,
-                          epic: type.epic.name,
-                          deliverableKinds: Object.fromEntries(
-                              Object.entries(type.deliverableKinds).map(([key, option]) => [key, option.name]),
-                          ),
-                      }
-                    : {
-                          scope: "issue",
-                          epic: type.epic.name,
-                          deliverableKinds: Object.fromEntries(
-                              Object.entries(type.deliverableKinds).map(([key, option]) => [key, option.name]),
-                          ),
-                      },
         },
     }
     if (!Value.Check(GitHubTrackerSchema, config)) {
@@ -1458,11 +1365,6 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
         throw new Error(`generated invalid GitHub tracker configuration: ${details}`)
     }
     return config
-}
-
-function uniqueOptions(options: Static<typeof OptionSchema>[]): Static<typeof OptionSchema>[] {
-    const seen = new Set<string>()
-    return options.filter((option) => (seen.has(option.name) ? false : (seen.add(option.name), true)))
 }
 
 function describeProjectField(field: ProjectFieldDefinition): string {

@@ -1,0 +1,42 @@
+{
+  "id": "GIG-01M3NWSVYS",
+  "rawId": "01M3NWSVYS",
+  "slug": "github-issue-labels-for-workflow-kind",
+  "title": "Use GitHub issue labels for workflow Kind",
+  "createdAt": "2026-09-29T06:14:31.641Z",
+  "workStage": "execution",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m3nwsvys-github-issue-labels-for-workflow-kind",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "state": "bound",
+      "external": {
+        "issueId": 5621790472,
+        "issueNumber": 6,
+        "issueUrl": "https://github.com/alex35mil/pi-af/issues/6",
+        "projectItemId": "PVTI_lAHOAEDDG84Bk9OMzg9TjeM"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "pullRequest": {
+        "number": 20,
+        "url": "https://github.com/alex35mil/pi-af/pull/20"
+      }
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "feature"
+}

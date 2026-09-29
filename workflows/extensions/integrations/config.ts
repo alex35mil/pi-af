@@ -52,26 +52,14 @@ const DeliverableKindValuesSchema = Type.Object(
     { additionalProperties: false },
 )
 
-export const TypeProjectionSchema = Type.Union([
-    Type.Object(
-        {
-            scope: Type.Literal("issue"),
-            epic: Type.String({ minLength: 1 }),
-            deliverableKinds: DeliverableKindValuesSchema,
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            scope: Type.Literal("project"),
-            field: FieldNameSchema,
-            epic: Type.String({ minLength: 1 }),
-            deliverableKinds: DeliverableKindValuesSchema,
-        },
-        { additionalProperties: false },
-    ),
-])
-export type TypeProjection = Static<typeof TypeProjectionSchema>
+export const KindLabelsSchema = Type.Object(
+    {
+        epic: Type.String({ minLength: 1 }),
+        deliverableKinds: DeliverableKindValuesSchema,
+    },
+    { additionalProperties: false },
+)
+export type KindLabels = Static<typeof KindLabelsSchema>
 
 const StatusValuesSchema = Type.Object(
     {
@@ -107,7 +95,13 @@ export const GitHubTrackerSchema = Type.Object(
             },
             { additionalProperties: false },
         ),
-        labels: Type.Object({ planning: FieldNameSchema }, { additionalProperties: false }),
+        labels: Type.Object(
+            {
+                planning: FieldNameSchema,
+                kind: KindLabelsSchema,
+            },
+            { additionalProperties: false },
+        ),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -119,7 +113,6 @@ export const GitHubTrackerSchema = Type.Object(
                 ),
                 priority: PriorityFieldSchema,
                 internalId: ScopedFieldSchema,
-                type: TypeProjectionSchema,
             },
             { additionalProperties: false },
         ),
@@ -189,11 +182,20 @@ function assertGitHubTrackerInvariants(config: GitHubTracker): void {
         throw new Error("GitHub Status mappings must use distinct options")
     }
 
+    const managedLabels = [
+        config.labels.planning,
+        config.labels.kind.epic,
+        ...Object.values(config.labels.kind.deliverableKinds),
+    ]
+    const normalizedLabels = managedLabels.map((label) => label.toLowerCase())
+    if (new Set(normalizedLabels).size !== normalizedLabels.length) {
+        throw new Error("GitHub Planning and Kind label names must be distinct case-insensitively")
+    }
+
     const projectFieldNames = [
         config.fields.status.field,
         ...(config.fields.priority.scope === "project" ? [config.fields.priority.field] : []),
         ...(config.fields.internalId.scope === "project" ? [config.fields.internalId.field] : []),
-        ...(config.fields.type.scope === "project" ? [config.fields.type.field] : []),
     ]
     const duplicateProjectFields = projectFieldNames.filter(
         (field, index) => projectFieldNames.indexOf(field) !== index,

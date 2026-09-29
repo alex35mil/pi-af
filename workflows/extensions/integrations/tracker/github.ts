@@ -11,7 +11,6 @@ export const GITHUB_TRACKER_TOOL_NAMES = {
     projectsWrite: "projects_write",
     subIssueWrite: "sub_issue_write",
     listIssueFields: "list_issue_fields",
-    listIssueTypes: "list_issue_types",
 } as const
 
 export const GITHUB_TRACKER_METHODS = {
@@ -29,11 +28,11 @@ const TRACKER_REQUIREMENTS: ToolRequirement[] = [
     {
         name: GITHUB_TRACKER_TOOL_NAMES.issueRead,
         properties: ["method", "owner", "repo", "issue_number"],
-        methods: ["get"],
+        methods: ["get", "get_labels"],
     },
     {
         name: GITHUB_TRACKER_TOOL_NAMES.issueWrite,
-        properties: ["method", "owner", "repo", "title", "body", "issue_number", "issue_fields", "type", "labels"],
+        properties: ["method", "owner", "repo", "title", "body", "issue_number", "issue_fields", "labels"],
         methods: ["create", "update"],
     },
     {
@@ -107,12 +106,21 @@ export function validateGitHubTrackerCapabilities(
                       requirement.name === GITHUB_TRACKER_TOOL_NAMES.issueWrite,
               )
             : TRACKER_REQUIREMENTS
-    const requirements = selected.map((requirement) =>
-        artifactMode === "unversioned" && requirement.name === GITHUB_TRACKER_TOOL_NAMES.issueWrite
-            ? { ...requirement, properties: ["method", "owner", "repo", "title", "body", "issue_number", "labels"] }
-            : requirement,
-    )
-    if (operation === "inspect" || operation === "initialize" || operation === "resume") {
+    const requirements = selected.map((requirement) => {
+        if (operation === "artifactProjection" && requirement.name === GITHUB_TRACKER_TOOL_NAMES.issueRead) {
+            return { ...requirement, methods: ["get"] }
+        }
+        if (artifactMode === "unversioned" && requirement.name === GITHUB_TRACKER_TOOL_NAMES.issueWrite) {
+            return { ...requirement, properties: ["method", "owner", "repo", "title", "body", "issue_number", "labels"] }
+        }
+        return requirement
+    })
+    if (
+        operation === "inspect" ||
+        operation === "initialize" ||
+        operation === "resume" ||
+        (operation === "queueIntake" && artifactMode === "versioned")
+    ) {
         requirements.push({
             name: GITHUB_TRACKER_TOOL_NAMES.getLabel,
             properties: ["owner", "repo", "name"],
@@ -124,9 +132,6 @@ export function validateGitHubTrackerCapabilities(
             (artifactMode === "versioned" && config.fields.internalId.scope === "issue"))
     ) {
         requirements.push({ name: GITHUB_TRACKER_TOOL_NAMES.listIssueFields, properties: ["owner", "repo"] })
-    }
-    if (operation !== "artifactProjection" && artifactMode === "versioned" && config.fields.type.scope === "issue") {
-        requirements.push({ name: GITHUB_TRACKER_TOOL_NAMES.listIssueTypes, properties: ["owner", "repo"] })
     }
     return validateRequirements(catalog, config.mcpServer, "GitHub", requirements)
 }
@@ -141,21 +146,21 @@ export function buildGitHubRemoteValidationSteps(
     if (artifactMode === "versioned" && config.fields.internalId.scope === "project") {
         projectFields.push(config.fields.internalId.field)
     }
-    if (artifactMode === "versioned" && config.fields.type.scope === "project")
-        projectFields.push(config.fields.type.field)
-    const projectTypeRequirement =
-        artifactMode === "versioned" && config.fields.type.scope === "project"
-            ? " Require every configured Project Type option mapping."
-            : ""
     const projectPriorityRequirement =
         config.fields.priority.scope === "project" ? " Require every configured Priority option." : ""
     const steps = [
-        `Use ${tools.projectsList} method=list_project_fields for ${config.project.owner} project ${config.project.number}; require exact Project fields ${projectFields.map((field) => JSON.stringify(field)).join(", ")} with compatible types and every configured Status option.${projectPriorityRequirement}${projectTypeRequirement}`,
+        `Use ${tools.projectsList} method=list_project_fields for ${config.project.owner} project ${config.project.number}; require exact Project fields ${projectFields.map((field) => JSON.stringify(field)).join(", ")} with compatible types and every configured Status option.${projectPriorityRequirement}`,
     ]
     if (tools.getLabel) {
         steps.push(
             `Use ${tools.getLabel} for ${config.repository.owner}/${config.repository.repo} label ${JSON.stringify(config.labels.planning)}; require that exact configured Planning label.`,
         )
+        if (artifactMode === "versioned") {
+            const kindLabels = [config.labels.kind.epic, ...Object.values(config.labels.kind.deliverableKinds)]
+            steps.push(
+                `Use ${tools.getLabel} once for each configured Kind label in ${config.repository.owner}/${config.repository.repo}: ${kindLabels.map((label) => JSON.stringify(label)).join(", ")}; require every exact label.`,
+            )
+        }
     }
     if (
         config.fields.priority.scope === "issue" ||
@@ -169,11 +174,6 @@ export function buildGitHubRemoteValidationSteps(
         ]
         steps.push(
             `Use ${tools.listIssueFields} for ${config.repository.owner}/${config.repository.repo}; require exact issue fields ${fields.map((field) => JSON.stringify(field)).join(", ")} and compatible field types/options.`,
-        )
-    }
-    if (artifactMode === "versioned" && config.fields.type.scope === "issue") {
-        steps.push(
-            `Use ${tools.listIssueTypes} for ${config.repository.owner}/${config.repository.repo}; require every configured Epic and Deliverable-kind type.`,
         )
     }
     return steps

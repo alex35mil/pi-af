@@ -50,12 +50,12 @@ const statuses = {
     canceled: "Canceled",
 }
 const deliverableKinds = {
-    feature: "Feature",
-    bugfix: "Bug",
-    research: "Task",
-    refactor: "Task",
-    audit: "Task",
-    chore: "Task",
+    feature: "Kind: Feature",
+    bugfix: "Kind: Bugfix",
+    research: "Kind: Research",
+    refactor: "Kind: Refactor",
+    audit: "Kind: Audit",
+    chore: "Kind: Chore",
 }
 
 function config(scope: "project" | "issue" = "project") {
@@ -64,15 +64,11 @@ function config(scope: "project" | "issue" = "project") {
         mcpServer: "github",
         repository: { owner: "alex", repo: "example" },
         project: { owner: "alex", ownerType: scope === "project" ? ("user" as const) : ("org" as const), number: 3 },
-        labels: { planning: "Planning" },
+        labels: { planning: "Planning", kind: { epic: "Kind: Epic", deliverableKinds: { ...deliverableKinds } } },
         fields: {
             status: { field: "Status", values: { ...statuses } },
             priority: { scope, field: "Priority", values: ["Urgent", "High", "Medium", "Low"] },
             internalId: { scope, field: "Internal ID" },
-            type:
-                scope === "project"
-                    ? ({ scope: "project" as const, field: "Type", epic: "Epic", deliverableKinds } as const)
-                    : ({ scope: "issue" as const, epic: "Epic", deliverableKinds } as const),
         },
     }
 }
@@ -114,10 +110,10 @@ function catalog(includeOrganizationTools: boolean): McpToolCatalog {
     const add = (name: string, properties: string[], methods?: string[]) => {
         entries.push([getMcpToolName("github", name), metadata(name, properties, methods)])
     }
-    add(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get"])
+    add(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get", "get_labels"])
     add(
         GITHUB_TOOL_NAMES.issueWrite,
-        ["owner", "repo", "title", "body", "issue_number", "issue_fields", "type", "labels"],
+        ["owner", "repo", "title", "body", "issue_number", "issue_fields", "labels"],
         ["create", "update"],
     )
     add(GITHUB_TOOL_NAMES.getLabel, ["owner", "repo", "name"])
@@ -145,10 +141,7 @@ function catalog(includeOrganizationTools: boolean): McpToolCatalog {
     add(GITHUB_TOOL_NAMES.createPullRequest, ["owner", "repo", "title", "body", "head", "base"])
     add(GITHUB_TOOL_NAMES.listPullRequests, ["owner", "repo", "head", "base", "state"])
     add(GITHUB_TOOL_NAMES.pullRequestRead, ["method", "owner", "repo", "pullNumber"], ["get"])
-    if (includeOrganizationTools) {
-        add(GITHUB_TOOL_NAMES.listIssueFields, ["owner", "repo"])
-        add(GITHUB_TOOL_NAMES.listIssueTypes, ["owner", "repo"])
-    }
+    if (includeOrganizationTools) add(GITHUB_TOOL_NAMES.listIssueFields, ["owner", "repo"])
     return new Map(entries)
 }
 
@@ -563,6 +556,17 @@ describe("workflow integration configuration", () => {
             writeConfig(duplicateProjectField)
             assert.throws(() => loadIntegrationConfig(cwd), /Project field names must be distinct/)
 
+            const duplicateKindLabel = config("project")
+            duplicateKindLabel.labels.kind.deliverableKinds.bugfix =
+                duplicateKindLabel.labels.kind.deliverableKinds.feature.toUpperCase()
+            writeConfig(duplicateKindLabel)
+            assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
+
+            const planningCollision = config("project")
+            planningCollision.labels.kind.epic = planningCollision.labels.planning.toLowerCase()
+            writeConfig(planningCollision)
+            assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
+
             const separateScope = config("issue")
             separateScope.fields.priority.field = separateScope.fields.status.field
             writeConfig(separateScope)
@@ -577,10 +581,9 @@ describe("workflow integration configuration", () => {
         assert.equal(tools.issueWrite, "mcp__github__issue_write")
         assert.equal(tools.projectsWrite, "mcp__github__projects_write")
         assert.equal("listIssueFields" in tools, false)
-        assert.equal("listIssueTypes" in tools, false)
     })
 
-    it("requires Planning-label capability only for GitHub inspection and entity lifecycle operations", () => {
+    it("requires repository-label capabilities for GitHub lifecycle operations", () => {
         const withoutLabel = new Map(catalog(false))
         withoutLabel.delete(getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.getLabel))
         assert.throws(
@@ -591,9 +594,28 @@ describe("workflow integration configuration", () => {
             () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "initialize"),
             /missing required tool mcp__github__get_label/,
         )
-        assert.doesNotThrow(() => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake"))
+        assert.throws(
+            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake"),
+            /missing required tool mcp__github__get_label/,
+        )
+        assert.doesNotThrow(() =>
+            validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake", "unversioned"),
+        )
         assert.doesNotThrow(() =>
             validateGitHubTrackerCapabilities(withoutLabel, config("project"), "artifactProjection"),
+        )
+
+        const withoutLabelRead = new Map(catalog(false))
+        withoutLabelRead.set(
+            getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.issueRead),
+            metadata(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get"]),
+        )
+        assert.throws(
+            () => validateGitHubTrackerCapabilities(withoutLabelRead, config("project"), "initialize"),
+            /get_labels/,
+        )
+        assert.doesNotThrow(() =>
+            validateGitHubTrackerCapabilities(withoutLabelRead, config("project"), "artifactProjection"),
         )
     })
 
@@ -769,7 +791,6 @@ describe("workflow integration configuration", () => {
                 JSON.stringify({ tracker: config("issue") }),
             )
             const tools = new Map(catalog(true))
-            tools.delete(getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.listIssueTypes))
 
             const context = buildIntegrationContext({ cwd } as ExtensionContext, tools, "inspect")
             if (context.state !== "enabled") assert.fail("expected enabled integrations")
@@ -779,9 +800,8 @@ describe("workflow integration configuration", () => {
             if (!tracker || tracker.state !== "enabled" || tracker.provider !== "github") {
                 assert.fail("expected enabled GitHub tracker")
             }
-            assert.equal(tracker.tools.listIssueTypes, undefined)
             assert.equal(
-                tracker.remoteValidation.some((step) => /Internal ID|Deliverable-kind type/.test(step)),
+                tracker.remoteValidation.some((step) => /Internal ID|configured Kind label/.test(step)),
                 false,
             )
         } finally {
@@ -856,17 +876,15 @@ describe("workflow integration configuration", () => {
         }
         const tools = validateGitHubTrackerCapabilities(catalog(true), personalProjectWithIssueFields)
         assert.equal(tools.listIssueFields, "mcp__github__list_issue_fields")
-        assert.equal(tools.listIssueTypes, "mcp__github__list_issue_types")
     })
 
-    it("requires issue-field and native-type capabilities for organization metadata", () => {
+    it("requires issue-field capability for organization metadata", () => {
         assert.throws(
             () => validateGitHubTrackerCapabilities(catalog(false), config("issue")),
             /missing required tool mcp__github__list_issue_fields/,
         )
         const tools = validateGitHubTrackerCapabilities(catalog(true), config("issue"))
         assert.equal(tools.listIssueFields, "mcp__github__list_issue_fields")
-        assert.equal(tools.listIssueTypes, "mcp__github__list_issue_types")
     })
 
     it("resolves GitHub artifact projection without metadata or forge tools", () => {
@@ -882,21 +900,26 @@ describe("workflow integration configuration", () => {
         assert.deepEqual(Object.keys(tools).sort(), ["issueRead", "issueWrite"])
     })
 
-    it("validates Type only at its configured scope", () => {
+    it("validates Kind labels only for versioned artifacts", () => {
         const projectConfig = config("project")
         const projectTools = validateGitHubTrackerCapabilities(catalog(false), projectConfig)
         const projectSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools)
-        assert.equal(projectSteps.length, 2)
-        assert.match(projectSteps[0], /Project Type option mapping/)
+        assert.equal(projectSteps.length, 3)
+        assert.doesNotMatch(projectSteps[0], /Kind|Type/)
         assert.match(projectSteps[1], /get_label.*Planning label/)
+        assert.match(projectSteps[2], /get_label.*Kind: Epic.*Kind: Chore/)
 
         const issueConfig = config("issue")
         const issueTools = validateGitHubTrackerCapabilities(catalog(true), issueConfig)
         const issueSteps = buildGitHubRemoteValidationSteps(issueConfig, issueTools)
         assert.equal(issueSteps.length, 4)
         assert.match(issueSteps[1], /get_label.*Planning label/)
-        assert.match(issueSteps[2], /list_issue_fields/)
-        assert.match(issueSteps[3], /list_issue_types/)
+        assert.match(issueSteps[2], /get_label.*Kind: Epic.*Kind: Chore/)
+        assert.match(issueSteps[3], /list_issue_fields/)
+
+        const unversionedSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools, "unversioned")
+        assert.equal(unversionedSteps.length, 2)
+        assert.equal(unversionedSteps.some((step) => /configured Kind label/.test(step)), false)
     })
 
     it("returns the official sub-issue add operation without speculative schema requirements", () => {
@@ -941,7 +964,24 @@ describe("workflow integration configuration", () => {
             fs.mkdirSync(path.join(cwd, ".project"))
             const integrationPath = path.join(cwd, ".project", "integrations.json")
             const valid = config("project")
-            const { audit, ...legacyKinds } = valid.fields.type.deliverableKinds
+            const { audit, ...legacyKinds } = valid.labels.kind.deliverableKinds
+            fs.writeFileSync(
+                integrationPath,
+                JSON.stringify({
+                    tracker: {
+                        ...valid,
+                        labels: {
+                            ...valid.labels,
+                            kind: {
+                                ...valid.labels.kind,
+                                deliverableKinds: { ...legacyKinds, review: audit },
+                            },
+                        },
+                    },
+                }),
+            )
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+
             fs.writeFileSync(
                 integrationPath,
                 JSON.stringify({
@@ -949,10 +989,7 @@ describe("workflow integration configuration", () => {
                         ...valid,
                         fields: {
                             ...valid.fields,
-                            type: {
-                                ...valid.fields.type,
-                                deliverableKinds: { ...legacyKinds, review: audit },
-                            },
+                            type: { scope: "project", field: "Kind", epic: "Epic", deliverableKinds },
                         },
                     },
                 }),

@@ -8,7 +8,20 @@
             "ownerType": "user",
             "number": 2
         },
-        "labels": { "planning": "Planning" },
+        "labels": {
+            "planning": "Planning",
+            "kind": {
+                "epic": "Kind: Epic",
+                "deliverableKinds": {
+                    "feature": "Kind: Feature",
+                    "bugfix": "Kind: Bugfix",
+                    "research": "Kind: Research",
+                    "refactor": "Kind: Refactor",
+                    "audit": "Kind: Audit",
+                    "chore": "Kind: Chore"
+                }
+            }
+        },
         "fields": {
             "status": {
                 "field": "Status",
@@ -29,19 +42,6 @@
             "internalId": {
                 "scope": "project",
                 "field": "Internal ID"
-            },
-            "type": {
-                "scope": "project",
-                "field": "Kind",
-                "epic": "Epic",
-                "deliverableKinds": {
-                    "feature": "Feature",
-                    "bugfix": "Bugfix",
-                    "research": "Research",
-                    "refactor": "Refactor",
-                    "audit": "Audit",
-                    "chore": "Chore"
-                }
             }
         }
     },

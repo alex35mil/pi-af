@@ -24,11 +24,11 @@ interface FakeProject {
 class FakeGitHub {
     projects: FakeProject[] = []
     issueFields: Array<Record<string, unknown>> = []
-    issueTypes: Array<Record<string, unknown>> = []
     repositoryLabels: Array<{ name: string; color: string; description: string }> = []
     authorizationHeaders: string[] = []
     deleteProjectFieldAttempts = 0
     loseNextProjectCreateResponse = false
+    loseNextRepositoryLabelCreateResponse = false
     nextField = 10
 
     readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -46,6 +46,10 @@ class FakeGitHub {
                 return json({ message: "Validation Failed" }, 422)
             }
             this.repositoryLabels.push(body)
+            if (this.loseNextRepositoryLabelCreateResponse) {
+                this.loseNextRepositoryLabelCreateResponse = false
+                return json({ message: "response lost after repository label creation" }, 500)
+            }
             return json(body, 201)
         }
         if (url.includes("/repos/acme/example/labels/")) {
@@ -72,15 +76,6 @@ class FakeGitHub {
                 return json(field)
             }
             return json(this.issueFields)
-        }
-        if (url.endsWith("/orgs/acme/issue-types")) {
-            if (init?.method === "POST") {
-                const body = JSON.parse(String(init.body)) as Record<string, unknown>
-                const issueType = { id: this.issueTypes.length + 1, ...body }
-                this.issueTypes.push(issueType)
-                return json(issueType)
-            }
-            return json(this.issueTypes)
         }
         return json({ message: `unexpected request ${init?.method ?? "GET"} ${url}` }, 404)
     }
@@ -242,6 +237,15 @@ function options(...names: string[]) {
     return names.map((name, index) => ({ id: `default-${index}`, name, description: "", color: "GRAY" }))
 }
 
+function defaultRepositoryLabels() {
+    const labels = GITHUB_PROJECT_DEFAULTS.labels
+    return [labels.planning, labels.kind.epic, ...Object.values(labels.kind.deliverableKinds)].map((label) => ({
+        name: label.name,
+        color: label.color.slice(1),
+        description: label.description,
+    }))
+}
+
 function projectContained(source: Record<string, unknown>) {
     const defaults = structuredClone(GITHUB_PROJECT_DEFAULTS)
     return {
@@ -255,7 +259,6 @@ function projectContained(source: Record<string, unknown>) {
             status: defaults.status,
             priority: { scope: "project", ...defaults.priority },
             internalId: { scope: "project", ...defaults.internalId },
-            type: { scope: "project", ...defaults.type },
         },
     }
 }
@@ -282,12 +285,6 @@ function organizationNative(source: Record<string, unknown>) {
                 ...defaults.internalId,
                 provisionMissing: true,
                 visibility: "organization_members_only",
-            },
-            type: {
-                scope: "issue",
-                epic: defaults.type.epic,
-                deliverableKinds: defaults.type.deliverableKinds,
-                provisionMissing: true,
             },
         },
     }
@@ -320,17 +317,18 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projects.length, 1)
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
-            ["Status", "Priority", "Internal ID", "Kind"],
+            ["Status", "Priority", "Internal ID"],
         )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.project.number, 1)
         assert.equal(tracker.fields.status.values.todo, "Todo")
         assert.equal(tracker.fields.status.values.inReview, "In Review")
         assert.equal(tracker.labels.planning, "Planning")
+        assert.equal(tracker.labels.kind.epic, "Kind: Epic")
+        assert.equal(tracker.labels.kind.deliverableKinds.feature, "Kind: Feature")
         assert.deepEqual(tracker.fields.priority.values, ["Urgent", "High", "Medium", "Low"])
-        assert.deepEqual(github.repositoryLabels, [
-            { name: "Planning", color: "0969DA", description: "Work is currently being planned." },
-        ])
+        assert.equal(tracker.fields.type, undefined)
+        assert.deepEqual(github.repositoryLabels, defaultRepositoryLabels())
         const statusOptions = github.projects[0].fields[0].options!
         assert.equal(statusOptions.find((option) => option.name === "Todo")?.id, "default-0")
         assert.equal(statusOptions.find((option) => option.name === "In Progress")?.id, "default-1")
@@ -358,7 +356,7 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projects.length, 1)
     })
 
-    it("reuses the exact Planning label and blocks conflicting label metadata", async () => {
+    it("reuses exact managed labels and blocks conflicting label metadata", async () => {
         const github = new FakeGitHub()
         const specification = projectContained({
             mode: "new",
@@ -371,15 +369,59 @@ describe("GitHub Project setup", () => {
         assert.equal(blocked.state, "blocked")
         assert.match(JSON.stringify(blocked.conflicts), /incompatible color or description/)
 
-        github.repositoryLabels = [
-            { name: "Planning", color: "0969DA", description: "Work is currently being planned." },
-        ]
+        github.repositoryLabels = defaultRepositoryLabels()
         const ready = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
         assert.equal(ready.state, "ready")
         assert.doesNotMatch(JSON.stringify(ready.actions), /create-repository-label/)
     })
 
-    it("provisions explicitly approved organization issue fields and types", async () => {
+    it("rejects case-insensitive managed-label collisions before preview", async () => {
+        const github = new FakeGitHub()
+        const base = projectContained({
+            mode: "new",
+            title: "Label collision",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const specification = {
+            ...base,
+            labels: {
+                ...base.labels,
+                kind: {
+                    ...base.labels.kind,
+                    deliverableKinds: {
+                        ...base.labels.kind.deliverableKinds,
+                        feature: { ...base.labels.kind.deliverableKinds.feature, name: "planning" },
+                    },
+                },
+            },
+        }
+        await assert.rejects(
+            runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github)),
+            /label names must be distinct case-insensitively/,
+        )
+        assert.equal(github.repositoryLabels.length, 0)
+    })
+
+    it("recovers an uncertain repository-label create from provider state", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Recovered label",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        github.loseNextRepositoryLabelCreateResponse = true
+        const applied = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        assert.equal(applied.state, "provisioned")
+        assert.deepEqual(github.repositoryLabels, defaultRepositoryLabels())
+    })
+
+    it("provisions explicitly approved organization issue fields without managing native types", async () => {
         const github = new FakeGitHub()
         github.projects.push({
             id: "project-1",
@@ -415,7 +457,7 @@ describe("GitHub Project setup", () => {
         assert.match(JSON.stringify(preview), /Change Project visibility to public/)
         assert.match(JSON.stringify(preview), /Associate.*repository repo-node/)
         assert.match(JSON.stringify(preview), /Create organization issue field.*Priority/)
-        assert.match(JSON.stringify(preview), /Create enabled organization issue type.*Epic/)
+        assert.doesNotMatch(JSON.stringify(preview), /issue type/i)
 
         const applied = await runGitHubProjectSetup(
             { operation: "apply", specification, approvedPlanHash: preview.planHash },
@@ -428,13 +470,9 @@ describe("GitHub Project setup", () => {
             github.issueFields.map((field) => field.name),
             ["Priority", "Internal ID"],
         )
-        assert.deepEqual(
-            github.issueTypes.map((issueType) => issueType.name),
-            ["Epic", "Feature", "Bugfix", "Research", "Refactor", "Audit", "Chore"],
-        )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.fields.priority.scope, "issue")
-        assert.equal(tracker.fields.type.scope, "issue")
+        assert.equal(tracker.fields.type, undefined)
     })
 
     it("appends Canceled to a populated compatible Status field", async () => {

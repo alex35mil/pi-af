@@ -119,11 +119,11 @@ Never hand-construct GitHub tracker configuration. Use the exact `trackerConfig`
 - Project owner, owner type (`user` or `org`), and positive Project URL number;
 - one Project Status field with distinct non-empty mappings for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`;
 - one exact workflow-owned repository Planning label name;
+- exact workflow-owned repository Kind label names for Epic and all six Deliverable kinds;
 - Priority with `issue` or `project` scope, a non-empty field name, and unique non-empty values that exclude exact lowercase `not set`;
-- Internal ID with `issue` or `project` scope and a non-empty field name;
-- Type with either native issue scope or a named Project field, plus non-empty mappings for Epic and all six Deliverable kinds.
+- Internal ID with `issue` or `project` scope and a non-empty field name.
 
-All configured Project-scoped field names must be distinct. Status is always Project-scoped. The Planning label projects active workflow planning only; it is not a lifecycle status or substitute for another field. Do not substitute other labels, Custom Properties, or a different field scope.
+All configured Project-scoped field names must be distinct. Planning and Kind label names must be distinct case-insensitively. Status is always Project-scoped. Planning projects active workflow planning; Kind classifies versioned GitHub issues through exactly one managed label after initialization. Native GitHub issue Type remains independent and unmanaged. Do not substitute other labels, Custom Properties, or a different field scope.
 
 Example returned configuration for a Project-contained tracker (use actual provisioning output, not these sample identities):
 
@@ -134,7 +134,20 @@ Example returned configuration for a Project-contained tracker (use actual provi
         "mcpServer": "github",
         "repository": { "owner": "octocat", "repo": "example" },
         "project": { "owner": "octocat", "ownerType": "user", "number": 3 },
-        "labels": { "planning": "Planning" },
+        "labels": {
+            "planning": "Planning",
+            "kind": {
+                "epic": "Kind: Epic",
+                "deliverableKinds": {
+                    "feature": "Kind: Feature",
+                    "bugfix": "Kind: Bugfix",
+                    "research": "Kind: Research",
+                    "refactor": "Kind: Refactor",
+                    "audit": "Kind: Audit",
+                    "chore": "Kind: Chore"
+                }
+            }
+        },
         "fields": {
             "status": {
                 "field": "Status",
@@ -152,20 +165,7 @@ Example returned configuration for a Project-contained tracker (use actual provi
                 "field": "Priority",
                 "values": ["Urgent", "High", "Medium", "Low"]
             },
-            "internalId": { "scope": "project", "field": "Internal ID" },
-            "type": {
-                "scope": "project",
-                "field": "Kind",
-                "epic": "Epic",
-                "deliverableKinds": {
-                    "feature": "Feature",
-                    "bugfix": "Bug",
-                    "research": "Task",
-                    "refactor": "Task",
-                    "audit": "Task",
-                    "chore": "Task"
-                }
-            }
+            "internalId": { "scope": "project", "field": "Internal ID" }
         }
     }
 }

@@ -336,7 +336,7 @@ export function createInitialIntegrationRecords(
                               projectItemId: input.source.projectItemId,
                           },
                           operations: [
-                              ...(exposesSystemTraces ? ["apply configured Type and Internal ID"] : []),
+                              ...(exposesSystemTraces ? ["apply configured Kind label and Internal ID"] : []),
                               "move Project Status to In Progress",
                               "add Planning label",
                               ...(input.entity === "task" ? ["attach Task issue to parent Epic issue"] : []),
