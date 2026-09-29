@@ -23,6 +23,14 @@
         "issueUrl": "https://github.com/alex35mil/pi-af/issues/6",
         "projectItemId": "PVTI_lAHOAEDDG84Bk9OMzg9TjeM"
       }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "pullRequest": {
+        "number": 20,
+        "url": "https://github.com/alex35mil/pi-af/pull/20"
+      }
     }
   ],
   "authority": {
