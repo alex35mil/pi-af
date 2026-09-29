@@ -38,7 +38,8 @@ Replace the custom GitHub Project `Kind` field with managed issue labels: `Kind:
 - Final source/configuration removes Type-based workflow Kind, generates and validates the managed label group, keeps native issue Type independent, reconciles initialized Kind absolutely, and makes versioned queue Kind an inferred/reused explicit approval choice with `not set`.
 - `npm test` passed all 146 tests; `npx tsc --noEmit` passed; `git diff --check` passed.
 - After the final Pi restart, artifact preparation and the label-only integration context passed. Remote validation confirmed every configured field/option and exact managed label; #6 retained High priority and only `Kind: Feature`; every old Project Kind value remained empty; no existing branch PR was found. #6 is now In Review, and final review round 001 approved the synchronized implementation and `result.md` with no findings.
-- During final user review, the user identified the pre-existing omission of a Linear planning marker. Issue #19 was broadened to require provider-native Phase projection for GitHub and Linear and read-back verified as Todo/High. This does not change Gig #6's accepted Kind scope or reviewed implementation. Next required action is final user acceptance.
+- During final user review, the user identified the pre-existing omission of a Linear planning marker. Issue #19 was broadened to require provider-native Phase projection for GitHub and Linear and read-back verified as Todo/High. This does not change Gig #6's accepted Kind scope or reviewed implementation.
+- The user accepted the result. Commits `2658e4e` and `be1f9c9` are pushed on the stored branch; PR https://github.com/alex35mil/pi-af/pull/20 is open against `main`, persisted in metadata, and natively linked to close issue #6 after merge. Tracker projection with artifact and PR links verifies exactly. Keep lifecycle In Review until the PR is merged.
 
 ## Repository findings
 
