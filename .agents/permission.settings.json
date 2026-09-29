@@ -6,7 +6,10 @@
         "bash(npm test *)",
         "bash(npx tsx --test *)",
         "bash(npx tsc --noEmit)",
-        "bash(npx oxfmt --check *)"
+        "bash(npx oxfmt --check *)",
+        "mcp(github, hint: readOnly)",
+        "mcp(github, projects_write)",
+        "mcp(github, issue_write)"
     ],
     "ask": [
         "write(.project/*/epic.md)",
