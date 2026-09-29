@@ -136,7 +136,20 @@ function enableGitHubIntegration(repository: string): void {
                 mcpServer: "github",
                 repository: { owner: "example", repo: "project" },
                 project: { owner: "example", ownerType: "user", number: 3 },
-                labels: { planning: "Planning" },
+                labels: {
+                    planning: "Planning",
+                    kind: {
+                        epic: "Kind: Epic",
+                        deliverableKinds: {
+                            feature: "Kind: Feature",
+                            bugfix: "Kind: Bugfix",
+                            research: "Kind: Research",
+                            refactor: "Kind: Refactor",
+                            audit: "Kind: Audit",
+                            chore: "Kind: Chore",
+                        },
+                    },
+                },
                 fields: {
                     status: {
                         field: "Status",
@@ -151,19 +164,6 @@ function enableGitHubIntegration(repository: string): void {
                     },
                     priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
                     internalId: { scope: "project", field: "Internal ID" },
-                    type: {
-                        scope: "project",
-                        field: "Type",
-                        epic: "Epic",
-                        deliverableKinds: {
-                            feature: "Feature",
-                            bugfix: "Bug",
-                            research: "Task",
-                            refactor: "Task",
-                            audit: "Task",
-                            chore: "Task",
-                        },
-                    },
                 },
             },
             forge: {
@@ -626,7 +626,7 @@ describe("workflow domain", () => {
             )
             fs.rmSync(trackerStatusPath)
             assert.deepEqual(tracker.operations, [
-                "apply configured Type and Internal ID",
+                "apply configured Kind label and Internal ID",
                 "move Project Status to In Progress",
                 "add Planning label",
             ])

@@ -71,7 +71,7 @@ Kind is current workflow strategy, not identity. The qualified ID, directory, re
 The user may approve any target kind while lifecycle remains `inProgress`, `workStage` remains `planning`, and execution has not started.
 
 1. Update kind while keeping lifecycle `inProgress` and `workStage: planning`.
-2. Update `brief.md`, remove any stale candidate, and project Type only through a tracker/provider that supports the configured Type.
+2. Update `brief.md`, remove any stale candidate, and project the approved Kind through the configured provider when supported. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
 3. Continue by target:
     - `bugfix`: use adaptive inquiry and investigation, then the shared review/acceptance flow with a root-cause-shaped `.local/draft.md`.
     - `feature`, `refactor`, `research`, `audit`, or `chore`: replace `.local/draft.md` with the target kind's candidate and run shared planning review/acceptance.
@@ -82,7 +82,7 @@ After `report.md` passes final review, the user may approve one bounded continua
 
 1. Preserve `report.md` and the accepted root plan.
 2. Update kind and `workStage: planning` in `metadata.json`; set lifecycle to `inProgress` when necessary.
-3. Update `brief.md`; project Type only when supported and use native tracker Status when configured.
+3. Update `brief.md`; project the approved Kind through the configured provider when supported and use native tracker Status when configured. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
 4. Continue by target:
     - `bugfix`: remove the previous candidate, validate the report's causal evidence, investigate remaining gaps, then use shared review/acceptance with a root-cause-shaped `.local/draft.md`.
     - `feature`, `refactor`, or `chore`: write a new `.local/draft.md` and repeat shared planning review/acceptance.
