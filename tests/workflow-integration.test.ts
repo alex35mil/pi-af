@@ -47,6 +47,7 @@ const statuses = {
     inProgress: "In Progress",
     inReview: "In Review",
     done: "Done",
+    canceled: "Canceled",
 }
 const deliverableKinds = {
     feature: "Feature",
@@ -494,7 +495,7 @@ describe("workflow integration configuration", () => {
         )
     })
 
-    it("uses strict Linear tracker configuration and native priorities", () => {
+    it("requires complete, distinct Linear status mappings and native priorities", () => {
         assert.equal(linearPriorityNumber("Urgent"), 1)
         assert.equal(linearPriorityNumber("High"), 2)
         assert.equal(linearPriorityNumber("Medium"), 3)
@@ -520,6 +521,16 @@ describe("workflow integration configuration", () => {
             fs.writeFileSync(integrationPath, JSON.stringify({ tracker: duplicateStatuses }))
             assert.throws(() => loadIntegrationConfig(cwd), /Linear issue Status mappings must use distinct options/)
 
+            const missingIssueCanceled = linearConfig()
+            delete (missingIssueCanceled.statuses.issues as Partial<typeof statuses>).canceled
+            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: missingIssueCanceled }))
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+
+            const missingProjectCanceled = linearConfig()
+            delete (missingProjectCanceled.statuses.projects as Partial<typeof statuses>).canceled
+            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: missingProjectCanceled }))
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+
             fs.writeFileSync(
                 integrationPath,
                 JSON.stringify({ tracker: { ...linearConfig(), repository: { owner: "x", repo: "y" } } }),
@@ -530,7 +541,7 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("rejects ambiguous GitHub Project mappings while preserving separate scopes", () => {
+    it("requires complete, distinct GitHub mappings while preserving separate scopes", () => {
         const cwd = temporaryProject()
         try {
             fs.mkdirSync(path.join(cwd, ".project"))
@@ -541,6 +552,11 @@ describe("workflow integration configuration", () => {
             duplicateStatus.fields.status.values.todo = duplicateStatus.fields.status.values.backlog
             writeConfig(duplicateStatus)
             assert.throws(() => loadIntegrationConfig(cwd), /Status mappings must use distinct options/)
+
+            const missingCanceled = config("project")
+            delete (missingCanceled.fields.status.values as Partial<typeof statuses>).canceled
+            writeConfig(missingCanceled)
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
 
             const duplicateProjectField = config("project")
             duplicateProjectField.fields.priority.field = duplicateProjectField.fields.status.field

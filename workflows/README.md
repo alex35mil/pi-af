@@ -41,6 +41,7 @@ See the [configuration reference](references/setup.md) for exact schemas, exampl
 Queue:       backlog | todo
 Deliverable: inProgress/planning → inProgress/execution → inReview/execution → done/execution
 Epic:        inProgress/planning → inProgress/execution → done/execution
+Canceled:    terminal unsuccessful status for queued or initialized work
 ```
 
 Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.

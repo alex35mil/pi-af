@@ -17,7 +17,8 @@
                     "todo": "Todo",
                     "inProgress": "In Progress",
                     "inReview": "In Review",
-                    "done": "Done"
+                    "done": "Done",
+                    "canceled": "Canceled"
                 }
             },
             "priority": {

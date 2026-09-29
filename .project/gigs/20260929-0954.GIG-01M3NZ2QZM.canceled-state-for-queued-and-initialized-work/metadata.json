@@ -1,0 +1,42 @@
+{
+  "id": "GIG-01M3NZ2QZM",
+  "rawId": "01M3NZ2QZM",
+  "slug": "canceled-state-for-queued-and-initialized-work",
+  "title": "Add Canceled state for queued and initialized work",
+  "createdAt": "2026-09-29T06:54:19.636Z",
+  "workStage": "execution",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m3nz2qzm-canceled-state-for-queued-and-initialized-work",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "state": "bound",
+      "external": {
+        "issueId": 5626412168,
+        "issueNumber": 10,
+        "issueUrl": "https://github.com/alex35mil/pi-af/issues/10",
+        "projectItemId": "PVTI_lAHOAEDDG84Bk9OMzg9Xt4w"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "pullRequest": {
+        "number": 15,
+        "url": "https://github.com/alex35mil/pi-af/pull/15"
+      }
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "feature"
+}

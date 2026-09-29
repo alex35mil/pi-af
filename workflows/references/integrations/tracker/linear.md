@@ -75,7 +75,7 @@ Recover uncertain provider results only through read-back as defined in the shar
 
 ## Lifecycle, work stage, and priority
 
-Follow the absolute update/read-back procedure in `../shared.md`, using `save_project` for Epic state/priority and `save_issue` for Task/Gig status/priority. Planning and execution both remain In Progress; `workStage` changes only workflow metadata. Final review uses In Review and confirmed delivery uses Done. Kind transitions do not project labels or type.
+Follow the absolute update/read-back procedure in `../shared.md`, using `save_project` for Epic state/priority and `save_issue` for Task/Gig status/priority. Planning and execution both remain In Progress; `workStage` changes only workflow metadata. Final review uses In Review, confirmed delivery uses Done, and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
 
 ## Artifact projection
 

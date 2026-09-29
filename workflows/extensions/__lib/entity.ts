@@ -164,6 +164,10 @@ export const EpicTaskProgressSchema = Type.Object(
                     { state: Type.Literal("complete"), display: OneLineSchema, task: ProgressTaskSchema },
                     { additionalProperties: false },
                 ),
+                Type.Object(
+                    { state: Type.Literal("canceled"), display: OneLineSchema, task: ProgressTaskSchema },
+                    { additionalProperties: false },
+                ),
             ]),
         ),
     },
@@ -218,10 +222,10 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
     if (status.id !== qualifyId(status.entity, status.rawId)) fail("qualified ID does not match entity and rawId")
     if (slugify(status.slug) !== status.slug) fail("slug is not normalized")
     if ("state" in status) {
-        if (status.workStage === "planning" && status.state !== "inProgress") {
-            fail("planning work stage requires In Progress lifecycle")
+        if (status.workStage === "planning" && status.state !== "inProgress" && status.state !== "canceled") {
+            fail("planning work stage requires In Progress or Canceled lifecycle")
         }
-        if (status.state !== "inProgress" && status.workStage !== "execution") {
+        if (status.state !== "inProgress" && status.state !== "canceled" && status.workStage !== "execution") {
             fail("In Review and Done lifecycle require execution work stage")
         }
     }
@@ -322,14 +326,18 @@ export function readEpicTaskProgress(
             const task = tasks.get(planItem.taskId)
             if (!task) throw new Error(`Epic plan item references missing Task ${planItem.taskId}`)
             const taskReference = { id: planItem.taskId, directory: task.directory }
-            return task.lifecycle === "done"
-                ? { state: "complete" as const, display: planItem.display, task: taskReference }
-                : {
-                      state: "initialized" as const,
-                      display: planItem.display,
-                      lifecycle: task.lifecycle,
-                      task: taskReference,
-                  }
+            if (task.lifecycle === "done") {
+                return { state: "complete" as const, display: planItem.display, task: taskReference }
+            }
+            if (task.lifecycle === "canceled") {
+                return { state: "canceled" as const, display: planItem.display, task: taskReference }
+            }
+            return {
+                state: "initialized" as const,
+                display: planItem.display,
+                lifecycle: task.lifecycle,
+                task: taskReference,
+            }
         }),
     }
     for (const taskId of tasks.keys()) {

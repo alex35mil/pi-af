@@ -437,6 +437,57 @@ describe("GitHub Project setup", () => {
         assert.equal(tracker.fields.type.scope, "issue")
     })
 
+    it("appends Canceled to a populated compatible Status field", async () => {
+        const github = new FakeGitHub()
+        const existingOptions: NonNullable<FakeField["options"]> = Object.entries(
+            GITHUB_PROJECT_DEFAULTS.status.options,
+        )
+            .filter(([key]) => key !== "canceled")
+            .map(([, option], index) => ({
+                id: `existing-${index}`,
+                name: option.name,
+                description: option.description,
+                color: option.color,
+            }))
+        existingOptions.push({ id: "existing-extra", name: "Paused", description: "Custom", color: "pink" })
+        github.projects.push({
+            id: "project-1",
+            number: 1,
+            title: "Existing",
+            url: "https://github.com/users/alex/projects/1",
+            public: false,
+            closed: false,
+            itemCount: 3,
+            fields: [{ id: "status", name: "Status", dataType: "SINGLE_SELECT", options: existingOptions }],
+            repositoryIds: [],
+        })
+        const specification = projectContained({
+            mode: "existing",
+            number: 1,
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "ready")
+        assert.match(JSON.stringify(preview.actions), /Append Status option.*Canceled/)
+
+        await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        const updated = github.projects[0].fields[0].options!
+        assert.deepEqual(
+            updated.slice(0, existingOptions.length).map((option) => option.id),
+            existingOptions.map((option) => option.id),
+        )
+        assert.equal(updated.find((option) => option.name === "Paused")?.id, "existing-extra")
+        assert.equal(updated.find((option) => option.name === "Canceled")?.description, "Canceled work.")
+
+        const repeated = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(repeated.state, "ready")
+        assert.deepEqual(repeated.actions, [])
+    })
+
     it("blocks incompatible existing fields and exact-title recreation", async () => {
         const github = new FakeGitHub()
         github.projects.push({

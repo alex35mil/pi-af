@@ -35,6 +35,7 @@ const StatusOptionsSchema = Type.Object(
         inProgress: OptionSchema,
         inReview: OptionSchema,
         done: OptionSchema,
+        canceled: OptionSchema,
     },
     { additionalProperties: false },
 )
@@ -226,6 +227,7 @@ export const GITHUB_PROJECT_DEFAULTS = {
                 color: "purple",
             },
             done: { name: "Done", description: "Approved work confirmed delivered.", color: "green" },
+            canceled: { name: "Canceled", description: "Canceled work.", color: "gray" },
         },
     },
     priority: {
@@ -310,7 +312,11 @@ interface ProjectFieldDefinition {
 type ProjectFieldAction = { description: string } & (
     | {
           kind: "update-native-status"
-          details: { existing: ProjectField; desired: ProjectFieldDefinition }
+          details: {
+              existing: ProjectField
+              desired: ProjectFieldDefinition
+              verification: "exact" | "compatible"
+          }
       }
     | { kind: "create-project-field"; details: ProjectFieldDefinition }
 )
@@ -898,7 +904,13 @@ function planProjectFields(
     conflicts: string[],
 ): void {
     for (const desired of desiredProjectFields(specification)) {
-        const decision = planProjectField(desired, specification.fields.status.field, project, allowStatusReplacement)
+        const decision = planProjectField(
+            desired,
+            specification.fields.status.field,
+            project,
+            allowStatusReplacement,
+            specification.fields.status.options.canceled,
+        )
         actions.push(...decision.actions)
         conflicts.push(...decision.conflicts)
     }
@@ -909,6 +921,7 @@ function planProjectField(
     statusField: string,
     project: ProjectDetails,
     allowStatusUpdate: boolean,
+    canceledStatus: Static<typeof OptionSchema>,
 ) {
     const actions: ProjectFieldAction[] = []
     const conflicts: string[] = []
@@ -922,7 +935,14 @@ function planProjectField(
         if (!existing) {
             conflicts.push("Project native Status field is missing")
         } else if (!compatibleProjectField(existing, desired)) {
-            if (!allowStatusUpdate || project.itemCount > 0) {
+            const additive = additiveCanceledStatus(existing, desired, canceledStatus)
+            if (additive) {
+                actions.push({
+                    kind: "update-native-status",
+                    description: `Append Status option ${JSON.stringify(canceledStatus.name)} to native Status field ${existing.id}`,
+                    details: { existing, desired: additive, verification: "compatible" },
+                })
+            } else if (!allowStatusUpdate || project.itemCount > 0) {
                 conflicts.push(`Project field ${JSON.stringify(existing.name)} has incompatible type or options`)
             } else if (existing.dataType.toUpperCase() !== "SINGLE_SELECT") {
                 conflicts.push("Project native Status field is not a single-select field")
@@ -930,7 +950,7 @@ function planProjectField(
                 actions.push({
                     kind: "update-native-status",
                     description: `Update native Status field ${existing.id} in place as ${JSON.stringify(desired.name)} with the complete configured options`,
-                    details: { existing, desired },
+                    details: { existing, desired, verification: "exact" },
                 })
             }
         }
@@ -1161,7 +1181,13 @@ async function provisionProjectFields(
 ): Promise<void> {
     let current = project
     for (const desired of desiredProjectFields(specification)) {
-        const decision = planProjectField(desired, specification.fields.status.field, current, allowStatusReplacement)
+        const decision = planProjectField(
+            desired,
+            specification.fields.status.field,
+            current,
+            allowStatusReplacement,
+            specification.fields.status.options.canceled,
+        )
         if (decision.conflicts.length > 0) throw new Error(decision.conflicts.join("; "))
         if (decision.actions.length === 0) continue
         for (const action of decision.actions) {
@@ -1176,11 +1202,14 @@ async function provisionProjectFields(
         }
         current = await client.getProject(current.id)
         const existing = current.fields.find((field) => field.name === desired.name)
-        const updatedNativeStatus = decision.actions.some((action) => action.kind === "update-native-status")
-        if (
-            !existing ||
-            !(updatedNativeStatus ? exactProjectField(existing, desired) : compatibleProjectField(existing, desired))
-        ) {
+        if (!existing) throw new Error(`GitHub did not persist Project field ${JSON.stringify(desired.name)} exactly`)
+        const statusUpdate = decision.actions.find((action) => action.kind === "update-native-status")
+        const persisted = statusUpdate
+            ? statusUpdate.details.verification === "exact"
+                ? exactProjectField(existing, statusUpdate.details.desired)
+                : compatibleProjectField(existing, desired)
+            : compatibleProjectField(existing, desired)
+        if (!persisted) {
             throw new Error(`GitHub did not persist Project field ${JSON.stringify(desired.name)} exactly`)
         }
     }
@@ -1310,6 +1339,33 @@ function compatibleProjectField(existing: ProjectField, desired: ProjectFieldDef
     if (!desired.options) return true
     const names = new Set((existing.options ?? []).map((option) => option.name))
     return desired.options.every((option) => names.has(option.name))
+}
+
+function additiveCanceledStatus(
+    existing: ProjectField,
+    desired: ProjectFieldDefinition,
+    canceled: Static<typeof OptionSchema>,
+): ProjectFieldDefinition | undefined {
+    if (
+        existing.name !== desired.name ||
+        existing.dataType.toUpperCase() !== "SINGLE_SELECT" ||
+        desired.dataType !== "SINGLE_SELECT" ||
+        !desired.options
+    ) {
+        return undefined
+    }
+    const existingOptions = existing.options ?? []
+    const existingNames = new Set(existingOptions.map((option) => option.name))
+    const missing = desired.options.filter((option) => !existingNames.has(option.name))
+    if (missing.length !== 1 || missing[0].name !== canceled.name) return undefined
+    const retained = existingOptions.map((option) =>
+        Value.Parse(OptionSchema, {
+            name: option.name,
+            description: option.description,
+            color: option.color.toLowerCase(),
+        }),
+    )
+    return { ...desired, options: [...retained, canceled] }
 }
 
 function exactProjectField(existing: ProjectField, desired: ProjectFieldDefinition): boolean {

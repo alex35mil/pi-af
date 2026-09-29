@@ -53,7 +53,7 @@ The Planning label is an absolute projection of workflow stage:
 
 - In Progress plus `workStage: planning` — read labels, add exact configured Planning, preserve unrelated labels, update, and re-read.
 - In Progress plus `workStage: execution` — read labels, remove exact configured Planning, preserve unrelated labels, update, and re-read.
-- In Review or Done — remove exact configured Planning through the same read/update/read-back flow.
+- In Review, Done, or Canceled — remove exact configured Planning through the same read/update/read-back flow.
 
 After the shared material-replanning transition records In Progress plus `workStage: planning`, re-add Planning through the absolute label flow above. After accepted planning records `workStage: execution`, remove Planning without changing In Progress. Never create or use an Execution label or phase field.
 

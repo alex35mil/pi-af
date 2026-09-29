@@ -185,6 +185,7 @@ describe("workflow project configuration", () => {
                                 inProgress: "In Progress",
                                 inReview: "In Review",
                                 done: "Done",
+                                canceled: "Canceled",
                             },
                             projects: {
                                 backlog: "Backlog",
@@ -192,6 +193,7 @@ describe("workflow project configuration", () => {
                                 inProgress: "In Progress",
                                 inReview: "In Review",
                                 done: "Completed",
+                                canceled: "Canceled",
                             },
                         },
                     },
