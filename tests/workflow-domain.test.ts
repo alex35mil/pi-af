@@ -455,7 +455,7 @@ describe("workflow domain", () => {
                 fs.readFileSync(path.join(repository, epic.directory, ".local", "notes.md"), "utf-8"),
                 "# Notes\n",
             )
-            assert.equal(fs.existsSync(path.join(repository, epic.directory, ".local", "todos.md")), false)
+            assert.equal(fs.existsSync(path.join(repository, epic.directory, ".local", "pending.md")), false)
             assert.equal(
                 fs.readFileSync(path.join(repository, epic.directory, "brief.md"), "utf-8"),
                 "# Brief\n\nPlan the project\n",
@@ -541,8 +541,8 @@ describe("workflow domain", () => {
                 "# Notes\n",
             )
             assert.equal(
-                fs.readFileSync(path.join(repository, task.directory, ".local", "todos.md"), "utf-8"),
-                "# Todos\n",
+                fs.readFileSync(path.join(repository, task.directory, ".local", "pending.md"), "utf-8"),
+                "# Pending\n",
             )
             assert.match(fs.readFileSync(epicPath, "utf-8"), new RegExp(`1\\. \\[${task.status.id}\\]`))
             const linkedEpicContent = fs.readFileSync(epicPath, "utf-8")
@@ -643,8 +643,8 @@ describe("workflow domain", () => {
                 "# Notes\n",
             )
             assert.equal(
-                fs.readFileSync(path.join(repository, gig.directory, ".local", "todos.md"), "utf-8"),
-                "# Todos\n",
+                fs.readFileSync(path.join(repository, gig.directory, ".local", "pending.md"), "utf-8"),
+                "# Pending\n",
             )
             const trackerStatusPath = path.join(repository, gig.directory, ".local", "status.md")
             assert.equal(fs.existsSync(trackerStatusPath), false)

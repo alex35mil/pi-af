@@ -8,7 +8,7 @@ When entity metadata has no forge record, use returned `listPullRequests` with t
 
 During full submission authorized by `../../deliverable.md`, use its final approved commit and exact title/body contract:
 
-1. Call `render_provider_body` with the synchronized `result.md` or `report.md`. It removes the root heading and adds a horizontal rule followed by `Closes #<issue number>.` for a same-repository GitHub tracker issue.
+1. Call `render_provider_body` with the synchronized `result.md` or `report.md`. It removes the root heading and adds a horizontal rule, a blank line, and `Closes #<issue number>` for a same-repository GitHub tracker issue.
 2. Require a ready stored branch, push only that branch to `origin`, then repeat the exact head/base lookup. A unique open match is success and is verified/stored without creating another PR.
 3. When no match exists, call returned `createPullRequest` once with the approved title/body, stored branch `name` as head, and stored `target` as base.
 4. On confirmed success, verify the PR with `pullRequestRead` method `get`, then store `{ role: "forge", provider: "github", pullRequest: { number, url } }` in entity metadata.

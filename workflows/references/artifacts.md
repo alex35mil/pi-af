@@ -1,6 +1,6 @@
 # Workflow artifacts
 
-This is the agent-facing map of workflow directories, file meanings, and persistence. Paths are repository-relative. The `init` tool creates entity directories, `.local/` working state, `brief.md`, `metadata.json`, and `.local/notes.md`; Task/Gig initialization also creates `.local/todos.md`, while `.local/status.md` exists only without a tracker. Planning, execution, and review create the remaining files when their lifecycle gate is reached.
+This is the agent-facing map of workflow directories, file meanings, and persistence. Paths are repository-relative. The `init` tool creates entity directories, `.local/` working state, `brief.md`, `metadata.json`, and `.local/notes.md`; Task/Gig initialization also creates `.local/pending.md`, while `.local/status.md` exists only without a tracker. Planning, execution, and review create the remaining files when their lifecycle gate is reached.
 
 ## Terminology
 
@@ -52,9 +52,9 @@ Epic and Gig start from and target the repository default branch, resolved in or
 
 Every entity has free-form agent notes for transient context that does not belong in metadata, the mutable draft, the accepted artifact, or a review round. Keep useful resume context here and refresh it before conversation compaction when possible. Notes have no lifecycle or completion gate.
 
-### `.local/todos.md`
+### `.local/pending.md`
 
-Tasks and Gigs use Markdown task-list entries for current-scope obligations discovered during execution. An unchecked ordered or unordered task item is active and unresolved; checked entries may remain. Independently schedulable or out-of-scope work requires separate approved workflow/tracker intake. Final review requires zero active entries. A missing local checklist, such as after a fresh checkout, has no recoverable entries and is treated as empty.
+Tasks and Gigs use Markdown task-list entries for current-scope work discovered during execution. An unchecked ordered or unordered entry is active and unresolved; checked entries may remain. Independently schedulable or out-of-scope work requires separate approved workflow/tracker intake. Final review requires zero active entries. A missing local pending-work file, such as after a fresh checkout, has no recoverable entries and is treated as empty.
 
 ## Project
 
@@ -114,7 +114,7 @@ Within this workflow, current explicit user instructions take precedence over `.
   .local/                          # Local entity state; always gitignored in versioned mode.
     status.md                      # Trackerless only: authoritative lifecycle state.
     notes.md                       # Free-form agent working notes; no completion gate.
-    todos.md                       # Markdown checklist; final review requires no active entries.
+    pending.md                     # Pending work; final review requires no active entries.
     draft.md                       # Mutable plan candidate before review and acceptance.
     designs/                       # Default location for design sketches and iterations.
     scratch/                       # Temporary scripts, probes, generated data, and debugging material.
@@ -162,4 +162,4 @@ In `unversioned` mode, all `.project/` artifacts remain outside Git. Preparation
 
 Workflow artifacts, IDs, relationships, branch contracts, work stage, and review gates remain authoritative. An older entity that stores lifecycle `planning` or omits `workStage` is invalid under this contract and requires an explicit project migration; initialization and resume never rewrite it implicitly. Every initialized entity stores `workStage: planning | execution` in `metadata.json`. Without a tracker, workflow authority stores Priority in `metadata.authority` and lifecycle (`inProgress | inReview | done | canceled`) in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. `metadata.authority.desired` exists only while initial tracker binding is pending and is removed when binding is confirmed. Keep machine data valid, keep transient human context in `.local/notes.md`, and never store provider credentials in `.project/integrations.json`.
 
-The mutable `.local/draft.md` is not a substitute for accepted `epic.md` or `plan.md`. The review tool owns each round's structured report, canonical `review.md`, and execution diagnostics; `record_review_response` owns canonical `response.md`; the main agent owns adjudication input and approved source changes. Every accepted change must be reflected directly in the current authoritative artifact; historical review rounds remain local and are not required by a fresh checkout. Keep temporary material under `.local/scratch/`, free-form context in `.local/notes.md`, and current-scope obligations in a Deliverable's `.local/todos.md`. Create design sketches and iterations under `.local/designs/` by default. In versioned mode, copy only exact user-selected designs into root `designs/`; keep later iterations local until the user explicitly requests another durable update. Unversioned artifact policy cannot commit a design without an explicitly approved project migration. Do not add unrelated files to entity roots.
+The mutable `.local/draft.md` is not a substitute for accepted `epic.md` or `plan.md`. The review tool owns each round's structured report, canonical `review.md`, and execution diagnostics; `record_review_response` owns canonical `response.md`; the main agent owns adjudication input and approved source changes. Every accepted change must be reflected directly in the current authoritative artifact; historical review rounds remain local and are not required by a fresh checkout. Keep temporary material under `.local/scratch/`, free-form context in `.local/notes.md`, and current-scope work in a Deliverable's `.local/pending.md`. Create design sketches and iterations under `.local/designs/` by default. In versioned mode, copy only exact user-selected designs into root `designs/`; keep later iterations local until the user explicitly requests another durable update. Unversioned artifact policy cannot commit a design without an explicitly approved project migration. Do not add unrelated files to entity roots.

@@ -6,10 +6,10 @@ export function renderProviderBody(source: string, options: ProviderBodyOptions 
     let body = removeRootHeading(source)
     if (options.githubIssueNumber === undefined) return body
 
-    const closingReference = `Closes #${options.githubIssueNumber}.`
+    const closingReference = `Closes #${options.githubIssueNumber}`
     if (!body) return closingReference
     body += body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n"
-    return `${body}---\n${closingReference}`
+    return `${body}---\n\n${closingReference}`
 }
 
 function removeRootHeading(source: string): string {

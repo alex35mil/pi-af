@@ -752,7 +752,7 @@ describe("workflow integration configuration", () => {
             assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), "Delivered.\n")
             assert.equal(
                 renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
-                "Delivered.\n\n---\nCloses #42.",
+                "Delivered.\n\n---\n\nCloses #42",
             )
 
             fs.writeFileSync(

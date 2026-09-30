@@ -419,22 +419,22 @@ describe("workflow reviewer isolation", () => {
                 path.join(gigDir, "result.md"),
                 "# Result\n\n## What changed\n\n- Fixed the defect.\n\n## Verification\n\n- `test` — passed\n",
             )
-            const todosPath = path.join(gigDir, ".local", "todos.md")
-            assert.equal(fs.existsSync(todosPath), false)
+            const pendingPath = path.join(gigDir, ".local", "pending.md")
+            assert.equal(fs.existsSync(pendingPath), false)
             const rerunFinalPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final")
             assert.match(rerunFinalPrompt, /# result\.md/)
             assert.match(rerunFinalPrompt, /Verify that the existing result\.md remains synchronized/)
 
-            fs.writeFileSync(todosPath, "# Todos\n\n- [x] Resolved item\n")
+            fs.writeFileSync(pendingPath, "# Pending\n\n- [x] Resolved item\n")
             await assert.doesNotReject(buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"))
-            for (const todo of ["- [ ] Unresolved item", "1. [ ] Ordered unresolved item"]) {
-                fs.writeFileSync(todosPath, `# Todos\n\n${todo}\n`)
+            for (const entry of ["- [ ] Unresolved item", "1. [ ] Ordered unresolved item"]) {
+                fs.writeFileSync(pendingPath, `# Pending\n\n${entry}\n`)
                 await assert.rejects(
                     buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"),
-                    /requires zero active todos; unresolved entries: line 3/,
+                    /requires zero unchecked pending entries; unresolved entries: line 3/,
                 )
             }
-            fs.writeFileSync(todosPath, "# Todos\n")
+            fs.writeFileSync(pendingPath, "# Pending\n")
             await assert.doesNotReject(buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"))
             fs.rmSync(path.join(gigDir, "result.md"))
 

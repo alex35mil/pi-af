@@ -21,8 +21,8 @@ describe("workflow provider body renderer", () => {
     it("appends a same-repository GitHub closing reference to pull-request content", () => {
         assert.equal(
             renderProviderBody("# Result\n\nDelivered.\n", { githubIssueNumber: 21 }),
-            "Delivered.\n\n---\nCloses #21.",
+            "Delivered.\n\n---\n\nCloses #21",
         )
-        assert.equal(renderProviderBody("# Result\n", { githubIssueNumber: 21 }), "Closes #21.")
+        assert.equal(renderProviderBody("# Result\n", { githubIssueNumber: 21 }), "Closes #21")
     })
 })

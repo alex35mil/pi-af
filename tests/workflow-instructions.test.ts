@@ -134,7 +134,7 @@ describe("workflow instruction ownership", () => {
 
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
         assert.match(shared, /removes the first Markdown H1/)
-        assert.match(shared, /horizontal rule and `Closes #<issue number>\.`/)
+        assert.match(shared, /horizontal rule, a blank line, and `Closes #<issue number>`/)
         assert.doesNotMatch(shared, /render_artifact_links|artifactLinks|## Shared Links section/)
 
         for (const skill of ["epic", "task", "gig"]) {

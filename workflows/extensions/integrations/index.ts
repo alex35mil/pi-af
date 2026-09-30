@@ -273,7 +273,7 @@ export function buildIntegrationContext(
                       contentPolicy:
                           "lossless: preserve all structure, wording, technical detail, and ordinary repository paths; never summarize or condense",
                       automaticPresentationNormalization:
-                          "remove the first Markdown H1 and its following blank line; for same-repository GitHub tracker and forge work, append a horizontal rule followed by `Closes #<number>.` in pull-request bodies",
+                          "remove the first Markdown H1 and its following blank line; for same-repository GitHub tracker and forge work, append a horizontal rule, a blank line, and `Closes #<number>` in pull-request bodies",
                       changedCandidateGate:
                           "except for root-H1 removal and the same-repository GitHub closing reference, before mutation present the complete candidate or exact diff, list every omission, rewrite, or addition with its reason, and require explicit user approval",
                       postWriteVerification:

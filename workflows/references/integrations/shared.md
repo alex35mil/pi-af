@@ -18,7 +18,7 @@ Never replace a denied or failed MCP operation with HTTP, `gh`, another client, 
 
 1. Read the current provider body and start from the complete source artifact. Never summarize or condense it.
 2. For unversioned tracker projection, first remove or minimally rewrite only the forbidden content listed below. Present the complete candidate or exact diff, explain every change, and require approval.
-3. Call `render_provider_body` with the approved candidate and destination. It removes the first Markdown H1 plus its following blank line. For a pull request whose bound GitHub tracker and forge use the same repository, it also appends a horizontal rule and `Closes #<issue number>.` Linear adds nothing to the body.
+3. Call `render_provider_body` with the approved candidate and destination. It removes the first Markdown H1 plus its following blank line. For a pull request whose bound GitHub tracker and forge use the same repository, it also appends a horizontal rule, a blank line, and `Closes #<issue number>`. Linear adds nothing to the body.
 4. H1 removal and the same-repository GitHub closing block need no separate content approval. Any other difference from the source artifact requires the existing complete-candidate or exact-diff approval. Preserve unrelated provider content.
 5. Update the provider only when the expected body differs. Re-read it and call `verify_artifact_projection`; only exact bytes verify. If verification differs, preserve work, show the exact difference, and stop. After an uncertain update, re-read first and retry only after confirmed non-application.
 6. Update an existing pull request when its source `result.md` or `report.md` changes.
