@@ -6,6 +6,7 @@ export const GITHUB_FORGE_TOOL_NAMES = {
     createPullRequest: "create_pull_request",
     listPullRequests: "list_pull_requests",
     pullRequestRead: "pull_request_read",
+    updatePullRequest: "update_pull_request",
 } as const
 
 export const GITHUB_FORGE_METHODS = { pullRequestGet: "get" } as const
@@ -23,6 +24,10 @@ const FORGE_REQUIREMENTS: ToolRequirement[] = [
         name: GITHUB_FORGE_TOOL_NAMES.pullRequestRead,
         properties: ["method", "owner", "repo", "pullNumber"],
         methods: [GITHUB_FORGE_METHODS.pullRequestGet],
+    },
+    {
+        name: GITHUB_FORGE_TOOL_NAMES.updatePullRequest,
+        properties: ["owner", "repo", "pullNumber", "body"],
     },
 ]
 

@@ -39,14 +39,10 @@ export type WorkflowPolicy =
     | ({ case: "unversioned/github" | "unversioned/linear" } & typeof RESTRICTED_PROJECTION)
 
 export type ForgePolicy =
-    | { case: "versioned/no-forge"; pullRequests: false; artifactLinks: "unavailable" }
-    | {
-          case: "versioned/github"
-          pullRequests: true
-          artifactLinks: "pull-request" | "pull-request-and-tracker"
-      }
-    | { case: "unversioned/no-forge"; pullRequests: false; artifactLinks: "unavailable" }
-    | { case: "unversioned/github"; pullRequests: true; artifactLinks: "forbidden" }
+    | { case: "versioned/no-forge"; pullRequests: false }
+    | { case: "versioned/github"; pullRequests: true }
+    | { case: "unversioned/no-forge"; pullRequests: false }
+    | { case: "unversioned/github"; pullRequests: true }
 
 export function resolveWorkflowEnvironment(
     projectConfig: ProjectConfig,
@@ -112,23 +108,18 @@ export function resolveForgePolicy(environment: WorkflowEnvironment): ForgePolic
         case "versioned":
             switch (environment.forge.kind) {
                 case "none":
-                    return { case: "versioned/no-forge", pullRequests: false, artifactLinks: "unavailable" }
+                    return { case: "versioned/no-forge", pullRequests: false }
                 case "github":
-                    return {
-                        case: "versioned/github",
-                        pullRequests: true,
-                        artifactLinks:
-                            environment.tracker.kind === "none" ? "pull-request" : "pull-request-and-tracker",
-                    }
+                    return { case: "versioned/github", pullRequests: true }
                 default:
                     return environment.forge satisfies never
             }
         case "unversioned":
             switch (environment.forge.kind) {
                 case "none":
-                    return { case: "unversioned/no-forge", pullRequests: false, artifactLinks: "unavailable" }
+                    return { case: "unversioned/no-forge", pullRequests: false }
                 case "github":
-                    return { case: "unversioned/github", pullRequests: true, artifactLinks: "forbidden" }
+                    return { case: "unversioned/github", pullRequests: true }
                 default:
                     return environment.forge satisfies never
             }

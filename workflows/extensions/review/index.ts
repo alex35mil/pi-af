@@ -15,6 +15,7 @@ import {
     LOCAL_REVIEWS_DIR,
     LOCAL_STATUS_FILE,
     readEntityStatus,
+    readPendingEntries,
     resolveEntityPath,
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
@@ -563,6 +564,12 @@ export async function buildDeliverableReviewPrompt(
     const report = await readOptional(path.join(gigDir, "report.md"))
     const result = await readOptional(path.join(gigDir, "result.md"))
     if (phase === "final") {
+        const pendingEntries = readPendingEntries(gigDir)
+        if (pendingEntries.length > 0) {
+            throw new Error(
+                `${entityStatus.id} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
+            )
+        }
         if (deliverableKindRequiresReport(entityStatus.kind)) {
             if (!report.trim()) throw new Error(`${entityStatus.kind} final review requires a non-empty report.md`)
         } else if (!result.trim()) {

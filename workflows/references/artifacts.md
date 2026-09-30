@@ -1,6 +1,6 @@
 # Workflow artifacts
 
-This is the agent-facing map of workflow directories, file meanings, and persistence. Paths are repository-relative. The `init` tool creates entity directories, `.local/` working state, `brief.md`, and `metadata.json`; it creates `.local/status.md` only without a tracker. Planning, execution, and review create the remaining files when their lifecycle gate is reached.
+This is the agent-facing map of workflow directories, file meanings, and persistence. Paths are repository-relative. The `init` tool creates entity directories, `.local/` working state, `brief.md`, `metadata.json`, and `.local/notes.md`; Task/Gig initialization also creates `.local/pending.md`, while `.local/status.md` exists only without a tracker. Planning, execution, and review create the remaining files when their lifecycle gate is reached.
 
 ## Terminology
 
@@ -42,15 +42,19 @@ A raw ID is the ten-character ULID timestamp component. Qualified IDs are `EPIC-
 
 Epic and Gig start from and target the repository default branch, resolved in order from configured `origin/HEAD`, an existing workflow contract, the current attached local branch, or the sole local branch. A remote is optional. Task copies its parent Epic's current target; the Task skill owns its prerequisites and parent relation. Follow `./setup.md` for configured branch formats and username sources, and the selected provider reference for tracker branch initialization. Branch readiness and approved repository operations remain lifecycle gates.
 
-## Brief
+## Brief and local working state
 
 ### `brief.md`
 
-- Store the approved Request as the durable description of the requested outcome. For adopted tracker work, the tracker item's title or name and description may supply that Request unchanged.
-- Keep established decisions, material findings, unresolved questions, and the present understanding current; remove resolved questions or move their answers into established decisions.
-- Record relevant repository paths and external source URLs with the conclusions they support.
-- Update the brief after each material change before relying on that information later.
-- Before conversation compaction, when given an opportunity to prepare, ensure the brief contains everything a fresh agent needs to resume.
+`brief.md` contains only `# Brief`, one blank line, and the exact approved Request. For adopted tracker work, the tracker item's title or name and description may supply that Request unchanged. Change the Request only through explicit user approval; never add decisions, findings, questions, paths, provider data, checkpoints, or execution history.
+
+### `.local/notes.md`
+
+Every entity has free-form agent notes for transient context that does not belong in metadata, the mutable draft, the accepted artifact, or a review round. Keep useful resume context here and refresh it before conversation compaction when possible. Notes have no lifecycle or completion gate.
+
+### `.local/pending.md`
+
+Tasks and Gigs use Markdown task-list entries for current-scope work discovered during execution. An unchecked ordered or unordered entry is active and unresolved; checked entries may remain. Independently schedulable or out-of-scope work requires separate approved workflow/tracker intake. Final review requires zero active entries. A missing local pending-work file, such as after a fresh checkout, has no recoverable entries and is treated as empty.
 
 ## Project
 
@@ -66,17 +70,18 @@ Epic and Gig start from and target the repository default branch, resolved in or
 
 ## Project Policy precedence
 
-Within this workflow, current explicit user instructions take precedence over `.project/policies.md`, and `.project/policies.md` takes precedence over reusable workflow skills and references. Apply Project Policies unless the user explicitly overrides one in chat. Keep every active work-specific override in the entity `brief.md`. When the user wants a permanent workflow-policy change for this repository, update `.project/policies.md` only with their approval. Use Project Policies to adapt the shared workflow for this repository without modifying the reusable workflow files.
+Within this workflow, current explicit user instructions take precedence over `.project/policies.md`, and `.project/policies.md` takes precedence over reusable workflow skills and references. Apply Project Policies unless the user explicitly overrides one in chat. Keep an active work-specific override in `.local/notes.md` until it is represented by the accepted artifact or metadata. When the user wants a permanent workflow-policy change for this repository, update `.project/policies.md` only with their approval. Use Project Policies to adapt the shared workflow for this repository without modifying the reusable workflow files.
 
 ## Epic
 
 ```text
 .project/epics/<timestamp>.EPIC-<raw-id>.<slug>/
-  brief.md                         # Original request and current resumable understanding.
+  brief.md                         # Exact approved Request.
   metadata.json                    # Validated ID, authority, work stage, branch contract, task target, and tracker/forge records.
   epic.md                          # User-accepted initiative contract and ordered prospective/initialized Tasks.
   .local/                          # Local entity state; always gitignored in versioned mode.
     status.md                      # Trackerless only: authoritative lifecycle state.
+    notes.md                       # Free-form agent working notes; no completion gate.
     draft.md                       # Mutable candidate; never the accepted contract.
     scratch/                       # Temporary research, probes, scripts, and one-off data.
     reviews/
@@ -100,7 +105,7 @@ Within this workflow, current explicit user instructions take precedence over `.
 
 ```text
 .project/epics/<epic>/tasks/<timestamp>.TASK-<raw-id>.<slug>/
-  brief.md                         # Original request and current collaborator-facing understanding.
+  brief.md                         # Exact approved Request.
   metadata.json                    # Validated kind, authority, work stage, branch contract, and role records; parent derives from containment.
   plan.md                          # User-accepted plan for the current kind.
   result.md                        # Feature/Bugfix/Refactor/Chore: concise delivered outcome and actual verification.
@@ -108,6 +113,8 @@ Within this workflow, current explicit user instructions take precedence over `.
   designs/                         # Optional: only designs explicitly selected by the user for versioning.
   .local/                          # Local entity state; always gitignored in versioned mode.
     status.md                      # Trackerless only: authoritative lifecycle state.
+    notes.md                       # Free-form agent working notes; no completion gate.
+    pending.md                     # Pending work; final review requires no active entries.
     draft.md                       # Mutable plan candidate before review and acceptance.
     designs/                       # Default location for design sketches and iterations.
     scratch/                       # Temporary scripts, probes, generated data, and debugging material.
@@ -128,7 +135,7 @@ Within this workflow, current explicit user instructions take precedence over `.
 
 ```text
 .project/gigs/<timestamp>.GIG-<raw-id>.<slug>/
-  brief.md                         # Original request, current understanding, and kind context.
+  brief.md                         # Exact approved Request.
   metadata.json                    # Validated kind, authority, work stage, branch contract, and role records.
   plan.md                          # User-accepted plan for the current kind.
   result.md                        # Feature/Bugfix/Refactor/Chore: concise delivered outcome and actual verification.
@@ -137,7 +144,7 @@ Within this workflow, current explicit user instructions take precedence over `.
   .local/                          # Same local status/draft/designs/scratch/review layout as Task.
 ```
 
-Task and Gig share the Deliverable lifecycle and artifact meanings. Only Task has a parent Epic and may synchronize parent Epic artifacts. Its parent identity is the containing Epic directory plus the exact `[TASK-…]` marker. `metadata.branch` is a strict ready/tracker-pending/provisioning union; a ready branch records whether its name was generated or tracker-provided, and work cannot begin until ready. A Task's stored start/target never changes when its Epic later changes `taskTarget`. `metadata.json` is authoritative for current kind and `workStage: planning | execution`, and `brief.md` keeps current human context. Feature/Bugfix/Refactor/Chore create `result.md` before final subagent review so the reviewer receives the actual outcome and verification evidence; Research/Audit complete `report.md` before final subagent review. A Research/Audit continuation preserves `report.md` and adds `result.md` for the implementation outcome before final subagent review. Once created, `result.md` stays synchronized with every later review change and verification rerun.
+Task and Gig share the Deliverable lifecycle and artifact meanings. Only Task has a parent Epic and may synchronize parent Epic artifacts. Its parent identity is the containing Epic directory plus the exact `[TASK-…]` marker. `metadata.branch` is a strict ready/tracker-pending/provisioning union; a ready branch records whether its name was generated or tracker-provided, and work cannot begin until ready. A Task's stored start/target never changes when its Epic later changes `taskTarget`. `metadata.json` is authoritative for current kind and `workStage: planning | execution`; `brief.md` remains the approved Request, and `.local/notes.md` holds transient human context. Feature/Bugfix/Refactor/Chore create `result.md` before final subagent review so the reviewer receives the actual outcome and verification evidence; Research/Audit complete `report.md` before final subagent review. A Research/Audit continuation preserves `report.md` and adds `result.md` for the implementation outcome before final subagent review. Once created, `result.md` stays synchronized with every later review change and verification rerun.
 
 ## Persistence and authority
 
@@ -153,6 +160,6 @@ Keep `.project/config.local.json` and every entity `.local/` directory local. Th
 
 In `unversioned` mode, all `.project/` artifacts remain outside Git. Preparation adds exactly `/.project/` to `.git/info/exclude`; do not add `.project/` to `.gitignore`. Never stage, commit, push, or link any `.project/` path. If any path is already in Git or staged, stop; removal from Git requires separate user approval and is never automatic. To return to versioned mode, remove the managed exclude entry manually before preparation.
 
-Workflow artifacts, IDs, relationships, branch contracts, work stage, and review gates remain authoritative. An older entity that stores lifecycle `planning` or omits `workStage` is invalid under this contract and requires an explicit project migration; initialization and resume never rewrite it implicitly. Every initialized entity stores `workStage: planning | execution` in `metadata.json`. Without a tracker, workflow authority stores Priority in `metadata.authority` and lifecycle (`inProgress | inReview | done | canceled`) in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. `metadata.authority.desired` exists only while initial tracker binding is pending and is removed when binding is confirmed. Keep machine data valid, keep current human context in `brief.md`, and never store provider credentials in `.project/integrations.json`.
+Workflow artifacts, IDs, relationships, branch contracts, work stage, and review gates remain authoritative. An older entity that stores lifecycle `planning` or omits `workStage` is invalid under this contract and requires an explicit project migration; initialization and resume never rewrite it implicitly. Every initialized entity stores `workStage: planning | execution` in `metadata.json`. Without a tracker, workflow authority stores Priority in `metadata.authority` and lifecycle (`inProgress | inReview | done | canceled`) in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. `metadata.authority.desired` exists only while initial tracker binding is pending and is removed when binding is confirmed. Keep machine data valid, keep transient human context in `.local/notes.md`, and never store provider credentials in `.project/integrations.json`.
 
-The mutable `.local/draft.md` is not a substitute for accepted `epic.md` or `plan.md`. The review tool owns each round's structured report, canonical `review.md`, and execution diagnostics; `record_review_response` owns canonical `response.md`; the main agent owns adjudication input and approved source changes. Every accepted change must be reflected directly in the current authoritative artifact; historical review rounds remain local and are not required by a fresh checkout. Keep temporary material under `.local/scratch/` and create design sketches and iterations under `.local/designs/` by default. In versioned mode, copy only exact user-selected designs into root `designs/`; keep later iterations local until the user explicitly requests another durable update. Unversioned artifact policy cannot commit a design without an explicitly approved project migration. Do not add unrelated files to entity roots.
+The mutable `.local/draft.md` is not a substitute for accepted `epic.md` or `plan.md`. The review tool owns each round's structured report, canonical `review.md`, and execution diagnostics; `record_review_response` owns canonical `response.md`; the main agent owns adjudication input and approved source changes. Every accepted change must be reflected directly in the current authoritative artifact; historical review rounds remain local and are not required by a fresh checkout. Keep temporary material under `.local/scratch/`, free-form context in `.local/notes.md`, and current-scope work in a Deliverable's `.local/pending.md`. Create design sketches and iterations under `.local/designs/` by default. In versioned mode, copy only exact user-selected designs into root `designs/`; keep later iterations local until the user explicitly requests another durable update. Unversioned artifact policy cannot commit a design without an explicitly approved project migration. Do not add unrelated files to entity roots.

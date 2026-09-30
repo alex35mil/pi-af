@@ -54,9 +54,27 @@ export const ENTITY_METADATA_FILE = "metadata.json"
 export const ENTITY_LOCAL_DIR = ".local"
 export const LOCAL_STATUS_FILE = path.join(ENTITY_LOCAL_DIR, "status.md")
 export const LOCAL_DRAFT_FILE = path.join(ENTITY_LOCAL_DIR, "draft.md")
+export const LOCAL_NOTES_FILE = path.join(ENTITY_LOCAL_DIR, "notes.md")
+export const LOCAL_PENDING_FILE = path.join(ENTITY_LOCAL_DIR, "pending.md")
 export const LOCAL_REVIEWS_DIR = path.join(ENTITY_LOCAL_DIR, "reviews")
 export const LOCAL_SCRATCH_DIR = path.join(ENTITY_LOCAL_DIR, "scratch")
 export const LOCAL_DESIGNS_DIR = path.join(ENTITY_LOCAL_DIR, "designs")
+
+export interface PendingEntry {
+    line: number
+    text: string
+}
+
+export function readPendingEntries(entityDirectory: string): PendingEntry[] {
+    const pendingPath = path.join(entityDirectory, LOCAL_PENDING_FILE)
+    if (!fs.existsSync(pendingPath)) return []
+    return fs
+        .readFileSync(pendingPath, "utf-8")
+        .split(/\r?\n/)
+        .flatMap((line, index) =>
+            /^\s*(?:[-*+]|\d+[.)])\s+\[\s\](?:\s+.*)?$/.test(line) ? [{ line: index + 1, text: line.trim() }] : [],
+        )
+}
 
 export const BranchContractSchema = Type.Union([
     ReadyBranchContractSchema,

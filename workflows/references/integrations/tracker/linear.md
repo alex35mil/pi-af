@@ -22,15 +22,17 @@ Call `integration_context` and use only enabled `roles.tracker` provider `linear
 
 Native priority mapping is fixed: `Urgent=1`, `High=2`, `Medium=3`, `Low=4`, `not set=0`.
 
-## Check existing Backlog or Todo work
+## Queue intake and explicit adoption
 
-Before adding or adopting Linear work, require the approved entity type and exact selected destination (`backlog | todo`).
+Require the approved entity type and exact selected destination (`backlog | todo`). Create approved new Linear queue work directly without searching for an existing object.
+
+For explicit adoption, read the selected object:
 
 - Epic: get the explicit Project; require configured team, selected configured Project queue state, and native priority.
 - Task: get the explicit issue; require configured team, selected configured issue queue status, priority, exact parent Epic Project ID, and non-empty `gitBranchName`.
 - Gig: get the explicit issue; require configured team, selected configured issue queue status, priority, no Epic Project, and non-empty `gitBranchName`.
 
-Present the exact object, title, queue state, Priority, and relationship for approval. Pass Project ID/URL for Epic; issue ID/identifier/URL/`gitBranchName` plus parent Project ID for Task; issue ID/identifier/URL/`gitBranchName` for Gig.
+Present the exact adopted object, title, queue state, Priority, and relationship for approval. Pass Project ID/URL for Epic; issue ID/identifier/URL/`gitBranchName` plus parent Project ID for Task; issue ID/identifier/URL/`gitBranchName` for Gig.
 
 ## Initialize
 
@@ -79,4 +81,4 @@ Follow the absolute update/read-back procedure in `../shared.md`, using `save_pr
 
 ## Artifact projection
 
-After accepted `epic.md`/`plan.md` changes or a tracker Links refresh, call `artifactProjection` and follow the complete projection, approval, and verification contract in `../shared.md`. Patch and re-read the bound Epic Project description or bound Task/Gig issue description.
+After accepted `epic.md`/`plan.md` changes, call `artifactProjection`, render the provider body, and follow the approval and verification contract in `../shared.md`. Patch and re-read the bound Epic Project description or bound Task/Gig issue description.

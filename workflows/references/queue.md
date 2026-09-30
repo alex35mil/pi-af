@@ -16,6 +16,8 @@ Both destinations contain work that has not started. Adding work creates no work
 5. For Linear, also require `epic | task | gig`. A Task requires one initialized Linear-backed parent Epic.
 6. Obtain explicit approval of the complete provider-specific intake, run the returned provider checks, and use only the returned tracker MCP tools.
 
+An approved new queue intake is a direct create request. Do not search for duplicates before the first create attempt. Search for an existing object only when the user asks to adopt one or when a create response is uncertain.
+
 GitHub creates an ordinary issue, applies the approved managed Kind label only in versioned mode when Kind is not `not set`, verifies its labels, adds it to the configured Project, and applies the selected Status and Priority. Linear creates a Project for Epic, an issue in the parent Epic Project for Task, or a projectless issue for Gig, then applies the selected queue state and native Priority.
 
 Except for that approved versioned GitHub Kind label, do not assign a workflow ID, native GitHub issue Type, Linear label/kind, Planning label, branch, workflow artifact, or pending workflow record while adding work to Backlog or Todo.

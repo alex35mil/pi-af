@@ -22,8 +22,7 @@ import {
 } from "./policy.js"
 import { resolveIntegrationOperationPolicy, type IntegrationOperation } from "./capabilities.js"
 import { resolveGitHubForge } from "./forge/github.js"
-import { renderArtifactLinks, RenderArtifactLinksSchema, SHARED_LINK_SECTION } from "./links.js"
-import { verifyMarkdownProjection } from "./projection.js"
+import { renderProviderBody, verifyMarkdownProjection } from "./projection.js"
 import { resolveGitHubTracker } from "./tracker/github.js"
 import { finalizeLinearBranch, resolveLinearTracker } from "./tracker/linear.js"
 
@@ -37,6 +36,15 @@ const ProjectionVerificationSchema = Type.Object(
     { additionalProperties: false },
 )
 
+export const RenderProviderBodySchema = Type.Object(
+    {
+        entityDir: Type.String({ minLength: 1 }),
+        destination: Type.Union([Type.Literal("tracker"), Type.Literal("pullRequest")]),
+        source: Type.String(),
+    },
+    { additionalProperties: false },
+)
+
 const IntegrationContextSchema = Type.Union([
     Type.Object({ operation: Type.Literal("inspect") }, { additionalProperties: false }),
     Type.Object({ operation: Type.Literal("queueIntake") }, { additionalProperties: false }),
@@ -46,7 +54,6 @@ const IntegrationContextSchema = Type.Union([
                 Type.Literal("initialize"),
                 Type.Literal("resume"),
                 Type.Literal("artifactProjection"),
-                Type.Literal("artifactLinks"),
                 Type.Literal("pullRequest"),
             ]),
             entityDir: Type.String({ minLength: 1 }),
@@ -125,14 +132,14 @@ export default function (pi: ExtensionAPI): void {
     }
 
     pi.registerTool({
-        name: "render_artifact_links",
-        label: "render_artifact_links",
+        name: "render_provider_body",
+        label: "render_provider_body",
         description:
-            "Render the canonical destination-specific Links section from verified URLs and target availability. Omit unavailable entries; unversioned input accepts only external links. Returns Markdown without reading Git, verifying URLs, or mutating providers.",
-        parameters: RenderArtifactLinksSchema,
-        async execute(_toolCallId, params) {
-            const input = Value.Parse(RenderArtifactLinksSchema, params)
-            const result = { markdown: renderArtifactLinks(input) }
+            "Render a tracker or pull-request body from an accepted artifact. Removes the root heading and adds the same-repository GitHub closing block when applicable. Reads workflow configuration and entity metadata without external mutation.",
+        parameters: RenderProviderBodySchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const input = Value.Parse(RenderProviderBodySchema, params)
+            const result = { markdown: renderEntityProviderBody(ctx, input) }
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
                 details: result,
@@ -199,13 +206,6 @@ export function buildIntegrationContext(
         if (!environment) throw new Error(`${operation} requires prepared project configuration`)
         assertEntityEnvironment(entity.status, environment)
     }
-    if (operation === "artifactLinks" && projectConfig?.artifacts === "unversioned") {
-        return {
-            state: "skipped" as const,
-            operation,
-            reason: "unversioned artifacts have no forge links",
-        }
-    }
     if (loaded.state === "disabled") {
         if (operationPolicy.tracker === "required") throw new Error(`${operation} requires a configured tracker`)
         if (operationPolicy.forge === "required") throw new Error(`${operation} requires a configured forge`)
@@ -263,16 +263,6 @@ export function buildIntegrationContext(
         registeredMcpServers,
         workflowPolicy,
         forgePolicy,
-        ...(operation === "artifactLinks" &&
-        (forgePolicy.artifactLinks === "pull-request" || forgePolicy.artifactLinks === "pull-request-and-tracker")
-            ? {
-                  artifactLinkDestinations:
-                      forgePolicy.artifactLinks === "pull-request-and-tracker"
-                          ? (["pullRequest", "tracker"] as const)
-                          : (["pullRequest"] as const),
-                  linkSection: SHARED_LINK_SECTION,
-              }
-            : {}),
         artifactMode: environment.artifacts.kind,
         projection:
             workflowPolicy.projection === "none"
@@ -283,9 +273,9 @@ export function buildIntegrationContext(
                       contentPolicy:
                           "lossless: preserve all structure, wording, technical detail, and ordinary repository paths; never summarize or condense",
                       automaticPresentationNormalization:
-                          "without separate content approval, remove only the first Markdown H1 and its following blank line when the heading exactly equals the provider title or `Plan: <provider title>`, and mechanically render the shared destination-specific `## Links` section",
+                          "remove the first Markdown H1 and its following blank line; for same-repository GitHub tracker and forge work, append a horizontal rule, a blank line, and `Closes #<number>` in pull-request bodies",
                       changedCandidateGate:
-                          "except for duplicate-title H1 normalization and shared deterministic Links rendering, before mutation present the complete candidate or exact diff, list every omission/rewrite/addition with its reason, and require explicit user approval",
+                          "except for root-H1 removal and the same-repository GitHub closing reference, before mutation present the complete candidate or exact diff, list every omission, rewrite, or addition with its reason, and require explicit user approval",
                       postWriteVerification:
                           "re-read the provider description/body and call verify_artifact_projection; only exact bytes verify, while every difference keeps the existing approval gate and returns a concise hint to consider Markdown parsing and normalized comparison when harmless formatting makes byte-for-byte comparison annoying",
                       preserveUnrelatedProviderContent: true as const,
@@ -317,6 +307,40 @@ export function buildIntegrationContext(
         permissionBoundary:
             "Call returned Pi-registered MCP tools directly. A denial or failed call must never be replaced with HTTP, gh, another client, or provider SDK.",
     }
+}
+
+export function renderEntityProviderBody(
+    ctx: ExtensionContext,
+    input: { entityDir: string; destination: "tracker" | "pullRequest"; source: string },
+): string {
+    const projectConfig = assertArtifactPersistencePrepared(ctx.cwd)
+    const loaded = loadIntegrationConfig(ctx.cwd)
+    const environment = resolveWorkflowEnvironment(
+        projectConfig,
+        loaded.state === "enabled" ? loaded.config : undefined,
+    )
+    const entity = readWorkflowEntity(ctx.cwd, input.entityDir)
+    assertEntityEnvironment(entity.status, environment)
+
+    if (
+        input.destination !== "pullRequest" ||
+        environment.tracker.kind !== "github" ||
+        environment.forge.kind !== "github" ||
+        environment.tracker.config.repository.owner.toLowerCase() !==
+            environment.forge.config.repository.owner.toLowerCase() ||
+        environment.tracker.config.repository.repo.toLowerCase() !==
+            environment.forge.config.repository.repo.toLowerCase()
+    ) {
+        return renderProviderBody(input.source)
+    }
+
+    const tracker = entity.status.integrations.find(
+        (integration) =>
+            integration.role === "tracker" && integration.provider === "github" && "external" in integration,
+    )
+    return renderProviderBody(input.source, {
+        ...(tracker ? { githubIssueNumber: tracker.external.issueNumber } : {}),
+    })
 }
 
 function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvironment): void {

@@ -101,6 +101,47 @@ describe("workflow instruction ownership", () => {
         assert.match(linear, /workStage.*workflow metadata/)
     })
 
+    it("keeps request-only briefs, local working state, and provider bodies explicit", () => {
+        const artifacts = fs.readFileSync("workflows/references/artifacts.md", "utf-8")
+        assert.match(artifacts, /`brief\.md` contains only `# Brief`, one blank line, and the exact approved Request/)
+        assert.match(artifacts, /Every entity has free-form agent notes/)
+        assert.match(artifacts, /Final review requires zero active entries/)
+        assert.doesNotMatch(artifacts, /Keep established decisions.*brief/)
+
+        const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
+        assert.match(planning, /transient understanding.*in `\.local\/notes\.md`/)
+        assert.doesNotMatch(planning, /Keep `brief\.md` current/)
+
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        assert.match(deliverable, /final review requires zero unchecked entries/)
+        assert.match(deliverable, /call `render_provider_body`/)
+        assert.match(deliverable, /update operation once when different/)
+        assert.match(deliverable, /After an uncertain update, re-read first/)
+        assert.match(deliverable, /never create another PR/)
+        assert.doesNotMatch(deliverable, /render_artifact_links|artifactLinks|destination-specific Links/)
+
+        const forge = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
+        assert.match(forge, /When `result\.md` or `report\.md` changes after PR creation/)
+        assert.match(forge, /updatePullRequest` once when different/)
+        assert.match(forge, /Re-read with `pullRequestRead` and verify exact text/)
+        assert.match(forge, /update outcome is uncertain, re-read before retrying/)
+        assert.match(forge, /Never blindly repeat creation/)
+
+        const forgeReadme = fs.readFileSync("workflows/extensions/integrations/forge/README.md", "utf-8")
+        assert.match(forgeReadme, /body-update/)
+        assert.doesNotMatch(forgeReadme, /Artifact-link/)
+        assert.doesNotMatch(fs.readFileSync("workflows/README.md", "utf-8"), /Integration roles and Links/)
+
+        const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
+        assert.match(shared, /removes the first Markdown H1/)
+        assert.match(shared, /horizontal rule, a blank line, and `Closes #<issue number>`/)
+        assert.doesNotMatch(shared, /render_artifact_links|artifactLinks|## Shared Links section/)
+
+        for (const skill of ["epic", "task", "gig"]) {
+            assert.match(fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8"), /render_provider_body/)
+        }
+    })
+
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(deliverable, /After approval, call `cleanup_delivery_branch` once\./)

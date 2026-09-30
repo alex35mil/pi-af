@@ -64,4 +64,4 @@ Follow `../../queue.md`. Create an ordinary issue without Internal ID or Plannin
 
 ## Artifact projection
 
-After accepted `epic.md`/`plan.md` changes or a tracker Links refresh, call `artifactProjection` and follow the complete projection, approval, and verification contract in `../shared.md`. The GitHub destination is the bound issue body; re-read that issue for verification.
+After accepted `epic.md`/`plan.md` changes, call `artifactProjection`, render the provider body, and follow the approval and verification contract in `../shared.md`. The GitHub destination is the bound issue body; re-read that issue for verification.
