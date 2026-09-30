@@ -6,6 +6,7 @@ allowed-tools:
     - "review"
     - "present_plan"
     - "prepare_artifacts"
+    - "render_provider_body"
     - "verify_artifact_projection"
     - "integration_context"
     - "finalize_linear_branch"

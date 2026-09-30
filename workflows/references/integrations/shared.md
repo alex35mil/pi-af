@@ -1,6 +1,6 @@
 # Integration roles
 
-`tracker` owns external work objects, Backlog/Todo queues, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns repository links and pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
+`tracker` owns external work objects, Backlog/Todo queues, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
 
 When `integration_context` returns top-level `state: enabled`, inspect each configured entry under `roles` independently:
 
@@ -12,38 +12,22 @@ Durable operation checkpoints are limited to non-idempotent creation/provisionin
 
 Never replace a denied or failed MCP operation with HTTP, `gh`, another client, or a provider SDK. Never let one role failure alter another role.
 
-## Projection operations
+## Provider bodies
 
-`artifactProjection` requires only the tracker role and updates provider-facing content without requiring forge capability. Its source is the exact accepted `epic.md` or `plan.md`, which remains the tracker body's task definition throughout the entity lifecycle. `result.md` and `report.md` never replace or append to that body; versioned mode exposes them only through the shared Links section. Projection is lossless by default:
+`artifactProjection` requires only the tracker role. Its source is the accepted `epic.md` or `plan.md`, which remains the tracker body's task definition throughout the entity lifecycle. Pull-request bodies use the synchronized `result.md` or `report.md`.
 
-1. Read the current provider description/body and start from the complete authoritative artifact. Preserve its structure, wording, technical detail, ordinary repository paths such as `infra/...`, and unrelated provider content. Call `verify_artifact_projection` with the final expected candidate and current provider Markdown; only `exact` completes verification without a write.
-2. Never summarize, condense, or otherwise rewrite accepted content automatically. Concision belongs in drafting and review before acceptance.
-3. Apply one automatic presentation normalization without approval: remove the artifact's first Markdown H1 and its immediately following blank line only when the heading text exactly equals the provider title or `Plan: <provider title>`. This avoids repeating the provider's separately rendered title. Never remove any other heading or content under this rule.
-4. In unversioned mode, remove or minimally rewrite only content forbidden below. In versioned mode, keep the remaining artifact text unchanged except for the shared deterministic `## Links` section or explicitly approved additions.
-5. Except for duplicate-title H1 normalization and the shared deterministic `## Links` rendering, whenever the final provider candidate differs from the authoritative artifact, present the complete candidate or an exact diff before mutation. List every omission, rewrite, or addition and its reason. Require explicit user approval of that exact candidate.
-6. Update the provider with only the unchanged artifact or explicitly approved candidate. Re-read the provider and call `verify_artifact_projection` again. Only exact bytes verify. `different` means verification failed: preserve working-tree work, show the exact difference, present the tool's remediation hint, and stop. Resume by re-reading the provider and rebuilding the candidate; do not repeat the write or seek new approval unless the user chooses a changed candidate.
+1. Read the current provider body and start from the complete source artifact. Never summarize or condense it.
+2. For unversioned tracker projection, first remove or minimally rewrite only the forbidden content listed below. Present the complete candidate or exact diff, explain every change, and require approval.
+3. Call `render_provider_body` with the approved candidate and destination. It removes the first Markdown H1 plus its following blank line. For a pull request whose bound GitHub tracker and forge use the same repository, it also appends a horizontal rule and `Closes #<issue number>.` Linear adds nothing to the body.
+4. H1 removal and the same-repository GitHub closing block need no separate content approval. Any other difference from the source artifact requires the existing complete-candidate or exact-diff approval. Preserve unrelated provider content.
+5. Update the provider only when the expected body differs. Re-read it and call `verify_artifact_projection`; only exact bytes verify. If verification differs, preserve work, show the exact difference, and stop. After an uncertain update, re-read first and retry only after confirmed non-application.
+6. Update an existing pull request when its source `result.md` or `report.md` changes.
 
-## Shared Links section
-
-Call `render_artifact_links` for PR and tracker bodies with the configured `artifactMode`, the `destination` (`pullRequest` or `tracker`), and verified `entries`. The tool only formats supplied evidence; it does not read Git, verify URLs, mutate providers, or authorize publication. Available link entries are:
-
-1. `Brief` — root `brief.md`.
-2. `Epic` or `Plan` — root `epic.md` or `plan.md`.
-3. `Result` or `Report` — root `result.md` or `report.md`.
-4. `Tracker` — configured tracker object.
-5. `Pull request` — confirmed forge PR.
-
-Supply repository entries as `brief`, `planOrEpic`, and `resultOrReport`, selecting the matching `label` for the latter two. Each contains `permanentCommit` and `targetBranch: { url, state }`; set `state` to `resolved` only after the target URL resolves, otherwise `available-after-merge`. Supply confirmed provider URLs as `tracker` and `pullRequest`; include a PR reference only when its publication is approved. Omit unavailable entries. Unversioned input accepts only external entries.
-
-Use the returned `markdown` unchanged. Append a nonempty block after the exact approved destination body, separated by a blank line; omit the section when the returned string is empty. No separate content approval is required for the rendered Links; the enclosing approved operation and configured permission gate still govern provider mutation.
-
-`artifactLinks` requires only the forge role; its generated repository links may be rendered into PR or tracker bodies. In versioned mode, after a containing commit exists, generate the repository entries above whether or not a tracker exists. In unversioned mode, link generation skips before forge capability or branch checks and `.project` links are never exposed.
-
-Unversioned mode may include the approved entity title, the approved Request during initialization, the accepted Epic/Plan task definition after planning, native lifecycle, native priority, native hierarchy/Project relationship, exact provider branch name, and an explicitly approved PR reference. Never project qualified workflow IDs, `.project` paths/links, entity or kind labels/types, workflow/review terminology, review artifacts, or raw workflow artifact structure. These restrictions do not make ordinary repository implementation paths private. Preserve unrelated provider content.
+Unversioned mode may include the approved entity title, the approved Request during initialization, the accepted Epic/Plan task definition after planning, native lifecycle, native priority, native hierarchy/Project relationship, exact provider branch name, and an explicitly approved PR reference. Never project qualified workflow IDs, `.project` paths or links, entity or kind labels/types, workflow/review terminology, review artifacts, or raw workflow artifact structure. These restrictions do not make ordinary repository implementation paths private.
 
 ## Branch gate
 
-A ready branch contract contains exact `name`, `start`, `target`, and generated/tracker source. A Linear `tracker` Epic is immediately ready after reconstructing current provider branch settings; a new Linear Task/Gig can instead be `tracker-pending` or `provisioning` until its issue supplies the exact branch. Do not plan, review, link artifacts, push, or create a PR until `finalize_linear_branch` returns a ready contract. Never invent or rewrite a provider-generated branch name.
+A ready branch contract contains exact `name`, `start`, `target`, and generated/tracker source. A Linear `tracker` Epic is immediately ready after reconstructing current provider branch settings; a new Linear Task/Gig can instead be `tracker-pending` or `provisioning` until its issue supplies the exact branch. Do not plan, review, push, or create a PR until `finalize_linear_branch` returns a ready contract. Never invent or rewrite a provider-generated branch name.
 
 ## Workflow-first updates
 

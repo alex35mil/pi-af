@@ -1,0 +1,34 @@
+{
+  "id": "GIG-01M3PN3WP8",
+  "rawId": "01M3PN3WP8",
+  "slug": "simplify-deliverable-artifacts-projections",
+  "title": "Simplify Deliverable artifacts and provider projections",
+  "createdAt": "2026-09-29T13:19:25.896Z",
+  "workStage": "execution",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m3pn3wp8-simplify-deliverable-artifacts-projections",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "state": "bound",
+      "external": {
+        "issueId": 5631193326,
+        "issueNumber": 21,
+        "issueUrl": "https://github.com/alex35mil/pi-af/issues/21",
+        "projectItemId": "257711049"
+      }
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "refactor"
+}

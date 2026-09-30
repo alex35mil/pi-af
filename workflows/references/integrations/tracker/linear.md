@@ -79,4 +79,4 @@ Follow the absolute update/read-back procedure in `../shared.md`, using `save_pr
 
 ## Artifact projection
 
-After accepted `epic.md`/`plan.md` changes or a tracker Links refresh, call `artifactProjection` and follow the complete projection, approval, and verification contract in `../shared.md`. Patch and re-read the bound Epic Project description or bound Task/Gig issue description.
+After accepted `epic.md`/`plan.md` changes, call `artifactProjection`, render the provider body, and follow the approval and verification contract in `../shared.md`. Patch and re-read the bound Epic Project description or bound Task/Gig issue description.

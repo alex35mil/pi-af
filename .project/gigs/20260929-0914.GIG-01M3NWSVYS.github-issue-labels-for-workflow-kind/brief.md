@@ -1,7 +1,5 @@
 # Brief
 
-## Request
-
 Replace the custom GitHub Project `Kind` field with managed issue labels: `Kind: Epic`, `Kind: Feature`, `Kind: Bugfix`, `Kind: Research`, `Kind: Refactor`, `Kind: Audit`, and `Kind: Chore`.
 
 - Make labels visible and filterable in repository Issues and Project Labels.

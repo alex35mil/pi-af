@@ -7,7 +7,7 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 - **Gig**: a standalone Deliverable.
 - **Deliverable**: the shared Task/Gig lifecycle, with Feature, Bugfix, Refactor, Research, Audit, and Chore strategies.
 - **Tracker**: optional GitHub or Linear work tracking, including native lifecycle and Priority.
-- **Forge**: optional GitHub repository links and pull requests, independent of the tracker.
+- **Forge**: optional GitHub pull requests, independent of the tracker.
 
 ## Commands
 
@@ -60,7 +60,7 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
 | Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md)                                                                                                                                          |
 | Backlog and Todo                                              | [Queue](references/queue.md)                                                                                                                                                      |
-| Provider-independent integration rules and Links              | [Integration roles](references/integrations/shared.md)                                                                                                                            |
+| Provider-body and integration rules                           | [Integration roles](references/integrations/shared.md)                                                                                                                            |
 | Provider operations                                           | [GitHub tracker](references/integrations/tracker/github.md), [Linear tracker](references/integrations/tracker/linear.md), [GitHub forge](references/integrations/forge/github.md) |
 | Human-facing prose                                            | [Communication](references/communication.md)                                                                                                                                      |
 

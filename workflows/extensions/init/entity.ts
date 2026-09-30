@@ -28,8 +28,10 @@ import {
     type BranchContract,
     ENTITY_LOCAL_DIR,
     LOCAL_DESIGNS_DIR,
+    LOCAL_NOTES_FILE,
     LOCAL_REVIEWS_DIR,
     LOCAL_SCRATCH_DIR,
+    LOCAL_TODOS_FILE,
     type EntityStatus,
     EntityStatusSchema,
     readEntityStatus,
@@ -285,7 +287,9 @@ function createEntityArtifacts(
     fs.mkdirSync(absoluteDirectory, { recursive: false })
     for (const directory of directories) fs.mkdirSync(path.join(absoluteDirectory, directory))
 
-    fs.writeFileSync(path.join(absoluteDirectory, "brief.md"), `# Brief\n\n## Request\n\n${input.request.trim()}\n`)
+    fs.writeFileSync(path.join(absoluteDirectory, "brief.md"), `# Brief\n\n${input.request.trim()}\n`)
+    fs.writeFileSync(path.join(absoluteDirectory, LOCAL_NOTES_FILE), "# Notes\n")
+    if (input.entity !== "epic") fs.writeFileSync(path.join(absoluteDirectory, LOCAL_TODOS_FILE), "# Todos\n")
     writeEntityStatus(absoluteDirectory, status)
 
     if (!Value.Check(EntityStatusSchema, status)) {

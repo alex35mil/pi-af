@@ -14,6 +14,7 @@ import {
     LOCAL_DRAFT_FILE,
     LOCAL_REVIEWS_DIR,
     LOCAL_STATUS_FILE,
+    readActiveTodos,
     readEntityStatus,
     resolveEntityPath,
 } from "../__lib/entity.js"
@@ -563,6 +564,12 @@ export async function buildDeliverableReviewPrompt(
     const report = await readOptional(path.join(gigDir, "report.md"))
     const result = await readOptional(path.join(gigDir, "result.md"))
     if (phase === "final") {
+        const activeTodos = readActiveTodos(gigDir)
+        if (activeTodos.length > 0) {
+            throw new Error(
+                `${entityStatus.id} final review requires zero active todos; unresolved entries: ${activeTodos.map(({ line }) => `line ${line}`).join(", ")}`,
+            )
+        }
         if (deliverableKindRequiresReport(entityStatus.kind)) {
             if (!report.trim()) throw new Error(`${entityStatus.kind} final review requires a non-empty report.md`)
         } else if (!result.trim()) {

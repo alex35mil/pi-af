@@ -8,6 +8,7 @@ allowed-tools:
     - "prepare_artifacts"
     - "set_epic_task_target"
     - "integration_context"
+    - "render_provider_body"
     - "verify_artifact_projection"
     - "read(.project/*)"
     - "write(.project/*)"
@@ -26,10 +27,10 @@ Follow the preparation and explicit entity-selection gates in `../../references/
 
 For resume:
 
-1. Read `brief.md`, `metadata.json`, accepted `epic.md`, the relevant `.local/reviews/` round when present, and applicable `.project/policies.md`. Read `.local/status.md` only for workflow authority; for tracker authority require it to be absent and refresh native lifecycle/Priority through the tracker. Read `.local/scratch/` only when temporary context is relevant.
+1. Read `brief.md`, `metadata.json`, `.local/notes.md` when present, accepted `epic.md`, the relevant `.local/reviews/` round when present, and applicable `.project/policies.md`. Create missing local notes when continuing local work. Read `.local/status.md` only for workflow authority; for tracker authority require it to be absent and refresh native lifecycle/Priority through the tracker. Read `.local/scratch/` only when temporary context is relevant.
 2. Because the Epic is the primary active workflow here, switch to its exact stored branch before editing Epic artifacts. This does not apply when a Task updates its parent Epic from the Task branch.
 3. Call `integration_context` with `operation: "resume"`; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
-4. After accepted `epic.md` changes, call `artifactProjection`, which requires only the tracker role. In versioned mode, when a containing commit and forge exist, call `artifactLinks`, which requires only the forge role, and render the shared destination-specific `## Links` section for PR or tracker content. Unversioned mode returns an explicit link skip and never exposes artifact links.
+4. After accepted `epic.md` changes, call `artifactProjection`, which requires only the tracker role, then call `render_provider_body` for the tracker destination and verify the exact provider body.
 5. Summarize current state and continue without creating another Epic.
 
 ## Initialize
@@ -40,7 +41,7 @@ Switch to the stored branch, then call `integration_context` with `operation: "i
 
 ## Durable working state
 
-Follow `../../references/artifacts.md` for resumable brief updates, local scratch, and the mutable `.local/draft.md`. Accepted `epic.md` is written only through shared planning acceptance.
+Follow `../../references/artifacts.md` for the request-only brief, local notes and scratch, and the mutable `.local/draft.md`. Accepted `epic.md` is written only through shared planning acceptance.
 
 When the Epic is the primary active workflow, write workflow artifacts only inside that Epic's directory and treat repository files outside it as read-only. Provider writes remain limited to the integration lifecycle above.
 
@@ -75,7 +76,7 @@ Before review, rewrite the candidate until it satisfies all of these conditions:
 - It explains user, operator, or system outcomes before architecture. For infrastructure, migration, or internal work, use operational outcomes, invariants, boundaries, and observable changes rather than forcing product framing.
 - It carries every material settled behavior, scope boundary, configuration/state rule, workflow, failure contract, compatibility requirement, invariant, integration boundary, and migration state.
 - It includes concrete examples when they are needed to understand an agreed behavior or configuration.
-- It does not hide required contract details in `brief.md`; the brief supports planning but is not a substitute for the accepted Epic.
+- It does not hide required contract details in `brief.md` or local notes; the accepted Epic must stand alone.
 - It keeps architecture high-level and excludes implementation recipes, detailed test plans, status tracking, risk-register boilerplate, and empty template sections.
 - Each Task states its owned outcome, relevant settled contract, stopping boundary, and material prerequisites or exclusions; has enough context to understand without the planning conversation; and is ordered so prerequisites come first without avoidable overlap. Do not create Tasks merely to make the list longer.
 
@@ -85,7 +86,7 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `present_plan` targets `epic.md`. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-On acceptance, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through the provider's absolute label read/update/read-back procedure. Project the accepted `epic.md` and request available forge links through the same integration steps used on resume. Stop without initializing or implementing a Task.
+On acceptance, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through the provider's absolute label read/update/read-back procedure. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 

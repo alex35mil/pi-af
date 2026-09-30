@@ -60,7 +60,7 @@ Counting is separate for each entity and review phase. The checkpoint stops imme
 | Role    | Choices              | Owns                                                                                      |
 | ------- | -------------------- | ----------------------------------------------------------------------------------------- |
 | tracker | none, GitHub, Linear | backlog/work objects, lifecycle, priority, hierarchy, accepted task-definition projection |
-| forge   | none, GitHub         | repository links and pull requests                                                        |
+| forge   | none, GitHub         | pull requests                                                                             |
 
 Either role may be configured alone. Omit `.project/integrations.json` when both are none. Never create placeholder, disabled, or secret-bearing configuration. Select the tracker provider before asking about branch naming; forge selection does not affect branch options.
 

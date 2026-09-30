@@ -24,13 +24,6 @@ const OPERATION_POLICIES = {
         forge: "none",
         forgeCapabilities: false,
     },
-    artifactLinks: {
-        operation: "artifactLinks",
-        entity: true,
-        tracker: "none",
-        forge: "required",
-        forgeCapabilities: false,
-    },
     pullRequest: {
         operation: "pullRequest",
         entity: true,

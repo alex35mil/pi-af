@@ -20,7 +20,10 @@ import {
     resolveWorkflowPolicy,
     type WorkflowEnvironment,
 } from "../workflows/extensions/integrations/policy.ts"
-import registerIntegrations, { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
+import registerIntegrations, {
+    buildIntegrationContext,
+    renderEntityProviderBody,
+} from "../workflows/extensions/integrations/index.ts"
 import { resolveIntegrationOperationPolicy } from "../workflows/extensions/integrations/capabilities.ts"
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
 import { linearPriorityNumber } from "../workflows/extensions/integrations/records.ts"
@@ -141,6 +144,7 @@ function catalog(includeOrganizationTools: boolean): McpToolCatalog {
     add(GITHUB_TOOL_NAMES.createPullRequest, ["owner", "repo", "title", "body", "head", "base"])
     add(GITHUB_TOOL_NAMES.listPullRequests, ["owner", "repo", "head", "base", "state"])
     add(GITHUB_TOOL_NAMES.pullRequestRead, ["method", "owner", "repo", "pullNumber"], ["get"])
+    add(GITHUB_TOOL_NAMES.updatePullRequest, ["owner", "repo", "pullNumber", "body"])
     if (includeOrganizationTools) add(GITHUB_TOOL_NAMES.listIssueFields, ["owner", "repo"])
     return new Map(entries)
 }
@@ -214,6 +218,46 @@ function writeTrackerlessGigEntity(cwd: string): string {
         path.join(absolute, ".local", "status.md"),
         '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
     )
+    return directory
+}
+
+function writeGitHubGigEntity(cwd: string): string {
+    const rawId = "01KDVDNA02"
+    const directory = path.join(".project", "gigs", `20260102-0306.GIG-${rawId}.github-provider`)
+    const absolute = path.join(cwd, directory)
+    fs.mkdirSync(absolute, { recursive: true })
+    const metadata = {
+        id: `GIG-${rawId}`,
+        rawId,
+        slug: "github-provider",
+        title: "GitHub provider",
+        entity: "gig",
+        kind: "feature",
+        authority: { kind: "tracker", provider: "github" },
+        createdAt: "2026-01-02T03:06:00.000Z",
+        workStage: "execution",
+        branch: {
+            state: "ready",
+            name: "gig-github-provider",
+            start: "main",
+            target: "main",
+            source: "generated",
+        },
+        integrations: [
+            {
+                role: "tracker",
+                provider: "github",
+                state: "bound",
+                external: {
+                    issueId: 101,
+                    issueNumber: 42,
+                    issueUrl: "https://github.com/alex/example/issues/42",
+                    projectItemId: "PVTI_example",
+                },
+            },
+        ],
+    }
+    fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
     return directory
 }
 
@@ -322,33 +366,17 @@ describe("workflow integration configuration", () => {
             }),
         ])
         assert.deepEqual(
-            forgeCases.map((policy) => [policy.case, policy.pullRequests, policy.artifactLinks]),
+            forgeCases.map((policy) => [policy.case, policy.pullRequests]),
             [
-                ["versioned/no-forge", false, "unavailable"],
-                ["versioned/github", true, "pull-request"],
-                ["unversioned/no-forge", false, "unavailable"],
-                ["unversioned/github", true, "forbidden"],
+                ["versioned/no-forge", false],
+                ["versioned/github", true],
+                ["unversioned/no-forge", false],
+                ["unversioned/github", true],
             ],
-        )
-        assert.equal(
-            resolveForgePolicy({
-                artifacts: { kind: "versioned" },
-                tracker: { kind: "linear", config: linearConfig() },
-                forge: { kind: "github", config: forgeConfig() },
-            }).artifactLinks,
-            "pull-request-and-tracker",
         )
 
         assert.deepEqual(
-            [
-                "inspect",
-                "queueIntake",
-                "initialize",
-                "resume",
-                "artifactProjection",
-                "artifactLinks",
-                "pullRequest",
-            ].map((operation) =>
+            ["inspect", "queueIntake", "initialize", "resume", "artifactProjection", "pullRequest"].map((operation) =>
                 resolveIntegrationOperationPolicy(operation as Parameters<typeof resolveIntegrationOperationPolicy>[0]),
             ),
             [
@@ -381,13 +409,6 @@ describe("workflow integration configuration", () => {
                     forge: "none",
                     forgeCapabilities: false,
                 },
-                {
-                    operation: "artifactLinks",
-                    entity: true,
-                    tracker: "none",
-                    forge: "required",
-                    forgeCapabilities: false,
-                },
                 { operation: "pullRequest", entity: true, tracker: "none", forge: "required", forgeCapabilities: true },
             ],
         )
@@ -414,6 +435,8 @@ describe("workflow integration configuration", () => {
             assert.ok(commands.has("backlog"))
             assert.ok(commands.has("todo"))
             assert.ok(tools.includes("verify_artifact_projection"))
+            assert.ok(tools.includes("render_provider_body"))
+            assert.equal(tools.includes("render_artifact_links"), false)
             assert.ok(tools.includes("finalize_linear_branch"))
             assert.equal(tools.includes("reconcile_linear_backlog"), false)
             assert.equal(
@@ -663,6 +686,7 @@ describe("workflow integration configuration", () => {
                     GITHUB_TOOL_NAMES.createPullRequest,
                     GITHUB_TOOL_NAMES.listPullRequests,
                     GITHUB_TOOL_NAMES.pullRequestRead,
+                    GITHUB_TOOL_NAMES.updatePullRequest,
                 ].some((tool) => name.endsWith(`__${tool}`)),
             ),
         )
@@ -670,11 +694,18 @@ describe("workflow integration configuration", () => {
         assert.equal(forgeTools.createPullRequest, "mcp__github__create_pull_request")
         assert.equal(forgeTools.listPullRequests, "mcp__github__list_pull_requests")
         assert.equal(forgeTools.pullRequestRead, "mcp__github__pull_request_read")
+        assert.equal(forgeTools.updatePullRequest, "mcp__github__update_pull_request")
         const forgeWithoutLookup = new Map(forgeCatalog)
         forgeWithoutLookup.delete(getMcpToolName("github", GITHUB_TOOL_NAMES.listPullRequests))
         assert.throws(
             () => validateGitHubForgeCapabilities(forgeWithoutLookup, forgeConfig()),
             /missing required tool mcp__github__list_pull_requests/,
+        )
+        const forgeWithoutUpdate = new Map(forgeCatalog)
+        forgeWithoutUpdate.delete(getMcpToolName("github", GITHUB_TOOL_NAMES.updatePullRequest))
+        assert.throws(
+            () => validateGitHubForgeCapabilities(forgeWithoutUpdate, forgeConfig()),
+            /missing required tool mcp__github__update_pull_request/,
         )
 
         const cwd = temporaryProject()
@@ -707,27 +738,34 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("returns the shared PR link contract without a tracker", () => {
+    it("renders entity provider bodies with only same-repository GitHub closing references", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
-            fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
-            const entityDir = writeTrackerlessGigEntity(cwd)
-            const context = buildIntegrationContext({ cwd } as ExtensionContext, new Map(), "artifactLinks", entityDir)
-            if (context.state !== "enabled") assert.fail("expected enabled forge links")
-            assert.deepEqual(context.artifactLinkDestinations, ["pullRequest"])
-            assert.deepEqual(context.linkSection, {
-                heading: "Links",
-                order: ["brief", "planOrEpic", "resultOrReport", "tracker", "pullRequest"],
-                repositoryVariants: ["permanentCommit", "targetBranch"],
-                destinations: {
-                    pullRequest: ["brief", "planOrEpic", "tracker"],
-                    tracker: ["brief", "planOrEpic", "resultOrReport", "pullRequest"],
-                },
-            })
-            assert.deepEqual(context.projection, { mode: "none" })
-            assert.equal(context.roles.tracker, undefined)
-            assert.equal(context.roles.forge?.state, "enabled")
+            const integrationPath = path.join(cwd, ".project", "integrations.json")
+            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: config("project"), forge: forgeConfig() }))
+            prepareArtifactPersistence(cwd)
+            const entityDir = writeGitHubGigEntity(cwd)
+            const ctx = { cwd } as ExtensionContext
+            const source = "# Result\n\nDelivered.\n"
+
+            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), "Delivered.\n")
+            assert.equal(
+                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
+                "Delivered.\n\n---\nCloses #42.",
+            )
+
+            fs.writeFileSync(
+                integrationPath,
+                JSON.stringify({
+                    tracker: config("project"),
+                    forge: { ...forgeConfig(), repository: { owner: "alex", repo: "other" } },
+                }),
+            )
+            assert.equal(
+                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
+                "Delivered.\n",
+            )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -766,16 +804,14 @@ describe("workflow integration configuration", () => {
             if (forgeSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(forgeSide.roles.tracker, undefined)
             assert.equal(forgeSide.roles.forge?.state, "enabled")
-            const artifactSide = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                new Map(),
-                "artifactLinks",
-                entityDir,
+            assert.equal(
+                renderEntityProviderBody({ cwd } as ExtensionContext, {
+                    entityDir,
+                    destination: "pullRequest",
+                    source: "# Result\n\nDelivered.\n",
+                }),
+                "Delivered.\n",
             )
-            if (artifactSide.state !== "enabled") assert.fail("expected enabled integrations")
-            assert.equal(artifactSide.roles.tracker, undefined)
-            assert.equal(artifactSide.roles.forge?.state, "enabled")
-            assert.deepEqual(artifactSide.artifactLinkDestinations, ["pullRequest", "tracker"])
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -809,7 +845,7 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("keeps unversioned-artifact tracker projection and forge links independent", () => {
+    it("keeps restricted unversioned tracker projection independent from the forge", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd, "unversioned")
@@ -819,13 +855,6 @@ describe("workflow integration configuration", () => {
                 JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
             )
             const entityDir = writeLinearGigEntity(cwd)
-
-            const links = buildIntegrationContext({ cwd } as ExtensionContext, new Map(), "artifactLinks", entityDir)
-            assert.deepEqual(links, {
-                state: "skipped",
-                operation: "artifactLinks",
-                reason: "unversioned artifacts have no forge links",
-            })
 
             const projection = buildIntegrationContext(
                 { cwd } as ExtensionContext,
@@ -841,11 +870,11 @@ describe("workflow integration configuration", () => {
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
                 projection.projection.automaticPresentationNormalization,
-                /without separate content approval.*first Markdown H1.*Plan:.*shared destination-specific `## Links`/,
+                /remove the first Markdown H1.*same-repository GitHub.*Closes/,
             )
             assert.match(
                 projection.projection.changedCandidateGate,
-                /except for duplicate-title H1 normalization and shared deterministic Links rendering.*exact diff.*every omission\/rewrite\/addition.*approval/,
+                /except for root-H1 removal and the same-repository GitHub closing reference.*exact diff.*every omission, rewrite, or addition.*approval/,
             )
             assert.match(
                 projection.projection.postWriteVerification,
@@ -919,7 +948,10 @@ describe("workflow integration configuration", () => {
 
         const unversionedSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools, "unversioned")
         assert.equal(unversionedSteps.length, 2)
-        assert.equal(unversionedSteps.some((step) => /configured Kind label/.test(step)), false)
+        assert.equal(
+            unversionedSteps.some((step) => /configured Kind label/.test(step)),
+            false,
+        )
     })
 
     it("returns the official sub-issue add operation without speculative schema requirements", () => {
