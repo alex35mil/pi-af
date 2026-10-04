@@ -9,6 +9,7 @@ allowed-tools:
     - "render_provider_body"
     - "verify_artifact_projection"
     - "integration_context"
+    - "resource_ids"
     - "finalize_linear_branch"
     - "cleanup_delivery_branch"
     - "read(.project/*)"

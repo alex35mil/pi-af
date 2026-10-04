@@ -25,6 +25,7 @@ import {
     assertTaskIntegrationParent,
     IntegrationRecordSchema,
     ProvisioningBranchContractSchema,
+    TrackerNamedBranchContractSchema,
     TrackerPendingBranchContractSchema,
     TrackerProviderSchema,
 } from "../integrations/records.js"
@@ -79,6 +80,7 @@ export function readPendingEntries(entityDirectory: string): PendingEntry[] {
 export const BranchContractSchema = Type.Union([
     ReadyBranchContractSchema,
     TrackerPendingBranchContractSchema,
+    TrackerNamedBranchContractSchema,
     ProvisioningBranchContractSchema,
 ])
 export type BranchContract = Static<typeof BranchContractSchema>
@@ -201,7 +203,9 @@ export function readEntityStatus(entityDirectory: string): EntityStatus {
         const details = [...Value.Errors(EntityMetadataSchema, metadata)]
             .map((error) => `${error.instancePath || "/"}: ${error.message}`)
             .join("; ")
-        throw new Error(`invalid entity metadata in ${metadataPath}: ${details}`)
+        throw new Error(
+            `invalid entity metadata in ${metadataPath}: ${details}; see workflows/MIGRATIONS.md to convert this entity to the current format`,
+        )
     }
 
     let value: unknown = metadata

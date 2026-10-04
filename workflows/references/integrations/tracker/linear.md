@@ -16,9 +16,9 @@ Do not create or apply entity, kind, planning, or execution labels. Kind and wor
 
 During `/project-setup`, use `inspect_linear_workspace` to read workspace identity, authenticated viewer Full Name/Username, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. This operation is read-only and never substitutes for MCP tracker operations. Select exact team/status names without inferring semantics. Follow `../../setup.md` for exact branch-template matching. With `tracker`, Epic initialization repeats only the read-only viewer/workspace branch query so the branch uses current Linear settings.
 
-## Validate before mutation
+## Provider calls
 
-Call `integration_context` and use only enabled `roles.tracker` provider `linear`. Run returned validation steps: verify workspace, exact configured team, and every configured team issue-status name. Runtime MCP has no Project-status listing capability; use the exact API-discovered or explicitly confirmed configured names and fail clearly when Linear rejects one.
+Read the selected role's local configuration through `integration_context`. The agent calls registered Linear tools directly: Project writes for Epic and issue writes for Task/Gig. Named team/state inputs resolve inside the provider. Do not rediscover workspace, teams or all statuses during ordinary work. A denied/unavailable provider call stops that operation without changing the other role.
 
 Native priority mapping is fixed: `Urgent=1`, `High=2`, `Medium=3`, `Low=4`, `not set=0`.
 
@@ -29,37 +29,28 @@ Require the approved entity type and exact selected destination (`backlog | todo
 For explicit adoption, read the selected object:
 
 - Epic: get the explicit Project; require configured team, selected configured Project queue state, and native priority.
-- Task: get the explicit issue; require configured team, selected configured issue queue status, priority, exact parent Epic Project ID, and non-empty `gitBranchName`.
-- Gig: get the explicit issue; require configured team, selected configured issue queue status, priority, no Epic Project, and non-empty `gitBranchName`.
+- Task: get the explicit issue; require configured team, selected configured issue queue status, Priority, and exact parent Epic Project ID.
+- Gig: get the explicit issue; require configured team, selected configured issue queue status, Priority, and no Epic Project.
 
-Present the exact adopted object, title, queue state, Priority, and relationship for approval. Pass Project ID/URL for Epic; issue ID/identifier/URL/`gitBranchName` plus parent Project ID for Task; issue ID/identifier/URL/`gitBranchName` for Gig.
+Use `adopt` with the selected entity. Present the synthesized Request, copied Priority, and exact relationship for approval. Deployed responses expose immutable identity as `uuid`; issue `id` is the identifier. Pass Project UUID/URL for Epic; issue UUID/identifier/URL and Task parent Project UUID for issues. With tracker naming only, reuse the returned exact `gitBranchName`, or fetch that exact issue when this required name is absent. Generated naming never requests or stores an unused provider branch.
 
 ## Initialize
 
 Workflow `init` completes first and records `workStage: planning` with intended lifecycle In Progress.
 
 - Epic: tracker resource `project`; new starts `awaiting`, approved existing starts `bound-pending`. Static formats create the configured branch. With `tracker`, read current `organization.gitBranchFormat` and `viewer.displayName`, reconstruct the supported template with the lowercase workflow Epic ID and normalized slug, and persist a ready tracker-owned branch before Project mutation.
-- Task: tracker resource `task-issue`; static formats create a ready branch in the current clone. With `tracker`, new starts `awaiting` with `tracker-pending`; approved existing starts `bound-pending` with its exact ready `gitBranchName`.
-- Gig: tracker resource `gig-issue`; same naming behavior as Task, without Project relationship.
+- Task: tracker resource `task-issue`; generated formats are ready immediately. Tracker naming retains `tracker-pending` until a name is obtained; an adopted returned name is saved as `tracker-named` before local branch creation.
+- Gig: tracker resource `gig-issue`; same issue-branch behavior without Project relationship.
 
-For new Epic:
+For new work:
 
-1. `save_project` with title, configured team, In Progress state, native priority, and the exact approved Request from `brief.md`. In versioned mode only, include `Internal ID: <qualified-id>`.
-2. Persist Project ID/URL and remaining operations immediately.
-3. Re-read Project and set tracker `bound` only after all fields are confirmed.
+1. Request `initialize` for this entity. A Task requires its identified parent Epic Project; otherwise preserve the awaiting operation and finish parent binding first. A Gig remains projectless.
+2. Prepare the exact title/Request, native In Progress/Priority, configured team, Task Project when applicable, and versioned Internal ID. Call local `resource_ids` `beginCreation`, role `tracker`, before the first registered `save_project`/`save_issue`. Do not search before the first approved create or perform blanket discovery.
+3. On clear success, call local `recordCreation` with actual tool/arguments/response. Save the returned immutable UUID and Task parent relationship durably before dependent work; URL/identifier go into scoped local cache. Reuse state/Priority/relationship proof supplied by the mutation; read only required missing facts. Do not read merely to repopulate returned values.
+4. Only with tracker-controlled issue naming, save a returned name in `tracker-named`; fetch the exact issue only when the name is missing, then save it there. Never duplicate it in tracker records or put it in disposable cache. `finalize_linear_branch` checkpoints the start commit and preserves existing collision/interruption checks through provisioning to immutable ready.
+5. Keep remaining initialization operations and desired lifecycle/Priority until their required outcome is confirmed, then set `bound` and remove `authority.desired`. Generated names need no provider branch step.
 
-For new Task/Gig:
-
-1. For Task, inspect the parent Epic tracker. A bound/bound-pending Project identity permits issue creation. Otherwise keep exact awaiting operation `wait for parent Epic Project binding, then create Linear issue`; finish parent projection first. Gig omits Project.
-2. `save_issue` with title, configured team, In Progress status, native priority, exact approved Request, and Task `project` when applicable. In versioned mode only, include Internal ID.
-3. As soon as issue ID/identifier/URL/Project relation are known, persist `issue-bound-pending` with remaining operation `read generated gitBranchName`. Never leave known identity only in chat.
-4. With `tracker` format, `get_issue` obtains exact generated `gitBranchName`; persist complete binding before branch work.
-5. Set tracker `bound` after remote fields are confirmed.
-6. With `tracker` format, call `finalize_linear_branch` until ready; generated formats are already ready.
-
-Approved Backlog or Todo objects skip creation and retain `bound-pending` for remaining In Progress/native metadata updates. They move directly to In Progress; never force Backlog through Todo.
-
-Linear tracker checkpoints are `awaiting`/`pending` before identity, `issue-bound-pending` after issue identity but before branch identity, `bound-pending` with complete provider identity and remaining updates, and `bound` after projection is confirmed.
+Approved Backlog/Todo objects skip creation, keep their UUID/relationship, and apply only remaining initialization changes directly to In Progress. Adoption seeds supplied Resource IDs locally. Provider records contain semantic identity plus pending operations, not branch copies or cached lifecycle/Priority.
 
 ## Initialized-create uncertainty
 
@@ -77,8 +68,8 @@ Recover uncertain provider results only through read-back as defined in the shar
 
 ## Lifecycle, work stage, and priority
 
-Follow the absolute update/read-back procedure in `../shared.md`, using `save_project` for Epic state/priority and `save_issue` for Task/Gig status/priority. Planning and execution both remain In Progress; `workStage` changes only workflow metadata. Final review uses In Review, confirmed delivery uses Done, and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
+Read fresh lifecycle/Priority on resume by the durable UUID. Use `trackerMutation` for the selected lifecycle or Priority assignment and follow shared absolute-value outcome/recovery rules, with `save_project` for Epic and `save_issue` for Task/Gig. Planning and execution both remain In Progress; `workStage` changes only workflow metadata. Final review uses In Review, confirmed delivery uses Done, and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
 
 ## Artifact projection
 
-After accepted `epic.md`/`plan.md` changes, call `artifactProjection`, render the provider body, and follow the approval and verification contract in `../shared.md`. Patch and re-read the bound Epic Project description or bound Task/Gig issue description.
+After accepted `epic.md`/`plan.md` changes, call `artifactProjection`, render the provider body, and follow the complete-body publishing contract in `../shared.md`. Save the complete description directly by the bound Epic Project ID or Task/Gig issue ID. Call `save_project` or `save_issue` directly with that ID and complete description. Recover an uncertain outcome through an exact resource read before retrying.

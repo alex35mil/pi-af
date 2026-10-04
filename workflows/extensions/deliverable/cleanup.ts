@@ -7,6 +7,8 @@ import * as project from "../../../extensions/__lib/project.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import { resolveResourceIdsContext } from "../integrations/resource-id-operations.js"
+import { isResourceIdsKind, readCachedResourceIds } from "../integrations/resource-ids.js"
 
 const CompletionEvidenceSchema = Type.Union([
     Type.Object({ kind: Type.Literal("workflow") }, { additionalProperties: false }),
@@ -26,13 +28,16 @@ const MergeEvidenceSchema = Type.Union([
         {
             kind: Type.Literal("github-pr"),
             source: Type.Literal("pull_request_read:get"),
+            repository: Type.Object(
+                { owner: Type.String({ minLength: 1 }), repo: Type.String({ minLength: 1 }) },
+                { additionalProperties: false },
+            ),
             pullRequestNumber: Type.Integer({ minimum: 1 }),
             merged: Type.Literal(true),
             mergedAt: Type.String({ minLength: 1 }),
             head: Type.String({ minLength: 1 }),
             headCommitSha: Type.String({ pattern: "^[0-9a-fA-F]{40,64}$" }),
             base: Type.String({ minLength: 1 }),
-            mergeCommitSha: Type.String({ pattern: "^[0-9a-fA-F]{40,64}$" }),
         },
         { additionalProperties: false },
     ),
@@ -60,22 +65,19 @@ export function runDeliveryCleanup(rawInput: unknown, options: { cwd: string }) 
     assertArtifactPersistencePrepared(root)
     const cleanup = resolveCleanupContext(root, input)
 
+    Git.run(root, ["fetch", "--no-tags", "origin", `refs/heads/${cleanup.target}`])
+    const originTargetCommit = Git.run(root, ["rev-parse", "FETCH_HEAD"])
+    Git.run(root, ["switch", cleanup.target])
+    Git.run(root, ["merge", "--ff-only", "--no-edit", originTargetCommit])
+    const targetCommit = Git.run(root, ["rev-parse", `refs/heads/${cleanup.target}`])
+    if (targetCommit !== originTargetCommit) {
+        throw new Error(
+            `target ${cleanup.target} does not match freshly fetched origin; branch ${cleanup.branch} was preserved`,
+        )
+    }
+
     switch (cleanup.mergeEvidence.kind) {
         case "github-pr":
-            Git.run(root, ["switch", cleanup.target])
-            Git.run(root, ["pull", "--ff-only", "--no-rebase", "origin", cleanup.target])
-            if (
-                !Git.succeeds(root, [
-                    "merge-base",
-                    "--is-ancestor",
-                    cleanup.mergeEvidence.mergeCommitSha,
-                    cleanup.target,
-                ])
-            ) {
-                throw new Error(
-                    `verified GitHub merge commit ${cleanup.mergeEvidence.mergeCommitSha} is not present on updated target ${cleanup.target}; branch ${cleanup.branch} in the current clone was preserved`,
-                )
-            }
             Git.run(root, ["branch", "-D", cleanup.branch])
             break
         case "git-ancestry":
@@ -84,7 +86,6 @@ export function runDeliveryCleanup(rawInput: unknown, options: { cwd: string }) 
                     `branch ${cleanup.branch} in the current clone is not merged into target ${cleanup.target}; branch was preserved`,
                 )
             }
-            Git.run(root, ["switch", cleanup.target])
             Git.run(root, ["branch", "-d", cleanup.branch])
             break
         default:
@@ -94,8 +95,6 @@ export function runDeliveryCleanup(rawInput: unknown, options: { cwd: string }) 
     if (Git.succeeds(root, ["show-ref", "--verify", `refs/heads/${cleanup.branch}`])) {
         throw new Error(`branch deletion in the current clone did not complete: ${cleanup.branch}`)
     }
-    const targetCommit = Git.run(root, ["rev-parse", cleanup.target])
-
     return {
         entityId: cleanup.entityId,
         target: cleanup.target,
@@ -122,9 +121,19 @@ function resolveCleanupContext(root: string, input: DeliveryCleanupInput): Clean
     const forge = status.integrations.find((integration) => integration.role === "forge")
     switch (input.merge.kind) {
         case "github-pr": {
-            if (!forge) throw new Error("GitHub merge evidence requires a stored forge pull request")
-            if (input.merge.pullRequestNumber !== forge.pullRequest.number) {
-                throw new Error("merge evidence pull request does not match entity metadata")
+            if (!forge) throw new Error("GitHub merge evidence requires stored forge intent")
+            const { scope } = resolveResourceIdsContext(root, entityDirectory, "github-pull-request")
+            const saved = readCachedResourceIds(entityDirectory, scope)
+            if (!saved || !isResourceIdsKind(saved, "github-pull-request"))
+                throw new Error("cleanup requires locally recorded PR resource IDs")
+            if (
+                input.merge.repository.owner.toLowerCase() !== forge.repository.owner.toLowerCase() ||
+                input.merge.repository.repo.toLowerCase() !== forge.repository.repo.toLowerCase()
+            ) {
+                throw new Error("merge evidence repository does not match the stored forge association")
+            }
+            if (input.merge.pullRequestNumber !== saved.value.number) {
+                throw new Error("merge evidence pull request does not match the locally recorded PR")
             }
             if (input.merge.head !== branch || input.merge.base !== target) {
                 throw new Error("merge evidence head/base does not match the stored branch contract")
@@ -138,9 +147,7 @@ function resolveCleanupContext(root: string, input: DeliveryCleanupInput): Clean
         }
         case "git-ancestry":
             if (forge) {
-                throw new Error(
-                    "a Deliverable with a stored GitHub pull request requires verified GitHub merge evidence",
-                )
+                throw new Error("a Deliverable with a forge association requires verified GitHub merge evidence")
             }
             break
         default:

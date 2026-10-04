@@ -25,7 +25,7 @@ export const GitHubInitializationSourceSchema = Type.Object(
         issueId: Type.Integer({ minimum: 1 }),
         issueNumber: Type.Integer({ minimum: 1 }),
         issueUrl: Type.String({ minLength: 1 }),
-        projectItemId: Type.String({ minLength: 1 }),
+        projectItemId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     },
     { additionalProperties: false },
 )
@@ -47,7 +47,7 @@ export const LinearTaskInitializationSourceSchema = Type.Object(
         issueId: OneLineSchema,
         identifier: OneLineSchema,
         issueUrl: OneLineSchema,
-        gitBranchName: OneLineSchema,
+        gitBranchName: Type.Optional(OneLineSchema),
         projectId: OneLineSchema,
     },
     { additionalProperties: false },
@@ -60,7 +60,7 @@ export const LinearGigInitializationSourceSchema = Type.Object(
         issueId: OneLineSchema,
         identifier: OneLineSchema,
         issueUrl: OneLineSchema,
-        gitBranchName: OneLineSchema,
+        gitBranchName: Type.Optional(OneLineSchema),
     },
     { additionalProperties: false },
 )
@@ -73,18 +73,11 @@ export const InitializationSourceSchema = Type.Union([
 ])
 export type InitializationSource = Static<typeof InitializationSourceSchema>
 
-const IssueBindingSchema = Type.Object(
-    {
-        issueId: Type.Integer({ minimum: 1 }),
-        issueNumber: Type.Integer({ minimum: 1 }),
-        issueUrl: Type.String({ minLength: 1 }),
-    },
+const GitHubRepositorySchema = Type.Object(
+    { owner: OneLineSchema, repo: OneLineSchema },
     { additionalProperties: false },
 )
-const TrackerBindingSchema = Type.Object(
-    { ...IssueBindingSchema.properties, projectItemId: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-)
+const IssueBindingSchema = Type.Object({ issueNumber: Type.Integer({ minimum: 1 }) }, { additionalProperties: false })
 const pendingOperations = () => Type.Array(OneLineSchema, { minItems: 1 })
 
 function unboundTrackerRecords<P extends TProperties>(properties: P) {
@@ -132,9 +125,10 @@ function issueTrackerRecords<P extends TProperties, I extends TSchema, B extends
     ] as const
 }
 
+const GitHubTrackerProperties = { provider: Type.Literal("github"), repository: GitHubRepositorySchema }
 const GitHubTrackerRecordSchema = Type.Union([
-    ...unboundTrackerRecords({ provider: Type.Literal("github") }),
-    ...issueTrackerRecords({ provider: Type.Literal("github") }, IssueBindingSchema, TrackerBindingSchema),
+    ...unboundTrackerRecords(GitHubTrackerProperties),
+    ...issueTrackerRecords(GitHubTrackerProperties, IssueBindingSchema, IssueBindingSchema),
 ])
 
 const LinearResourceSchema = Type.Union([
@@ -142,35 +136,12 @@ const LinearResourceSchema = Type.Union([
     Type.Literal("task-issue"),
     Type.Literal("gig-issue"),
 ])
-const LinearProjectBindingSchema = Type.Object(
-    { projectId: OneLineSchema, projectUrl: OneLineSchema },
-    { additionalProperties: false },
-)
+const LinearProjectBindingSchema = Type.Object({ projectId: OneLineSchema }, { additionalProperties: false })
 const LinearTaskIssueIdentitySchema = Type.Object(
-    {
-        issueId: OneLineSchema,
-        identifier: OneLineSchema,
-        issueUrl: OneLineSchema,
-        projectId: OneLineSchema,
-    },
+    { issueId: OneLineSchema, projectId: OneLineSchema },
     { additionalProperties: false },
 )
-const LinearTaskIssueBindingSchema = Type.Object(
-    { ...LinearTaskIssueIdentitySchema.properties, gitBranchName: OneLineSchema },
-    { additionalProperties: false },
-)
-const LinearGigIssueIdentitySchema = Type.Object(
-    {
-        issueId: OneLineSchema,
-        identifier: OneLineSchema,
-        issueUrl: OneLineSchema,
-    },
-    { additionalProperties: false },
-)
-const LinearGigIssueBindingSchema = Type.Object(
-    { ...LinearGigIssueIdentitySchema.properties, gitBranchName: OneLineSchema },
-    { additionalProperties: false },
-)
+const LinearGigIssueIdentitySchema = Type.Object({ issueId: OneLineSchema }, { additionalProperties: false })
 
 const LinearTrackerRecordSchema = Type.Union([
     ...unboundTrackerRecords({ provider: Type.Literal("linear"), resource: LinearResourceSchema }),
@@ -181,27 +152,24 @@ const LinearTrackerRecordSchema = Type.Union([
     ...issueTrackerRecords(
         { provider: Type.Literal("linear"), resource: Type.Literal("task-issue") },
         LinearTaskIssueIdentitySchema,
-        LinearTaskIssueBindingSchema,
+        LinearTaskIssueIdentitySchema,
     ),
     ...issueTrackerRecords(
         { provider: Type.Literal("linear"), resource: Type.Literal("gig-issue") },
         LinearGigIssueIdentitySchema,
-        LinearGigIssueBindingSchema,
+        LinearGigIssueIdentitySchema,
     ),
 ])
 
+const GitHubForgeProperties = {
+    role: Type.Literal("forge"),
+    provider: Type.Literal("github"),
+    repository: GitHubRepositorySchema,
+    head: OneLineSchema,
+    target: OneLineSchema,
+}
 const GitHubForgeRecordSchema = Type.Object(
-    {
-        role: Type.Literal("forge"),
-        provider: Type.Literal("github"),
-        pullRequest: Type.Object(
-            {
-                number: Type.Integer({ minimum: 1 }),
-                url: Type.String({ minLength: 1 }),
-            },
-            { additionalProperties: false },
-        ),
-    },
+    { ...GitHubForgeProperties, state: Type.Literal("intent") },
     { additionalProperties: false },
 )
 
@@ -224,6 +192,18 @@ export const TrackerPendingBranchContractSchema = Type.Object(
     { additionalProperties: false },
 )
 export type TrackerPendingBranchContract = Static<typeof TrackerPendingBranchContractSchema>
+
+export const TrackerNamedBranchContractSchema = Type.Object(
+    {
+        state: Type.Literal("tracker-named"),
+        provider: Type.Literal("linear"),
+        name: OneLineSchema,
+        start: OneLineSchema,
+        target: OneLineSchema,
+    },
+    { additionalProperties: false },
+)
+export type TrackerNamedBranchContract = Static<typeof TrackerNamedBranchContractSchema>
 
 export const ProvisioningBranchContractSchema = Type.Object(
     {
@@ -271,7 +251,7 @@ export function createTrackerBranchContract(
     startBranch: string,
     tracker: WorkflowEnvironment["tracker"],
     renderTrackerBranch?: (identity: EntityIdentity) => string,
-): ReadyBranchContract | TrackerPendingBranchContract {
+): ReadyBranchContract | TrackerPendingBranchContract | TrackerNamedBranchContract {
     if (tracker.kind !== "linear") {
         throw new Error("tracker branch format requires a Linear tracker; no fallback branch is allowed")
     }
@@ -285,7 +265,15 @@ export function createTrackerBranchContract(
         if (input.source.provider !== "linear") {
             throw new Error("tracker branch format requires a Linear external source")
         }
-        return readyBranch(input.source.gitBranchName, startBranch, "tracker")
+        if (!input.source.gitBranchName)
+            throw new Error("tracker branch format requires the exact Linear issue branch name")
+        return {
+            state: "tracker-named",
+            provider: "linear",
+            name: input.source.gitBranchName,
+            start: startBranch,
+            target: startBranch,
+        }
     }
     return trackerPendingBranch(startBranch)
 }
@@ -328,13 +316,9 @@ export function createInitialIntegrationRecords(
                     ? {
                           role: "tracker",
                           provider: "github",
+                          repository: { ...environment.tracker.config.repository },
                           state: "bound-pending",
-                          external: {
-                              issueId: input.source.issueId,
-                              issueNumber: input.source.issueNumber,
-                              issueUrl: input.source.issueUrl,
-                              projectItemId: input.source.projectItemId,
-                          },
+                          external: { issueNumber: input.source.issueNumber },
                           operations: [
                               ...(exposesSystemTraces ? ["apply configured Kind label and Internal ID"] : []),
                               "move Project Status to In Progress",
@@ -342,7 +326,13 @@ export function createInitialIntegrationRecords(
                               ...(input.entity === "task" ? ["attach Task issue to parent Epic issue"] : []),
                           ],
                       }
-                    : { role: "tracker", provider: "github", state: "awaiting", operation: "create issue" },
+                    : {
+                          role: "tracker",
+                          provider: "github",
+                          repository: { ...environment.tracker.config.repository },
+                          state: "awaiting",
+                          operation: "create issue",
+                      },
             ]
         case "linear":
             switch (input.entity) {
@@ -354,10 +344,7 @@ export function createInitialIntegrationRecords(
                                   provider: "linear",
                                   resource: "project",
                                   state: "bound-pending",
-                                  external: {
-                                      projectId: input.source.projectId,
-                                      projectUrl: input.source.projectUrl,
-                                  },
+                                  external: { projectId: input.source.projectId },
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
                                       "move Linear Project to In Progress",
@@ -381,9 +368,6 @@ export function createInitialIntegrationRecords(
                                   state: "bound-pending",
                                   external: {
                                       issueId: input.source.issueId,
-                                      identifier: input.source.identifier,
-                                      issueUrl: input.source.issueUrl,
-                                      gitBranchName: input.source.gitBranchName,
                                       projectId: input.source.projectId,
                                   },
                                   operations: [
@@ -409,12 +393,7 @@ export function createInitialIntegrationRecords(
                                   provider: "linear",
                                   resource: "gig-issue",
                                   state: "bound-pending",
-                                  external: {
-                                      issueId: input.source.issueId,
-                                      identifier: input.source.identifier,
-                                      issueUrl: input.source.issueUrl,
-                                      gitBranchName: input.source.gitBranchName,
-                                  },
+                                  external: { issueId: input.source.issueId },
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
                                       "move Linear issue to In Progress",
@@ -441,6 +420,15 @@ export function assertIntegrationInvariants(status: EntityStatus, fail: (message
     for (const integration of status.integrations) {
         if (roles.has(integration.role)) fail(`duplicate integration role ${JSON.stringify(integration.role)}`)
         roles.add(integration.role)
+        if (integration.role === "forge") {
+            if (
+                status.branch.state !== "ready" ||
+                integration.head !== status.branch.name ||
+                integration.target !== status.branch.target
+            ) {
+                fail("forge association must match the ready branch contract")
+            }
+        }
         if (integration.role === "tracker" && integration.provider === "linear") {
             const expectedResource =
                 status.entity === "epic" ? "project" : status.entity === "task" ? "task-issue" : "gig-issue"
@@ -478,13 +466,14 @@ export function assertIntegrationInvariants(status: EntityStatus, fail: (message
     if (status.branch.state !== "ready") {
         if (status.entity === "epic") fail("an Epic may not have a pending branch")
         if (!linearTracker) return fail("only a Linear Task/Gig may have a pending branch")
-        if (status.branch.state === "provisioning") {
+        if (status.branch.state === "tracker-named" || status.branch.state === "provisioning") {
             if (
-                (linearTracker.state !== "bound" && linearTracker.state !== "bound-pending") ||
-                linearTracker.resource === "project" ||
-                status.branch.name !== linearTracker.external.gitBranchName
+                (linearTracker.state !== "bound" &&
+                    linearTracker.state !== "bound-pending" &&
+                    linearTracker.state !== "issue-bound-pending") ||
+                linearTracker.resource === "project"
             ) {
-                fail("provisioning branch must match the bound Linear issue branch")
+                fail("named/provisioning branch requires an identified Linear issue")
             }
         }
         return
@@ -496,11 +485,12 @@ export function assertIntegrationInvariants(status: EntityStatus, fail: (message
                 fail("tracker-owned Epic branch requires a Linear Project record")
             }
         } else if (
-            (linearTracker.state !== "bound" && linearTracker.state !== "bound-pending") ||
-            linearTracker.resource === "project" ||
-            status.branch.name !== linearTracker.external.gitBranchName
+            (linearTracker.state !== "bound" &&
+                linearTracker.state !== "bound-pending" &&
+                linearTracker.state !== "issue-bound-pending") ||
+            linearTracker.resource === "project"
         ) {
-            fail("tracker-owned Task/Gig branch must match the bound Linear issue branch")
+            fail("tracker-owned Task/Gig branch requires an identified Linear issue")
         }
     }
 }

@@ -27,6 +27,7 @@ import {
     assertEntityBranchReady,
     type BranchContract,
     ENTITY_LOCAL_DIR,
+    ENTITY_METADATA_FILE,
     LOCAL_DESIGNS_DIR,
     LOCAL_NOTES_FILE,
     LOCAL_PENDING_FILE,
@@ -40,6 +41,8 @@ import {
     writeEntityStatus,
 } from "../__lib/entity.js"
 import { writeTextAtomically } from "../__lib/files.js"
+import type { ResourceIds } from "../integrations/resource-ids.js"
+import { resourceIdsFromAdoption } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared, type ProjectConfig } from "../__lib/project-config.js"
 import { resolveWorkflowEnvironment, resolveWorkflowPolicy, type WorkflowEnvironment } from "../integrations/policy.js"
@@ -137,6 +140,7 @@ export interface InitializeEntityOptions {
 export interface InitializedEntity {
     directory: string
     status: EntityStatus
+    adoptionResourceIds: ResourceIds[]
 }
 
 export function initializeEntity(input: EntityInitialization, options: InitializeEntityOptions): InitializedEntity {
@@ -176,6 +180,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
     }
 
     const identity = { entity: input.entity, rawId, slug } as const
+    const adoptionResourceIds = resourceIdsFromAdoption(input, environment, qualifyId(input.entity, rawId))
     const contract: BranchContract =
         format === "tracker"
             ? createTrackerBranchContract(
@@ -229,7 +234,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
         throw error
     }
 
-    return { directory: relativeDirectory, status: initializedStatus! }
+    return { directory: relativeDirectory, status: initializedStatus!, adoptionResourceIds }
 }
 
 function createEntityArtifacts(
@@ -442,6 +447,43 @@ function resolveDefaultBranch(root: string): string {
     )
 }
 
+interface RecordedBranchFacts {
+    id: string
+    start: string
+    target: string
+}
+
+// Reads one entity's metadata.json without schema validation and extracts only the
+// branch facts (id, start, target) that default-branch discovery needs. Intentionally
+// format-blind in both directions: a done entity saved before a format change does not
+// block new work, and this scan never signals staleness — that belongs to the entity's
+// own operational read. Corrupt JSON or missing branch fields still throw. Strict
+// operational validation stays in readEntityStatus.
+function readRecordedBranchFacts(entityDirectory: string): RecordedBranchFacts | null {
+    const metadataPath = path.join(entityDirectory, ENTITY_METADATA_FILE)
+    if (!fs.existsSync(metadataPath)) return null
+    let metadata: unknown
+    try {
+        metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
+    } catch (cause) {
+        throw new Error(`cannot parse ${metadataPath}: ${String(cause)}`)
+    }
+    if (typeof metadata !== "object" || metadata === null) {
+        throw new Error(`invalid entity metadata in ${metadataPath}`)
+    }
+    const record = metadata as Record<string, unknown>
+    if (record.entity !== "epic" && record.entity !== "gig") return null
+    const branch = (record.branch ?? {}) as Record<string, unknown>
+    if (typeof branch.start !== "string" || typeof branch.target !== "string") {
+        throw new Error(`cannot read recorded branch in ${metadataPath}`)
+    }
+    return {
+        id: typeof record.id === "string" ? record.id : path.basename(entityDirectory),
+        start: branch.start,
+        target: branch.target,
+    }
+}
+
 function recordedDefaultBranches(root: string): string[] {
     const branches = new Set<string>()
     for (const relativeRoot of [EPIC_ROOT, GIG_ROOT]) {
@@ -449,12 +491,12 @@ function recordedDefaultBranches(root: string): string[] {
         if (!fs.existsSync(entityRoot)) continue
         for (const entry of fs.readdirSync(entityRoot, { withFileTypes: true })) {
             if (!entry.isDirectory()) continue
-            const status = readEntityStatus(path.join(entityRoot, entry.name))
-            if (status.entity !== "epic" && status.entity !== "gig") continue
-            if (status.branch.start !== status.branch.target) {
-                throw new Error(`${status.id} has inconsistent default-branch start and target`)
+            const facts = readRecordedBranchFacts(path.join(entityRoot, entry.name))
+            if (!facts) continue
+            if (facts.start !== facts.target) {
+                throw new Error(`${facts.id} has inconsistent default-branch start and target`)
             }
-            branches.add(status.branch.start)
+            branches.add(facts.start)
         }
     }
     return [...branches]

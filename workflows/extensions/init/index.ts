@@ -4,6 +4,7 @@ import { Value } from "typebox/value"
 
 import { EntityInitializationSchema, initializeEntity, type InitializedEntity, setEpicTaskTarget } from "./entity.js"
 import { resolveLinearTrackerBranchRendererForInitialization } from "../integrations/tracker/linear.js"
+import { seedInitializedEntityResourceIds } from "./resource-ids.js"
 
 const SetEpicTaskTargetSchema = Type.Object(
     {
@@ -28,6 +29,7 @@ export default function (pi: ExtensionAPI): void {
                 signal,
             )
             const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch })
+            await seedInitializedEntityResourceIds(initialized, ctx.cwd)
             return {
                 content: [{ type: "text" as const, text: formatInitializedEntity(initialized) }],
                 details: initialized,
@@ -56,11 +58,9 @@ export default function (pi: ExtensionAPI): void {
     })
 }
 
-export function formatInitializedEntity(initialized: InitializedEntity): string {
-    const integrationSummary = initialized.status.integrations.map((integration) =>
-        integration.role === "forge"
-            ? `forge/${integration.provider}: pull request #${integration.pullRequest.number}`
-            : `${integration.role}/${integration.provider}: ${integration.state}`,
+export function formatInitializedEntity(initialized: Pick<InitializedEntity, "directory" | "status">): string {
+    const integrationSummary = initialized.status.integrations.map(
+        (integration) => `${integration.role}/${integration.provider}: ${integration.state}`,
     )
     const branch = initialized.status.branch
     return [

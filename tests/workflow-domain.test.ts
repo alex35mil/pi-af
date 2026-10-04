@@ -285,7 +285,7 @@ describe("workflow domain", () => {
                     issueId: 101,
                     issueNumber: 42,
                     issueUrl: "https://github.com/example/project/issues/42",
-                    projectItemId: "PVTI_example",
+                    projectItemId: 301,
                 },
             }),
             true,
@@ -363,15 +363,12 @@ describe("workflow domain", () => {
     })
 
     it("models tracker checkpoints and confirmed forge PR references", () => {
-        const issue = {
-            issueId: 101,
-            issueNumber: 42,
-            issueUrl: "https://github.com/example/project/issues/42",
-        }
+        const issue = { issueNumber: 42 }
         assert.equal(
             Value.Check(IntegrationRecordSchema, {
                 role: "tracker",
                 provider: "github",
+                repository: { owner: "example", repo: "project" },
                 state: "issue-bound-pending",
                 external: issue,
                 operations: ["add issue to Project"],
@@ -382,8 +379,9 @@ describe("workflow domain", () => {
             Value.Check(IntegrationRecordSchema, {
                 role: "tracker",
                 provider: "github",
+                repository: { owner: "example", repo: "project" },
                 state: "bound-pending",
-                external: { ...issue, projectItemId: "PVTI_example" },
+                external: issue,
                 operations: ["set Project Status"],
             }),
             true,
@@ -392,7 +390,10 @@ describe("workflow domain", () => {
             Value.Check(IntegrationRecordSchema, {
                 role: "forge",
                 provider: "github",
-                pullRequest: { number: 7, url: "https://github.com/example/project/pull/7" },
+                repository: { owner: "example", repo: "project" },
+                head: "work",
+                target: "main",
+                state: "intent",
             }),
             true,
         )
@@ -402,7 +403,7 @@ describe("workflow domain", () => {
                 provider: "linear",
                 resource: "project",
                 state: "bound",
-                external: { projectId: "project-uuid", projectUrl: "https://linear.app/example/project/epic" },
+                external: { projectId: "project-uuid" },
             }),
             true,
         )
@@ -413,9 +414,6 @@ describe("workflow domain", () => {
             state: "bound",
             external: {
                 issueId: "issue-uuid",
-                identifier: "ENG-42",
-                issueUrl: "https://linear.app/example/issue/ENG-42/work",
-                gitBranchName: "alex/eng-42-work",
                 projectId: "project-uuid",
             },
         }
@@ -612,7 +610,7 @@ describe("workflow domain", () => {
                         issueId: 101,
                         issueNumber: 42,
                         issueUrl: "https://github.com/example/project/issues/42",
-                        projectItemId: "PVTI_example",
+                        projectItemId: 301,
                     },
                 },
                 { cwd: repository, now: new Date("2026-01-02T03:06:00.000Z") },
@@ -695,7 +693,7 @@ describe("workflow domain", () => {
                                 issueId: 101,
                                 issueNumber: 42,
                                 issueUrl: "https://github.com/example/project/issues/42",
-                                projectItemId: "PVTI_example",
+                                projectItemId: 301,
                             },
                         },
                         { cwd: repository },
@@ -717,7 +715,13 @@ describe("workflow domain", () => {
                 { cwd: repository, now: new Date("2026-01-02T03:08:00.000Z") },
             )
             assert.deepEqual(trackerOnly.status.integrations, [
-                { role: "tracker", provider: "github", state: "awaiting", operation: "create issue" },
+                {
+                    role: "tracker",
+                    provider: "github",
+                    repository: { owner: "example", repo: "project" },
+                    state: "awaiting",
+                    operation: "create issue",
+                },
             ])
             assert.deepEqual(trackerOnly.status.authority, {
                 kind: "tracker",
@@ -902,7 +906,11 @@ describe("workflow domain", () => {
                 },
                 { cwd: repository, now: new Date("2026-01-03T02:01:00.000Z") },
             )
-            assert.equal(readyBranch(task.status).name, externalTaskSource.gitBranchName)
+            assert.equal(task.status.branch.state, "tracker-named")
+            assert.equal(
+                readyBranch(finalizeLinearBranch(task.directory, { cwd: repository })).name,
+                externalTaskSource.gitBranchName,
+            )
             assert.throws(
                 () =>
                     initializeEntity(
@@ -942,7 +950,11 @@ describe("workflow domain", () => {
                 },
                 { cwd: repository, now: new Date("2026-01-03T02:02:00.000Z") },
             )
-            assert.equal(readyBranch(gig.status).name, "alex/eng-41-existing-linear-gig")
+            assert.equal(gig.status.branch.state, "tracker-named")
+            assert.equal(
+                readyBranch(finalizeLinearBranch(gig.directory, { cwd: repository })).name,
+                "alex/eng-41-existing-linear-gig",
+            )
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
         }
@@ -974,7 +986,7 @@ describe("workflow domain", () => {
                         issueId: 101,
                         issueNumber: 12,
                         issueUrl: "https://github.com/example/project/issues/12",
-                        projectItemId: "PVTI_private",
+                        projectItemId: 302,
                     },
                     kind: "feature",
                 },
@@ -1096,7 +1108,6 @@ describe("workflow domain", () => {
                         state: "bound" as const,
                         external: {
                             projectId: "project-uuid",
-                            projectUrl: "https://linear.app/example/project/linear-epic",
                         },
                     },
                 ],
@@ -1140,8 +1151,6 @@ describe("workflow domain", () => {
                         state: "issue-bound-pending" as const,
                         external: {
                             issueId: "issue-uuid",
-                            identifier: "ENG-42",
-                            issueUrl: "https://linear.app/example/issue/ENG-42/linear-task",
                             projectId: "project-uuid",
                         },
                         operations: ["read generated gitBranchName"],
@@ -1158,6 +1167,7 @@ describe("workflow domain", () => {
             const linearBranchName = "alex/eng-42-linear-task"
             const boundTaskStatus: EntityStatus = {
                 ...task.status,
+                branch: { ...task.status.branch, state: "tracker-named", provider: "linear", name: linearBranchName },
                 authority: { kind: "tracker", provider: "linear" },
                 integrations: [
                     {
@@ -1167,9 +1177,6 @@ describe("workflow domain", () => {
                         state: "bound" as const,
                         external: {
                             issueId: "issue-uuid",
-                            identifier: "ENG-42",
-                            issueUrl: "https://linear.app/example/issue/ENG-42/linear-task",
-                            gitBranchName: linearBranchName,
                             projectId: "project-uuid",
                         },
                     },
@@ -1232,7 +1239,7 @@ describe("workflow domain", () => {
             })
             assert.throws(
                 () => readEntityStatus(path.join(repository, task.directory)),
-                /tracker-owned Task\/Gig branch must match/,
+                /invalid entity metadata.*MIGRATIONS\.md/,
             )
             writeStatus(repository, task.directory, {
                 ...finalized,
@@ -1268,11 +1275,7 @@ describe("workflow domain", () => {
                 provider: "linear" as const,
                 resource: "gig-issue" as const,
                 state: "issue-bound-pending" as const,
-                external: {
-                    issueId: "gig-partial-uuid",
-                    identifier: "ENG-43",
-                    issueUrl: "https://linear.app/example/issue/ENG-43/linear-partial-gig",
-                },
+                external: { issueId: "gig-partial-uuid" },
                 operations: ["read generated gitBranchName"],
             }
             writeStatus(repository, resumedGig.directory, {
@@ -1294,6 +1297,12 @@ describe("workflow domain", () => {
             const resumedBranchName = "alex/eng-43-linear-partial-gig"
             writeStatus(repository, resumedGig.directory, {
                 ...resumedPartial,
+                branch: {
+                    ...resumedPartial.branch,
+                    state: "tracker-named",
+                    provider: "linear",
+                    name: resumedBranchName,
+                },
                 authority: { kind: "tracker", provider: "linear" },
                 integrations: [
                     {
@@ -1301,7 +1310,7 @@ describe("workflow domain", () => {
                         provider: "linear",
                         resource: "gig-issue",
                         state: "bound",
-                        external: { ...partialGigTracker.external, gitBranchName: resumedBranchName },
+                        external: partialGigTracker.external,
                     },
                 ],
             })
@@ -1349,32 +1358,37 @@ describe("workflow domain", () => {
                 provider: "linear" as const,
                 resource: "gig-issue" as const,
                 state: "bound" as const,
-                external: {
-                    issueId: "collision-uuid",
-                    identifier: "ENG-44",
-                    issueUrl: "https://linear.app/example/issue/ENG-44/linear-collision",
-                    gitBranchName: "bad branch name",
-                },
+                external: { issueId: "collision-uuid" },
             }
             writeStatus(repository, collision.directory, {
                 ...collision.status,
+                branch: {
+                    ...collision.status.branch,
+                    state: "tracker-named",
+                    provider: "linear",
+                    name: "bad branch name",
+                },
                 authority: { kind: "tracker", provider: "linear" },
                 integrations: [collisionBinding],
             })
             assert.throws(() => finalizeLinearBranch(collision.directory, { cwd: repository }), /check-ref-format/)
             writeStatus(repository, collision.directory, {
                 ...collision.status,
+                branch: {
+                    ...collision.status.branch,
+                    state: "tracker-named",
+                    provider: "linear",
+                    name: collisionBranch,
+                },
                 authority: { kind: "tracker", provider: "linear" },
-                integrations: [
-                    { ...collisionBinding, external: { ...collisionBinding.external, gitBranchName: collisionBranch } },
-                ],
+                integrations: [collisionBinding],
             })
             git(repository, ["branch", collisionBranch, "main"])
             assert.throws(
                 () => finalizeLinearBranch(collision.directory, { cwd: repository }),
                 /workflow branch already exists/,
             )
-            assert.equal(readEntityStatus(path.join(repository, collision.directory)).branch.state, "tracker-pending")
+            assert.equal(readEntityStatus(path.join(repository, collision.directory)).branch.state, "tracker-named")
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
         }
@@ -1450,10 +1464,17 @@ describe("workflow domain", () => {
                     status: {
                         ...gig.status,
                         integrations: [
-                            { role: "tracker", provider: "github", state: "awaiting", operation: "create issue" },
                             {
                                 role: "tracker",
                                 provider: "github",
+                                repository: { owner: "example", repo: "project" },
+                                state: "awaiting",
+                                operation: "create issue",
+                            },
+                            {
+                                role: "tracker",
+                                provider: "github",
+                                repository: { owner: "example", repo: "project" },
                                 state: "pending",
                                 operations: ["create issue"],
                             },
@@ -1535,6 +1556,60 @@ describe("workflow domain", () => {
                 /workflow branch already exists/,
             )
             assert.equal(git(repository, ["show-ref", "--verify", `refs/heads/${branch}`]).length > 0, true)
+        } finally {
+            fs.rmSync(repository, { recursive: true, force: true })
+        }
+    })
+
+    it("discovers the recorded default branch from an old-format historical gig", () => {
+        const repository = temporaryRepository()
+        try {
+            const legacyDirectory = path.join(
+                repository,
+                ".project",
+                "gigs",
+                "20260101-0000.GIG-01MTEST0000.legacy-format",
+            )
+            fs.mkdirSync(legacyDirectory, { recursive: true })
+            fs.writeFileSync(
+                path.join(legacyDirectory, "metadata.json"),
+                JSON.stringify({
+                    id: "GIG-01MTEST0000",
+                    entity: "gig",
+                    kind: "chore",
+                    branch: { state: "ready", name: "gig-01mtest0000-legacy-format", start: "main", target: "main" },
+                    authority: { kind: "tracker", provider: "github" },
+                    integrations: [
+                        {
+                            role: "tracker",
+                            provider: "github",
+                            state: "bound",
+                            external: {
+                                issueId: 123,
+                                issueNumber: 7,
+                                issueUrl: "https://github.com/example/project/issues/7",
+                                projectItemId: 456,
+                            },
+                        },
+                    ],
+                }),
+            )
+            assert.throws(() => readEntityStatus(legacyDirectory), /invalid entity metadata/)
+            git(repository, ["checkout", "-q", "-b", "work"])
+
+            const initialized = initializeEntity(
+                {
+                    entity: "gig",
+                    title: "Fresh work",
+                    slug: "fresh-work",
+                    request: "Fresh work",
+                    priority: "not set",
+                    source: { mode: "new" },
+                    kind: "chore",
+                },
+                { cwd: repository, now: new Date("2026-01-02T03:04:00.000Z") },
+            )
+            assert.equal(initialized.status.branch.start, "main")
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
         }

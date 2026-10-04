@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M3S2H283",
+  "rawId": "01M3S2H283",
+  "slug": "optimize-remote-calls-and-provider-handle-caching",
+  "title": "Optimize workflow remote calls and provider-handle caching",
+  "createdAt": "2026-09-30T11:52:17.923Z",
+  "workStage": "execution",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m3s2h283-optimize-remote-calls-and-provider-handle-caching",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 23
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m3s2h283-optimize-remote-calls-and-provider-handle-caching",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "refactor"
+}
