@@ -78,33 +78,30 @@ describe("workflow consolidation contracts", () => {
         const cases = [
             {
                 provider: "github",
-                identity: { issueId: 1, issueNumber: 2, issueUrl: "url" },
-                binding: { projectItemId: "item" },
+                repository: { owner: "example", repo: "project" },
+                identity: { issueNumber: 2 },
             },
             {
                 provider: "linear",
                 resource: "task-issue",
-                identity: { issueId: "issue", identifier: "ENG-1", issueUrl: "url", projectId: "project" },
-                binding: { gitBranchName: "eng-1" },
+                identity: { issueId: "issue", projectId: "project" },
             },
             {
                 provider: "linear",
                 resource: "gig-issue",
-                identity: { issueId: "issue", identifier: "ENG-1", issueUrl: "url" },
-                binding: { gitBranchName: "eng-1" },
+                identity: { issueId: "issue" },
             },
         ]
-        for (const { identity, binding, ...provider } of cases) {
+        for (const { identity, ...provider } of cases) {
             const common = { role: "tracker", ...provider }
             for (const checkpoint of [
                 { state: "awaiting", operation: "create" },
                 { state: "pending", operations: ["create"] },
                 { state: "issue-bound-pending", external: identity, operations: ["complete binding"] },
-                { state: "bound-pending", external: { ...identity, ...binding }, operations: ["confirm"] },
-                { state: "bound", external: { ...identity, ...binding } },
+                { state: "bound-pending", external: identity, operations: ["confirm"] },
+                { state: "bound", external: identity },
             ])
                 assert.equal(Value.Check(IntegrationRecordSchema, { ...common, ...checkpoint }), true)
-            assert.equal(Value.Check(IntegrationRecordSchema, { ...common, state: "bound", external: identity }), false)
             assert.equal(Value.Check(IntegrationRecordSchema, { ...common, state: "pending", operations: [] }), false)
             assert.equal(
                 Value.Check(IntegrationRecordSchema, {
@@ -120,7 +117,7 @@ describe("workflow consolidation contracts", () => {
             role: "tracker",
             provider: "linear",
             resource: "project",
-            external: { projectId: "p", projectUrl: "url" },
+            external: { projectId: "p" },
         }
         assert.equal(Value.Check(IntegrationRecordSchema, { ...project, state: "bound" }), true)
         assert.equal(

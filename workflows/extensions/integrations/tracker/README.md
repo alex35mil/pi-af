@@ -1,8 +1,7 @@
-# Tracker adapters
+# Tracker integration
 
-`github.ts` and `linear.ts` resolve operation-specific MCP capabilities and provider validation steps. Linear also owns interruption-safe local branch finalization from its exact issue branch name. Provider adapters perform no provider mutation; the agent calls returned Pi-registered tools under normal permissions.
+The agent follows the [GitHub](../../../references/integrations/tracker/github.md) or [Linear](../../../references/integrations/tracker/linear.md) procedure and calls registered provider tools directly. Local context reads configuration/authority/entity state; `../creation.ts` and Resource IDs helpers record actual identities. `linear.ts` owns branch finalization from the durable exact saved-name contract.
 
-- Configuration and examples: [setup reference](../../../references/setup.md).
-- Shared operational contract: [integration roles](../../../references/integrations/shared.md).
-- Provider operations: [GitHub](../../../references/integrations/tracker/github.md) and [Linear](../../../references/integrations/tracker/linear.md).
-- Executable capability requirements: each adapter's requirement declarations and `../capabilities.ts`.
+- Configuration: [setup](../../../references/setup.md).
+- Shared contract: [integration roles](../../../references/integrations/shared.md).
+- Owned local IDs: `../resource-ids.ts` and `../resource-id-operations.ts`.

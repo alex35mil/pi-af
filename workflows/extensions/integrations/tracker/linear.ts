@@ -1,4 +1,3 @@
-import type { McpToolCatalog } from "../../../../extensions/__lib/mcp.js"
 import * as project from "../../../../extensions/__lib/project.js"
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
@@ -10,7 +9,6 @@ import { assertArtifactPersistencePrepared } from "../../__lib/project-config.js
 import type { EntityInitialization } from "../../init/entity.js"
 import { loadIntegrationConfig, type LinearTracker } from "../config.js"
 import { registeredCredentialEnvironment } from "../mcp.js"
-import { type IntegrationOperation, type ToolRequirement, validateRequirements } from "../capabilities.js"
 
 const LinearApiRecordSchema = Type.Record(Type.String(), Type.Unknown())
 
@@ -39,7 +37,12 @@ export function finalizeLinearBranch(rawEntityDirectory: string, options: Finali
     if (status.branch.state === "ready") return status
 
     if (status.branch.state === "tracker-pending") {
-        const name = tracker.external.gitBranchName
+        throw new Error(
+            "save the exact Linear issue branch name in the tracker-named branch contract before finalization",
+        )
+    }
+    if (status.branch.state === "tracker-named") {
+        const name = status.branch.name
         Git.run(root, ["check-ref-format", "--branch", name])
         Git.run(root, ["show-ref", "--verify", `refs/heads/${status.branch.start}`])
         if (Git.succeeds(root, ["show-ref", "--verify", `refs/heads/${name}`])) {
@@ -493,124 +496,4 @@ function text(value: unknown, label: string): string {
 function number(value: unknown, label: string): number {
     if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`invalid ${label}`)
     return value
-}
-
-export const LINEAR_TOOL_NAMES = {
-    getWorkspace: "get_workspace",
-    getTeam: "get_team",
-    listIssueStatuses: "list_issue_statuses",
-    getIssue: "get_issue",
-    listIssues: "list_issues",
-    saveIssue: "save_issue",
-    getProject: "get_project",
-    listProjects: "list_projects",
-    saveProject: "save_project",
-} as const
-
-const COMMON_REQUIREMENTS: ToolRequirement[] = [
-    { name: LINEAR_TOOL_NAMES.getWorkspace, properties: [] },
-    { name: LINEAR_TOOL_NAMES.getTeam, properties: ["query"] },
-]
-const ISSUE_READ_REQUIREMENTS: ToolRequirement[] = [
-    { name: LINEAR_TOOL_NAMES.listIssueStatuses, properties: ["team"] },
-    { name: LINEAR_TOOL_NAMES.getIssue, properties: ["id", "includeRelations"] },
-    {
-        name: LINEAR_TOOL_NAMES.listIssues,
-        properties: ["query", "team", "state", "project", "priority", "parentId", "fields"],
-    },
-]
-const ISSUE_WRITE_REQUIREMENTS: ToolRequirement[] = [
-    {
-        name: LINEAR_TOOL_NAMES.saveIssue,
-        properties: ["id", "title", "description", "patch", "team", "priority", "project", "state"],
-    },
-]
-const PROJECT_READ_REQUIREMENTS: ToolRequirement[] = [
-    { name: LINEAR_TOOL_NAMES.getProject, properties: ["query"] },
-    {
-        name: LINEAR_TOOL_NAMES.listProjects,
-        properties: ["query", "state", "team", "fields"],
-    },
-]
-const PROJECT_WRITE_REQUIREMENTS: ToolRequirement[] = [
-    {
-        name: LINEAR_TOOL_NAMES.saveProject,
-        properties: ["id", "name", "description", "patch", "state", "priority", "addTeams", "setTeams"],
-    },
-]
-
-export function resolveLinearTracker(
-    catalog: McpToolCatalog,
-    config: LinearTracker,
-    operation: IntegrationOperation,
-    entity?: EntityStatus,
-) {
-    try {
-        const tools = validateLinearTrackerCapabilities(catalog, config, operation, entity?.entity)
-        return {
-            state: "enabled" as const,
-            provider: "linear" as const,
-            config,
-            tools,
-            remoteValidation: buildLinearRemoteValidationSteps(config, tools),
-        }
-    } catch (error) {
-        return {
-            state: "unavailable" as const,
-            provider: "linear" as const,
-            config,
-            error: error instanceof Error ? error.message : String(error),
-        }
-    }
-}
-
-export function validateLinearTrackerCapabilities(
-    catalog: McpToolCatalog,
-    config: LinearTracker,
-    operation: IntegrationOperation,
-    entity?: EntityStatus["entity"],
-) {
-    return validateRequirements(catalog, config.mcpServer, "Linear", requirementsFor(operation, entity))
-}
-
-function requirementsFor(operation: IntegrationOperation, entity?: EntityStatus["entity"]): ToolRequirement[] {
-    if (operation === "pullRequest") return COMMON_REQUIREMENTS
-    if (operation === "inspect") {
-        return [...COMMON_REQUIREMENTS, ...ISSUE_READ_REQUIREMENTS, ...PROJECT_READ_REQUIREMENTS]
-    }
-    if (operation === "queueIntake" || !entity) {
-        return [
-            ...COMMON_REQUIREMENTS,
-            ...ISSUE_READ_REQUIREMENTS,
-            ...ISSUE_WRITE_REQUIREMENTS,
-            ...PROJECT_READ_REQUIREMENTS,
-            ...PROJECT_WRITE_REQUIREMENTS,
-        ]
-    }
-    if (entity === "epic") {
-        return [...COMMON_REQUIREMENTS, ...PROJECT_READ_REQUIREMENTS, ...PROJECT_WRITE_REQUIREMENTS]
-    }
-    if (entity === "task") {
-        return [
-            ...COMMON_REQUIREMENTS,
-            ...ISSUE_READ_REQUIREMENTS,
-            ...ISSUE_WRITE_REQUIREMENTS,
-            ...PROJECT_READ_REQUIREMENTS,
-        ]
-    }
-    return [...COMMON_REQUIREMENTS, ...ISSUE_READ_REQUIREMENTS, ...ISSUE_WRITE_REQUIREMENTS]
-}
-
-function buildLinearRemoteValidationSteps(config: LinearTracker, tools: Record<string, string>): string[] {
-    const steps: string[] = []
-    if (tools.getWorkspace) steps.push(`Use ${tools.getWorkspace} to verify the authenticated Linear workspace.`)
-    if (tools.getTeam) {
-        steps.push(`Use ${tools.getTeam} query=${JSON.stringify(config.team)} and require one exact configured team.`)
-    }
-    if (tools.listIssueStatuses) {
-        steps.push(
-            `Use ${tools.listIssueStatuses} team=${JSON.stringify(config.team)} and require every configured issue lifecycle status name.`,
-        )
-    }
-    return steps
 }

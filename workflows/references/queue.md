@@ -9,16 +9,16 @@ Both destinations contain work that has not started. Adding work creates no work
 
 ## Add work
 
-1. Call `integration_context` with `operation: "queueIntake"` to obtain the configured tracker. Stop and report a missing, invalid, or unavailable tracker.
+1. Call local/read-only `integration_context` with `operation: "inspect"` to obtain configuration. Stop and report a missing/invalid tracker; select the entity and approved values before making provider mutations.
 2. Read [communication guidance](./communication.md), [shared integration rules](./integrations/shared.md), and the returned provider guide: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md).
 3. Draft the title, description, selected Backlog or Todo destination, and configured Priority or `not set`.
 4. For versioned GitHub, include workflow Kind as a standard intake choice: when the request states Epic, Feature, Bugfix, Research, Refactor, Audit, or Chore, reuse it; otherwise infer and recommend the best-supported value. Present the exact Kind or `not set` with the other intake fields. `not set` creates no managed Kind label. Unversioned GitHub does not ask for or apply Kind because queue intake has nowhere private to retain it.
-5. For Linear, also require `epic | task | gig`. A Task requires one initialized Linear-backed parent Epic.
-6. Obtain explicit approval of the complete provider-specific intake, run the returned provider checks, and use only the returned tracker MCP tools.
+5. Require the selected `epic | task | gig` before mutation capability checks. A Task requires its initialized parent Epic and exact selected-provider issue/Project relationship.
+6. Obtain approval of the complete provider-specific intake, then request `queueIntake` with selected `entity`, exact `priority`, and `kind` (`not set` when no Kind is used). Use only its selected registered tracker tools; let native named mutations validate their own inputs without label/option/workspace/status preflight.
 
 An approved new queue intake is a direct create request. Do not search for duplicates before the first create attempt. Search for an existing object only when the user asks to adopt one or when a create response is uncertain.
 
-GitHub creates an ordinary issue, applies the approved managed Kind label only in versioned mode when Kind is not `not set`, verifies its labels, adds it to the configured Project, and applies the selected Status and Priority. Linear creates a Project for Epic, an issue in the parent Epic Project for Task, or a projectless issue for Gig, then applies the selected queue state and native Priority.
+GitHub creates an ordinary issue with only the approved versioned Kind (omit for `not set`) and Task parent when applicable, adds it to the configured Project, and applies selected Status/Priority through supported named writes. Task parent and issue-scoped fields are separate supported calls. Linear creates only the selected Project, parent-Project Task issue, or projectless Gig with team/state/native Priority together. Reuse returned identities and established outcome proof; obtain only required missing facts. No queued cache or persisted recovery state is created.
 
 Except for that approved versioned GitHub Kind label, do not assign a workflow ID, native GitHub issue Type, Linear label/kind, Planning label, branch, workflow artifact, or pending workflow record while adding work to Backlog or Todo.
 

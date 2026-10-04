@@ -80,6 +80,7 @@ Within this workflow, current explicit user instructions take precedence over `.
   metadata.json                    # Validated ID, authority, work stage, branch contract, task target, and tracker/forge records.
   epic.md                          # User-accepted initiative contract and ordered prospective/initialized Tasks.
   .local/                          # Local entity state; always gitignored in versioned mode.
+    metadata.json                  # Strict scoped scoped Resource IDs; disposable, never lifecycle authority.
     status.md                      # Trackerless only: authoritative lifecycle state.
     notes.md                       # Free-form agent working notes; no completion gate.
     draft.md                       # Mutable candidate; never the accepted contract.
@@ -112,6 +113,7 @@ Within this workflow, current explicit user instructions take precedence over `.
   report.md                        # Durable Research/Audit result; preserved when that work continues into implementation.
   designs/                         # Optional: only designs explicitly selected by the user for versioning.
   .local/                          # Local entity state; always gitignored in versioned mode.
+    metadata.json                  # Strict scoped scoped Resource IDs; outside Git in both artifact modes.
     status.md                      # Trackerless only: authoritative lifecycle state.
     notes.md                       # Free-form agent working notes; no completion gate.
     pending.md                     # Pending work; final review requires no active entries.
@@ -144,7 +146,9 @@ Within this workflow, current explicit user instructions take precedence over `.
   .local/                          # Same local status/draft/designs/scratch/review layout as Task.
 ```
 
-Task and Gig share the Deliverable lifecycle and artifact meanings. Only Task has a parent Epic and may synchronize parent Epic artifacts. Its parent identity is the containing Epic directory plus the exact `[TASK-…]` marker. `metadata.branch` is a strict ready/tracker-pending/provisioning union; a ready branch records whether its name was generated or tracker-provided, and work cannot begin until ready. A Task's stored start/target never changes when its Epic later changes `taskTarget`. `metadata.json` is authoritative for current kind and `workStage: planning | execution`; `brief.md` remains the approved Request, and `.local/notes.md` holds transient human context. Feature/Bugfix/Refactor/Chore create `result.md` before final subagent review so the reviewer receives the actual outcome and verification evidence; Research/Audit complete `report.md` before final subagent review. A Research/Audit continuation preserves `report.md` and adds `result.md` for the implementation outcome before final subagent review. Once created, `result.md` stays synchronized with every later review change and verification rerun.
+Task and Gig share the Deliverable lifecycle and artifact meanings. Only Task has a parent Epic and may synchronize parent Epic artifacts. Its parent identity is the containing Epic directory plus the exact `[TASK-…]` marker. `metadata.branch` is a strict ready/tracker-pending/tracker-named/provisioning union; a ready branch records whether its name was generated or tracker-provided, and work cannot begin until ready. A Task's stored start/target never changes when its Epic later changes `taskTarget`. `metadata.json` is authoritative for current kind and `workStage: planning | execution`; `brief.md` remains the approved Request, and `.local/notes.md` holds transient human context. Feature/Bugfix/Refactor/Chore create `result.md` before final subagent review so the reviewer receives the actual outcome and verification evidence; Research/Audit complete `report.md` before final subagent review. A Research/Audit continuation preserves `report.md` and adds `result.md` for the implementation outcome before final subagent review. Once created, `result.md` stays synchronized with every later review change and verification rerun.
+
+Durable provider records retain semantic identity, exact relationships/branch intent and tracker creation progress. Versioned PR repository/head/target intent is prepared before the one submission commit. Returned and explicitly selected PR number/URL are recorded directly in the existing ignored Resource IDs file `.local/metadata.json`; PR recording does not update versioned metadata after submission. See [shared integrations](./integrations/shared.md) for the single inventory and [Migrations](../MIGRATIONS.md) for resume-time conversion of an old-format entity. Normal reads use strict current schemas and never rewrite historical state.
 
 ## Persistence and authority
 

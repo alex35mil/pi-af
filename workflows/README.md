@@ -46,7 +46,9 @@ Canceled:    terminal unsuccessful status for queued or initialized work
 
 Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.
 
-Accepting the final completion-artifact diff normally authorizes the final commit and, with a forge, push and PR discovery/creation. An explicit commit-only/no-push/no-PR request stops after the commit. Deliverables remain `inReview` until confirmed merged. Branch cleanup requires separate approval. [Epic guidance](skills/epic/SKILL.md) owns early-merge Task targeting and explicit Epic completion.
+After final review passes, you review the finished work and decide whether to submit it. Approving an earlier draft or file write is not submission approval.
+
+Submitting and finishing are separate. Submission commits the work and opens or updates a PR when configured. An explicit finish request handles merging, marking the work Done, and cleaning up the local branch. See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
 ## Contract ownership
 

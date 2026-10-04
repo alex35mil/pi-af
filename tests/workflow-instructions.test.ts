@@ -91,11 +91,11 @@ describe("workflow instruction ownership", () => {
         assert.match(epic, /first enter the material-replanning transition/)
 
         const github = fs.readFileSync("workflows/references/integrations/tracker/github.md", "utf-8")
-        assert.match(github, /workStage: planning.*add exact configured Planning/)
-        assert.match(github, /workStage: execution.*remove exact configured Planning/)
-        assert.match(github, /shared material-replanning transition.*re-add Planning/)
-        assert.match(github, /initialization, resume, and every approved Kind transition/)
-        assert.match(github, /remove every configured managed Kind label.*add exactly the authoritative/)
+        assert.match(github, /Planning is present only for In Progress with `workStage: planning`/)
+        assert.match(github, /absent during execution, In Review, Done or Canceled/)
+        assert.match(github, /Versioned Kind equals the authoritative workflow Kind/)
+        assert.match(github, /Preserve unrelated labels/)
+        assert.match(github, /write only when the intended set differs/)
         const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
         assert.match(linear, /Planning and execution both remain In Progress/)
         assert.match(linear, /workStage.*workflow metadata/)
@@ -115,24 +115,34 @@ describe("workflow instruction ownership", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(deliverable, /final review requires zero unchecked entries/)
         assert.match(deliverable, /call `render_provider_body`/)
-        assert.match(deliverable, /update operation once when different/)
-        assert.match(deliverable, /After an uncertain update, re-read first/)
+        assert.match(deliverable, /directly publish the complete body/)
+        assert.match(deliverable, /uncertain or partial update, read the exact PR before retrying/)
         assert.match(deliverable, /never create another PR/)
         assert.doesNotMatch(deliverable, /render_artifact_links|artifactLinks|destination-specific Links/)
 
         const forge = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
-        assert.match(forge, /When `result\.md` or `report\.md` changes after PR creation/)
-        assert.match(forge, /updatePullRequest` once when different/)
-        assert.match(forge, /Re-read with `pullRequestRead` and verify exact text/)
-        assert.match(forge, /update outcome is uncertain, re-read before retrying/)
-        assert.match(forge, /Never blindly repeat creation/)
+        assert.match(forge, /For an approved revised completion artifact/)
+        assert.match(forge, /update the exact scoped PR's whole body directly/)
+        assert.match(forge, /Trust established clear success/)
+        assert.match(forge, /uncertain\/partial outcomes, read the exact PR and reconcile/)
+        assert.match(forge, /never blindly retry a non-idempotent create/)
+        assert.match(forge, /Before the submission commit/)
+        assert.match(forge, /one authorized submission commit\/push/)
+        assert.match(forge, /returned number\/URL is recorded directly in the existing ignored Resource IDs file/)
+        assert.match(forge, /Missing\/stale IDs or uncertain attempts require agent investigation/)
+        assert.match(deliverable, /recording leaves versioned metadata unchanged/)
 
         const forgeReadme = fs.readFileSync("workflows/extensions/integrations/forge/README.md", "utf-8")
-        assert.match(forgeReadme, /body-update/)
+        assert.match(forgeReadme, /agent follows.*GitHub forge procedure/)
         assert.doesNotMatch(forgeReadme, /Artifact-link/)
         assert.doesNotMatch(fs.readFileSync("workflows/README.md", "utf-8"), /Integration roles and Links/)
 
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
+        assert.match(shared, /workflow owns the entire provider body/)
+        assert.match(shared, /Discussion.*belong in comments/)
+        assert.match(shared, /Preserve the exact rendered request/)
+        assert.match(shared, /Trust an established clear provider success/)
+        assert.match(shared, /uncertain or partial update, read the exact body/)
         assert.match(shared, /removes the first Markdown H1/)
         assert.match(shared, /horizontal rule, a blank line, and `Closes #<issue number>`/)
         assert.doesNotMatch(shared, /render_artifact_links|artifactLinks|## Shared Links section/)
@@ -140,11 +150,21 @@ describe("workflow instruction ownership", () => {
         for (const skill of ["epic", "task", "gig"]) {
             assert.match(fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8"), /render_provider_body/)
         }
+        assert.match(
+            fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8"),
+            /follow the shared complete-body publishing contract.*trust established clear success and reconcile uncertain outcomes/,
+        )
     })
 
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
-        assert.match(deliverable, /After approval, call `cleanup_delivery_branch` once\./)
+        assert.match(
+            deliverable,
+            /Within that same explicit finish request, call `cleanup_delivery_branch` once without another cleanup question/,
+        )
+        assert.match(deliverable, /Final completion-artifact acceptance authorizes submission, not finishing/)
+        assert.match(deliverable, /requires exact target\/origin equality/)
+        assert.match(deliverable, /Epic-target Tasks remain on the Epic branch and leave main intact/)
         assert.deepEqual(Object.keys(DeliveryCleanupSchema.properties).sort(), ["completion", "entityDir", "merge"])
     })
 

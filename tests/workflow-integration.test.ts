@@ -8,13 +8,13 @@ import { describe, it } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
 
-import { getMcpToolName, type McpToolCatalog, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
 import {
     assertConfiguredPriority,
     loadIntegrationConfig,
     PriorityFieldSchema,
 } from "../workflows/extensions/integrations/config.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
+
 import {
     resolveForgePolicy,
     resolveWorkflowPolicy,
@@ -24,25 +24,9 @@ import registerIntegrations, {
     buildIntegrationContext,
     renderEntityProviderBody,
 } from "../workflows/extensions/integrations/index.ts"
-import { resolveIntegrationOperationPolicy } from "../workflows/extensions/integrations/capabilities.ts"
+
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
 import { linearPriorityNumber } from "../workflows/extensions/integrations/records.ts"
-import {
-    GITHUB_FORGE_TOOL_NAMES,
-    validateGitHubForgeCapabilities,
-} from "../workflows/extensions/integrations/forge/github.ts"
-import {
-    buildGitHubRemoteValidationSteps,
-    GITHUB_TRACKER_METHODS,
-    GITHUB_TRACKER_TOOL_NAMES,
-    validateGitHubTrackerCapabilities,
-} from "../workflows/extensions/integrations/tracker/github.ts"
-import {
-    LINEAR_TOOL_NAMES,
-    validateLinearTrackerCapabilities,
-} from "../workflows/extensions/integrations/tracker/linear.ts"
-
-const GITHUB_TOOL_NAMES = { ...GITHUB_TRACKER_TOOL_NAMES, ...GITHUB_FORGE_TOOL_NAMES }
 
 const statuses = {
     backlog: "Backlog",
@@ -96,84 +80,7 @@ function forgeConfig() {
     }
 }
 
-function metadata(name: string, properties: string[], methods?: string[], serverName = "github"): McpToolMetadata {
-    const schemaProperties: Record<string, Record<string, unknown>> = Object.fromEntries(
-        properties.map((property) => [property, { type: "string" }]),
-    )
-    if (methods) schemaProperties.method = { type: "string", enum: methods }
-    return {
-        serverName,
-        serverToolName: name,
-        inputSchema: { type: "object", properties: schemaProperties },
-    }
-}
-
-function catalog(includeOrganizationTools: boolean): McpToolCatalog {
-    const entries: Array<[string, McpToolMetadata]> = []
-    const add = (name: string, properties: string[], methods?: string[]) => {
-        entries.push([getMcpToolName("github", name), metadata(name, properties, methods)])
-    }
-    add(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get", "get_labels"])
-    add(
-        GITHUB_TOOL_NAMES.issueWrite,
-        ["owner", "repo", "title", "body", "issue_number", "issue_fields", "labels"],
-        ["create", "update"],
-    )
-    add(GITHUB_TOOL_NAMES.getLabel, ["owner", "repo", "name"])
-    add(GITHUB_TOOL_NAMES.searchIssues, ["query", "owner", "repo", "fields", "sort", "order"])
-    add(
-        GITHUB_TOOL_NAMES.projectsList,
-        ["owner", "owner_type", "project_number", "field_names"],
-        ["list_project_fields", "list_project_items"],
-    )
-    add(
-        GITHUB_TOOL_NAMES.projectsWrite,
-        [
-            "owner",
-            "owner_type",
-            "project_number",
-            "item_owner",
-            "item_repo",
-            "item_type",
-            "issue_number",
-            "updated_field",
-        ],
-        ["add_project_item", "update_project_item"],
-    )
-    add(GITHUB_TOOL_NAMES.subIssueWrite, ["method", "owner", "repo", "issue_number", "sub_issue_id"])
-    add(GITHUB_TOOL_NAMES.createPullRequest, ["owner", "repo", "title", "body", "head", "base"])
-    add(GITHUB_TOOL_NAMES.listPullRequests, ["owner", "repo", "head", "base", "state"])
-    add(GITHUB_TOOL_NAMES.pullRequestRead, ["method", "owner", "repo", "pullNumber"], ["get"])
-    add(GITHUB_TOOL_NAMES.updatePullRequest, ["owner", "repo", "pullNumber", "body"])
-    if (includeOrganizationTools) add(GITHUB_TOOL_NAMES.listIssueFields, ["owner", "repo"])
-    return new Map(entries)
-}
-
-function linearCatalog(): McpToolCatalog {
-    const entries: Array<[string, McpToolMetadata]> = []
-    const add = (name: string, properties: string[]) => {
-        entries.push([getMcpToolName("linear", name), metadata(name, properties, undefined, "linear")])
-    }
-    add(LINEAR_TOOL_NAMES.getWorkspace, [])
-    add(LINEAR_TOOL_NAMES.getTeam, ["query"])
-    add(LINEAR_TOOL_NAMES.listIssueStatuses, ["team"])
-    add(LINEAR_TOOL_NAMES.getIssue, ["id", "includeRelations"])
-    add(LINEAR_TOOL_NAMES.listIssues, ["query", "team", "state", "project", "priority", "parentId", "fields"])
-    add(LINEAR_TOOL_NAMES.saveIssue, ["id", "title", "description", "patch", "team", "priority", "project", "state"])
-    add(LINEAR_TOOL_NAMES.getProject, ["query"])
-    add(LINEAR_TOOL_NAMES.listProjects, ["query", "state", "team", "fields"])
-    add(LINEAR_TOOL_NAMES.saveProject, [
-        "id",
-        "name",
-        "description",
-        "patch",
-        "state",
-        "priority",
-        "addTeams",
-        "setTeams",
-    ])
-    return new Map(entries)
-}
+const queueSelection = { operation: "queueIntake" as const, entity: "gig" as const, priority: "High", kind: "refactor" }
 
 function temporaryProject(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), "workflow-integration-"))
@@ -247,13 +154,9 @@ function writeGitHubGigEntity(cwd: string): string {
             {
                 role: "tracker",
                 provider: "github",
+                repository: { owner: "alex", repo: "example" },
                 state: "bound",
-                external: {
-                    issueId: 101,
-                    issueNumber: 42,
-                    issueUrl: "https://github.com/alex/example/issues/42",
-                    projectItemId: "PVTI_example",
-                },
+                external: { issueNumber: 42 },
             },
         ],
     }
@@ -289,12 +192,7 @@ function writeLinearGigEntity(cwd: string): string {
                 provider: "linear",
                 resource: "gig-issue",
                 state: "bound",
-                external: {
-                    issueId: "linear-uuid",
-                    identifier: "ENG-123",
-                    issueUrl: "https://linear.app/example/issue/ENG-123/mixed-provider",
-                    gitBranchName: "alex/eng-123-mixed-provider",
-                },
+                external: { issueId: "linear-uuid" },
             },
         ],
     }
@@ -374,44 +272,6 @@ describe("workflow integration configuration", () => {
                 ["unversioned/github", true],
             ],
         )
-
-        assert.deepEqual(
-            ["inspect", "queueIntake", "initialize", "resume", "artifactProjection", "pullRequest"].map((operation) =>
-                resolveIntegrationOperationPolicy(operation as Parameters<typeof resolveIntegrationOperationPolicy>[0]),
-            ),
-            [
-                {
-                    operation: "inspect",
-                    entity: false,
-                    tracker: "optional",
-                    forge: "optional",
-                    forgeCapabilities: true,
-                },
-                {
-                    operation: "queueIntake",
-                    entity: false,
-                    tracker: "required",
-                    forge: "none",
-                    forgeCapabilities: false,
-                },
-                {
-                    operation: "initialize",
-                    entity: true,
-                    tracker: "optional",
-                    forge: "optional",
-                    forgeCapabilities: true,
-                },
-                { operation: "resume", entity: true, tracker: "optional", forge: "optional", forgeCapabilities: true },
-                {
-                    operation: "artifactProjection",
-                    entity: true,
-                    tracker: "optional",
-                    forge: "none",
-                    forgeCapabilities: false,
-                },
-                { operation: "pullRequest", entity: true, tracker: "none", forge: "required", forgeCapabilities: true },
-            ],
-        )
     })
 
     it("keeps Backlog and Todo command intake external-only", async () => {
@@ -466,11 +326,10 @@ describe("workflow integration configuration", () => {
         try {
             assert.deepEqual(loadIntegrationConfig(cwd).state, "disabled")
             const ctx = { cwd } as ExtensionContext
-            assert.deepEqual(buildIntegrationContext(ctx, catalog(false), "inspect"), {
+            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect" }), {
                 state: "disabled",
-                registeredMcpServers: ["github"],
             })
-            assert.throws(() => buildIntegrationContext(ctx, new Map(), "queueIntake"), /requires a configured tracker/)
+            assert.throws(() => buildIntegrationContext(ctx, queueSelection), /requires a configured tracker/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -483,14 +342,21 @@ describe("workflow integration configuration", () => {
             prepareArtifactPersistence(cwd)
             const trackerEntity = writeLinearGigEntity(cwd)
             assert.throws(
-                () => buildIntegrationContext({ cwd } as ExtensionContext, new Map(), "resume", trackerEntity),
+                () =>
+                    buildIntegrationContext({ cwd } as ExtensionContext, {
+                        operation: "resume",
+                        entityDir: trackerEntity,
+                    }),
                 /requires tracker migration/,
             )
 
             const workflowEntity = writeTrackerlessGigEntity(cwd)
             assert.deepEqual(
-                buildIntegrationContext({ cwd } as ExtensionContext, new Map(), "resume", workflowEntity),
-                { state: "disabled", registeredMcpServers: [] },
+                buildIntegrationContext({ cwd } as ExtensionContext, {
+                    operation: "resume",
+                    entityDir: workflowEntity,
+                }),
+                { state: "disabled" },
             )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -599,140 +465,18 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("validates a personal Project using only Project-scoped fields", () => {
-        const tools = validateGitHubTrackerCapabilities(catalog(false), config("project"))
-        assert.equal(tools.issueWrite, "mcp__github__issue_write")
-        assert.equal(tools.projectsWrite, "mcp__github__projects_write")
-        assert.equal("listIssueFields" in tools, false)
-    })
-
-    it("requires repository-label capabilities for GitHub lifecycle operations", () => {
-        const withoutLabel = new Map(catalog(false))
-        withoutLabel.delete(getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.getLabel))
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "inspect"),
-            /missing required tool mcp__github__get_label/,
-        )
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "initialize"),
-            /missing required tool mcp__github__get_label/,
-        )
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake"),
-            /missing required tool mcp__github__get_label/,
-        )
-        assert.doesNotThrow(() =>
-            validateGitHubTrackerCapabilities(withoutLabel, config("project"), "queueIntake", "unversioned"),
-        )
-        assert.doesNotThrow(() =>
-            validateGitHubTrackerCapabilities(withoutLabel, config("project"), "artifactProjection"),
-        )
-
-        const withoutLabelRead = new Map(catalog(false))
-        withoutLabelRead.set(
-            getMcpToolName("github", GITHUB_TRACKER_TOOL_NAMES.issueRead),
-            metadata(GITHUB_TOOL_NAMES.issueRead, ["owner", "repo", "issue_number"], ["get"]),
-        )
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(withoutLabelRead, config("project"), "initialize"),
-            /get_labels/,
-        )
-        assert.doesNotThrow(() =>
-            validateGitHubTrackerCapabilities(withoutLabelRead, config("project"), "artifactProjection"),
-        )
-    })
-
-    it("validates official Linear capabilities by entity and operation", () => {
-        const tools = linearCatalog()
-        const readOnly = new Map(tools)
-        readOnly.delete(getMcpToolName("linear", LINEAR_TOOL_NAMES.saveIssue))
-        readOnly.delete(getMcpToolName("linear", LINEAR_TOOL_NAMES.saveProject))
-        const inspected = validateLinearTrackerCapabilities(readOnly, linearConfig(), "inspect")
-        assert.equal(inspected.getIssue, "mcp__linear__get_issue")
-        assert.equal("saveProject" in inspected, false)
-        const all = validateLinearTrackerCapabilities(tools, linearConfig(), "queueIntake")
-        assert.equal(all.saveProject, "mcp__linear__save_project")
-
-        const withoutProjectWrite = new Map(tools)
-        withoutProjectWrite.delete(getMcpToolName("linear", LINEAR_TOOL_NAMES.saveProject))
-        assert.throws(
-            () => validateLinearTrackerCapabilities(withoutProjectWrite, linearConfig(), "initialize", "epic"),
-            /missing required tool mcp__linear__save_project/,
-        )
-        assert.doesNotThrow(() =>
-            validateLinearTrackerCapabilities(withoutProjectWrite, linearConfig(), "initialize", "gig"),
-        )
-
-        const withoutIssueWrite = new Map(tools)
-        withoutIssueWrite.delete(getMcpToolName("linear", LINEAR_TOOL_NAMES.saveIssue))
-        assert.doesNotThrow(() =>
-            validateLinearTrackerCapabilities(withoutIssueWrite, linearConfig(), "initialize", "epic"),
-        )
-        assert.throws(
-            () => validateLinearTrackerCapabilities(withoutIssueWrite, linearConfig(), "initialize", "task"),
-            /missing required tool mcp__linear__save_issue/,
-        )
-    })
-
-    it("validates tracker and forge roles independently", () => {
-        const allTools = catalog(false)
-        const trackerTools = new Map(allTools)
-        trackerTools.delete(getMcpToolName("github", GITHUB_TOOL_NAMES.createPullRequest))
-        assert.doesNotThrow(() => validateGitHubTrackerCapabilities(trackerTools, config("project")))
-
-        const forgeCatalog = new Map(
-            [...allTools].filter(([name]) =>
-                [
-                    GITHUB_TOOL_NAMES.createPullRequest,
-                    GITHUB_TOOL_NAMES.listPullRequests,
-                    GITHUB_TOOL_NAMES.pullRequestRead,
-                    GITHUB_TOOL_NAMES.updatePullRequest,
-                ].some((tool) => name.endsWith(`__${tool}`)),
-            ),
-        )
-        const forgeTools = validateGitHubForgeCapabilities(forgeCatalog, forgeConfig())
-        assert.equal(forgeTools.createPullRequest, "mcp__github__create_pull_request")
-        assert.equal(forgeTools.listPullRequests, "mcp__github__list_pull_requests")
-        assert.equal(forgeTools.pullRequestRead, "mcp__github__pull_request_read")
-        assert.equal(forgeTools.updatePullRequest, "mcp__github__update_pull_request")
-        const forgeWithoutLookup = new Map(forgeCatalog)
-        forgeWithoutLookup.delete(getMcpToolName("github", GITHUB_TOOL_NAMES.listPullRequests))
-        assert.throws(
-            () => validateGitHubForgeCapabilities(forgeWithoutLookup, forgeConfig()),
-            /missing required tool mcp__github__list_pull_requests/,
-        )
-        const forgeWithoutUpdate = new Map(forgeCatalog)
-        forgeWithoutUpdate.delete(getMcpToolName("github", GITHUB_TOOL_NAMES.updatePullRequest))
-        assert.throws(
-            () => validateGitHubForgeCapabilities(forgeWithoutUpdate, forgeConfig()),
-            /missing required tool mcp__github__update_pull_request/,
-        )
-
+    it("reads tracker and forge configuration independently without provider preflight", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
-            const integrationPath = path.join(cwd, ".project", "integrations.json")
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: config("project") }))
-            assert.equal(loadIntegrationConfig(cwd).state, "enabled")
-            fs.writeFileSync(integrationPath, JSON.stringify({ forge: forgeConfig() }))
-            assert.equal(loadIntegrationConfig(cwd).state, "enabled")
-            assert.throws(
-                () => buildIntegrationContext({ cwd } as ExtensionContext, allTools, "queueIntake"),
-                /tracker/,
-            )
-
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: config("project"), forge: forgeConfig() }))
-            const trackerAvailable = buildIntegrationContext({ cwd } as ExtensionContext, trackerTools, "inspect")
-            assert.equal(trackerAvailable.state, "enabled")
-            assert.equal(trackerAvailable.roles.tracker?.state, "enabled")
-            assert.equal(trackerAvailable.roles.forge?.state, "unavailable")
-            const forgeAvailable = buildIntegrationContext({ cwd } as ExtensionContext, forgeCatalog, "inspect")
-            assert.equal(forgeAvailable.state, "enabled")
-            assert.equal(forgeAvailable.roles.tracker?.state, "unavailable")
-            assert.equal(forgeAvailable.roles.forge?.state, "enabled")
-
-            fs.writeFileSync(integrationPath, JSON.stringify({}))
-            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+            const file = path.join(cwd, ".project/integrations.json")
+            fs.writeFileSync(file, JSON.stringify({ forge: forgeConfig() }))
+            assert.throws(() => buildIntegrationContext({ cwd } as ExtensionContext, queueSelection), /tracker/)
+            fs.writeFileSync(file, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
+            const result = buildIntegrationContext({ cwd } as ExtensionContext, { operation: "inspect" })
+            if (result.state !== "enabled") assert.fail("enabled configuration expected")
+            assert.deepEqual(result.roles.tracker, { state: "enabled", provider: "github", config: config() })
+            assert.deepEqual(result.roles.forge, { state: "enabled", provider: "github", config: forgeConfig() })
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -771,7 +515,7 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("keeps Linear tracker and GitHub forge failures independent in both directions", () => {
+    it("keeps Linear tracker and GitHub forge contexts independent", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
@@ -781,26 +525,22 @@ describe("workflow integration configuration", () => {
             )
             const entityDir = writeLinearGigEntity(cwd)
 
-            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, linearCatalog(), "queueIntake")
+            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, queueSelection)
             if (trackerSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(trackerSide.roles.tracker?.state, "enabled")
             assert.equal(trackerSide.roles.forge, undefined)
-            const initializeSide = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                linearCatalog(),
-                "initialize",
+            const initializeSide = buildIntegrationContext({ cwd } as ExtensionContext, {
+                operation: "initialize",
                 entityDir,
-            )
+            })
             if (initializeSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(initializeSide.roles.tracker?.state, "enabled")
-            assert.equal(initializeSide.roles.forge?.state, "unavailable")
+            assert.equal(initializeSide.roles.forge?.state, "enabled")
 
-            const forgeSide = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                catalog(false),
-                "pullRequest",
+            const forgeSide = buildIntegrationContext({ cwd } as ExtensionContext, {
+                operation: "pullRequest",
                 entityDir,
-            )
+            })
             if (forgeSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(forgeSide.roles.tracker, undefined)
             assert.equal(forgeSide.roles.forge?.state, "enabled")
@@ -817,7 +557,7 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("inspects unversioned GitHub setup without versioned-only metadata capabilities", () => {
+    it("reads unversioned GitHub configuration and projection policy", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd, "unversioned")
@@ -826,9 +566,8 @@ describe("workflow integration configuration", () => {
                 path.join(cwd, ".project", "integrations.json"),
                 JSON.stringify({ tracker: config("issue") }),
             )
-            const tools = new Map(catalog(true))
 
-            const context = buildIntegrationContext({ cwd } as ExtensionContext, tools, "inspect")
+            const context = buildIntegrationContext({ cwd } as ExtensionContext, { operation: "inspect" })
             if (context.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(context.artifactMode, "unversioned")
             assert.equal(context.projection?.mode, "restricted")
@@ -836,10 +575,7 @@ describe("workflow integration configuration", () => {
             if (!tracker || tracker.state !== "enabled" || tracker.provider !== "github") {
                 assert.fail("expected enabled GitHub tracker")
             }
-            assert.equal(
-                tracker.remoteValidation.some((step) => /Internal ID|configured Kind label/.test(step)),
-                false,
-            )
+            assert.equal(tracker.config.fields.internalId.scope, "issue")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -856,12 +592,10 @@ describe("workflow integration configuration", () => {
             )
             const entityDir = writeLinearGigEntity(cwd)
 
-            const projection = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                linearCatalog(),
-                "artifactProjection",
+            const projection = buildIntegrationContext({ cwd } as ExtensionContext, {
+                operation: "artifactProjection",
                 entityDir,
-            )
+            })
             if (projection.state !== "enabled") assert.fail("expected enabled tracker projection")
             assert.equal(projection.artifactMode, "unversioned")
             assert.ok(projection.projection)
@@ -876,11 +610,10 @@ describe("workflow integration configuration", () => {
                 projection.projection.changedCandidateGate,
                 /except for root-H1 removal and the same-repository GitHub closing reference.*exact diff.*every omission, rewrite, or addition.*approval/,
             )
-            assert.match(
-                projection.projection.postWriteVerification,
-                /re-read.*verify_artifact_projection.*only exact bytes verify.*concise hint.*Markdown parsing and normalized comparison.*harmless formatting.*byte-for-byte comparison annoying/,
-            )
-            assert.equal(projection.projection.preserveUnrelatedProviderContent, true)
+            assert.equal(projection.projection.ownership, "workflow")
+            assert.match(projection.projection.outcomeProof, /complete rendered approved body.*clear provider success/)
+            assert.match(projection.projection.recovery, /uncertain or partial.*reconcile before retrying/)
+            assert.match(projection.projection.discussion, /comments.*accepted source artifact/)
             assert.ok(projection.projection.allowed)
             assert.ok(projection.projection.forbidden)
             assert.ok(projection.projection.allowed.includes("ordinary repository paths"))
@@ -890,7 +623,11 @@ describe("workflow integration configuration", () => {
 
             fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
             assert.throws(
-                () => buildIntegrationContext({ cwd } as ExtensionContext, new Map(), "artifactProjection", entityDir),
+                () =>
+                    buildIntegrationContext({ cwd } as ExtensionContext, {
+                        operation: "artifactProjection",
+                        entityDir,
+                    }),
                 /requires tracker migration/,
             )
         } finally {
@@ -898,96 +635,20 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("permits a personal Project to use fields from an organization repository", () => {
-        const personalProjectWithIssueFields = {
-            ...config("issue"),
-            project: { owner: "alex", ownerType: "user" as const, number: 3 },
-        }
-        const tools = validateGitHubTrackerCapabilities(catalog(true), personalProjectWithIssueFields)
-        assert.equal(tools.listIssueFields, "mcp__github__list_issue_fields")
-    })
-
-    it("requires issue-field capability for organization metadata", () => {
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(catalog(false), config("issue")),
-            /missing required tool mcp__github__list_issue_fields/,
-        )
-        const tools = validateGitHubTrackerCapabilities(catalog(true), config("issue"))
-        assert.equal(tools.listIssueFields, "mcp__github__list_issue_fields")
-    })
-
-    it("resolves GitHub artifact projection without metadata or forge tools", () => {
-        const contentOnly = new Map(
-            [...catalog(true)].filter(([name]) =>
-                [
-                    `mcp__github__${GITHUB_TRACKER_TOOL_NAMES.issueRead}`,
-                    `mcp__github__${GITHUB_TRACKER_TOOL_NAMES.issueWrite}`,
-                ].includes(name),
-            ),
-        )
-        const tools = validateGitHubTrackerCapabilities(contentOnly, config("issue"), "artifactProjection")
-        assert.deepEqual(Object.keys(tools).sort(), ["issueRead", "issueWrite"])
-    })
-
-    it("validates Kind labels only for versioned artifacts", () => {
-        const projectConfig = config("project")
-        const projectTools = validateGitHubTrackerCapabilities(catalog(false), projectConfig)
-        const projectSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools)
-        assert.equal(projectSteps.length, 3)
-        assert.doesNotMatch(projectSteps[0], /Kind|Type/)
-        assert.match(projectSteps[1], /get_label.*Planning label/)
-        assert.match(projectSteps[2], /get_label.*Kind: Epic.*Kind: Chore/)
-
-        const issueConfig = config("issue")
-        const issueTools = validateGitHubTrackerCapabilities(catalog(true), issueConfig)
-        const issueSteps = buildGitHubRemoteValidationSteps(issueConfig, issueTools)
-        assert.equal(issueSteps.length, 4)
-        assert.match(issueSteps[1], /get_label.*Planning label/)
-        assert.match(issueSteps[2], /get_label.*Kind: Epic.*Kind: Chore/)
-        assert.match(issueSteps[3], /list_issue_fields/)
-
-        const unversionedSteps = buildGitHubRemoteValidationSteps(projectConfig, projectTools, "unversioned")
-        assert.equal(unversionedSteps.length, 2)
-        assert.equal(
-            unversionedSteps.some((step) => /configured Kind label/.test(step)),
-            false,
-        )
-    })
-
-    it("returns the official sub-issue add operation without speculative schema requirements", () => {
+    it("permits a personal Project to use issue-scoped fields", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd)
+            fs.mkdirSync(path.join(cwd, ".project"))
             fs.writeFileSync(
-                path.join(cwd, ".project", "integrations.json"),
-                JSON.stringify({ tracker: config("project"), forge: forgeConfig() }),
+                path.join(cwd, ".project/integrations.json"),
+                JSON.stringify({
+                    tracker: { ...config("issue"), project: { owner: "alex", ownerType: "user", number: 3 } },
+                }),
             )
-            const context = buildIntegrationContext({ cwd } as ExtensionContext, catalog(false), "inspect")
-            assert.equal(context.state, "enabled")
-            const tracker = context.roles.tracker
-            assert.equal(tracker?.state, "enabled")
-            assert.equal(tracker?.provider, "github")
-            if (!tracker || tracker.state !== "enabled" || tracker.provider !== "github") {
-                assert.fail("expected enabled GitHub tracker")
-            }
-            assert.equal(tracker.methods.subIssueAdd, GITHUB_TRACKER_METHODS.subIssueAdd)
-            assert.equal(tracker.methods.subIssueAdd, "add")
-            assert.equal(context.roles.forge?.provider, "github")
+            assert.equal(loadIntegrationConfig(cwd).state, "enabled")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
-    })
-
-    it("rejects a matching tool name whose schema lacks required operations", () => {
-        const tools = new Map(catalog(false))
-        tools.set(
-            "mcp__github__projects_write",
-            metadata(GITHUB_TOOL_NAMES.projectsWrite, ["owner", "project_number"], ["add_project_item"]),
-        )
-        assert.throws(
-            () => validateGitHubTrackerCapabilities(tools, config("project")),
-            /projects_write schema is missing:/,
-        )
     })
 
     it("fails loudly for invalid configuration without substituting labels", () => {

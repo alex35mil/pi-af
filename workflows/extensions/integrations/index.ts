@@ -1,10 +1,9 @@
 import * as path from "node:path"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Type } from "typebox"
+import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
-import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import {
     assertEntityBranchReady,
@@ -14,17 +13,18 @@ import {
 } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import * as Git from "../__lib/git.js"
 import {
     resolveForgePolicy,
     resolveWorkflowEnvironment,
     resolveWorkflowPolicy,
     type WorkflowEnvironment,
 } from "./policy.js"
-import { resolveIntegrationOperationPolicy, type IntegrationOperation } from "./capabilities.js"
-import { resolveGitHubForge } from "./forge/github.js"
 import { renderProviderBody, verifyMarkdownProjection } from "./projection.js"
-import { resolveGitHubTracker } from "./tracker/github.js"
-import { finalizeLinearBranch, resolveLinearTracker } from "./tracker/linear.js"
+import { isResourceIdsKind, OperationResourceIdsMemo, readCachedResourceIds } from "./resource-ids.js"
+import { finishReadDecision, resolveResourceIdsContext, type FinishReadDecision } from "./resource-id-operations.js"
+import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
+import { finalizeLinearBranch } from "./tracker/linear.js"
 
 const FinalizeBranchSchema = Type.Object({ entityDir: Type.String({ minLength: 1 }) }, { additionalProperties: false })
 
@@ -45,9 +45,36 @@ export const RenderProviderBodySchema = Type.Object(
     { additionalProperties: false },
 )
 
-const IntegrationContextSchema = Type.Union([
+const ContextEntitySchema = Type.Union([Type.Literal("epic"), Type.Literal("task"), Type.Literal("gig")])
+export const IntegrationContextSchema = Type.Union([
     Type.Object({ operation: Type.Literal("inspect") }, { additionalProperties: false }),
-    Type.Object({ operation: Type.Literal("queueIntake") }, { additionalProperties: false }),
+    Type.Object(
+        {
+            operation: Type.Literal("queueIntake"),
+            entity: ContextEntitySchema,
+            priority: Type.String({ minLength: 1 }),
+            kind: Type.String({ minLength: 1 }),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object({ operation: Type.Literal("adopt"), entity: ContextEntitySchema }, { additionalProperties: false }),
+    Type.Object(
+        { operation: Type.Literal("finishMerge"), entityDir: Type.String({ minLength: 1 }), evidence: EvidenceSchema },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            operation: Type.Literal("trackerMutation"),
+            entityDir: Type.String({ minLength: 1 }),
+            change: Type.Union([
+                Type.Literal("labels"),
+                Type.Literal("lifecycle"),
+                Type.Literal("priority"),
+                Type.Literal("hierarchy"),
+            ]),
+        },
+        { additionalProperties: false },
+    ),
     Type.Object(
         {
             operation: Type.Union([
@@ -55,6 +82,7 @@ const IntegrationContextSchema = Type.Union([
                 Type.Literal("resume"),
                 Type.Literal("artifactProjection"),
                 Type.Literal("pullRequest"),
+                Type.Literal("finishRead"),
             ]),
             entityDir: Type.String({ minLength: 1 }),
         },
@@ -62,22 +90,18 @@ const IntegrationContextSchema = Type.Union([
     ),
 ])
 
-export default function (pi: ExtensionAPI): void {
-    let catalog: McpToolCatalog = new Map()
-    const dispose = pi.events.on(MCP_TOOL_CATALOG_EVENT, (value) => {
-        catalog = value instanceof Map ? new Map(value as McpToolCatalog) : new Map()
-    })
+export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 
-    pi.on("session_shutdown", async () => {
-        dispose()
-        catalog = new Map()
-    })
+export default function (pi: ExtensionAPI): void {
+    const resourceIdsMemo = new OperationResourceIdsMemo()
+    registerResourceIds(pi, resourceIdsMemo)
+    pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
     pi.registerTool({
         name: "finalize_linear_branch",
         label: "finalize_linear_branch",
         description:
-            "Finalize a new Linear Task/Gig branch from the exact bound issue gitBranchName. Safely resumes interrupted branch creation.",
+            "Finalize a Linear Task/Gig branch from its durable exact saved-name contract. Safely resumes interrupted branch creation.",
         parameters: FinalizeBranchSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(FinalizeBranchSchema, params)
@@ -167,16 +191,12 @@ export default function (pi: ExtensionAPI): void {
         name: "integration_context",
         label: "integration_context",
         description:
-            "Read and validate optional tracker/forge configuration and registered MCP capabilities. Never performs external mutations.",
+            "Read local tracker/forge configuration, workflow authority and entity state. Validate supplied finish evidence against the locally recorded PR and source branch. Never inspect provider-tool schemas or perform external operations.",
         parameters: IntegrationContextSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(IntegrationContextSchema, params)
-            const result = buildIntegrationContext(
-                ctx,
-                catalog,
-                input.operation,
-                "entityDir" in input ? input.entityDir : undefined,
-            )
+            resourceIdsMemo.reset()
+            const result = buildIntegrationContext(ctx, input)
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
                 details: result,
@@ -185,18 +205,16 @@ export default function (pi: ExtensionAPI): void {
     })
 }
 
-export function buildIntegrationContext(
-    ctx: ExtensionContext,
-    catalog: McpToolCatalog,
-    operation: IntegrationOperation,
-    entityDir?: string,
-) {
-    const operationPolicy = resolveIntegrationOperationPolicy(operation)
-    if (operationPolicy.entity && !entityDir) throw new Error(`${operation} requires entityDir`)
-    if (!operationPolicy.entity && entityDir) throw new Error(`${operation} does not accept entityDir`)
-    const registeredMcpServers = [...new Set([...catalog.values()].map(({ serverName }) => serverName))].sort()
+export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput) {
+    if (!Value.Check(IntegrationContextSchema, input))
+        throw new Error("invalid integration context request: select the exact operation and its required inputs")
+    const operation = input.operation
+    const entityDir = "entityDir" in input ? input.entityDir : undefined
+    const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
+    const requiresTracker = ["queueIntake", "adopt", "trackerMutation"].includes(operation)
+    const forgeOnly = ["pullRequest", "finishRead", "finishMerge"].includes(operation)
     const loaded = loadIntegrationConfig(ctx.cwd)
-    let projectConfig = operationPolicy.entity ? assertArtifactPersistencePrepared(ctx.cwd) : undefined
+    let projectConfig = entityDir ? assertArtifactPersistencePrepared(ctx.cwd) : undefined
     if (loaded.state === "enabled") projectConfig ??= assertArtifactPersistencePrepared(ctx.cwd)
     const environment = projectConfig
         ? resolveWorkflowEnvironment(projectConfig, loaded.state === "enabled" ? loaded.config : undefined)
@@ -207,60 +225,73 @@ export function buildIntegrationContext(
         assertEntityEnvironment(entity.status, environment)
     }
     if (loaded.state === "disabled") {
-        if (operationPolicy.tracker === "required") throw new Error(`${operation} requires a configured tracker`)
-        if (operationPolicy.forge === "required") throw new Error(`${operation} requires a configured forge`)
-        return { state: "disabled" as const, registeredMcpServers }
+        if (requiresTracker) throw new Error(`${operation} requires a configured tracker`)
+        if (forgeOnly) throw new Error(`${operation} requires a configured forge`)
+        return { state: "disabled" as const }
     }
     if (!projectConfig || !environment) throw new Error(`${operation} requires prepared project configuration`)
     const workflowPolicy = resolveWorkflowPolicy(environment)
     const forgePolicy = resolveForgePolicy(environment)
-    if (operationPolicy.tracker === "required" && environment.tracker.kind === "none") {
+    if (requiresTracker && environment.tracker.kind === "none") {
         throw new Error(`${operation} requires a configured tracker`)
     }
     if (operation === "artifactProjection" && environment.tracker.kind === "none") {
         return { state: "skipped" as const, operation, reason: "no tracker is configured", entity }
     }
-    if (operationPolicy.forge === "required" && environment.forge.kind === "none") {
+    if (forgeOnly && environment.forge.kind === "none") {
         throw new Error(`${operation} requires a configured forge`)
     }
-    if (operationPolicy.forge === "required" && entity) assertEntityBranchReady(entity.status)
-
+    if (forgeOnly && entity) assertEntityBranchReady(entity.status)
+    if ((operation === "finishRead" || operation === "finishMerge") && entity?.status.entity === "epic")
+        throw new Error("finish operations require a Task or Gig")
+    let finish: FinishReadDecision | undefined
+    if (input.operation === "finishMerge") {
+        const status = entity!.status
+        assertEntityBranchReady(status)
+        if (status.workStage !== "execution") {
+            finish = { state: "blocked", reason: "finish requires execution" }
+        } else {
+            const context = resolveResourceIdsContext(ctx.cwd, input.entityDir, "github-pull-request")
+            if (context.scope.kind !== "github-pull-request") throw new Error("finish requires PR addressing")
+            const saved = readCachedResourceIds(context.directory, context.scope)
+            finish =
+                saved && isResourceIdsKind(saved, "github-pull-request")
+                    ? finishReadDecision(
+                          context.scope,
+                          input.evidence,
+                          Git.run(ctx.cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
+                          saved.value.number,
+                      )
+                    : {
+                          state: "blocked",
+                          reason: "finish requires locally recorded PR resource IDs; investigate and record the exact PR first",
+                      }
+        }
+    }
     const tracker = (() => {
-        if (operationPolicy.tracker === "none") return undefined
+        if (forgeOnly) return undefined
         switch (environment.tracker.kind) {
             case "none":
                 return undefined
             case "github":
-                return resolveGitHubTracker(catalog, environment.tracker.config, operation, environment.artifacts.kind)
+                return { state: "enabled" as const, provider: "github" as const, config: environment.tracker.config }
             case "linear":
-                return resolveLinearTracker(catalog, environment.tracker.config, operation, entity?.status)
-            default:
-                return environment.tracker satisfies never
+                return { state: "enabled" as const, provider: "linear" as const, config: environment.tracker.config }
         }
     })()
-    const forge = (() => {
-        if (operationPolicy.forge === "none") return undefined
-        switch (environment.forge.kind) {
-            case "none":
-                return undefined
-            case "github":
-                return resolveGitHubForge(catalog, environment.forge.config, operationPolicy.forgeCapabilities)
-            default:
-                return environment.forge satisfies never
-        }
-    })()
-
-    if (operationPolicy.tracker === "required" && tracker?.state === "unavailable") {
-        throw new Error(`configured tracker is unavailable: ${tracker.error}`)
-    }
-    if (operationPolicy.forge === "required" && operationPolicy.forgeCapabilities && forge?.state === "unavailable") {
-        throw new Error(`configured forge is unavailable: ${forge.error}`)
-    }
+    const forge =
+        !trackerOnly && environment.forge.kind !== "none"
+            ? {
+                  state: "enabled" as const,
+                  provider: environment.forge.kind,
+                  config: environment.forge.config,
+                  ...(finish ? { finish } : {}),
+              }
+            : undefined
 
     return {
         state: "enabled" as const,
         operation,
-        registeredMcpServers,
         workflowPolicy,
         forgePolicy,
         artifactMode: environment.artifacts.kind,
@@ -276,9 +307,13 @@ export function buildIntegrationContext(
                           "remove the first Markdown H1 and its following blank line; for same-repository GitHub tracker and forge work, append a horizontal rule, a blank line, and `Closes #<number>` in pull-request bodies",
                       changedCandidateGate:
                           "except for root-H1 removal and the same-repository GitHub closing reference, before mutation present the complete candidate or exact diff, list every omission, rewrite, or addition with its reason, and require explicit user approval",
-                      postWriteVerification:
-                          "re-read the provider description/body and call verify_artifact_projection; only exact bytes verify, while every difference keeps the existing approval gate and returns a concise hint to consider Markdown parsing and normalized comparison when harmless formatting makes byte-for-byte comparison annoying",
-                      preserveUnrelatedProviderContent: true as const,
+                      ownership: "workflow" as const,
+                      outcomeProof:
+                          "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
+                      recovery:
+                          "after uncertain or partial success, read the exact provider body and reconcile before retrying; retry only confirmed non-application",
+                      discussion:
+                          "keep discussion in comments; requirements and agreed decisions belong in the accepted source artifact",
                       ...(workflowPolicy.projection === "restricted"
                           ? {
                                 allowed: [
@@ -305,7 +340,7 @@ export function buildIntegrationContext(
         },
         entity,
         permissionBoundary:
-            "Call returned Pi-registered MCP tools directly. A denial or failed call must never be replaced with HTTP, gh, another client, or provider SDK.",
+            "Call configured Pi-registered MCP tools directly. A denial or failed call must never be replaced with HTTP, gh, another client, or provider SDK.",
     }
 }
 
@@ -354,7 +389,21 @@ function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvi
         case "github":
         case "linear":
             if (status.authority.kind !== "tracker" || status.authority.provider !== environment.tracker.kind) {
-                throw new Error(`${status.id} requires tracker migration before using the current configuration`)
+                throw new Error(
+                    `${status.id} requires tracker migration before using the current configuration; see workflows/MIGRATIONS.md`,
+                )
+            }
+            if (environment.tracker.kind === "github") {
+                const tracker = status.integrations.find((entry) => entry.role === "tracker")
+                if (
+                    !tracker ||
+                    tracker.provider !== "github" ||
+                    tracker.repository.owner.toLowerCase() !==
+                        environment.tracker.config.repository.owner.toLowerCase() ||
+                    tracker.repository.repo.toLowerCase() !== environment.tracker.config.repository.repo.toLowerCase()
+                ) {
+                    throw new Error(`${status.id} tracker repository changed; see workflows/MIGRATIONS.md`)
+                }
             }
             break
         default:
@@ -366,6 +415,15 @@ function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvi
                 throw new Error(`${status.id} requires forge migration before removing its configured forge`)
             break
         case "github":
+            if (
+                forgeRecord &&
+                (forgeRecord.repository.owner.toLowerCase() !==
+                    environment.forge.config.repository.owner.toLowerCase() ||
+                    forgeRecord.repository.repo.toLowerCase() !==
+                        environment.forge.config.repository.repo.toLowerCase())
+            ) {
+                throw new Error(`${status.id} forge repository changed; see workflows/MIGRATIONS.md`)
+            }
             break
         default:
             environment.forge satisfies never
