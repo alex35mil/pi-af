@@ -20,6 +20,8 @@ allowed-tools:
 
 An Epic is a high-level initiative and ordered plan of prospective Tasks. Epic work shapes and maintains the initiative contract; implementation happens only through separately initialized Tasks.
 
+For explicitly authorized Epic commits, use the available `commit` skill and its selection and message rules.
+
 Read and follow `../../references/artifacts.md` for authoritative paths and file ownership, `../../references/communication.md` for human-facing communication and prose artifacts, `../../references/review.md` for finding adjudication in every review phase, and `../../references/planning.md` for inquiry, planning review rounds, and user diff presentation shared with Deliverables.
 
 ## Start or resume

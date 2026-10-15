@@ -156,6 +156,21 @@ describe("workflow instruction ownership", () => {
         )
     })
 
+    it("routes commits through the available skill and supplies an explicit squash title", () => {
+        for (const file of [
+            "workflows/skills/epic/SKILL.md",
+            "workflows/references/deliverable.md",
+            "workflows/references/integrations/forge/github.md",
+        ]) {
+            const source = fs.readFileSync(file, "utf-8")
+            assert.match(source, /`commit` skill/, file)
+            assert.doesNotMatch(source, /skills\/commit\/SKILL\.md/, file)
+        }
+        const forge = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
+        for (const field of ["commit_title", "metadata.title", "merge_method: squash", "expectedHeadSha"])
+            assert.ok(forge.includes(`\`${field}\``), `forge must retain ${field}`)
+    })
+
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(
