@@ -2,6 +2,7 @@
 name: project-setup
 description: "Use to interactively initialize or reconfigure Epic/Task/Gig workflows for a repository, including artifacts, branch naming, optional integrations, and Project Policies."
 allowed-tools:
+    - "inspect_project_setup"
     - "prepare_artifacts"
     - "configure_mcp"
     - "configure_permissions"
@@ -27,7 +28,7 @@ Read `../../references/setup.md` for the configuration-file contract. When integ
 
 `/project-setup` supplies a deterministic read-only snapshot containing the repository root, exact setup files, global and repository-local workflow settings, `.git/info/exclude` state, `.project` paths in Git or staged, bound entity tracker summaries, and a credential-redacted inventory of global, committed-project, and local MCP registrations. Recognized official registrations may expose their environment-variable name but never its value. Use that snapshot directly. Do not repeat its Git checks through Bash or another shell command. The default branch is irrelevant to setup and must not be inspected.
 
-For a natural-language invocation without the command snapshot, use Pi's project working directory and read only `.project/config.json`, `.project/config.local.json`, `.project/integrations.json`, `.project/policies.md`, `.gitignore`, `.git/info/exclude`, `.agents/permission.settings.json`, and `.agents/permission.settings.local.json` when present. Do not run Git or shell discovery; `prepare_artifacts` owns Git safety validation.
+For a natural-language invocation without the command snapshot, call `inspect_project_setup` before asking setup questions. It returns the same read-only context through the same inspector, including missing or invalid setup files that need reconfiguration. Reuse a supplied snapshot rather than inspecting twice. Use its effective MCP inventory and recognized credential environment references instead of asking for known names. Ask only for genuinely missing information. Do not run Git or shell discovery; the snapshot supplies observed Git facts and `prepare_artifacts` owns persistence validation.
 
 Before asking questions:
 
@@ -66,7 +67,7 @@ Either role may be configured alone. Omit `.project/integrations.json` when both
 
 ### MCP registration
 
-After integration providers are selected, call `integration_context` with `operation: inspect` and compare its successfully registered MCP server names with the snapshot's configured server inventory.
+After integration providers are selected, use the snapshot's effective MCP inventory to select configured servers and reuse their recognized credential environment-variable names. That inventory describes configuration, not active tool availability. Establish selected-provider availability through its registered provider tools under normal permissions. Operational `integration_context` validation belongs after approved, valid workflow configuration is saved.
 
 For each provider, reuse a suitable active MCP server when one exists; ask the user to select it when multiple names are suitable. A configured but inactive server is not usable: report it and stop for authentication/configuration correction rather than silently replacing it.
 
@@ -79,7 +80,7 @@ Accept the number or exact value, confirm the interpreted selection as muted con
 
 Before adding registrations, preview the exact server entries, shared target file, and—when local is selected—the exact `/.agents/mcp.settings.local.json` append to `.git/info/exclude`. Obtain explicit approval, then call `configure_mcp`. This tool preserves unrelated settings, rejects conflicting names, never changes the Git index, and enables only `issues,projects` for a GitHub tracker plus `pull_requests` for a GitHub forge.
 
-New MCP registrations are unavailable to the running Pi session. When `configure_mcp` reports `restartRequired`, make no `.project` writes: tell the user which environment variables must be exported, then instruct them to reload or restart Pi and restore this current session. Do not tell them to open an empty session or run `/project-setup` again; the restored conversation contains the approved answers needed to continue. After restoration, continue from the next unanswered setup decision and proceed only when `integration_context` reports the selected servers as active.
+New MCP registrations are unavailable to the running Pi session. When `configure_mcp` reports `restartRequired`, make no `.project` writes: tell the user which environment variables must be exported, then instruct them to reload or restart Pi and restore this current session. Do not tell them to open an empty session or run `/project-setup` again; the restored conversation contains the approved answers needed to continue. After restoration, refresh the configured inventory with `inspect_project_setup`, continue from the next unanswered setup decision, and proceed only when the selected registered provider tools are available under normal permissions.
 
 ### Branch naming
 
@@ -196,7 +197,7 @@ After approval:
 2. In versioned mode, add only missing local-file rules to `.gitignore`. In unversioned mode, do not add any `.project/` ignore rule there.
 3. When permission gates are selected, call `configure_permissions` once with the approved target and exact rules. Do not write or merge permission settings manually.
 4. Call `prepare_artifacts`. Stop on any Git-membership/exclusion conflict; never repair it by changing the index.
-5. If integrations are configured, call `integration_context` with `operation: inspect`. Validate each role independently and run only its returned read-only validation steps. Report unavailable roles without removing or changing another valid role.
+5. If integrations are configured, call `integration_context` with `operation: inspect` to confirm operational configuration and roles. Validate each role independently, reusing native metadata facts already verified during setup/provisioning and obtaining only missing facts through registered read-only provider tools. Configured roles do not establish provider availability. Report unavailable roles without removing or changing another valid role.
 6. Re-read every created/edited file and confirm strict configuration loads. Trust returned tool results for Git safety; do not run shell-based Git verification.
 7. Report artifact mode using exact `versioned` or `unversioned` wording, branch formats and username source, configured roles, policy status, permission-settings scope, files changed, and validation results. Do not label commands as `Next` or imply another action is required. End with `Available workflow commands when you want to start work:` and briefly define `/epic <initiative>`, `/task <request and parent Epic>`, `/gig <standalone request>`, and—only when a tracker is configured—`/backlog <potential work>` plus `/todo <queued work>`.
 

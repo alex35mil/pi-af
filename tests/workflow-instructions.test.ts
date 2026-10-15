@@ -217,5 +217,24 @@ describe("workflow instruction ownership", () => {
 
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
         assert.match(skill, /only when that local file already exists or is proposed/)
+        assert.match(skill, /- "inspect_project_setup"/)
+        assert.match(
+            skill,
+            /For a natural-language invocation without the command snapshot, call `inspect_project_setup` before asking setup questions/,
+        )
+        assert.match(skill, /Reuse a supplied snapshot rather than inspecting twice/)
+        assert.match(skill, /inventory describes configuration, not active tool availability/)
+        assert.match(skill, /After restoration, refresh the configured inventory with `inspect_project_setup`/)
+        assert.match(skill, /Require explicit approval of that exact `planHash`/)
+        assert.match(skill, /Require explicit approval of that proposal/)
+        assert.match(
+            setup,
+            /`\/project-setup` and the agent-callable `inspect_project_setup` tool use the same inspector/,
+        )
+        assert.match(setup, /Inspection works before configuration exists or while it is invalid/)
+        assert.match(
+            setup,
+            /Registered-provider availability and existing provisioning\/file approval gates remain separate/,
+        )
     })
 })
