@@ -4,7 +4,7 @@
   "slug": "project-workflow-phase-github-linear",
   "title": "Project workflow Phase in GitHub and Linear",
   "createdAt": "2026-10-15T18:04:04.829Z",
-  "workStage": "execution",
+  "phase": "selfReview",
   "branch": {
     "state": "ready",
     "name": "gig-01m50brkax-project-workflow-phase-github-linear",

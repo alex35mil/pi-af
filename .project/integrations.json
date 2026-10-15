@@ -9,7 +9,6 @@
             "number": 2
         },
         "labels": {
-            "planning": "Planning",
             "kind": {
                 "epic": "Kind: Epic",
                 "deliverableKinds": {
@@ -32,6 +31,14 @@
                     "inReview": "In Review",
                     "done": "Done",
                     "canceled": "Canceled"
+                }
+            },
+            "phase": {
+                "field": "Phase",
+                "values": {
+                    "planning": "Planning",
+                    "execution": "Execution",
+                    "selfReview": "Self-Review"
                 }
             },
             "priority": {
