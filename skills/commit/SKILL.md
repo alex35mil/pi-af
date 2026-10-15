@@ -11,7 +11,7 @@ Honor the harness's configured skill resolution. When multiple commit skills are
 
 Use plain Git commands through `bash`. Do not build scripts, file manifests, or checkpoint machinery around them.
 
-1. Read repository instructions. Check `git status --short`, the current branch, and recent substantive commit messages. Select the message style below before staging or committing.
+1. Use the repository instructions supplied in context. Check `git status --short`, the current branch, and recent substantive commit messages. Select the message style below before staging or committing.
 2. Inspect staged and unstaged diffs and relevant new files. Identify exactly which changes the user authorized. Existing staging is not permission to include unrelated work.
 3. Preserve unrelated staged, unstaged, and untracked changes. Keep existing partial staging; stage only approved files or hunks with ordinary Git commands. Do not use blanket staging.
 4. Review the proposed commit and run `git diff --cached --check`.
