@@ -1,6 +1,6 @@
 # GitHub tracker
 
-First follow `../shared.md`. Read local configuration through `integration_context`, then follow this procedure using configured registered tools. Setup may validate configuration comprehensively; ordinary operations do not enumerate all labels, fields, or options. Use exact configured names/scopes and let the provider validate named mutations.
+First follow `../shared.md`. Read local configuration through `integration_context`, then follow this procedure using configured registered tools. Setup validates configuration comprehensively; ordinary operations inspect only required fields/labels. Follow `../../phase.md` for the shared invariant and the focused Phase metadata validation; never enumerate unrelated provider metadata.
 
 ## Adopt selected queued work
 
@@ -19,10 +19,10 @@ Wrong repository/Project/parent, non-queue state, ambiguity, denied access, or u
 
 For new work:
 
-1. Build one issue create using exact approved title/Request, Planning and—in versioned mode—the authoritative Kind. Include Task parent issue number. Include supported issue-scoped Priority/Internal ID together; a Task parent and issue fields cannot share creation, so apply those fields together afterward.
+1. Build one issue create using exact approved title/Request and—in versioned mode—the authoritative Kind. Include Task parent issue number. Include supported issue-scoped Priority/Internal ID together; a Task parent and issue fields cannot share creation, so apply those fields together afterward.
 2. Before the first remote create, call `resource_ids` `beginCreation`, role `tracker`. Then call the registered issue create directly under approval. No duplicate/label/option preflight.
 3. On established clear success, call local `recordCreation` with the actual registered-tool arguments/response. It saves repository/issue number before dependent work and caches supplied ID/URL; a minimal ID/URL success is not automatically uncertain.
-4. Add to the configured Project and record its returned Resource IDs through `resource_ids`. Use named Project writes by exact issue relationship for In Progress, approved Priority and versioned Internal ID. Combine supported issue-field writes. Do not refetch merely to populate cache. Clear success proves only facts established by that tool's deployed contract; obtain required missing facts and reconcile partial/unknown outcomes.
+4. Add to the configured Project and record its returned Resource IDs through `resource_ids`. Use named Project writes by exact issue relationship for In Progress, approved Priority and versioned Internal ID. Reconcile Planning in the configured Project Phase field through `../../phase.md` in both artifact modes. Combine supported issue-field writes. Do not refetch merely to populate cache. Clear success proves only facts established by that tool's deployed contract; obtain required missing facts and reconcile partial/unknown outcomes.
 5. Reuse proven creation labels and parent assignment. For an adopted issue or an unproven remaining correction, read current labels/hierarchy, preserve unrelated labels, and change only differences. Request `trackerMutation` with `change: labels` or Task-only `hierarchy` only when that correction is needed; numeric child issue ID can come from existing Project evidence.
 6. Keep explicit remaining operations and desired lifecycle/Priority until initialization is confirmed, then set `bound` and remove `authority.desired`. Do not keep cached Resource IDs or provider-state snapshots in durable records.
 
@@ -30,11 +30,11 @@ Adopted Backlog/Todo moves directly to In Progress, retaining the same object an
 
 ## Resume and mutations
 
-Request `resume`, then read fresh Status/Priority and complete issue labels needed for Planning/Kind. A scoped cached Project-item ID reaches required current fields directly; that response must verify the exact issue/Project identity. Missing or confirmed-stale Resource IDs require agent investigation through configured provider tools; record the actual required response afterward. Network/permission errors do not establish absence. PR discovery is unrelated to ordinary resume.
+Request `resume`, then read fresh Status/Priority/Phase and complete issue labels needed for versioned Kind. Reconcile Phase through `../../phase.md` using the exact Project field definition and fresh current selection. A scoped cached Project-item ID reaches required current fields directly; that response must verify the exact issue/Project identity. Missing or confirmed-stale Resource IDs require agent investigation through configured provider tools; record the actual required response afterward. Network/permission errors do not establish absence. PR discovery is unrelated to ordinary resume.
 
-Planning is present only for In Progress with `workStage: planning`; it is absent during execution, In Review, Done or Canceled. Versioned Kind equals the authoritative workflow Kind; unversioned mode projects no Kind. Preserve unrelated labels. Reuse current-operation reads and write only when the intended set differs. Required label confirmation remains when mutation success does not establish the applied full set; no all-label-definition preflight is needed.
+Phase is present only for initialized In Progress work and equals the authoritative Planning, Execution, or Self-Review activity. Clear native Phase outside In Progress. Phase projects in both artifact modes. Versioned Kind equals the authoritative workflow Kind; unversioned mode projects no Kind. Preserve unrelated labels. Reuse current-operation reads and write only when the intended set differs. Required label confirmation remains when mutation success does not establish the applied full set; no all-label-definition preflight is needed.
 
-Use `trackerMutation` with only the selected `labels`, `lifecycle`, `priority`, or Task `hierarchy` change. Project/issue Priority follows its configured scope. Lifecycle/priority remain provider authority, never cached snapshots or local fallback. Follow shared absolute-value outcome/recovery rules.
+Use `trackerMutation` with only the selected `labels`, `lifecycle`, `phase`, `priority`, or Task `hierarchy` change. Phase supplies the fresh lifecycle/native facts from `../../phase.md` and applies only the returned changed absolute field assignment. Project/issue Priority follows its configured scope. Lifecycle/priority remain provider authority, never cached snapshots or local fallback. Follow shared absolute-value outcome/recovery rules.
 
 ## Creation uncertainty
 
@@ -42,6 +42,6 @@ A returned error can follow creation or partial application. Preserve the pendin
 
 ## Queue and body projection
 
-Follow `../../queue.md`. Queued work has no workflow artifact/cache/checkpoint. Create with only approved versioned Kind (omit for `not set`), no Planning/Internal ID, selected native destination and Priority. Reuse returned identities during this operation; reconcile uncertain results before retry.
+Follow `../../queue.md`. Queued work has no workflow artifact/cache/checkpoint. Create with only approved versioned Kind (omit for `not set`), no Phase/Internal ID, selected native destination and Priority. Reuse returned identities during this operation; reconcile uncertain results before retry.
 
 For accepted `epic.md`/`plan.md`, request tracker-only `artifactProjection`, render, and publish the complete body directly by durable repository/issue number. Require only issue-update body arguments; no Project Resource IDs, Status/Kind discovery, pre-read/comparison, or routine confirmation read follows established clear success. Uncertain body writes require exact read-back reconciliation.

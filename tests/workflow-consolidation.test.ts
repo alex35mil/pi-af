@@ -22,7 +22,7 @@ const commonMetadata = {
     slug: "example",
     title: "Example",
     createdAt: "2026-01-01T00:00:00Z",
-    workStage: "planning",
+    phase: "planning",
     branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
     integrations: [],
 }
@@ -69,7 +69,10 @@ describe("workflow consolidation contracts", () => {
                 assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "planning" }), false)
                 assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "backlog" }), false)
                 assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "todo" }), false)
-                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, workStage: "paused" }), false)
+                for (const phase of ["planning", "execution", "selfReview"]) {
+                    assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, phase }), true)
+                }
+                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, phase: "paused" }), false)
             }
         }
     })

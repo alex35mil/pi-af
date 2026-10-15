@@ -6,6 +6,7 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { linearPhases } from "./workflow-phase-fixtures.ts"
 
 import { formatBranchName, validateRawId } from "../workflows/extensions/__lib/domain.ts"
 import { inspectProjectMcp, registeredCredentialEnvironment } from "../workflows/extensions/integrations/mcp.ts"
@@ -178,6 +179,7 @@ describe("workflow project configuration", () => {
                         provider: "linear",
                         mcpServer: "linear",
                         team: "Engineering",
+                        phase: linearPhases(),
                         statuses: {
                             issues: {
                                 backlog: "Backlog",

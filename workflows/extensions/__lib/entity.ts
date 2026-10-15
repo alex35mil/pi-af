@@ -17,7 +17,7 @@ import {
     RawIdSchema,
     type ReadyBranchContract,
     slugify,
-    WorkStageSchema,
+    PhaseSchema,
 } from "./domain.js"
 import { writeTextAtomically } from "./files.js"
 import {
@@ -112,7 +112,7 @@ const baseMetadataProperties = {
     slug: OneLineSchema,
     title: OneLineSchema,
     createdAt: OneLineSchema,
-    workStage: WorkStageSchema,
+    phase: PhaseSchema,
     branch: BranchContractSchema,
     integrations: Type.Array(IntegrationRecordSchema),
 }
@@ -243,14 +243,6 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
     }
     if (status.id !== qualifyId(status.entity, status.rawId)) fail("qualified ID does not match entity and rawId")
     if (slugify(status.slug) !== status.slug) fail("slug is not normalized")
-    if ("state" in status) {
-        if (status.workStage === "planning" && status.state !== "inProgress" && status.state !== "canceled") {
-            fail("planning work stage requires In Progress or Canceled lifecycle")
-        }
-        if (status.state !== "inProgress" && status.state !== "canceled" && status.workStage !== "execution") {
-            fail("In Review and Done lifecycle require execution work stage")
-        }
-    }
 
     const expectedDirectorySuffix = `.${status.id}.${status.slug}`
     if (!path.basename(entityDirectory).endsWith(expectedDirectorySuffix)) {

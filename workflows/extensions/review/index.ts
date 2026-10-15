@@ -153,7 +153,7 @@ export default function (pi: ExtensionAPI) {
                 return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
             }
             assertReviewEntity(entityDir, input.entity)
-            assertEntityBranchReady(readEntityStatus(entityDir))
+            assertSelfReview(entityDir)
 
             const round = await nextReviewRound(entityDir, phase)
             const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
@@ -303,7 +303,7 @@ export default function (pi: ExtensionAPI) {
                 return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
             }
             assertReviewEntity(entityDir, input.entity)
-            assertEntityBranchReady(readEntityStatus(entityDir))
+            assertSelfReview(entityDir)
 
             const snapshotPath = input.snapshot
                 ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
@@ -328,6 +328,14 @@ export default function (pi: ExtensionAPI) {
 function resolveEntityDir(cwd: string, raw: string): string {
     const root = project.resolveRootDir(cwd)
     return resolveEntityPath(root, cwd, raw)
+}
+
+export function assertSelfReview(directory: string): void {
+    const status = readEntityStatus(directory)
+    assertEntityBranchReady(status)
+    if (status.phase !== "selfReview" || ("state" in status && status.state !== "inProgress")) {
+        throw new Error(`${status.id} review requires In Progress and Phase Self-Review`)
+    }
 }
 
 function assertReviewEntity(directory: string, expected: ReviewEntity): void {

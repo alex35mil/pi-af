@@ -270,7 +270,7 @@ function createEntityArtifacts(
         slug,
         title: input.title.trim(),
         createdAt: timestamp.toISOString(),
-        workStage: "planning" as const,
+        phase: "planning" as const,
         branch: contract,
         integrations,
         authority,

@@ -1,6 +1,6 @@
 # Review finding adjudication
 
-Use this flow for every Epic/Task/Gig plan, interim, and final review.
+Use this flow for every Epic/Task/Gig plan, interim, and final review. First follow `./phase.md`: metadata Phase is Self-Review and lifecycle remains In Progress for all adversarial and local user reviews, including waiting for feedback or approval. Reconcile native Phase before starting or presenting review. The review tool's plan/interim/final category remains separate from workflow Phase. When corrections may proceed, enter Execution for edits and verification, then return to Self-Review for the next review. A blocked-review confirmation pause stays in Self-Review until the user permits corrections.
 
 1. The reviewer returns one validated structured report. The review tool passes its findings through the shared canonical renderer before writing `review.md` or returning them to the main agent. Raw reviewer prose is never a human-facing finding list.
 2. Validate every finding against repository evidence, active rules, and the credible-complexity requirements.

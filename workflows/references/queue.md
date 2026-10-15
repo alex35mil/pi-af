@@ -20,7 +20,7 @@ An approved new queue intake is a direct create request. Do not search for dupli
 
 GitHub creates an ordinary issue with only the approved versioned Kind (omit for `not set`) and Task parent when applicable, adds it to the configured Project, and applies selected Status/Priority through supported named writes. Task parent and issue-scoped fields are separate supported calls. Linear creates only the selected Project, parent-Project Task issue, or projectless Gig with team/state/native Priority together. Reuse returned identities and established outcome proof; obtain only required missing facts. No queued cache or persisted recovery state is created.
 
-Except for that approved versioned GitHub Kind label, do not assign a workflow ID, native GitHub issue Type, Linear label/kind, Planning label, branch, workflow artifact, or pending workflow record while adding work to Backlog or Todo.
+Except for that approved versioned GitHub Kind label, do not assign a workflow ID, native GitHub issue Type, Linear label/kind, native Phase, branch, workflow artifact, or pending workflow record while adding work to Backlog or Todo.
 
 ## If the provider response is uncertain
 
@@ -30,6 +30,6 @@ Always report the durable object URL and any incomplete update. Never bypass a d
 
 ## Start the work
 
-When the user starts a selected Backlog or Todo object through `/epic`, `/task`, or `/gig`, reuse that exact provider object and Priority, create the workflow entity and branch contract, and move directly to In Progress with `workStage: planning`. Todo is never required between Backlog and In Progress.
+When the user starts a selected Backlog or Todo object through `/epic`, `/task`, or `/gig`, reuse that exact provider object and Priority, create the workflow entity and branch contract, and move directly to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress.
 
-GitHub also adds the configured Planning label while planning is active. Linear and trackerless workflows use no separate external planning marker. Versioned mode reconciles the authoritative workflow Kind label and may apply configured Internal ID during initialization; unversioned mode keeps system metadata in workflow artifacts.
+Follow `./phase.md`: initialized GitHub work uses the Project Phase field, and Linear uses the selected mutually exclusive Project/issue-label group, in both artifact modes. Trackerless Phase stays in metadata. Versioned mode also reconciles the authoritative GitHub Kind label and may apply configured Internal ID during initialization; other system metadata stays private in unversioned mode.

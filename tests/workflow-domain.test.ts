@@ -6,6 +6,7 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import { Value } from "typebox/value"
+import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 
 import {
     entityDirectoryName,
@@ -94,6 +95,7 @@ function enableLinearIntegration(
                 provider: "linear",
                 mcpServer: "linear",
                 team: "Engineering",
+                phase: linearPhases(),
                 statuses: {
                     issues: {
                         backlog: "Backlog",
@@ -137,7 +139,6 @@ function enableGitHubIntegration(repository: string): void {
                 repository: { owner: "example", repo: "project" },
                 project: { owner: "example", ownerType: "user", number: 3 },
                 labels: {
-                    planning: "Planning",
                     kind: {
                         epic: "Kind: Epic",
                         deliverableKinds: {
@@ -162,6 +163,7 @@ function enableGitHubIntegration(repository: string): void {
                             canceled: "Canceled",
                         },
                     },
+                    phase: { field: "Phase", values: { ...phaseValues } },
                     priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
                     internalId: { scope: "project", field: "Internal ID" },
                 },
@@ -464,7 +466,7 @@ describe("workflow domain", () => {
             const epicMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
             if (!("state" in epic.status)) assert.fail("expected workflow Epic authority")
             assert.deepEqual({ ...epicMetadata, state: epic.status.state }, epic.status)
-            assert.equal(epic.status.workStage, "planning")
+            assert.equal(epic.status.phase, "planning")
             assert.match(fs.readFileSync(localStatusPath, "utf-8"), /"state": "inProgress"/)
             assert.equal(
                 git(repository, ["check-ignore", path.relative(repository, localStatusPath)]),
@@ -578,7 +580,7 @@ describe("workflow domain", () => {
                     task: { id: task.status.id, directory: task.directory },
                 },
             ])
-            writeStatus(repository, task.directory, { ...task.status, state: "done", workStage: "execution" })
+            writeStatus(repository, task.directory, { ...task.status, state: "done", phase: "selfReview" })
             assert.deepEqual(readEpicTaskProgress(path.join(repository, epic.directory)).items, [
                 {
                     state: "complete",
@@ -624,7 +626,7 @@ describe("workflow domain", () => {
                 assert.fail("expected GitHub tracker")
             assert.equal(tracker.external.issueNumber, 42)
             assert.equal(gig.status.integrations.length, 1)
-            assert.equal(gig.status.workStage, "planning")
+            assert.equal(gig.status.phase, "planning")
             assert.deepEqual(gig.status.authority, {
                 kind: "tracker",
                 provider: "github",
@@ -655,7 +657,7 @@ describe("workflow domain", () => {
             assert.deepEqual(tracker.operations, [
                 "apply configured Kind label and Internal ID",
                 "move Project Status to In Progress",
-                "add Planning label",
+                "project Planning Phase",
             ])
 
             const integrationPath = path.join(repository, ".project", "integrations.json")
@@ -1001,7 +1003,7 @@ describe("workflow domain", () => {
             ) {
                 assert.fail("expected pending GitHub tracker projection")
             }
-            assert.deepEqual(githubTracker.operations, ["move Project Status to In Progress", "add Planning label"])
+            assert.deepEqual(githubTracker.operations, ["move Project Status to In Progress", "project Planning Phase"])
             assert.equal(fs.existsSync(path.join(githubRepository, github.directory, ".local", "status.md")), false)
 
             enableLinearIntegration(linearRepository, false, "unversioned")
@@ -1035,7 +1037,7 @@ describe("workflow domain", () => {
             ) {
                 assert.fail("expected pending Linear tracker projection")
             }
-            assert.deepEqual(linearTracker.operations, ["move Linear issue to In Progress"])
+            assert.deepEqual(linearTracker.operations, ["move Linear issue to In Progress", "project Planning Phase"])
             assert.equal(fs.existsSync(path.join(linearRepository, linear.directory, ".local", "status.md")), false)
         } finally {
             fs.rmSync(githubRepository, { recursive: true, force: true })
@@ -1434,17 +1436,18 @@ describe("workflow domain", () => {
                 '# Status\n\n```json\n{\n  "state": "planning",\n  "extra": true\n}\n```\n',
             )
             assert.throws(() => readEntityStatus(directory), /invalid local status/)
-            writeStatus(repository, gig.directory, { ...gig.status, state: "inReview" })
-            assert.throws(
-                () => readEntityStatus(directory),
-                /planning work stage requires In Progress or Canceled lifecycle/,
-            )
+            for (const phase of ["planning", "execution", "selfReview"] as const) {
+                for (const state of ["inProgress", "inReview", "done", "canceled"] as const) {
+                    writeStatus(repository, gig.directory, { ...gig.status, state, phase })
+                    assert.equal(readEntityStatus(directory).phase, phase)
+                }
+            }
             writeStatus(repository, gig.directory, { ...gig.status, state: "canceled" })
             const canceled = readEntityStatus(directory)
             if (!("state" in canceled)) assert.fail("expected workflow lifecycle")
             assert.equal(canceled.state, "canceled")
-            writeStatus(repository, gig.directory, { ...gig.status, state: "inReview", workStage: "execution" })
-            assert.equal(readEntityStatus(directory).workStage, "execution")
+            writeStatus(repository, gig.directory, { ...gig.status, state: "inReview", phase: "selfReview" })
+            assert.equal(readEntityStatus(directory).phase, "selfReview")
             writeStatus(repository, gig.directory, gig.status)
 
             const cases: Array<{ status: typeof gig.status; error: RegExp }> = [

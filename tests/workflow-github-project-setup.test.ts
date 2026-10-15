@@ -239,7 +239,7 @@ function options(...names: string[]) {
 
 function defaultRepositoryLabels() {
     const labels = GITHUB_PROJECT_DEFAULTS.labels
-    return [labels.planning, labels.kind.epic, ...Object.values(labels.kind.deliverableKinds)].map((label) => ({
+    return [labels.kind.epic, ...Object.values(labels.kind.deliverableKinds)].map((label) => ({
         name: label.name,
         color: label.color.slice(1),
         description: label.description,
@@ -257,6 +257,7 @@ function projectContained(source: Record<string, unknown>) {
         labels: defaults.labels,
         fields: {
             status: defaults.status,
+            phase: defaults.phase,
             priority: { scope: "project", ...defaults.priority },
             internalId: { scope: "project", ...defaults.internalId },
         },
@@ -274,6 +275,7 @@ function organizationNative(source: Record<string, unknown>) {
         labels: defaults.labels,
         fields: {
             status: defaults.status,
+            phase: defaults.phase,
             priority: {
                 scope: "issue",
                 ...defaults.priority,
@@ -317,13 +319,17 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projects.length, 1)
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
-            ["Status", "Priority", "Internal ID"],
+            ["Status", "Phase", "Priority", "Internal ID"],
         )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.project.number, 1)
         assert.equal(tracker.fields.status.values.todo, "Todo")
         assert.equal(tracker.fields.status.values.inReview, "In Review")
-        assert.equal(tracker.labels.planning, "Planning")
+        assert.deepEqual(tracker.fields.phase.values, {
+            planning: "Planning",
+            execution: "Execution",
+            selfReview: "Self-Review",
+        })
         assert.equal(tracker.labels.kind.epic, "Kind: Epic")
         assert.equal(tracker.labels.kind.deliverableKinds.feature, "Kind: Feature")
         assert.deepEqual(tracker.fields.priority.values, ["Urgent", "High", "Medium", "Low"])
@@ -364,7 +370,7 @@ describe("GitHub Project setup", () => {
             visibility: "private",
             associateRepository: false,
         })
-        github.repositoryLabels.push({ name: "Planning", color: "ffffff", description: "Wrong" })
+        github.repositoryLabels.push({ name: "Kind: Epic", color: "ffffff", description: "Wrong" })
         const blocked = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
         assert.equal(blocked.state, "blocked")
         assert.match(JSON.stringify(blocked.conflicts), /incompatible color or description/)
@@ -391,7 +397,7 @@ describe("GitHub Project setup", () => {
                     ...base.labels.kind,
                     deliverableKinds: {
                         ...base.labels.kind.deliverableKinds,
-                        feature: { ...base.labels.kind.deliverableKinds.feature, name: "planning" },
+                        feature: { ...base.labels.kind.deliverableKinds.feature, name: "kind: epic" },
                     },
                 },
             },
@@ -752,8 +758,85 @@ describe("GitHub Project setup", () => {
         )
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
-            ["Status", "Priority"],
+            ["Status", "Phase", "Priority"],
         )
+    })
+
+    it("reuses compatible Phase metadata and blocks incompatible existing fields", async () => {
+        const github = new FakeGitHub()
+        const specification = projectContained({
+            mode: "new",
+            title: "Phase",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+        const existing = projectContained({
+            mode: "existing",
+            number: 1,
+            visibility: "private",
+            associateRepository: false,
+        })
+        const reused = await runGitHubProjectSetup(
+            { operation: "preview", specification: existing },
+            setupOptions(github),
+        )
+        assert.equal(reused.state, "ready")
+        assert.doesNotMatch(JSON.stringify(reused.actions), /create-project-field/)
+        const phase = github.projects[0].fields.find((field) => field.name === "Phase")!
+        const id = phase.id
+        phase.options = phase.options!.filter((option) => option.name !== "Self-Review")
+        const missing = await runGitHubProjectSetup(
+            { operation: "preview", specification: existing },
+            setupOptions(github),
+        )
+        assert.equal(missing.state, "blocked")
+        assert.match(JSON.stringify(missing.conflicts), /Phase.*incompatible/)
+        phase.dataType = "TEXT"
+        const wrongType = await runGitHubProjectSetup(
+            { operation: "preview", specification: existing },
+            setupOptions(github),
+        )
+        assert.equal(wrongType.state, "blocked")
+        assert.equal(phase.id, id)
+        assert.equal(github.deleteProjectFieldAttempts, 0)
+    })
+
+    it("requires distinct Phase option and Project field names", async () => {
+        const github = new FakeGitHub()
+        const base = projectContained({
+            mode: "new",
+            title: "Phase",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const duplicateField = { ...base, fields: { ...base.fields, phase: { ...base.fields.phase, field: "Status" } } }
+        await assert.rejects(
+            runGitHubProjectSetup({ operation: "preview", specification: duplicateField }, setupOptions(github)),
+            /field names must be distinct/,
+        )
+        const duplicateOption = {
+            ...base,
+            fields: {
+                ...base.fields,
+                phase: {
+                    ...base.fields.phase,
+                    options: {
+                        ...base.fields.phase.options,
+                        selfReview: { ...base.fields.phase.options.selfReview, name: "Execution" },
+                    },
+                },
+            },
+        }
+        await assert.rejects(
+            runGitHubProjectSetup({ operation: "preview", specification: duplicateOption }, setupOptions(github)),
+            /Phase option names must be distinct/,
+        )
+        assert.equal(github.projects.length, 0)
     })
 
     it("requires an environment-backed credential", async () => {

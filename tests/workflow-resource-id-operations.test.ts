@@ -5,6 +5,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { Value } from "typebox/value"
+import { phaseValues } from "./workflow-phase-fixtures.ts"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
@@ -81,7 +82,6 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
                 repository: repo,
                 project: itemScope.project,
                 labels: {
-                    planning: "Planning",
                     kind: {
                         epic: "Epic",
                         deliverableKinds: {
@@ -96,6 +96,7 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
                 },
                 fields: {
                     status: { field: "Status", values: statuses },
+                    phase: { field: "Phase", values: { ...phaseValues } },
                     priority: { scope: "project", field: "Priority", values: ["High"] },
                     internalId: { scope: "project", field: "ID" },
                 },
@@ -112,7 +113,7 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
         slug: "example",
         title: "Example",
         createdAt: "2026-10-01T00:00:00Z",
-        workStage: "execution",
+        phase: "selfReview",
         entity: "gig",
         kind: "refactor",
         authority: { kind: "tracker", provider: "github" },

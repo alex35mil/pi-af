@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M50BRKAX",
+  "rawId": "01M50BRKAX",
+  "slug": "project-workflow-phase-github-linear",
+  "title": "Project workflow Phase in GitHub and Linear",
+  "createdAt": "2026-10-15T18:04:04.829Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m50brkax-project-workflow-phase-github-linear",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 19
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m50brkax-project-workflow-phase-github-linear",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "feature"
+}

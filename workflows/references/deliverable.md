@@ -26,7 +26,7 @@ After every accepted `plan.md` change, call tracker-only `artifactProjection` an
 
 ## Material replanning
 
-When accepted Deliverable behavior, strategy, scope, or decomposition must change after execution began, use the material-replanning transition in `./planning.md` before rewriting `.local/draft.md`. This transition owns the lifecycle and `workStage` reset for every authority/provider; provider references own only their external projection. Repeat the normal review, acceptance, artifact projection, implementation, verification, and final-review flow from the corrected plan.
+When accepted Deliverable behavior, strategy, scope, or decomposition must change after execution began, use the material-replanning transition in `./planning.md` before rewriting `.local/draft.md`. This transition owns the lifecycle and `phase` reset for every authority/provider; provider references own only their external projection. Repeat the normal review, acceptance, artifact projection, implementation, verification, and final-review flow from the corrected plan.
 
 ## Kind strategy
 
@@ -70,9 +70,9 @@ Kind is current workflow strategy, not identity. The qualified ID, directory, re
 
 ### Planning correction before execution
 
-The user may approve any target kind while lifecycle remains `inProgress`, `workStage` remains `planning`, and execution has not started.
+The user may approve any target kind while lifecycle remains `inProgress` and execution of an accepted plan has not started. Phase may be Planning, Self-Review, or Execution during plan corrections; it is not proof of implementation start.
 
-1. Update kind while keeping lifecycle `inProgress` and `workStage: planning`.
+1. Update kind while keeping lifecycle `inProgress` and setting `phase: planning`; reconcile native Phase through `./phase.md`.
 2. Keep `brief.md` unchanged, remove any stale candidate, and project the approved Kind through the configured provider when supported. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
 3. Continue by target:
     - `bugfix`: use adaptive inquiry and investigation, then the shared review/acceptance flow with a root-cause-shaped `.local/draft.md`.
@@ -83,7 +83,7 @@ The user may approve any target kind while lifecycle remains `inProgress`, `work
 After `report.md` passes final review, the user may approve one bounded continuation to `bugfix`, `feature`, `refactor`, or `chore`.
 
 1. Preserve `report.md` and the accepted root plan.
-2. Update kind and `workStage: planning` in `metadata.json`; set lifecycle to `inProgress` when necessary.
+2. Update kind and `phase: planning` in `metadata.json`; set lifecycle to `inProgress` when necessary and reconcile native Phase through `./phase.md`.
 3. Keep `brief.md` unchanged; project the approved Kind through the configured provider when supported and use native tracker Status when configured. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
 4. Continue by target:
     - `bugfix`: remove the previous candidate, validate the report's causal evidence, investigate remaining gaps, then use shared review/acceptance with a root-cause-shaped `.local/draft.md`.
@@ -133,18 +133,18 @@ Write actual outcomes, not planned work or a chronological transcript. `result.m
 
 ## Implementation and verification
 
-1. When approved implementation begins, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through its absolute label read/update/read-back procedure. Linear and trackerless lifecycle require no transition at this point.
+1. When approved implementation begins, set `phase: execution`; lifecycle remains `inProgress`. Follow `./phase.md` for all activity transitions and native Phase reconciliation. Trackerless Phase remains metadata-only.
 2. Implement the complete approved change at its owning abstraction. Keep unrelated working-tree changes untouched.
 3. Run focused verification while developing and all plan/Project Policy verification before final review.
 4. For a Task, run the parent-synchronization flow in its skill. A Gig has no parent-synchronization step.
 5. Create or synchronize the applicable `result.md` or `report.md` with the actual implementation and verification evidence. Do not claim unrun verification.
 6. Check `.local/pending.md`. Resolve or move every active entry to separately approved work; final review requires zero unchecked entries. A missing file is empty.
-7. Change lifecycle to `inReview` with `workStage: execution`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to configured `inReview`, remove GitHub Planning when applicable, and re-read. Then call `review` with `phase: "final"`.
+7. Keep lifecycle `inProgress`, set metadata `phase: selfReview`, and reconcile native Phase. Then call `review` with `phase: "final"`.
 8. Follow `./review.md`, synchronize the completion artifact after every implementation or verification change, and repeat final subagent review until approved.
-9. Present the implementation and reviewed completion artifact together for final user review.
-10. When user review causes a change, update the implementation and verification evidence, synchronize `result.md` or `report.md`, and rerun final subagent review for every material implementation or report change. Repeat the user-review presentation with the synchronized artifact.
-11. Continue through Submission below. Keep lifecycle `inReview` through submission, pull-request review, and any required revisions.
-12. An explicit Task/Gig finish request authorizes conditional merge, Done, synchronization/checkout of the immutable stored target, and local Deliverable branch deletion. Final completion-artifact acceptance authorizes submission, not finishing; ordinary resume or an externally changed tracker status is not itself a finish request. With a forge, follow its `finishRead`/conditional `finishMerge` flow: require exact repository/head/base/head SHA and complete merged PR-get evidence, using fixed squash with the verified expected head when a merge is needed. Without a forge, retain the confirmed Git-ancestry delivery route; no automatic local or Epic merge is added. Only after confirmed delivery set `done` with `workStage: execution` through the existing authority, and confirm native Status/Priority and absent GitHub Planning as required. This lifecycle update never creates a repository commit.
+9. Remain in Self-Review while presenting the implementation and reviewed completion artifact together for final user review and awaiting approval.
+10. When user review causes a change, enter In Progress/Execution for corrections and verification, synchronize `result.md` or `report.md`, then return to Self-Review before rerunning final subagent review for every material implementation or report change. Repeat the user-review presentation with the synchronized artifact.
+11. Continue through Submission below. Enter lifecycle `inReview` only after confirmed external submission and clear native Phase. Revisions on an open PR return to In Progress/Execution, then Self-Review for adversarial/local user reviews, then In Review after successful resubmission. With no external submission route, never set In Review.
+12. An explicit Task/Gig finish request authorizes conditional merge, Done, synchronization/checkout of the immutable stored target, and local Deliverable branch deletion. Final completion-artifact acceptance authorizes submission, not finishing; ordinary resume or an externally changed tracker status is not itself a finish request. With a forge, follow its `finishRead`/conditional `finishMerge` flow: require exact repository/head/base/head SHA and complete merged PR-get evidence, using fixed squash with the verified expected head when a merge is needed. Without a forge, retain the confirmed Git-ancestry delivery route; no automatic local or Epic merge is added. Only after confirmed delivery set `done` through the existing authority, retain the last metadata Phase, and confirm native Status/Priority and absent native Phase as required. This lifecycle update never creates a repository commit.
 13. Within that same explicit finish request, call `cleanup_delivery_branch` once without another cleanup question. For a semantic GitHub forge association, supply fresh exact `pull_request_read:get` evidence including repository, PR number, merged=true, stored head/base, local head SHA and merge timestamp. Otherwise use Git source-ancestry evidence. The tool checks out only the stored target, fast-forwards it to freshly fetched origin, requires exact target/origin equality and lifecycle/head/worktree safety, then deletes only the local Deliverable branch. The no-forge route additionally verifies source ancestry. Epic-target Tasks remain on the Epic branch and leave main intact.
 14. Any blocked merge, missing evidence, unavailable origin, ahead/diverged target, head mismatch, or worktree failure preserves the Deliverable branch. Never stash, reset, clean unrelated files, force checkout, push the target to hide divergence, delete remote/Epic branches, or revert confirmed `done`. Report confirmed completed steps and the exact blocker; claim full finalization only when the clone is on the synchronized stored target with the local source branch deleted.
 
@@ -158,7 +158,8 @@ Submission starts only after final subagent approval, synchronized `result.md` o
 4. When a forge is configured, call `render_provider_body` with the complete synchronized `result.md` or `report.md`. It removes the root heading and, only for a bound GitHub tracker issue in the same repository, appends a horizontal rule, a blank line, and `Closes #<issue number>`. The exact approved entity title, without an internal or tracker identifier, is the PR title. The stored branch `name` is the head and stored `target` is the base; approval never changes this contract.
 5. With a configured forge, push only the stored entity branch. First approved PR creation is one direct native call using the stored head/target and approved title/body, without preliminary discovery. Record its clear-success number/URL directly in the existing Resource IDs file; recording leaves versioned metadata unchanged and creates no metadata-only follow-up commit/push/CI run. Use locally recorded IDs. Missing/stale data and uncertain attempts require agent investigation through configured provider tools. Record an approved explicit PR choice in the IDs file; ask the user when investigation requires a selection. Never replace an ambiguous or closed PR. Without a forge, perform no submission Git remote or PR operation.
 6. After a synchronized and approved post-creation `result.md` or `report.md` change, rebuild and directly publish the complete body under `./integrations/shared.md`. Trust established clear success. After an uncertain or partial update, read the exact PR before retrying and retry only confirmed non-application; never create another PR.
-7. A failure stops at its current confirmed state and resumes from remote evidence; never repeat uncertain PR creation blindly.
+7. After successful creation or recovery of a reviewable PR, set lifecycle `inReview` through its authority and clear native Phase using `./phase.md`. A local commit or push without an external review submission does not set In Review. After successful approved resubmission, reconcile the same In Review/absent-Phase outcome; reuse native automation outcomes and skip already-applied writes.
+8. A failure stops at its current confirmed state and resumes from remote evidence; never repeat uncertain PR creation blindly. An uncertain submission does not itself prove In Review is appropriate.
 
 ## Design artifacts
 

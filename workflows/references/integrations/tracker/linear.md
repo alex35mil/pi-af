@@ -10,11 +10,13 @@ Linear mapping is exact:
 | Task            | issue         | `project` equals parent Epic Project; never `parentId` | static format, or exact issue `gitBranchName` for `tracker`                     |
 | Gig             | issue         | no Epic Project                                        | static format, or exact issue `gitBranchName` for `tracker`                     |
 
-Do not create or apply entity, kind, planning, or execution labels. Kind and work stage remain workflow-only.
+Kind remains workflow-only. Project and issue labels project native Phase in both artifact modes through the configured mutually exclusive groups; follow `../../phase.md`. Entity/kind labels are not applied.
 
 ## Setup discovery
 
 During `/project-setup`, use `inspect_linear_workspace` to read workspace identity, authenticated viewer Full Name/Username, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. This operation is read-only and never substitutes for MCP tracker operations. Select exact team/status names without inferring semantics. Follow `../../setup.md` for exact branch-template matching. With `tracker`, Epic initialization repeats only the read-only viewer/workspace branch query so the branch uses current Linear settings.
+
+Read the selected Project/issue label catalog through registered `list_project_labels`/`list_issue_labels`, including groups and required pagination. Require the exact configured group scope and its active Planning, Execution, and Self-Review children. Issue groups require single-select; Project groups are mutually exclusive by Linear's documented contract. Setup stays read-only: ask the user to configure missing or incompatible groups before saving configuration.
 
 ## Provider calls
 
@@ -36,7 +38,7 @@ Use `adopt` with the selected entity. Present the synthesized Request, copied Pr
 
 ## Initialize
 
-Workflow `init` completes first and records `workStage: planning` with intended lifecycle In Progress.
+Workflow `init` completes first and records `phase: planning` with intended lifecycle In Progress.
 
 - Epic: tracker resource `project`; new starts `awaiting`, approved existing starts `bound-pending`. Static formats create the configured branch. With `tracker`, read current `organization.gitBranchFormat` and `viewer.displayName`, reconstruct the supported template with the lowercase workflow Epic ID and normalized slug, and persist a ready tracker-owned branch before Project mutation.
 - Task: tracker resource `task-issue`; generated formats are ready immediately. Tracker naming retains `tracker-pending` until a name is obtained; an adopted returned name is saved as `tracker-named` before local branch creation.
@@ -45,7 +47,7 @@ Workflow `init` completes first and records `workStage: planning` with intended 
 For new work:
 
 1. Request `initialize` for this entity. A Task requires its identified parent Epic Project; otherwise preserve the awaiting operation and finish parent binding first. A Gig remains projectless.
-2. Prepare the exact title/Request, native In Progress/Priority, configured team, Task Project when applicable, and versioned Internal ID. Call local `resource_ids` `beginCreation`, role `tracker`, before the first registered `save_project`/`save_issue`. Do not search before the first approved create or perform blanket discovery.
+2. Prepare the exact title/Request, native In Progress/Priority, configured team, Task Project when applicable, and versioned Internal ID. Resolve and validate the configured Phase group through `../../phase.md`; include its Planning child in new-work labels. For existing objects read and preserve the complete applied label set, replacing only managed Phase children. Call local `resource_ids` `beginCreation`, role `tracker`, before the first registered `save_project`/`save_issue`. Do not search before the first approved create or perform blanket discovery.
 3. On clear success, call local `recordCreation` with actual tool/arguments/response. Save the returned immutable UUID and Task parent relationship durably before dependent work; URL/identifier go into scoped local cache. Reuse state/Priority/relationship proof supplied by the mutation; read only required missing facts. Do not read merely to repopulate returned values.
 4. Only with tracker-controlled issue naming, save a returned name in `tracker-named`; fetch the exact issue only when the name is missing, then save it there. Never duplicate it in tracker records or put it in disposable cache. `finalize_linear_branch` checkpoints the start commit and preserves existing collision/interruption checks through provisioning to immutable ready.
 5. Keep remaining initialization operations and desired lifecycle/Priority until their required outcome is confirmed, then set `bound` and remove `authority.desired`. Generated names need no provider branch step.
@@ -66,9 +68,11 @@ Follow `../../queue.md`. Require the entity type and selected Backlog or Todo de
 
 Recover uncertain provider results only through read-back as defined in the shared Queue contract.
 
-## Lifecycle, work stage, and priority
+## Lifecycle, Phase, and priority
 
-Read fresh lifecycle/Priority on resume by the durable UUID. Use `trackerMutation` for the selected lifecycle or Priority assignment and follow shared absolute-value outcome/recovery rules, with `save_project` for Epic and `save_issue` for Task/Gig. Planning and execution both remain In Progress; `workStage` changes only workflow metadata. Final review uses In Review, confirmed delivery uses Done, and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
+Read fresh lifecycle/Priority and the complete applied label set on resume by the durable UUID. Use `trackerMutation` for the selected lifecycle or Priority assignment and follow shared absolute-value outcome/recovery rules, with `save_project` for Epic and `save_issue` for Task/Gig. Planning, Execution, and Self-Review all remain In Progress. In Review starts only after external submission; confirmed delivery uses Done and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
+
+Reconcile Phase through `../../phase.md`: use Project-label metadata for Epic and issue-label metadata for Task/Gig. Supply complete fresh catalog/applied-label facts to `trackerMutation` with `change: phase`. Apply its entire returned label-ID set through `save_project`/`save_issue` only when changed. Remove only managed Phase-group labels, preserve every unrelated label, and clear managed Phase outside In Progress. Never send just the desired Phase child as a replacement for the full set. Required missing outcome facts and uncertain writes use the existing read-back recovery boundary; no lifecycle or label snapshots become durable cache state.
 
 ## Artifact projection
 

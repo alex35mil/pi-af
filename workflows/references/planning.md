@@ -1,6 +1,6 @@
 # Shared planning protocol
 
-Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define plan content and any explicit inquiry-to-investigation branch. Follow `./review.md` for finding adjudication in every review phase.
+Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define plan content and any explicit inquiry-to-investigation branch. Follow `./review.md` for finding adjudication in every review phase and `./phase.md` for the shared workflow Phase contract.
 
 ## Research and inquiry
 
@@ -25,19 +25,20 @@ When an accepted `epic.md` or `plan.md` must change materially after execution b
 
 1. Reject replanning for lifecycle `done`; separately initialized work owns any later change.
 2. Restore lifecycle to `inProgress` when it is `inReview`: update `.local/status.md` for workflow authority or update and re-read the provider's native Status for tracker authority.
-3. Record `workStage: planning` in `metadata.json`.
-4. Apply the configured provider's planning projection. GitHub re-adds the exact configured Planning label while preserving unrelated labels; Linear and trackerless workflows require no additional external marker.
-5. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance records `workStage: execution` while lifecycle remains `inProgress`.
+3. Record `phase: planning` in `metadata.json`.
+4. Reconcile native Phase through `./phase.md`; trackerless Phase remains metadata-only.
+5. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance records `phase: execution` while lifecycle remains `inProgress`.
 
 Editorial changes that do not alter behavior, strategy, scope, or decomposition do not enter material replanning.
 
 ## Planning review and acceptance
 
-1. Call `review` with the exact entity, `entityDir`, and `phase: "plan"`. The tool creates `.local/reviews/plan-NNN/`, snapshots `.local/draft.md` to `candidate.md`, validates the structured reviewer report, renders canonical `review.md`, and stores request/transcript/raw diagnostics in that round directory.
+1. Set metadata `phase: selfReview`, keep lifecycle `inProgress`, and reconcile native Phase through `./phase.md`. Then call `review` with the exact entity, `entityDir`, and `phase: "plan"`. The tool creates `.local/reviews/plan-NNN/`, snapshots `.local/draft.md` to `candidate.md`, validates the structured reviewer report, renders canonical `review.md`, and stores request/transcript/raw diagnostics in that round directory.
 2. Follow `./review.md`: adjudicate every finding through `record_review_response`, present its exact returned Markdown in chat, and continue until review is approved with no unresolved user decision.
-3. When review approves, call `present_plan` with the same entity and `entityDir`. It reads the validated matching review outcome. Read its returned approved snapshot and write that exact content to its returned authoritative target through the configured write/edit user-diff gate. Do not print the candidate first.
+3. When review approves, remain in Self-Review while calling `present_plan` with the same entity and `entityDir` and waiting for user diff approval. It reads the validated matching review outcome. Read its returned approved snapshot and write that exact content to its returned authoritative target through the configured write/edit user-diff gate. Do not print the candidate first.
 4. A rejection or unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
 5. Compare any user-modified authoritative artifact with the reviewed snapshot. Editorial changes may proceed; a material change to behavior, strategy, or decomposition must become the mutable draft and pass a new review before implementation.
-6. Before acceptance, incorporate every material user note into the authoritative artifact or `.local/notes.md`, according to ownership. The root `epic.md` or `plan.md` is the sole accepted plan. Proceed only when no note remains blocking.
+6. For corrections, use `phase: execution` while editing the reviewed work, then return to Self-Review before another adversarial or local user review. An Execution Phase during plan corrections does not authorize implementation before plan acceptance.
+7. Before acceptance, incorporate every material user note into the authoritative artifact or `.local/notes.md`, according to ownership. The root `epic.md` or `plan.md` is the sole accepted plan. Proceed only when no note remains blocking.
 
 Review criteria and downstream lifecycle remain entity-specific; local round identity, adjudication, exact signoff parsing, and user diff presentation do not.

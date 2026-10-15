@@ -6,7 +6,7 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 - **Task**: a Deliverable belonging to exactly one Epic.
 - **Gig**: a standalone Deliverable.
 - **Deliverable**: the shared Task/Gig lifecycle, with Feature, Bugfix, Refactor, Research, Audit, and Chore strategies.
-- **Tracker**: optional GitHub or Linear work tracking, including native lifecycle and Priority.
+- **Tracker**: optional GitHub or Linear work tracking, including native lifecycle, Phase, and Priority.
 - **Forge**: optional GitHub pull requests, independent of the tracker.
 
 ## Commands
@@ -39,12 +39,16 @@ See the [configuration reference](references/setup.md) for exact schemas, exampl
 
 ```text
 Queue:       backlog | todo
-Deliverable: inProgress/planning → inProgress/execution → inReview/execution → done/execution
-Epic:        inProgress/planning → inProgress/execution → done/execution
+Local work:  inProgress/planning → inProgress/selfReview → inProgress/execution
+Review loop: inProgress/execution ↔ inProgress/selfReview
+Submitted:   inReview (external human review; native Phase cleared)
+Completed:   done (native Phase cleared)
 Canceled:    terminal unsuccessful status for queued or initialized work
 ```
 
 Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.
+
+All adversarial and local user reviews use Self-Review while Status remains In Progress. Phase appears as a GitHub Project field or a mutually exclusive Linear label group in both artifact modes; trackerless Phase stays in workflow metadata. See [Phase](references/phase.md).
 
 After final review passes, you review the finished work and decide whether to submit it. Approving an earlier draft or file write is not submission approval.
 
@@ -57,6 +61,7 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Contract                                                      | Canonical guidance                                                                                                                                                                |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Artifacts, intake, persistence, authority, policy precedence  | [Artifacts](references/artifacts.md)                                                                                                                                              |
+| Workflow activity and native Phase projection | [Phase](references/phase.md) |
 | Configuration files and permission gates                      | [Setup](references/setup.md)                                                                                                                                                      |
 | Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |

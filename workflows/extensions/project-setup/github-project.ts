@@ -28,6 +28,11 @@ const OptionSchema = Type.Object(
     { additionalProperties: false },
 )
 
+const PhaseOptionsSchema = Type.Object(
+    { planning: OptionSchema, execution: OptionSchema, selfReview: OptionSchema },
+    { additionalProperties: false },
+)
+
 const StatusOptionsSchema = Type.Object(
     {
         backlog: OptionSchema,
@@ -136,7 +141,6 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         project: ProjectSourceSchema,
         labels: Type.Object(
             {
-                planning: RepositoryLabelSchema,
                 kind: Type.Object(
                     {
                         epic: RepositoryLabelSchema,
@@ -151,6 +155,10 @@ export const GitHubProjectSpecificationSchema = Type.Object(
             {
                 status: Type.Object(
                     { field: OneLineSchema, options: StatusOptionsSchema },
+                    { additionalProperties: false },
+                ),
+                phase: Type.Object(
+                    { field: OneLineSchema, options: PhaseOptionsSchema },
                     { additionalProperties: false },
                 ),
                 priority: Type.Union([ProjectPrioritySchema, IssuePrioritySchema]),
@@ -189,11 +197,6 @@ export type GitHubProjectSetupToolInput = Static<typeof GitHubProjectSetupToolSc
 
 export const GITHUB_PROJECT_DEFAULTS = {
     labels: {
-        planning: {
-            name: "Planning",
-            color: "#0969DA",
-            description: "Work is currently being planned.",
-        },
         kind: {
             epic: {
                 name: "Kind: Epic",
@@ -249,16 +252,24 @@ export const GITHUB_PROJECT_DEFAULTS = {
             },
             inProgress: {
                 name: "In Progress",
-                description: "Approved work currently being planned or executed.",
+                description: "Work being planned, executed, or reviewed locally.",
                 color: "yellow",
             },
             inReview: {
                 name: "In Review",
-                description: "Implementation under review or awaiting delivery.",
+                description: "Submitted work waiting for external human review.",
                 color: "purple",
             },
             done: { name: "Done", description: "Approved work confirmed delivered.", color: "green" },
             canceled: { name: "Canceled", description: "Canceled work.", color: "gray" },
+        },
+    },
+    phase: {
+        field: "Phase",
+        options: {
+            planning: { name: "Planning", description: "Preparing the plan.", color: "blue" },
+            execution: { name: "Execution", description: "Executing work or correcting findings.", color: "yellow" },
+            selfReview: { name: "Self-Review", description: "Adversarial or local user review.", color: "purple" },
         },
     },
     priority: {
@@ -951,11 +962,7 @@ function planProjectField(
 }
 
 function desiredRepositoryLabels(specification: GitHubProjectSpecification) {
-    return [
-        specification.labels.planning,
-        specification.labels.kind.epic,
-        ...Object.values(specification.labels.kind.deliverableKinds),
-    ]
+    return [specification.labels.kind.epic, ...Object.values(specification.labels.kind.deliverableKinds)]
 }
 
 async function planRepositoryLabel(
@@ -1216,6 +1223,11 @@ function desiredProjectFields(specification: GitHubProjectSpecification): Projec
             dataType: "SINGLE_SELECT",
             options: Object.values(specification.fields.status.options),
         },
+        {
+            name: specification.fields.phase.field,
+            dataType: "SINGLE_SELECT",
+            options: Object.values(specification.fields.phase.options),
+        },
         ...(specification.fields.priority.scope === "project"
             ? [
                   {
@@ -1234,13 +1246,15 @@ function desiredProjectFields(specification: GitHubProjectSpecification): Projec
 function assertSpecification(specification: GitHubProjectSpecification): void {
     const statusNames = Object.values(specification.fields.status.options).map((option) => option.name)
     if (new Set(statusNames).size !== statusNames.length) throw new Error("GitHub Status option names must be distinct")
+    const phaseNames = Object.values(specification.fields.phase.options).map((option) => option.name)
+    if (new Set(phaseNames).size !== phaseNames.length) throw new Error("GitHub Phase option names must be distinct")
     const priorityNames = specification.fields.priority.options.map((option) => option.name)
     if (new Set(priorityNames).size !== priorityNames.length)
         throw new Error("GitHub Priority option names must be distinct")
     if (priorityNames.includes("not set")) throw new Error("GitHub Priority must not contain exact option `not set`")
     const labelNames = desiredRepositoryLabels(specification).map((label) => label.name.toLowerCase())
     if (new Set(labelNames).size !== labelNames.length) {
-        throw new Error("GitHub Planning and Kind label names must be distinct case-insensitively")
+        throw new Error("GitHub Kind label names must be distinct case-insensitively")
     }
     const projectFieldNames = desiredProjectFields(specification).map((field) => field.name)
     if (new Set(projectFieldNames).size !== projectFieldNames.length) {
@@ -1329,14 +1343,10 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             number: projectNumber,
         },
         labels: {
-            planning: specification.labels.planning.name,
             kind: {
                 epic: specification.labels.kind.epic.name,
                 deliverableKinds: Object.fromEntries(
-                    Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [
-                        key,
-                        label.name,
-                    ]),
+                    Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [key, label.name]),
                 ),
             },
         },
@@ -1345,6 +1355,12 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
                 field: specification.fields.status.field,
                 values: Object.fromEntries(
                     Object.entries(specification.fields.status.options).map(([key, option]) => [key, option.name]),
+                ),
+            },
+            phase: {
+                field: specification.fields.phase.field,
+                values: Object.fromEntries(
+                    Object.entries(specification.fields.phase.options).map(([key, option]) => [key, option.name]),
                 ),
             },
             priority: {

@@ -56,7 +56,7 @@ function createDoneGig(root: string, withPullRequest: boolean) {
     if (status.branch.state !== "ready") assert.fail("expected ready branch")
     const metadataPath = path.join(root, gig.directory, "metadata.json")
     const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
-    metadata.workStage = "execution"
+    metadata.phase = "selfReview"
     if (withPullRequest) {
         metadata.integrations = [
             {
@@ -362,7 +362,7 @@ describe("Deliverable branch cleanup", () => {
             const taskBranch = task.status.branch.name
             const metadataPath = path.join(root, task.directory, "metadata.json")
             const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
-            metadata.workStage = "execution"
+            metadata.phase = "selfReview"
             fs.writeFileSync(metadataPath, JSON.stringify(metadata))
             fs.writeFileSync(
                 path.join(root, task.directory, ".local/status.md"),

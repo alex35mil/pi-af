@@ -51,8 +51,12 @@ export function isFinishedLifecycleState(state: InitializedLifecycleState): stat
 export const LifecycleStateSchema = Type.Union([QueueStateSchema, InitializedLifecycleStateSchema])
 export type LifecycleState = Static<typeof LifecycleStateSchema>
 
-export const WorkStageSchema = Type.Union([Type.Literal("planning"), Type.Literal("execution")])
-export type WorkStage = Static<typeof WorkStageSchema>
+export const PhaseSchema = Type.Union([Type.Literal("planning"), Type.Literal("execution"), Type.Literal("selfReview")])
+export type Phase = Static<typeof PhaseSchema>
+
+export function projectedPhase(lifecycle: LifecycleState, phase: Phase): Phase | null {
+    return lifecycle === "inProgress" ? phase : null
+}
 
 export const PRIORITY_NOT_SET = "not set" as const
 export const PrioritySchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
