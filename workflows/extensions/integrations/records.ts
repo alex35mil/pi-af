@@ -322,7 +322,7 @@ export function createInitialIntegrationRecords(
                           operations: [
                               ...(exposesSystemTraces ? ["apply configured Kind label and Internal ID"] : []),
                               "move Project Status to In Progress",
-                              "add Planning label",
+                              "project Planning Phase",
                               ...(input.entity === "task" ? ["attach Task issue to parent Epic issue"] : []),
                           ],
                       }
@@ -348,6 +348,7 @@ export function createInitialIntegrationRecords(
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
                                       "move Linear Project to In Progress",
+                                      "project Planning Phase",
                                   ],
                               }
                             : {
@@ -373,6 +374,7 @@ export function createInitialIntegrationRecords(
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
                                       "move Linear issue to In Progress",
+                                      "project Planning Phase",
                                   ],
                               }
                             : {
@@ -397,6 +399,7 @@ export function createInitialIntegrationRecords(
                                   operations: [
                                       ...(exposesSystemTraces ? ["embed Internal ID"] : []),
                                       "move Linear issue to In Progress",
+                                      "project Planning Phase",
                                   ],
                               }
                             : {

@@ -89,7 +89,7 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `present_plan` targets `epic.md`. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-On acceptance, change `workStage` from `planning` to `execution`; lifecycle remains `inProgress`. For GitHub, remove the configured Planning label through the provider's absolute label read/update/read-back procedure. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
+On acceptance, set `phase: execution`; lifecycle remains `inProgress`. Follow `../../references/phase.md` to reconcile native Phase. All adversarial and local user reviews use Self-Review before acceptance. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 
@@ -103,7 +103,7 @@ When the user explicitly resumes the Epic and asks to complete it:
 
 1. Resolve every accepted Task marker through its child lifecycle authority. If any Task is neither `done` nor `canceled`, report the unfinished Tasks and stop.
 2. Reconcile finished Task outcomes against the accepted Epic contract and Project Policies. If contract drift remains, present it and stop without changing Epic lifecycle; resolve it through the existing Epic planning/acceptance flow before retrying completion.
-3. When every Task is `done` or `canceled` and no contract drift remains, set Epic lifecycle directly from `inProgress` to `done`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to the configured `done` value.
+3. When every Task is `done` or `canceled` and no contract drift remains, set Epic lifecycle directly from `inProgress` to `done`: without a tracker, update local `.local/status.md`; with a tracker, set the provider's native Status to the configured `done` value and clear native Phase through `../../references/phase.md`. Retain the last metadata Phase.
 4. Report the completion evidence. Do not modify any versioned artifact during this flow; Epic completion never creates a commit, push, PR, or CI run.
 
 Never implement Task work from the Epic workflow. Do not push, create a PR, merge, delete branches, or use a worktree unless the user explicitly approves the exact operation or set of operations.

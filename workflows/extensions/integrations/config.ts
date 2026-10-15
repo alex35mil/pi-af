@@ -61,6 +61,26 @@ export const KindLabelsSchema = Type.Object(
 )
 export type KindLabels = Static<typeof KindLabelsSchema>
 
+export const PhaseValuesSchema = Type.Object(
+    {
+        planning: FieldNameSchema,
+        execution: FieldNameSchema,
+        selfReview: FieldNameSchema,
+    },
+    { additionalProperties: false },
+)
+export type PhaseValues = Static<typeof PhaseValuesSchema>
+
+export const PhaseLabelGroupSchema = Type.Object(
+    {
+        scope: Type.Union([Type.Literal("workspace"), Type.Literal("team")]),
+        group: FieldNameSchema,
+        values: PhaseValuesSchema,
+    },
+    { additionalProperties: false },
+)
+export type PhaseLabelGroup = Static<typeof PhaseLabelGroupSchema>
+
 const StatusValuesSchema = Type.Object(
     {
         backlog: Type.String({ minLength: 1 }),
@@ -97,7 +117,6 @@ export const GitHubTrackerSchema = Type.Object(
         ),
         labels: Type.Object(
             {
-                planning: FieldNameSchema,
                 kind: KindLabelsSchema,
             },
             { additionalProperties: false },
@@ -109,6 +128,10 @@ export const GitHubTrackerSchema = Type.Object(
                         field: FieldNameSchema,
                         values: StatusValuesSchema,
                     },
+                    { additionalProperties: false },
+                ),
+                phase: Type.Object(
+                    { field: FieldNameSchema, values: PhaseValuesSchema },
                     { additionalProperties: false },
                 ),
                 priority: PriorityFieldSchema,
@@ -126,6 +149,10 @@ export const LinearTrackerSchema = Type.Object(
         provider: Type.Literal("linear"),
         mcpServer: McpServerSchema,
         team: Type.String({ minLength: 1 }),
+        phase: Type.Object(
+            { issues: PhaseLabelGroupSchema, projects: PhaseLabelGroupSchema },
+            { additionalProperties: false },
+        ),
         statuses: Type.Object(
             {
                 issues: StatusValuesSchema,
@@ -176,24 +203,27 @@ function assertDistinctStatuses(provider: string, scope: string, statuses: Stati
     }
 }
 
+export function assertDistinctPhases(values: PhaseValues): void {
+    const options = Object.values(values)
+    if (new Set(options).size !== options.length) throw new Error("Phase mappings must use distinct options")
+}
+
 function assertGitHubTrackerInvariants(config: GitHubTracker): void {
+    assertDistinctPhases(config.fields.phase.values)
     const statusOptions = Object.values(config.fields.status.values)
     if (new Set(statusOptions).size !== statusOptions.length) {
         throw new Error("GitHub Status mappings must use distinct options")
     }
 
-    const managedLabels = [
-        config.labels.planning,
-        config.labels.kind.epic,
-        ...Object.values(config.labels.kind.deliverableKinds),
-    ]
+    const managedLabels = [config.labels.kind.epic, ...Object.values(config.labels.kind.deliverableKinds)]
     const normalizedLabels = managedLabels.map((label) => label.toLowerCase())
     if (new Set(normalizedLabels).size !== normalizedLabels.length) {
-        throw new Error("GitHub Planning and Kind label names must be distinct case-insensitively")
+        throw new Error("GitHub Kind label names must be distinct case-insensitively")
     }
 
     const projectFieldNames = [
         config.fields.status.field,
+        config.fields.phase.field,
         ...(config.fields.priority.scope === "project" ? [config.fields.priority.field] : []),
         ...(config.fields.internalId.scope === "project" ? [config.fields.internalId.field] : []),
     ]
@@ -228,6 +258,8 @@ export function loadIntegrationConfig(cwd: string): LoadedIntegrationConfig {
     try {
         if (value.tracker?.provider === "github") assertGitHubTrackerInvariants(value.tracker)
         if (value.tracker?.provider === "linear") {
+            assertDistinctPhases(value.tracker.phase.issues.values)
+            assertDistinctPhases(value.tracker.phase.projects.values)
             assertDistinctStatuses("Linear", "issue", value.tracker.statuses.issues)
             assertDistinctStatuses("Linear", "Project", value.tracker.statuses.projects)
         }

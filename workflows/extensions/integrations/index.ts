@@ -12,6 +12,8 @@ import {
     type EntityStatus,
 } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
+import { LifecycleStateSchema } from "../__lib/domain.js"
+import { NativePhaseFactsSchema, phaseProjectionContract, planPhaseMutation } from "./phase.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import * as Git from "../__lib/git.js"
 import {
@@ -72,6 +74,16 @@ export const IntegrationContextSchema = Type.Union([
                 Type.Literal("priority"),
                 Type.Literal("hierarchy"),
             ]),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            operation: Type.Literal("trackerMutation"),
+            entityDir: Type.String({ minLength: 1 }),
+            change: Type.Literal("phase"),
+            lifecycle: LifecycleStateSchema,
+            native: NativePhaseFactsSchema,
         },
         { additionalProperties: false },
     ),
@@ -248,8 +260,8 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
     if (input.operation === "finishMerge") {
         const status = entity!.status
         assertEntityBranchReady(status)
-        if (status.workStage !== "execution") {
-            finish = { state: "blocked", reason: "finish requires execution" }
+        if (status.phase !== "selfReview") {
+            finish = { state: "blocked", reason: "finish requires completed Self-Review" }
         } else {
             const context = resolveResourceIdsContext(ctx.cwd, input.entityDir, "github-pull-request")
             if (context.scope.kind !== "github-pull-request") throw new Error("finish requires PR addressing")
@@ -279,6 +291,16 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
                 return { state: "enabled" as const, provider: "linear" as const, config: environment.tracker.config }
         }
     })()
+    const phaseMutation =
+        input.operation === "trackerMutation" && input.change === "phase" && environment.tracker.kind !== "none"
+            ? planPhaseMutation(
+                  environment.tracker.config,
+                  entity!.status.entity,
+                  entity!.status.phase,
+                  input.lifecycle,
+                  input.native,
+              )
+            : undefined
     const forge =
         !trackerOnly && environment.forge.kind !== "none"
             ? {
@@ -295,6 +317,10 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
         workflowPolicy,
         forgePolicy,
         artifactMode: environment.artifacts.kind,
+        ...(entity && tracker && operation !== "artifactProjection"
+            ? { phaseProjection: phaseProjectionContract(entity.status.phase, tracker.config, entity.status.entity) }
+            : {}),
+        ...(phaseMutation ? { phaseMutation } : {}),
         projection:
             workflowPolicy.projection === "none"
                 ? { mode: "none" as const }
@@ -320,6 +346,7 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
                                     "approved entity title and Request/task-definition content",
                                     "ordinary repository paths",
                                     "native lifecycle",
+                                    "native Phase metadata",
                                     "native priority",
                                     "native hierarchy",
                                     "exact provider branch",
@@ -329,7 +356,7 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
                                     "qualified workflow IDs",
                                     ".project paths, links, or raw artifact structure",
                                     "entity or kind labels/types",
-                                    "workflow or review terminology",
+                                    "workflow or review terminology outside native Phase metadata",
                                 ],
                             }
                           : {}),

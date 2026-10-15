@@ -7,6 +7,7 @@ import { describe, it } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
+import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 
 import {
     assertConfiguredPriority,
@@ -51,9 +52,10 @@ function config(scope: "project" | "issue" = "project") {
         mcpServer: "github",
         repository: { owner: "alex", repo: "example" },
         project: { owner: "alex", ownerType: scope === "project" ? ("user" as const) : ("org" as const), number: 3 },
-        labels: { planning: "Planning", kind: { epic: "Kind: Epic", deliverableKinds: { ...deliverableKinds } } },
+        labels: { kind: { epic: "Kind: Epic", deliverableKinds: { ...deliverableKinds } } },
         fields: {
             status: { field: "Status", values: { ...statuses } },
+            phase: { field: "Phase", values: { ...phaseValues } },
             priority: { scope, field: "Priority", values: ["Urgent", "High", "Medium", "Low"] },
             internalId: { scope, field: "Internal ID" },
         },
@@ -65,6 +67,7 @@ function linearConfig() {
         provider: "linear" as const,
         mcpServer: "linear",
         team: "Engineering",
+        phase: linearPhases(),
         statuses: {
             issues: { ...statuses },
             projects: { ...statuses },
@@ -115,7 +118,7 @@ function writeTrackerlessGigEntity(cwd: string): string {
         kind: "chore",
         authority: { kind: "workflow", priority: "not set" },
         createdAt: "2026-01-02T03:05:00.000Z",
-        workStage: "planning",
+        phase: "planning",
         branch: { state: "ready", name: "gig-forge-only", start: "main", target: "main", source: "generated" },
         integrations: [],
     }
@@ -142,7 +145,7 @@ function writeGitHubGigEntity(cwd: string): string {
         kind: "feature",
         authority: { kind: "tracker", provider: "github" },
         createdAt: "2026-01-02T03:06:00.000Z",
-        workStage: "execution",
+        phase: "execution",
         branch: {
             state: "ready",
             name: "gig-github-provider",
@@ -178,7 +181,7 @@ function writeLinearGigEntity(cwd: string): string {
         kind: "chore",
         authority: { kind: "tracker", provider: "linear" },
         createdAt: "2026-01-02T03:04:00.000Z",
-        workStage: "planning",
+        phase: "planning",
         branch: {
             state: "ready",
             name: "alex/eng-123-mixed-provider",
@@ -451,10 +454,15 @@ describe("workflow integration configuration", () => {
             writeConfig(duplicateKindLabel)
             assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
 
-            const planningCollision = config("project")
-            planningCollision.labels.kind.epic = planningCollision.labels.planning.toLowerCase()
-            writeConfig(planningCollision)
-            assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
+            const phaseCollision = config("project")
+            phaseCollision.fields.phase.field = phaseCollision.fields.status.field
+            writeConfig(phaseCollision)
+            assert.throws(() => loadIntegrationConfig(cwd), /Project field names must be distinct/)
+
+            const duplicatePhase = config("project")
+            duplicatePhase.fields.phase.values.selfReview = duplicatePhase.fields.phase.values.execution
+            writeConfig(duplicatePhase)
+            assert.throws(() => loadIntegrationConfig(cwd), /Phase mappings must use distinct options/)
 
             const separateScope = config("issue")
             separateScope.fields.priority.field = separateScope.fields.status.field
@@ -648,6 +656,95 @@ describe("workflow integration configuration", () => {
             assert.equal(loadIntegrationConfig(cwd).state, "enabled")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("validates native Phase through runtime context in both artifact modes", () => {
+        for (const mode of ["versioned", "unversioned"] as const) {
+            const cwd = temporaryProject()
+            try {
+                prepareWorkflowProject(cwd, mode)
+                fs.writeFileSync(path.join(cwd, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+                prepareArtifactPersistence(cwd)
+                const entityDir = writeGitHubGigEntity(cwd)
+                const context = buildIntegrationContext({ cwd } as ExtensionContext, {
+                    operation: "trackerMutation",
+                    entityDir,
+                    change: "phase",
+                    lifecycle: "inProgress",
+                    native: {
+                        provider: "github",
+                        current: "Planning",
+                        field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+                    },
+                })
+                if (context.state !== "enabled") assert.fail("expected context")
+                assert.deepEqual(context.phaseMutation, {
+                    provider: "github",
+                    field: "Phase",
+                    value: "Execution",
+                    changed: true,
+                })
+                assert.equal(context.phaseProjection?.inProgress, "execution")
+                if (context.projection?.mode === "restricted") {
+                    assert.ok(context.projection.allowed)
+                    assert.ok(context.projection.forbidden)
+                    assert.ok(context.projection.allowed.includes("native Phase metadata"))
+                    assert.ok(context.projection.forbidden.includes("entity or kind labels/types"))
+                }
+                const bodyOnly = buildIntegrationContext({ cwd } as ExtensionContext, {
+                    operation: "artifactProjection",
+                    entityDir,
+                })
+                if (bodyOnly.state !== "enabled") assert.fail("expected context")
+                assert.equal(bodyOnly.phaseProjection, undefined)
+            } finally {
+                fs.rmSync(cwd, { recursive: true, force: true })
+            }
+        }
+    })
+
+    it("calculates Linear whole-label updates through runtime context in both artifact modes", () => {
+        for (const mode of ["versioned", "unversioned"] as const) {
+            const cwd = temporaryProject()
+            try {
+                prepareWorkflowProject(cwd, mode)
+                fs.writeFileSync(
+                    path.join(cwd, ".project/integrations.json"),
+                    JSON.stringify({ tracker: linearConfig() }),
+                )
+                prepareArtifactPersistence(cwd)
+                const entityDir = writeLinearGigEntity(cwd)
+                const base = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
+                const context = buildIntegrationContext({ cwd } as ExtensionContext, {
+                    operation: "trackerMutation",
+                    entityDir,
+                    change: "phase",
+                    lifecycle: "inProgress",
+                    native: {
+                        provider: "linear",
+                        applied: ["customer", "execution"],
+                        catalog: [
+                            { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
+                            ...Object.entries(phaseValues).map(([id, name]) => ({
+                                ...base,
+                                id,
+                                name,
+                                parentId: "group",
+                            })),
+                        ],
+                    },
+                })
+                if (context.state !== "enabled") assert.fail("expected context")
+                assert.deepEqual(context.phaseMutation, {
+                    provider: "linear",
+                    labels: ["customer", "planning"],
+                    changed: true,
+                })
+                assert.equal(context.phaseProjection?.inProgress, "planning")
+            } finally {
+                fs.rmSync(cwd, { recursive: true, force: true })
+            }
         }
     })
 

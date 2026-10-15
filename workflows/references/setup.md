@@ -73,6 +73,18 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
         "provider": "linear",
         "mcpServer": "linear",
         "team": "Engineering",
+        "phase": {
+            "issues": {
+                "scope": "workspace",
+                "group": "Phase",
+                "values": { "planning": "Planning", "execution": "Execution", "selfReview": "Self-Review" }
+            },
+            "projects": {
+                "scope": "workspace",
+                "group": "Phase",
+                "values": { "planning": "Planning", "execution": "Execution", "selfReview": "Self-Review" }
+            }
+        },
         "statuses": {
             "issues": {
                 "backlog": "Backlog",
@@ -95,9 +107,11 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
 }
 ```
 
-Issue and Project mappings each require all six queue/lifecycle keys and six distinct, non-empty provider option names. A previous mapping containing `planning` instead of `todo` is invalid and requires explicit configuration migration; setup never rewrites it implicitly. `team` is non-empty. Linear Priority is native and is not configured here.
+Issue and Project Status mappings each require all six queue/lifecycle keys and six distinct, non-empty provider option names. `team` is non-empty. Linear Priority is native and is not configured here.
 
-During guided setup, `inspect_linear_workspace` reads the authenticated workspace, authenticated viewer, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. `viewer.name` is Full Name; `viewer.displayName` is the workspace-unique Username/Nickname and is returned as `viewer.username`. The API performs no mutation. Setup persists only the exact team and status names the user selects; provider IDs, viewer identity, branch template, and credentials remain outside workflow configuration. A recognized official MCP registration supplies its credential environment-variable name, never its value.
+Both Phase label-group mappings are required. Each has `scope: workspace | team`, one exact non-empty group name, and distinct non-empty child names for `planning`, `execution`, and `selfReview`. Team scope means the exact configured team; workspace scope means no team. Through registered Linear label reads, require the active applicable group and all three children, including issue single-select validation and pagination. Project-label groups are mutually exclusive by Linear's documented contract. Setup stays read-only and asks the user to configure missing/incompatible metadata. Follow `./phase.md` for runtime reconciliation and complete-label preservation.
+
+During guided setup, `inspect_linear_workspace` reads the authenticated workspace, authenticated viewer, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. `viewer.name` is Full Name; `viewer.displayName` is the workspace-unique Username/Nickname and is returned as `viewer.username`. The API performs no mutation. Setup persists only the exact team, status names, and Phase group scopes/names/child mappings the user selects; provider IDs, viewer identity, branch template, and credentials remain outside workflow configuration. A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
 Linear `tracker` supports only these exact workspace templates:
 
@@ -118,12 +132,12 @@ Never hand-construct GitHub tracker configuration. Use the exact `trackerConfig`
 - `provider: "github"`, MCP server, and repository identity;
 - Project owner, owner type (`user` or `org`), and positive Project URL number;
 - one Project Status field with distinct non-empty mappings for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`;
-- one exact workflow-owned repository Planning label name;
+- one Project Phase single-select field with distinct non-empty mappings for `planning`, `execution`, and `selfReview`;
 - exact workflow-owned repository Kind label names for Epic and all six Deliverable kinds;
 - Priority with `issue` or `project` scope, a non-empty field name, and unique non-empty values that exclude exact lowercase `not set`;
 - Internal ID with `issue` or `project` scope and a non-empty field name.
 
-All configured Project-scoped field names must be distinct. Planning and Kind label names must be distinct case-insensitively. Status is always Project-scoped. Planning projects active workflow planning; Kind classifies versioned GitHub issues through exactly one managed label after initialization. Native GitHub issue Type remains independent and unmanaged. Do not substitute other labels, Custom Properties, or a different field scope.
+All configured Project-scoped field names must be distinct. Kind label names must be distinct case-insensitively. Status and Phase are always Project-scoped. Phase projects initialized In Progress activity in both artifact modes; Kind classifies versioned GitHub issues through exactly one managed label after initialization. Native GitHub issue Type remains independent and unmanaged. Do not substitute other labels, Custom Properties, or a different field scope.
 
 Example returned configuration for a Project-contained tracker (use actual provisioning output, not these sample identities):
 
@@ -135,7 +149,6 @@ Example returned configuration for a Project-contained tracker (use actual provi
         "repository": { "owner": "octocat", "repo": "example" },
         "project": { "owner": "octocat", "ownerType": "user", "number": 3 },
         "labels": {
-            "planning": "Planning",
             "kind": {
                 "epic": "Kind: Epic",
                 "deliverableKinds": {
@@ -159,6 +172,10 @@ Example returned configuration for a Project-contained tracker (use actual provi
                     "done": "Done",
                     "canceled": "Canceled"
                 }
+            },
+            "phase": {
+                "field": "Phase",
+                "values": { "planning": "Planning", "execution": "Execution", "selfReview": "Self-Review" }
             },
             "priority": {
                 "scope": "project",

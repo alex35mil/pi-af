@@ -43,6 +43,7 @@ describe("workflow instruction ownership", () => {
             for (const reference of [
                 "artifacts.md",
                 "planning.md",
+                "phase.md",
                 "review.md",
                 "communication.md",
                 "setup.md",
@@ -84,21 +85,34 @@ describe("workflow instruction ownership", () => {
         const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
         assert.match(planning, /## Material replanning/)
         assert.match(planning, /Restore lifecycle to `inProgress` when it is `inReview`/)
-        assert.match(planning, /Record `workStage: planning` in `metadata.json`/)
+        assert.match(planning, /Record `phase: planning` in `metadata.json`/)
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(deliverable, /use the material-replanning transition in `\.\/planning.md`/)
         const epic = fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8")
         assert.match(epic, /first enter the material-replanning transition/)
 
         const github = fs.readFileSync("workflows/references/integrations/tracker/github.md", "utf-8")
-        assert.match(github, /Planning is present only for In Progress with `workStage: planning`/)
-        assert.match(github, /absent during execution, In Review, Done or Canceled/)
+        assert.match(github, /Phase is present only for initialized In Progress work/)
+        assert.match(github, /Clear native Phase outside In Progress/)
         assert.match(github, /Versioned Kind equals the authoritative workflow Kind/)
         assert.match(github, /Preserve unrelated labels/)
         assert.match(github, /write only when the intended set differs/)
         const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
-        assert.match(linear, /Planning and execution both remain In Progress/)
-        assert.match(linear, /workStage.*workflow metadata/)
+        assert.match(linear, /Planning, Execution, and Self-Review all remain In Progress/)
+        assert.match(linear, /Apply its entire returned label-ID set/)
+        assert.match(linear, /preserve every unrelated label/)
+        const phase = fs.readFileSync("workflows/references/phase.md", "utf-8")
+        assert.match(phase, /Enter Self-Review before every adversarial review and local user-review presentation/)
+        assert.match(phase, /remain there while awaiting feedback/)
+        assert.match(phase, /Set In Review only after work is actually submitted for external human review/)
+        assert.match(phase, /With no external submission route, do not set In Review/)
+        assert.match(phase, /applies equally to versioned and unversioned/)
+        assert.match(phase, /A local commit is not submission/)
+        assert.match(deliverable, /set metadata `phase: selfReview`/)
+        assert.match(deliverable, /Enter lifecycle `inReview` only after confirmed external submission/)
+        assert.match(deliverable, /Revisions on an open PR return to In Progress\/Execution/)
+        const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
+        assert.match(shared, /native Phase metadata \(Planning, Execution, and Self-Review\)/)
     })
 
     it("keeps request-only briefs, local working state, and provider bodies explicit", () => {

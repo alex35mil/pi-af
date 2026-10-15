@@ -2,6 +2,8 @@
 
 `tracker` owns external work objects, Backlog/Todo queues, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
 
+Read and follow `../phase.md` for the shared Phase transitions, native projection invariant, and fresh-fact validation procedure.
+
 `integration_context` reads local configuration, authority and entity state. An enabled role means it is configured, not that the harness has probed its provider tools. Follow that provider's reference and call the configured registered MCP tools directly under normal permissions.
 
 On denied/unavailable provider calls, preserve work and continue only independent work/the other role. Tracker-backed lifecycle/Priority never falls back to workflow authority. After uncertain/partial outcomes, the agent reads exact provider state, continues from confirmed application and retries only confirmed non-application. Report ambiguity instead of inventing a replacement.
@@ -12,7 +14,7 @@ Never replace a denied or failed MCP operation with HTTP, `gh`, another client, 
 
 ## Operations and Resource IDs
 
-`inspect` is local/read-only. Select queue entity/Priority/Kind before `queueIntake`; explicit selected existing work uses `adopt`. Initialized work supplies `entityDir` for `initialize`, `resume`, tracker-only `artifactProjection`, or forge `pullRequest`. A required correction uses tracker-only `trackerMutation` with the selected labels/lifecycle/Priority/Task-hierarchy change. An explicit Task/Gig finish uses `finishRead` and only when merging is necessary `finishMerge`.
+`inspect` is local/read-only. Select queue entity/Priority/Kind before `queueIntake`; explicit selected existing work uses `adopt`. Initialized work supplies `entityDir` for `initialize`, `resume`, tracker-only `artifactProjection`, or forge `pullRequest`. A required correction uses tracker-only `trackerMutation` with the selected labels/lifecycle/Phase/Priority/Task-hierarchy change. Phase mutations additionally supply fresh native lifecycle and normalized Phase metadata/applied-label facts as specified in `../phase.md`; the local tool validates and calculates the assignment without executing it. An explicit Task/Gig finish uses `finishRead` and only when merging is necessary `finishMerge`.
 
 Provider references own call procedures. The agent uses approved content, exact configured names, recorded IDs and required live responses directly. The harness validates its own inputs/configuration and actual delivery evidence, not provider-tool schemas. `finishMerge` consumes exact PR-get evidence and compares the recorded PR number, repository/head/base and local source SHA. It returns fixed expected-head squash for an unmerged PR, complete merged proof or a blocked decision.
 
@@ -45,7 +47,7 @@ The workflow owns the entire provider body. Discussion, feedback, screenshots, l
 6. After an uncertain or partial update, read the exact body to reconcile before retrying. Retry only confirmed non-application; preserve work and report ambiguity.
 7. Apply this same contract when an existing pull request's synchronized `result.md` or `report.md` changes.
 
-Unversioned mode may include the approved entity title, the approved Request during initialization, the accepted Epic/Plan task definition after planning, native lifecycle, native priority, native hierarchy/Project relationship, exact provider branch name, and an explicitly approved PR reference. Never project qualified workflow IDs, `.project` paths or links, entity or kind labels/types, workflow/review terminology, review artifacts, or raw workflow artifact structure. These restrictions do not make ordinary repository implementation paths private.
+Unversioned mode may include the approved entity title, the approved Request during initialization, the accepted Epic/Plan task definition after planning, native lifecycle, native Phase metadata (Planning, Execution, and Self-Review), native priority, native hierarchy/Project relationship, exact provider branch name, and an explicitly approved PR reference. Never project qualified workflow IDs, `.project` paths or links, entity or kind labels/types, workflow/review terminology outside native Phase metadata, review artifacts, or raw workflow artifact structure. These restrictions do not make ordinary repository implementation paths private.
 
 ## Branch gate
 
@@ -53,6 +55,6 @@ A ready branch contract contains exact `name`, `start`, `target`, and generated/
 
 ## Workflow-first updates
 
-For initialized entities, update workflow kind, `workStage`, and artifacts first. Without a tracker, workflow authority stores Priority in `metadata.authority` and initialized lifecycle in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. For an already-bound tracker object, read required fresh provider values, set only the intended absolute lifecycle/Priority or changed label values through the selected operation, and verify required outcome facts absent from established clear-success responses. Reconcile uncertain/partial application before retry. Tracker authority never falls back to workflow authority. Versioned GitHub reconciles its managed Kind label from workflow metadata; unversioned GitHub and Linear keep Kind in workflow artifacts only. Provider failure never rolls workflow artifacts back.
+For initialized entities, update workflow kind, `phase`, and artifacts first. Without a tracker, workflow authority stores Priority in `metadata.authority` and initialized lifecycle in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. For an already-bound tracker object, read required fresh provider values, set only the intended absolute lifecycle/Priority or changed label values through the selected operation, and verify required outcome facts absent from established clear-success responses. Reconcile uncertain/partial application before retry. Tracker authority never falls back to workflow authority. Versioned GitHub reconciles its managed Kind label from workflow metadata; unversioned GitHub and Linear keep Kind in workflow artifacts only. Provider failure never rolls workflow artifacts back.
 
 Adding work to Backlog or Todo creates no workflow artifact or saved workflow recovery state. Follow `../queue.md`; recover uncertain provider results through read-back without a separate candidate protocol.

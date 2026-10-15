@@ -377,7 +377,7 @@ describe("workflow reviewer isolation", () => {
                     title: "Example",
                     authority: { kind: "workflow", priority: "not set" },
                     createdAt: "2026-01-01T00:00:00.000Z",
-                    workStage: "planning",
+                    phase: "selfReview",
                     branch: {
                         state: "ready",
                         name: "GIG-01KDVDNA00-example",
