@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M50QK492",
+  "rawId": "01M50QK492",
+  "slug": "project-setup-inspection-tool",
+  "title": "Expose project setup inspection as an agent tool",
+  "createdAt": "2026-10-15T21:30:48.482Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m50qk492-project-setup-inspection-tool",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 45
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m50qk492-project-setup-inspection-tool",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}

@@ -24,6 +24,22 @@ export default function (pi: ExtensionAPI): void {
     })
 
     pi.registerTool({
+        name: "inspect_project_setup",
+        label: "inspect_project_setup",
+        description:
+            "Read project setup files, Git safety facts, tracker bindings, and credential-redacted MCP registrations without modifying files or requiring valid workflow configuration.",
+        parameters: EmptySchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            Value.Parse(EmptySchema, params)
+            const snapshot = inspectProjectSetup(ctx.cwd)
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(snapshot, null, 2) }],
+                details: snapshot,
+            }
+        },
+    })
+
+    pi.registerTool({
         name: "prepare_artifacts",
         label: "prepare_artifacts",
         description:

@@ -6,6 +6,7 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { Value } from "typebox/value"
 import { linearPhases } from "./workflow-phase-fixtures.ts"
 
 import { formatBranchName, validateRawId } from "../workflows/extensions/__lib/domain.ts"
@@ -24,7 +25,7 @@ import {
     UNVERSIONED_PROJECT_EXCLUDE,
 } from "../workflows/extensions/__lib/project-config.ts"
 import { resolveLinearTrackerBranchRendererForInitialization } from "../workflows/extensions/integrations/tracker/linear.ts"
-import registerProjectSetup from "../workflows/extensions/project-setup/index.ts"
+import registerProjectSetup, { inspectProjectSetup } from "../workflows/extensions/project-setup/index.ts"
 
 function repository(): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-project-config-"))
@@ -97,6 +98,7 @@ describe("workflow project configuration", () => {
             )
             registerProjectSetup(pi)
             assert.ok(setup)
+            assert.ok(tools.includes("inspect_project_setup"))
             assert.ok(tools.includes("configure_mcp"))
             assert.ok(tools.includes("configure_permissions"))
             assert.ok(tools.includes("inspect_linear_workspace"))
@@ -118,6 +120,141 @@ describe("workflow project configuration", () => {
             fs.rmSync(root, { recursive: true, force: true })
         }
     })
+
+    for (const scenario of [
+        { name: "missing", project: undefined, integrations: undefined },
+        { name: "existing", project: JSON.stringify(config("versioned")), integrations: undefined },
+        { name: "incompatible", project: '{"unsupported":true}', integrations: '{"tracker":{"provider":"github"}}' },
+        { name: "malformed", project: "{ not JSON", integrations: "{ broken" },
+    ]) {
+        it(`shares a read-only command/tool snapshot with ${scenario.name} setup`, async () => {
+            const root = repository()
+            type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
+            const tools = new Map<string, Tool>()
+            let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined
+            let sent = ""
+            const pi = {
+                registerCommand: (name: string, command: typeof setup) => {
+                    if (name === "project-setup") setup = command
+                },
+                registerTool: (tool: Tool) => tools.set(tool.name, tool),
+                sendUserMessage: (message: string) => {
+                    sent = message
+                },
+            } as unknown as ExtensionAPI
+            try {
+                fs.mkdirSync(path.join(root, ".agents"))
+                fs.writeFileSync(
+                    path.join(root, ".agents/mcp.settings.json"),
+                    JSON.stringify({
+                        servers: {
+                            "setup-github": {
+                                url: "https://api.githubcopilot.com/mcp/",
+                                headers: { Authorization: "Bearer ${PROJECT_SETUP_GITHUB_TOKEN}" },
+                            },
+                            "setup-linear": {
+                                url: "https://mcp.linear.app/mcp",
+                                headers: { Authorization: "Bearer ${SETUP_LINEAR_TOKEN}" },
+                            },
+                            "setup-custom": {
+                                url: "https://example.com/mcp",
+                                headers: { Authorization: "Bearer literal-setup-secret" },
+                            },
+                        },
+                    }),
+                )
+                fs.writeFileSync(
+                    path.join(root, ".agents/mcp.settings.local.json"),
+                    JSON.stringify({
+                        servers: {
+                            "setup-github": {
+                                url: "https://api.githubcopilot.com/mcp/",
+                                headers: { Authorization: "Bearer ${LOCAL_SETUP_GITHUB_TOKEN}" },
+                            },
+                        },
+                    }),
+                )
+                if (scenario.project !== undefined) {
+                    fs.mkdirSync(path.join(root, ".project"))
+                    fs.writeFileSync(path.join(root, ".project/config.json"), scenario.project)
+                }
+                if (scenario.integrations !== undefined)
+                    fs.writeFileSync(path.join(root, ".project/integrations.json"), scenario.integrations)
+                if (scenario.name === "existing") {
+                    fs.mkdirSync(path.join(root, ".project/gigs/example"), { recursive: true })
+                    fs.writeFileSync(
+                        path.join(root, ".project/gigs/example/metadata.json"),
+                        JSON.stringify({
+                            id: "GIG-01KDVDNA00",
+                            integrations: [
+                                { role: "tracker", provider: "github", state: "bound", external: { issueNumber: 2 } },
+                            ],
+                        }),
+                    )
+                    git(root, ["add", ".project/config.json"])
+                }
+                const observedPaths = [
+                    ".git/index",
+                    ".git/info/exclude",
+                    ".agents/mcp.settings.json",
+                    ".agents/mcp.settings.local.json",
+                    ".project/config.json",
+                    ".project/integrations.json",
+                ]
+                const fileContents = () =>
+                    observedPaths.map((file) =>
+                        fs.existsSync(path.join(root, file)) ? fs.readFileSync(path.join(root, file)) : null,
+                    )
+                const statusBefore = git(root, ["status", "--porcelain=v1"])
+                const indexBefore = git(root, ["ls-files", "--stage"])
+                const filesBefore = fileContents()
+                registerProjectSetup(pi)
+                const tool = tools.get("inspect_project_setup")
+                assert.ok(tool)
+                assert.ok(setup)
+                assert.equal(Value.Check(tool.parameters, {}), true)
+                assert.equal(Value.Check(tool.parameters, { unexpected: true }), false)
+                const inspected = await tool.execute("inspect", {}, undefined, undefined, { cwd: root } as never)
+                assert.equal(sent, "", "inspection must not inject a user message")
+                const snapshot = inspected.details as ReturnType<typeof inspectProjectSetup>
+                const text = inspected.content.map((block) => (block.type === "text" ? block.text : "")).join("\n")
+                assert.deepEqual(JSON.parse(text), snapshot)
+                assert.equal(snapshot.repositoryRoot, fs.realpathSync(root))
+                const projectFile = snapshot.files.find((file) => file.path === ".project/config.json")
+                const integrationFile = snapshot.files.find((file) => file.path === ".project/integrations.json")
+                assert.equal(projectFile?.exists ? projectFile.content : undefined, scenario.project)
+                assert.equal(integrationFile?.exists ? integrationFile.content : undefined, scenario.integrations)
+                assert.equal(
+                    snapshot.mcp.effectiveServers.find((server) => server.name === "setup-github")?.credentialEnv,
+                    "LOCAL_SETUP_GITHUB_TOKEN",
+                )
+                assert.equal(
+                    snapshot.mcp.effectiveServers.find((server) => server.name === "setup-linear")?.credentialEnv,
+                    "SETUP_LINEAR_TOKEN",
+                )
+                assert.doesNotMatch(text, /literal-setup-secret/)
+                assert.doesNotMatch(JSON.stringify(snapshot), /literal-setup-secret/)
+                if (scenario.name === "existing") {
+                    assert.equal(snapshot.boundEntityTrackers[0].id, "GIG-01KDVDNA00")
+                    assert.ok(snapshot.projectPathsInGit.includes(".project/config.json"))
+                    assert.ok(snapshot.stagedProjectPaths.includes(".project/config.json"))
+                }
+                await setup.handler("Inspect existing setup", { cwd: root })
+                const prefix = "Read-only setup context:\n"
+                const start = sent.indexOf(prefix) + prefix.length
+                const end = sent.indexOf("\n\nUse the project-setup skill.", start)
+                assert.ok(start >= prefix.length && end > start)
+                assert.deepEqual(JSON.parse(sent.slice(start, end)), snapshot)
+                assert.doesNotMatch(sent, /literal-setup-secret/)
+                assert.deepEqual(fileContents(), filesBefore)
+                assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
+                assert.equal(git(root, ["status", "--porcelain=v1"]), statusBefore)
+                assert.equal(fs.existsSync(path.join(root, ".project")), scenario.project !== undefined)
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true })
+            }
+        })
+    }
 
     it("reports reusable official MCP credential environment references without exposing values", () => {
         const root = repository()

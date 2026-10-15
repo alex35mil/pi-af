@@ -1,6 +1,6 @@
 # Project setup configuration contract
 
-This is the operational source of truth for files created or changed by `/project-setup`. The setup skill owns the interactive sequence, this reference owns the configuration-file contract, and selected provider references own provider behavior.
+This is the operational source of truth for files created or changed by project setup, whether entered through `/project-setup` or natural language. The setup skill owns the interactive sequence, this reference owns the configuration-file contract, and selected provider references own provider behavior.
 
 ## General rules
 
@@ -10,6 +10,14 @@ This is the operational source of truth for files created or changed by `/projec
 - Omit optional workflow files instead of writing empty, disabled, or placeholder configuration.
 - Preview exact file content and exact ignore/exclude additions before writing them.
 - Never stage files or alter the Git index.
+
+## Read-only setup context
+
+`/project-setup` and the agent-callable `inspect_project_setup` tool use the same inspector. The command supplies its snapshot in the kickoff prompt; natural-language setup calls the tool when no snapshot was supplied. The tool takes an empty argument object and returns the snapshot as JSON text and structured details without injecting a user message.
+
+The snapshot contains repository/setup-file contents, global and local workflow settings, exclusion and Git-membership facts, shallow tracker-binding summaries, and credential-redacted MCP registrations. Inspection works before configuration exists or while it is invalid; files remain untouched. Recognized official registrations expose credential environment-variable names, never token values or raw authorization headers. Reuse known references and ask only for genuinely missing information.
+
+Inspection performs no provider calls, file/index changes, artifact preparation, or configuration repair. Its inventory establishes configured registrations, not active tools. Registered-provider availability and existing provisioning/file approval gates remain separate; operational `integration_context` validation runs after valid approved configuration is saved.
 
 ## Project configuration
 
