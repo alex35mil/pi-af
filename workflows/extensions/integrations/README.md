@@ -2,7 +2,7 @@
 
 Registers `/backlog`, `/todo`, local `integration_context`, local `resource_ids`, `finalize_linear_branch`, `render_provider_body`, and `verify_artifact_projection`. The agent makes provider calls through registered MCP tools under normal permissions. The harness reads/writes owned configuration, metadata, artifacts and Resource IDs; it does not execute or model provider-call sequences.
 
-`integration_context` returns local configuration, authority and entity state for the selected tracker/forge role. Provider-tool schemas belong to the MCP bridge. For `finishMerge`, the context checks actual exact PR-get evidence against the recorded PR number and local source SHA, returning fixed expected-head squash arguments, complete merged proof or a blocked decision.
+`integration_context` reads local workflow configuration and state. It does not inspect provider-tool schemas. Before merging, `finishMerge` checks that GitHub's PR details match the saved PR and the local branch's commit. It returns squash-merge arguments locked to that commit, confirms the PR is already merged, or explains what prevents merging. The agent supplies the commit title using the selected commit skill's message rules.
 
 `resource_ids` uses scoped IDs/URLs from `.local/metadata.json` and records actual adoption, mutation or required-read evidence. Missing/stale IDs require agent investigation. Scoped cache mutation is queued/atomic, preserves unrelated entries and remains outside Git in both artifact modes; the operation memo resets on context/shutdown/reload.
 

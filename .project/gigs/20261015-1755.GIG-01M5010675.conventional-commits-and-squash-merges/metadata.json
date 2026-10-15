@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M5010675",
+  "rawId": "01M5010675",
+  "slug": "conventional-commits-and-squash-merges",
+  "title": "Enforce Conventional Commits for commits and squash merges",
+  "createdAt": "2026-10-15T14:55:59.205Z",
+  "workStage": "execution",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5010675-conventional-commits-and-squash-merges",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 41
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5010675-conventional-commits-and-squash-merges",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "feature"
+}

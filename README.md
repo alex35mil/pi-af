@@ -14,6 +14,10 @@ My [pi](https://pi.dev) setup for coding agent workflows.
 - [**rules**](extensions/rules/) — rule files injected into system prompt
 - [**web-search**](extensions/web-search/) — `web_search` tool via Brave Search API
 
+## Skills
+
+- [**commit**](skills/commit/SKILL.md) — `/skill:commit` creates an authorized, focused Git commit while preserving unrelated work. The bundled skill follows the repository's commit style; Conventional Commits are the default only when no style is established.
+
 ## Project workflows
 
 [`workflows/`](workflows/) contains reusable workflows for Epics, Tasks, and Gigs:
