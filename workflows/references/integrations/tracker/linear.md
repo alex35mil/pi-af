@@ -34,7 +34,7 @@ For explicit adoption, read the selected object:
 - Task: get the explicit issue; require configured team, selected configured issue queue status, Priority, and exact parent Epic Project ID.
 - Gig: get the explicit issue; require configured team, selected configured issue queue status, Priority, and no Epic Project.
 
-Use `adopt` with the selected entity. Present the synthesized Request, copied Priority, and exact relationship for approval. Deployed responses expose immutable identity as `uuid`; issue `id` is the identifier. Pass Project UUID/URL for Epic; issue UUID/identifier/URL and Task parent Project UUID for issues. With tracker naming only, reuse the returned exact `gitBranchName`, or fetch that exact issue when this required name is absent. Generated naming never requests or stores an unused provider branch.
+Use `adopt` with the selected entity. Follow the explicit-selection approval in `../../artifacts.md`: reuse the selected object's title or name and description, copied Priority, and verified relationship without another intake confirmation. Ask only for missing or conflicting information; Task/Gig Kind remains workflow-only and requires a user choice when not already supplied. Deployed responses expose immutable identity as `uuid`; issue `id` is the identifier. Pass Project UUID/URL for Epic; issue UUID/identifier/URL and Task parent Project UUID for issues. With tracker naming only, reuse the returned exact `gitBranchName`, or fetch that exact issue when this required name is absent. Generated naming never requests or stores an unused provider branch.
 
 ## Initialize
 

@@ -9,9 +9,9 @@ Only an explicit selected existing issue uses adoption, before `init`:
 1. Request `integration_context` operation `adopt` with the selected `entity`.
 2. Read the exact configured repository/issue number for title, description, URL, labels, required issue-scoped Priority, and Task hierarchy evidence. Reuse facts supplied together.
 3. Find its exact item in the configured Project, requesting only required Status/Priority fields. Complete pagination; verify repository and issue number, numeric Project-item database ID, Backlog or Todo, and configured Priority (`not set` when empty). The Project item can supply numeric issue ID omitted by the deployed issue read.
-4. Present the synthesized Request and copied Priority for approval, plus normal entity/Kind/parent choices. Pass numeric issue ID, number, URL, and numeric Project-item ID as verified intake evidence to `init`. It keeps repository/issue number durable and seeds recoverable values locally.
+4. Follow the explicit-selection approval in `../../artifacts.md`: reuse the issue title and description, copied Priority, and available configured Kind without another intake confirmation. Ask only for missing or conflicting information, including Kind or the Task relationship when unresolved. Pass numeric issue ID, number, URL, and numeric Project-item ID as verified intake evidence to `init`. It keeps repository/issue number durable and seeds recoverable values locally.
 
-Wrong repository/Project/parent, non-queue state, ambiguity, denied access, or unconfigured Priority stops adoption. A queue Kind is evidence, not authority over approved initialized Kind. Skip already-proven creation, membership and hierarchy work.
+Wrong repository/Project/parent, non-queue state, ambiguity, denied access, or unconfigured Priority stops adoption. A single configured queue Kind supplies the initialized Kind unless the user explicitly changes it; missing or conflicting Kind requires a user choice. After initialization, workflow metadata owns Kind. Skip already-proven creation, membership and hierarchy work.
 
 ## Initialize
 

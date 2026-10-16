@@ -103,6 +103,39 @@ describe("workflow instruction ownership", () => {
         assert.match(setupSkill, /`operation: inspect` and `target: "current"`/)
     })
 
+    it("treats explicit queued-work selection as intake approval", () => {
+        const artifacts = fs.readFileSync("workflows/references/artifacts.md", "utf-8")
+        assert.match(artifacts, /Explicit selection of a Backlog or Todo object authorizes adoption/)
+        assert.match(artifacts, /existing title or name, description, Priority, and available workflow Kind/)
+        assert.match(artifacts, /after the selected provider's read-only preflight/)
+        assert.match(artifacts, /Ask only for missing or conflicting information/)
+        assert.match(artifacts, /proceed to `init` without a separate confirmation/)
+        assert.match(artifacts, /For new work, present the cleaned title and Request together for approval/)
+        assert.match(artifacts, /Ask before changing meaning, scope, Priority, or Kind/)
+        assert.match(artifacts, /Never rename an adopted tracker item without separate approval/)
+
+        for (const provider of ["github", "linear"]) {
+            const source = fs.readFileSync(`workflows/references/integrations/tracker/${provider}.md`, "utf-8")
+            assert.match(source, /Follow the explicit-selection approval in `\.\.\/\.\.\/artifacts\.md`/)
+            assert.match(source, /without another intake confirmation/)
+            assert.match(source, /Ask only for missing or conflicting information/)
+        }
+        const github = fs.readFileSync("workflows/references/integrations/tracker/github.md", "utf-8")
+        assert.match(github, /A single configured queue Kind supplies the initialized Kind/)
+        assert.match(github, /missing or conflicting Kind requires a user choice/)
+        assert.match(
+            github,
+            /Wrong repository\/Project\/parent, non-queue state, ambiguity, denied access, or unconfigured Priority stops adoption/,
+        )
+        const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
+        assert.match(
+            linear,
+            /Task\/Gig Kind remains workflow-only and requires a user choice when not already supplied/,
+        )
+        assert.match(linear, /exact parent Epic Project ID/)
+        assert.match(linear, /Priority, and no Epic Project/)
+    })
+
     it("keeps queue intent and planning projection explicit", () => {
         assert.match(fs.readFileSync("workflows/skills/backlog/SKILL.md", "utf-8"), /backlog it/)
         assert.match(fs.readFileSync("workflows/skills/todo/SKILL.md", "utf-8"), /todo it/)
