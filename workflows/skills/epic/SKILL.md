@@ -4,7 +4,7 @@ description: "Use to initialize, shape, review, resume, and complete an Epic und
 allowed-tools:
     - "init"
     - "review"
-    - "present_plan"
+    - "prepare_plan_presentation"
     - "prepare_artifacts"
     - "set_epic_task_target"
     - "integration_context"
@@ -94,9 +94,9 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 ## Review and acceptance
 
-Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `present_plan` targets `epic.md`. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
+Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `prepare_plan_presentation` selects the reviewed snapshot and `epic.md` target for the write tool's approval diff. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-On acceptance, set `phase: execution`; lifecycle remains `inProgress`. Follow `../../references/phase.md` to reconcile native Phase. All adversarial and local user reviews use Self-Review before acceptance. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
+Keep Planning during plan review, corrections, presentation, and waiting for user approval. On acceptance, set `phase: execution`; lifecycle remains `inProgress`. Follow `../../references/phase.md` to reconcile native Phase. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 

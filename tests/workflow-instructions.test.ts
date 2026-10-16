@@ -39,6 +39,10 @@ describe("workflow instruction ownership", () => {
 
     it("keeps shared operational contracts reachable from every work skill", () => {
         for (const skill of ["epic", "task", "gig"]) {
+            assert.match(
+                fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8"),
+                /    - "prepare_plan_presentation"/,
+            )
             const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
             for (const reference of [
                 "artifacts.md",
@@ -153,15 +157,42 @@ describe("workflow instruction ownership", () => {
         const readme = fs.readFileSync("workflows/README.md", "utf-8")
         assert.match(readme, /\/backlog <potential work>/)
         assert.match(readme, /\/todo <queued work>/)
+        assert.match(readme, /Local work:  inProgress\/planning → inProgress\/execution/)
+        assert.match(readme, /Plan loop:   inProgress\/planning \(draft, review, correct, present, await approval\)/)
+        assert.match(
+            readme,
+            /Plan drafting, review, corrections, presentation, and waiting for approval stay in Planning/,
+        )
+        assert.match(readme, /Interim\/final reviews and local user review of delivered work use Self-Review/)
 
         const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
         assert.match(planning, /## Material replanning/)
         assert.match(planning, /Restore lifecycle to `inProgress` when it is `inReview`/)
         assert.match(planning, /Record `phase: planning` in `metadata.json`/)
+        assert.match(planning, /Keep metadata `phase: planning` and lifecycle `inProgress`/)
+        assert.match(planning, /remain in Planning while calling `prepare_plan_presentation`/)
+        assert.match(planning, /The tool selects a validated approved snapshot and returns its source and target paths/)
+        assert.match(planning, /the write tool presents the approval diff/)
+        assert.match(
+            planning,
+            /Keep `phase: planning` while correcting the reviewed plan, rerunning planning review, presenting it, and waiting for user approval/,
+        )
+        assert.match(planning, /On acceptance, set metadata `phase: execution`/)
+        const review = fs.readFileSync("workflows/references/review.md", "utf-8")
+        assert.match(review, /plan review, corrections, presentation, and waiting for plan approval remain in Planning/)
+        assert.match(
+            review,
+            /permitted implementation corrections and verification use Execution before returning to Self-Review/,
+        )
+        assert.match(
+            review,
+            /blocked-review confirmation pause stays in Planning for plan reviews or Self-Review for interim\/final reviews/,
+        )
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(deliverable, /use the material-replanning transition in `\.\/planning.md`/)
         const epic = fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8")
         assert.match(epic, /first enter the material-replanning transition/)
+        assert.match(epic, /Keep Planning during plan review, corrections, presentation, and waiting for user approval/)
 
         const github = fs.readFileSync("workflows/references/integrations/tracker/github.md", "utf-8")
         assert.match(github, /Phase is present only for initialized In Progress work/)
@@ -174,7 +205,13 @@ describe("workflow instruction ownership", () => {
         assert.match(linear, /Apply its entire returned label-ID set/)
         assert.match(linear, /preserve every unrelated label/)
         const phase = fs.readFileSync("workflows/references/phase.md", "utf-8")
-        assert.match(phase, /Enter Self-Review before every adversarial review and local user-review presentation/)
+        assert.match(
+            phase,
+            /Keep the entire planning loop in Planning: drafting, review, corrections, presentation, and waiting for plan approval/,
+        )
+        assert.match(phase, /Use Planning for `review` with category `plan` and for `prepare_plan_presentation`/)
+        assert.match(phase, /Use Execution for accepted implementation and implementation corrections/)
+        assert.match(phase, /Enter Self-Review before interim\/final review and local user review of delivered work/)
         assert.match(phase, /remain there while awaiting feedback/)
         assert.match(phase, /Set In Review only after work is actually submitted for external human review/)
         assert.match(phase, /With no external submission route, do not set In Review/)
@@ -185,6 +222,31 @@ describe("workflow instruction ownership", () => {
         assert.match(deliverable, /Revisions on an open PR return to In Progress\/Execution/)
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
         assert.match(shared, /native Phase metadata \(Planning, Execution, and Self-Review\)/)
+    })
+
+    it("treats user-directed kind changes as classification-only updates at any lifecycle", () => {
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        assert.match(deliverable, /When the user requests or approves a kind change, update `kind` in `metadata.json`/)
+        assert.match(
+            deliverable,
+            /Any supported kind can change to any other supported kind at any lifecycle, including `done` and `canceled`/,
+        )
+        assert.match(
+            deliverable,
+            /Leave lifecycle, Phase, identity, branch, Task parent, `brief.md`, and existing artifacts unchanged for a kind-only update/,
+        )
+        assert.match(deliverable, /Future work follows the current kind's strategy/)
+        assert.match(
+            deliverable,
+            /Actual scope or behavior changes follow the normal planning and approval rules, separately from changing kind/,
+        )
+        assert.match(deliverable, /Versioned GitHub reconciles the managed Kind label, preserving unrelated labels/)
+        assert.match(deliverable, /Linear and unversioned GitHub keep Kind in workflow metadata only/)
+        const artifacts = fs.readFileSync("workflows/references/artifacts.md", "utf-8")
+        assert.match(artifacts, /User-accepted work plan/)
+        assert.match(artifacts, /Kind-only updates leave accepted plans, results, and reports unchanged/)
+        const readme = fs.readFileSync("workflows/README.md", "utf-8")
+        assert.match(readme, /Kind can change at any point without restarting the workflow/)
     })
 
     it("keeps request-only briefs, local working state, and provider bodies explicit", () => {

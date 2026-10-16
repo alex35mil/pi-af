@@ -1,10 +1,13 @@
 import assert from "node:assert/strict"
+import * as cp from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { Value } from "typebox/value"
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
+import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildReviewerArgs, renderReviewTranscript } from "../workflows/extensions/review/agent.ts"
 import {
     parseReviewReport,
@@ -82,7 +85,114 @@ describe("workflow reviewer isolation", () => {
         }
         registerReviewTools(pi as never)
         registerEpic(pi as never)
-        assert.deepEqual(tools, ["review", "record_review_response", "present_plan"])
+        assert.deepEqual(tools, ["review", "record_review_response", "prepare_plan_presentation"])
+    })
+
+    it("routes review categories and plan presentation through their required Phase", async () => {
+        const repository = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-phase-tools-"))
+        const entityDir = ".project/gigs/20260101-0000.GIG-01KDVDNA00.example"
+        const directory = path.join(repository, entityDir)
+        const metadataPath = path.join(directory, "metadata.json")
+        try {
+            cp.execFileSync("git", ["init", "-q", repository])
+            fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
+            fs.writeFileSync(path.join(repository, ".gitignore"), ".project/**/.local/\n")
+            fs.writeFileSync(
+                path.join(repository, ".project/config.json"),
+                JSON.stringify({
+                    artifacts: "versioned",
+                    branches: { format: "identifier-title" },
+                }),
+            )
+            prepareArtifactPersistence(repository)
+            const metadata = {
+                id: "GIG-01KDVDNA00",
+                rawId: "01KDVDNA00",
+                title: "Example",
+                slug: "example",
+                createdAt: "2026-01-01T00:00:00Z",
+                entity: "gig",
+                kind: "feature",
+                authority: { kind: "workflow", priority: "not set" },
+                integrations: [],
+                branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
+            }
+            fs.writeFileSync(
+                path.join(directory, ".local/status.md"),
+                '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
+            )
+            const plan = "# Plan\n\n## Overview\n\nA plan.\n\n## Work\n\nDetails.\n"
+            fs.writeFileSync(path.join(directory, ".local/draft.md"), plan)
+            const acceptedPlan = "# Previously accepted plan\n"
+            fs.writeFileSync(path.join(directory, "plan.md"), acceptedPlan)
+            fs.writeFileSync(path.join(directory, "result.md"), "# Result\n\nDelivered work.\n")
+            const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
+            registerReviewTools({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) } as never)
+            const review = tools.find((tool) => tool.name === "review")!
+            const preparePresentation = tools.find((tool) => tool.name === "prepare_plan_presentation")!
+            const ctx = { cwd: repository } as never
+            const stopBeforeRunner = new Error("Reached the reviewer subprocess boundary")
+            for (const category of ["plan", "interim", "final"] as const) {
+                for (const phase of ["planning", "execution", "selfReview"]) {
+                    const before = JSON.stringify({ ...metadata, phase })
+                    fs.writeFileSync(metadataPath, before)
+                    await assert.rejects(
+                        review.execute(
+                            "test",
+                            { entity: "gig", entityDir, phase: category },
+                            undefined,
+                            () => {
+                                throw stopBeforeRunner
+                            },
+                            ctx,
+                        ),
+                        phase === (category === "plan" ? "planning" : "selfReview")
+                            ? (error: unknown) => error === stopBeforeRunner
+                            : new RegExp(
+                                  `${category} review requires In Progress and Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
+                              ),
+                    )
+                    assert.equal(fs.readFileSync(metadataPath, "utf-8"), before)
+                }
+            }
+            const snapshot = path.join(reviewRoundDir(directory, "plan", 1), "candidate.md")
+            assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
+            writeReviewRound(directory, "plan", 1, "approved")
+            for (const phase of ["planning", "execution", "selfReview"]) {
+                fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase }))
+                const invoke = () =>
+                    preparePresentation.execute("test", { entity: "gig", entityDir }, undefined, undefined, ctx)
+                if (phase === "planning") {
+                    const result = await invoke()
+                    assert.match(JSON.stringify(result.content), /Reviewed plan snapshot is ready/)
+                    assert.match(JSON.stringify(result.content), /plan-001/)
+                    assert.match(JSON.stringify(result.content), /Snapshot:.*candidate\.md/)
+                    assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
+                } else await assert.rejects(invoke(), /plan review requires In Progress and Phase Planning/)
+                assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
+                assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
+            }
+            fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase: "planning" }))
+            writeReviewRound(directory, "plan", 2, "blocked")
+            const blockedSnapshot = path.join(reviewRoundDir(directory, "plan", 2), "candidate.md")
+            fs.writeFileSync(blockedSnapshot, plan)
+            await assert.rejects(
+                preparePresentation.execute(
+                    "test",
+                    {
+                        entity: "gig",
+                        entityDir,
+                        snapshot: ".local/reviews/plan-002/candidate.md",
+                    },
+                    undefined,
+                    undefined,
+                    ctx,
+                ),
+                /Plan snapshot review is blocked/,
+            )
+        } finally {
+            fs.rmSync(repository, { recursive: true, force: true })
+        }
     })
 
     it("uses one canonical finding renderer for persisted and chat output", () => {

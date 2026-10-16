@@ -51,16 +51,17 @@ The agent reads that source checkout's `.project/integrations.json` and `.projec
 
 ```text
 Queue:       backlog | todo
-Local work:  inProgress/planning → inProgress/selfReview → inProgress/execution
+Local work:  inProgress/planning → inProgress/execution
+Plan loop:   inProgress/planning (draft, review, correct, present, await approval)
 Review loop: inProgress/execution ↔ inProgress/selfReview
 Submitted:   inReview (external human review; native Phase cleared)
 Completed:   done (native Phase cleared)
 Canceled:    terminal unsuccessful status for queued or initialized work
 ```
 
-Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. [Deliverable guidance](references/deliverable.md) defines kind transitions, verification, completion artifacts, submission, and cleanup.
+Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. Kind can change at any point without restarting the workflow. [Deliverable guidance](references/deliverable.md) covers kind changes, verification, completion artifacts, submission, and cleanup.
 
-All adversarial and local user reviews use Self-Review while Status remains In Progress. Phase appears as a GitHub Project field or a mutually exclusive Linear label group in both artifact modes; trackerless Phase stays in workflow metadata. See [Phase](references/phase.md).
+Plan drafting, review, corrections, presentation, and waiting for approval stay in Planning. Interim/final reviews and local user review of delivered work use Self-Review. Status remains In Progress throughout these local loops. Phase appears as a GitHub Project field or a mutually exclusive Linear label group in both artifact modes; trackerless Phase stays in workflow metadata. See [Phase](references/phase.md).
 
 After final review passes, you review the finished work and decide whether to submit it. Approving an earlier draft or file write is not submission approval.
 

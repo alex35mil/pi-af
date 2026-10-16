@@ -6,7 +6,7 @@ import { describe, it } from "node:test"
 
 import { Value } from "typebox/value"
 import { PhaseSchema, projectedPhase, type LifecycleState } from "../workflows/extensions/__lib/domain.ts"
-import { assertSelfReview } from "../workflows/extensions/review/index.ts"
+import { assertReviewPhase } from "../workflows/extensions/review/index.ts"
 import { GitHubTrackerSchema, LinearTrackerSchema } from "../workflows/extensions/integrations/config.ts"
 import {
     NativePhaseFactsSchema,
@@ -194,11 +194,76 @@ describe("shared workflow Phase", () => {
         assert.throws(() => resolveLinearPhaseGroup(tracker, "gig", facts.catalog), /Phase/)
     })
 
-    it("requires Self-Review and active local lifecycle at the review boundary", () => {
+    it("requires the category-specific Phase and active local lifecycle for every entity", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-review-"))
+        const epicDir = path.join(root, ".project/epics/20260101-0000.EPIC-01KDVDNA00.example")
+        const common = {
+            rawId: "01KDVDNA00",
+            title: "Example",
+            slug: "example",
+            createdAt: "2026-01-01T00:00:00Z",
+            authority: { kind: "workflow", priority: "not set" },
+            integrations: [],
+            branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
+        }
+        try {
+            for (const entity of ["epic", "task", "gig"] as const) {
+                const id = `${entity.toUpperCase()}-01KDVDNA00`
+                const directory =
+                    entity === "epic"
+                        ? epicDir
+                        : path.join(
+                              entity === "task" ? path.join(epicDir, "tasks") : root,
+                              `20260101-0000.${id}.example`,
+                          )
+                fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
+                const metadata = {
+                    ...common,
+                    id,
+                    entity,
+                    ...(entity === "epic" ? { taskTarget: "default" } : { kind: "feature" }),
+                }
+                if (entity === "epic")
+                    fs.writeFileSync(
+                        path.join(directory, "epic.md"),
+                        "## Ordered Tasks\n\n1. [TASK-01KDVDNA00] Example\n",
+                    )
+                for (const phase of ["planning", "execution", "selfReview"]) {
+                    fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
+                    for (const state of ["inProgress", "inReview", "done", "canceled"]) {
+                        fs.writeFileSync(
+                            path.join(directory, ".local/status.md"),
+                            `# Status\n\n\`\`\`json\n${JSON.stringify({ state })}\n\`\`\`\n`,
+                        )
+                        for (const category of entity === "epic"
+                            ? (["plan"] as const)
+                            : (["plan", "interim", "final"] as const)) {
+                            const expected = category === "plan" ? "planning" : "selfReview"
+                            if (phase === expected && state === "inProgress")
+                                assert.doesNotThrow(() => assertReviewPhase(directory, category))
+                            else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
+                        }
+                    }
+                }
+                fs.writeFileSync(
+                    path.join(directory, "metadata.json"),
+                    JSON.stringify({ ...metadata, phase: "planning" }),
+                )
+                fs.writeFileSync(
+                    path.join(directory, ".local/status.md"),
+                    '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
+                )
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("checks tracker-backed Phase without local lifecycle and preserves the pending-branch gate", () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-tracker-review-"))
         const directory = path.join(root, "20260101-0000.GIG-01KDVDNA00.example")
-        fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
-        const metadata = {
+        fs.mkdirSync(directory)
+        const common = {
             id: "GIG-01KDVDNA00",
             rawId: "01KDVDNA00",
             title: "Example",
@@ -206,23 +271,50 @@ describe("shared workflow Phase", () => {
             createdAt: "2026-01-01T00:00:00Z",
             entity: "gig",
             kind: "feature",
-            authority: { kind: "workflow", priority: "not set" },
-            integrations: [],
             branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
         }
         try {
-            for (const phase of ["planning", "execution", "selfReview"]) {
-                fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
-                for (const state of ["inProgress", "inReview", "done", "canceled"]) {
-                    fs.writeFileSync(
-                        path.join(directory, ".local/status.md"),
-                        `# Status\n\n\`\`\`json\n${JSON.stringify({ state })}\n\`\`\`\n`,
-                    )
-                    if (phase === "selfReview" && state === "inProgress")
-                        assert.doesNotThrow(() => assertSelfReview(directory))
-                    else assert.throws(() => assertSelfReview(directory), /review requires/)
+            for (const provider of ["github", "linear"]) {
+                const integration =
+                    provider === "github"
+                        ? {
+                              role: "tracker",
+                              provider,
+                              repository: { owner: "example", repo: "example" },
+                              state: "bound",
+                              external: { issueNumber: 1 },
+                          }
+                        : {
+                              role: "tracker",
+                              provider,
+                              resource: "gig-issue",
+                              state: "bound",
+                              external: { issueId: "issue-uuid" },
+                          }
+                const metadata = { ...common, authority: { kind: "tracker", provider }, integrations: [integration] }
+                for (const phase of ["planning", "execution", "selfReview"]) {
+                    fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
+                    for (const category of ["plan", "interim", "final"] as const) {
+                        if (phase === (category === "plan" ? "planning" : "selfReview"))
+                            assert.doesNotThrow(() => assertReviewPhase(directory, category))
+                        else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
+                    }
+                }
+                if (provider === "linear") {
+                    for (const category of ["plan", "interim", "final"] as const) {
+                        fs.writeFileSync(
+                            path.join(directory, "metadata.json"),
+                            JSON.stringify({
+                                ...metadata,
+                                phase: category === "plan" ? "planning" : "selfReview",
+                                branch: { state: "tracker-pending", provider, start: "main", target: "main" },
+                            }),
+                        )
+                        assert.throws(() => assertReviewPhase(directory, category), /branch is tracker-pending/)
+                    }
                 }
             }
+            assert.equal(fs.existsSync(path.join(directory, ".local/status.md")), false)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

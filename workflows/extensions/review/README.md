@@ -1,6 +1,6 @@
 # Review extension
 
-Registers `review`, `record_review_response`, and `present_plan`. Strict schemas admit Epic planning reviews and Task/Gig plan, interim, and final reviews.
+Registers `review`, `record_review_response`, and `prepare_plan_presentation`. Strict schemas admit Epic planning reviews and Task/Gig plan, interim, and final reviews. The preparation tool validates and selects a reviewed snapshot and returns its source and target paths; the write tool presents the approval diff.
 
 The review subsystem owns prompt assembly, round discovery, signoff validation, optional configured blocked-review confirmation, and reviewed-snapshot selection. `findings.ts` owns finding fields, report parsing, and canonical rendering; `agent.ts` owns fresh read-only subprocess execution with shared rules and permissions.
 
