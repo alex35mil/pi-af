@@ -14,7 +14,7 @@ import {
 import { loadIntegrationConfig } from "./config.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import { NativePhaseFactsSchema, phaseProjectionContract, planPhaseMutation } from "./phase.js"
-import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import { assertArtifactPersistencePrepared, resolveWorkflowProject } from "../__lib/project-config.js"
 import * as Git from "../__lib/git.js"
 import {
     resolveForgePolicy,
@@ -48,11 +48,13 @@ export const RenderProviderBodySchema = Type.Object(
 )
 
 const ContextEntitySchema = Type.Union([Type.Literal("epic"), Type.Literal("task"), Type.Literal("gig")])
+const ContextTargetSchema = Type.Union([Type.Literal("current"), Type.Literal("workflow")])
 export const IntegrationContextSchema = Type.Union([
-    Type.Object({ operation: Type.Literal("inspect") }, { additionalProperties: false }),
+    Type.Object({ operation: Type.Literal("inspect"), target: ContextTargetSchema }, { additionalProperties: false }),
     Type.Object(
         {
             operation: Type.Literal("queueIntake"),
+            target: ContextTargetSchema,
             entity: ContextEntitySchema,
             priority: Type.String({ minLength: 1 }),
             kind: Type.String({ minLength: 1 }),
@@ -203,7 +205,7 @@ export default function (pi: ExtensionAPI): void {
         name: "integration_context",
         label: "integration_context",
         description:
-            "Read local tracker/forge configuration, workflow authority and entity state. Validate supplied finish evidence against the locally recorded PR and source branch. Never inspect provider-tool schemas or perform external operations.",
+            "Read tracker/forge configuration and entity state. For inspect/queueIntake, select the current project or globally referenced workflow source project explicitly. Validate finish evidence without external operations or configuration changes.",
         parameters: IntegrationContextSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(IntegrationContextSchema, params)
@@ -220,18 +222,41 @@ export default function (pi: ExtensionAPI): void {
 export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput) {
     if (!Value.Check(IntegrationContextSchema, input))
         throw new Error("invalid integration context request: select the exact operation and its required inputs")
+    const selection =
+        "target" in input
+            ? {
+                  target: input.target,
+                  projectRoot:
+                      input.target === "workflow" ? resolveWorkflowProject(ctx.cwd) : project.resolveRootDir(ctx.cwd),
+              }
+            : undefined
+    const cwd = selection?.projectRoot ?? ctx.cwd
+    try {
+        const result = readProjectIntegrationContext(cwd, input)
+        return { ...result, ...selection }
+    } catch (error) {
+        if (selection?.target !== "workflow") throw error
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Workflow project ${cwd}: ${message}`)
+    }
+}
+
+function readProjectIntegrationContext(cwd: string, input: IntegrationContextInput) {
     const operation = input.operation
     const entityDir = "entityDir" in input ? input.entityDir : undefined
     const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
     const requiresTracker = ["queueIntake", "adopt", "trackerMutation"].includes(operation)
     const forgeOnly = ["pullRequest", "finishRead", "finishMerge"].includes(operation)
-    const loaded = loadIntegrationConfig(ctx.cwd)
-    let projectConfig = entityDir ? assertArtifactPersistencePrepared(ctx.cwd) : undefined
-    if (loaded.state === "enabled") projectConfig ??= assertArtifactPersistencePrepared(ctx.cwd)
+    const loaded = loadIntegrationConfig(cwd)
+    if ("target" in input && input.target === "workflow" && (loaded.state === "disabled" || !loaded.config.tracker)) {
+        throw new Error(`Configure a tracker in ${loaded.path}.`)
+    }
+    let projectConfig = entityDir ? assertArtifactPersistencePrepared(cwd) : undefined
+    if (loaded.state === "enabled") projectConfig ??= assertArtifactPersistencePrepared(cwd)
     const environment = projectConfig
         ? resolveWorkflowEnvironment(projectConfig, loaded.state === "enabled" ? loaded.config : undefined)
         : undefined
-    const entity = entityDir ? readWorkflowEntity(ctx.cwd, entityDir) : undefined
+    const entity = entityDir ? readWorkflowEntity(cwd, entityDir) : undefined
     if (entity) {
         if (!environment) throw new Error(`${operation} requires prepared project configuration`)
         assertEntityEnvironment(entity.status, environment)
@@ -263,7 +288,7 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
         if (status.phase !== "selfReview") {
             finish = { state: "blocked", reason: "finish requires completed Self-Review" }
         } else {
-            const context = resolveResourceIdsContext(ctx.cwd, input.entityDir, "github-pull-request")
+            const context = resolveResourceIdsContext(cwd, input.entityDir, "github-pull-request")
             if (context.scope.kind !== "github-pull-request") throw new Error("finish requires PR addressing")
             const saved = readCachedResourceIds(context.directory, context.scope)
             finish =
@@ -271,7 +296,7 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
                     ? finishReadDecision(
                           context.scope,
                           input.evidence,
-                          Git.run(ctx.cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
+                          Git.run(cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
                           saved.value.number,
                       )
                     : {

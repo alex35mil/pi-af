@@ -3,7 +3,7 @@ import * as cp from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { describe, it } from "node:test"
+import { describe, it, type TestContext } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
@@ -14,7 +14,7 @@ import {
     loadIntegrationConfig,
     PriorityFieldSchema,
 } from "../workflows/extensions/integrations/config.ts"
-import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
+import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 
 import {
     resolveForgePolicy,
@@ -23,6 +23,7 @@ import {
 } from "../workflows/extensions/integrations/policy.ts"
 import registerIntegrations, {
     buildIntegrationContext,
+    IntegrationContextSchema,
     renderEntityProviderBody,
 } from "../workflows/extensions/integrations/index.ts"
 
@@ -83,7 +84,13 @@ function forgeConfig() {
     }
 }
 
-const queueSelection = { operation: "queueIntake" as const, entity: "gig" as const, priority: "High", kind: "refactor" }
+const queueSelection = {
+    operation: "queueIntake" as const,
+    target: "current" as const,
+    entity: "gig" as const,
+    priority: "High",
+    kind: "refactor",
+}
 
 function temporaryProject(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), "workflow-integration-"))
@@ -202,6 +209,176 @@ function writeLinearGigEntity(cwd: string): string {
     fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
     return directory
 }
+
+function workflowFixture(t: TestContext) {
+    const root = fs.realpathSync(temporaryProject())
+    const source = path.join(root, "source")
+    const consumer = path.join(root, "consumer")
+    const agent = path.join(root, "agent")
+    for (const directory of [source, consumer, agent]) fs.mkdirSync(directory)
+    const previous = process.env.PI_CODING_AGENT_DIR
+    process.env.PI_CODING_AGENT_DIR = agent
+    t.after(() => {
+        if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+        else process.env.PI_CODING_AGENT_DIR = previous
+        fs.rmSync(root, { recursive: true, force: true })
+    })
+    const settingsPath = getWorkflowSettingsPaths(consumer).global
+    fs.writeFileSync(settingsPath, JSON.stringify({ workflowProject: source }))
+    return { root, source, consumer, settingsPath, ctx: { cwd: consumer } as ExtensionContext }
+}
+
+function fileSnapshot(root: string): [string, string][] {
+    return fs
+        .readdirSync(root, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .flatMap((entry) => {
+            const file = path.join(root, entry.name)
+            return entry.isDirectory() ? fileSnapshot(file) : [[file, fs.readFileSync(file).toString("hex")]]
+        })
+}
+
+describe("workflow-source queue context", () => {
+    it("requires an explicit target only on project inspection and queue intake", () => {
+        for (const target of ["current", "workflow"]) {
+            assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect", target }), true)
+            assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target }), true)
+            assert.equal(
+                Value.Check(IntegrationContextSchema, { operation: "resume", entityDir: "gig", target }),
+                false,
+            )
+            assert.equal(Value.Check(IntegrationContextSchema, { operation: "adopt", entity: "gig", target }), false)
+        }
+        assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect" }), false)
+        const { target, ...withoutTarget } = queueSelection
+        assert.equal(Value.Check(IntegrationContextSchema, withoutTarget), false)
+        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target: "other" }), false)
+    })
+
+    for (const mode of ["versioned", "unversioned"] as const) {
+        for (const provider of ["github", "linear"] as const) {
+            for (const consumingSetup of ["missing", "different", "malformed"] as const) {
+                it(`uses ${mode} ${provider} source configuration with ${consumingSetup} consuming setup`, (t) => {
+                    const f = workflowFixture(t)
+                    prepareWorkflowProject(f.source, mode)
+                    prepareArtifactPersistence(f.source)
+                    const tracker =
+                        provider === "github"
+                            ? {
+                                  ...config(),
+                                  mcpServer: "workflow-github",
+                                  repository: { owner: "maintainer", repo: "workflows" },
+                              }
+                            : { ...linearConfig(), mcpServer: "workflow-linear", team: "Workflow Team" }
+                    const sourceIntegrations = path.join(f.source, ".project/integrations.json")
+                    fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker }))
+                    if (consumingSetup !== "missing") {
+                        prepareWorkflowProject(f.consumer)
+                        fs.writeFileSync(
+                            path.join(f.consumer, ".project/integrations.json"),
+                            consumingSetup === "malformed" ? "broken JSON" : JSON.stringify({ tracker: config() }),
+                        )
+                        if (consumingSetup === "malformed")
+                            fs.writeFileSync(path.join(f.consumer, ".project/config.json"), "broken JSON")
+                    }
+                    const before = fileSnapshot(f.root)
+                    const inspected = buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" })
+                    const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" })
+                    for (const context of [inspected, intake]) {
+                        if (context.state !== "enabled") assert.fail("expected source context")
+                        assert.equal(context.target, "workflow")
+                        assert.equal(context.projectRoot, f.source)
+                        assert.equal(context.artifactMode, mode)
+                        assert.deepEqual(context.roles.tracker, { state: "enabled", provider, config: tracker })
+                    }
+                    assert.equal(fileSnapshot(f.root).length, before.length)
+                    assert.deepEqual(fileSnapshot(f.root), before, "context must not modify either project or settings")
+                    if (consumingSetup === "different") {
+                        const current = buildIntegrationContext(f.ctx, { ...queueSelection, target: "current" })
+                        if (current.state !== "enabled") assert.fail("expected consuming context")
+                        assert.deepEqual(current.roles.tracker, {
+                            state: "enabled",
+                            provider: "github",
+                            config: config(),
+                        })
+                    }
+                    const updated =
+                        provider === "github"
+                            ? { ...tracker, repository: { owner: "maintainer", repo: "new-inbox" } }
+                            : { ...tracker, team: "New Workflow Team" }
+                    fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated }))
+                    const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" })
+                    if (reread.state !== "enabled") assert.fail("expected refreshed context")
+                    assert.deepEqual(reread.roles.tracker?.config, updated)
+                })
+            }
+        }
+    }
+
+    it("errors on a missing source reference without requiring it for current intake", (t) => {
+        const f = workflowFixture(t)
+        prepareWorkflowProject(f.consumer)
+        fs.writeFileSync(path.join(f.consumer, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+        fs.rmSync(f.settingsPath)
+        const before = fileSnapshot(f.root)
+        assert.throws(
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            (error: Error) => error.message.includes("Set workflowProject") && error.message.includes(f.settingsPath),
+        )
+        assert.equal(buildIntegrationContext(f.ctx, queueSelection).state, "enabled")
+        assert.deepEqual(fileSnapshot(f.root), before)
+    })
+
+    it("names source config errors without falling back or preparing artifacts", (t) => {
+        const f = workflowFixture(t)
+        prepareWorkflowProject(f.source, "unversioned")
+        const integrations = path.join(f.source, ".project/integrations.json")
+        for (const content of [undefined, JSON.stringify({ forge: forgeConfig() }), "broken JSON"]) {
+            if (content !== undefined) fs.writeFileSync(integrations, content)
+            const before = fileSnapshot(f.root)
+            assert.throws(
+                () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+                (error: Error) => error.message.includes(f.source) && error.message.includes("integrations.json"),
+            )
+            assert.deepEqual(fileSnapshot(f.root), before)
+        }
+        fs.writeFileSync(integrations, JSON.stringify({ tracker: config() }))
+        const unprepared = fileSnapshot(f.root)
+        assert.throws(() => buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }), /not prepared/)
+        assert.deepEqual(fileSnapshot(f.root), unprepared)
+        prepareArtifactPersistence(f.source)
+        const projectConfig = path.join(f.source, ".project/config.json")
+        fs.writeFileSync(projectConfig, "broken JSON")
+        assert.throws(
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            (error: Error) => error.message.includes(f.source) && error.message.includes("config.json"),
+        )
+        fs.rmSync(projectConfig)
+        assert.throws(
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            /missing required/,
+        )
+    })
+
+    it("exposes source selection through the existing registered context tool without remote calls", async (t) => {
+        const f = workflowFixture(t)
+        prepareWorkflowProject(f.source)
+        fs.writeFileSync(path.join(f.source, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+        type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
+        const tools = new Map<string, Tool>()
+        registerIntegrations({
+            on: () => {},
+            registerCommand: () => {},
+            registerTool: (tool: Tool) => tools.set(tool.name, tool),
+        } as unknown as ExtensionAPI)
+        const before = fileSnapshot(f.root)
+        const result = await tools
+            .get("integration_context")!
+            .execute("inspect", { operation: "inspect", target: "workflow" }, undefined, undefined, f.ctx)
+        assert.equal((result.details as { projectRoot: string }).projectRoot, f.source)
+        assert.deepEqual(fileSnapshot(f.root), before)
+    })
+})
 
 describe("workflow integration configuration", () => {
     it("requires exact provider Markdown and returns a concise remediation hint", () => {
@@ -329,8 +506,10 @@ describe("workflow integration configuration", () => {
         try {
             assert.deepEqual(loadIntegrationConfig(cwd).state, "disabled")
             const ctx = { cwd } as ExtensionContext
-            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect" }), {
+            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect", target: "current" }), {
                 state: "disabled",
+                target: "current",
+                projectRoot: cwd,
             })
             assert.throws(() => buildIntegrationContext(ctx, queueSelection), /requires a configured tracker/)
         } finally {
@@ -481,7 +660,10 @@ describe("workflow integration configuration", () => {
             fs.writeFileSync(file, JSON.stringify({ forge: forgeConfig() }))
             assert.throws(() => buildIntegrationContext({ cwd } as ExtensionContext, queueSelection), /tracker/)
             fs.writeFileSync(file, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
-            const result = buildIntegrationContext({ cwd } as ExtensionContext, { operation: "inspect" })
+            const result = buildIntegrationContext({ cwd } as ExtensionContext, {
+                operation: "inspect",
+                target: "current",
+            })
             if (result.state !== "enabled") assert.fail("enabled configuration expected")
             assert.deepEqual(result.roles.tracker, { state: "enabled", provider: "github", config: config() })
             assert.deepEqual(result.roles.forge, { state: "enabled", provider: "github", config: forgeConfig() })
@@ -575,7 +757,10 @@ describe("workflow integration configuration", () => {
                 JSON.stringify({ tracker: config("issue") }),
             )
 
-            const context = buildIntegrationContext({ cwd } as ExtensionContext, { operation: "inspect" })
+            const context = buildIntegrationContext({ cwd } as ExtensionContext, {
+                operation: "inspect",
+                target: "current",
+            })
             if (context.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(context.artifactMode, "unversioned")
             assert.equal(context.projection?.mode, "restricted")

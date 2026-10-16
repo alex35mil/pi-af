@@ -47,7 +47,7 @@ Allowed formats are:
 
 Setup may select `tracker` only with a Linear tracker. It applies to every entity: Task/Gig use exact issue branch names, while Epic reconstructs the current Linear workspace template from read-only API data. GitHub and trackerless projects require a static format.
 
-A static format beginning with `username` requires this strict object in global `~/<agent-dir>/workflows.settings.json` or repository-local `.project/config.local.json`:
+A static format beginning with `username` requires `branches.username` in global `~/<agent-dir>/workflows.settings.json` or repository-local `.project/config.local.json`:
 
 ```json
 {
@@ -66,6 +66,24 @@ To require a user confirmation checkpoint after consecutive blocked reviews, add
 ```
 
 `userConfirmationAfter` is a positive integer. Counting is separate for each entity and review phase. The threshold pauses immediately after the blocking review result and before its findings are corrected or verified. Omit the entire `reviews` object to disable this checkpoint; reviews still continue until approved.
+
+## Workflow reporting source
+
+To report workflow problems from any consuming project, set `workflowProject` in the existing private global `workflows.settings.json`, located in Pi's resolved `getAgentDir()` directory:
+
+```json
+{
+    "workflowProject": "/absolute/path/to/pi-af"
+}
+```
+
+It references the workflow source repository root. Existing global `branches.username` may coexist; either field can appear alone. The global file stays outside Git, contains no credentials, and is not a consuming-project setting. `.project/config.local.json` remains branch-only and cannot override this reference.
+
+`integration_context` operations `inspect` and `queueIntake` require `target: "current" | "workflow"`. `current` inspects the current repository and does not require the reference. `workflow` reads the referenced source's `.project/integrations.json` and `.project/config.json` using the existing tracker schema, artifact policy, validation, and read-only artifact-readiness checks. It returns the selected `target` and `projectRoot` alongside context. The path must identify the repository root; filesystem aliases are resolved consistently. Consuming-project setup is not a prerequisite for workflow-target inspection.
+
+A missing reference errors: `Set workflowProject to the absolute workflow source repository root in <resolved-agent-dir>/workflows.settings.json.` Invalid references or source configuration name their corrective location. Stop the attempt without setup questions, automatic repair, artifact preparation, or a fallback destination; the user leads any later configuration fix.
+
+Use only the source tracker’s named MCP tools already registered in the reporting session under normal permissions. A tracker configuration does not prove provider access. Do not load or execute the source project's MCP settings or credentials. See [queue reporting](./queue.md#prepare-a-workflow-report) for the ordinary Todo intake and privacy/approval boundary.
 
 ## Integration configuration
 
