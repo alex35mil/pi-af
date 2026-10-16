@@ -7,6 +7,7 @@ interface FakeField {
     id: string
     name: string
     dataType: string
+    isIssueField?: boolean
     options?: Array<{ id: string; name: string; description: string; color: string }>
 }
 interface FakeProject {
@@ -21,8 +22,34 @@ interface FakeProject {
     repositoryIds: string[]
 }
 
+interface FakeView {
+    id: string
+    number: number
+    name: string
+    layout: string
+    filter: string
+    visibleFieldIds: string[]
+    groupBy: FakeField[]
+    columns: FakeField[]
+    sortBy: Array<{ field: FakeField; direction: string }>
+}
+
+const builtins = ["Title", "Assignees", "Linked pull requests", "Sub-issues progress", "Labels"].map((name) => ({
+    id: `builtin-${name}`,
+    name,
+    dataType: "TEXT",
+}))
+const allFields = (project: FakeProject) => [...builtins, ...project.fields]
+
 class FakeGitHub {
     projects: FakeProject[] = []
+    views = new Map<string, FakeView[]>()
+    viewWrites: Array<Record<string, any>> = []
+    initialViewCount = 1
+    pageSize = 50
+    loseNextViewCreateResponse = false
+    loseNextViewUpdateResponse = false
+    ignoreViewUpdate = false
     issueFields: Array<Record<string, unknown>> = []
     repositoryLabels: Array<{ name: string; color: string; description: string }> = []
     authorizationHeaders: string[] = []
@@ -83,6 +110,76 @@ class FakeGitHub {
     private graphql(rawBody: string): Response {
         const body = JSON.parse(rawBody) as { query: string; variables: Record<string, unknown> }
         const { query, variables } = body
+        if (query.includes("createProjectV2View(")) {
+            const input = variables.input as Record<string, any>
+            const project = this.project(input.projectId)
+            const views = this.projectViews(project)
+            const view = this.defaultView(project, views.length + 1)
+            Object.assign(view, {
+                name: input.name,
+                layout: input.layout,
+                visibleFieldIds: input.configuration.visibleFieldIds,
+            })
+            views.push(view)
+            this.viewWrites.push({ operation: "create", ...input })
+            if (this.loseNextViewCreateResponse) {
+                this.loseNextViewCreateResponse = false
+                return graph(undefined, [{ message: "response lost after view creation" }])
+            }
+            return graph({ createProjectV2View: { projectV2View: { id: view.id } } })
+        }
+        if (query.includes("updateProjectV2View(")) {
+            const input = variables.input as Record<string, any>
+            const view = [...this.views.values()].flat().find((view) => view.id === input.viewId)!
+            this.viewWrites.push({ operation: "update", ...input })
+            if (!this.ignoreViewUpdate)
+                Object.assign(view, {
+                    name: input.name,
+                    layout: input.layout,
+                    visibleFieldIds: input.configuration.visibleFieldIds,
+                })
+            if (this.loseNextViewUpdateResponse) {
+                this.loseNextViewUpdateResponse = false
+                return graph(undefined, [{ message: "response lost after view update" }])
+            }
+            return graph({ updateProjectV2View: { projectV2View: { id: view.id } } })
+        }
+        if (query.includes("views(first: 50")) {
+            const project = this.project(String(variables.projectId))
+            return graph({
+                node: {
+                    views: this.page(
+                        this.projectViews(project).map(({ id }) => ({ id })),
+                        variables.after,
+                    ),
+                },
+            })
+        }
+        if (query.includes("... on ProjectV2View")) {
+            const project = this.projects.find((project) =>
+                this.projectViews(project).some((view) => view.id === variables.viewId),
+            )!
+            const view = this.projectViews(project).find((view) => view.id === variables.viewId)!
+            return graph({
+                node: {
+                    id: view.id,
+                    number: view.number,
+                    name: view.name,
+                    layout: view.layout,
+                    filter: view.filter,
+                    project: { id: project.id },
+                    configuration: {
+                        visibleFields: this.page(
+                            view.visibleFieldIds.map((id) => allFields(project).find((field) => field.id === id)),
+                            variables.visible,
+                        ),
+                    },
+                    groupByFields: this.page(view.groupBy, variables.groups),
+                    verticalGroupByFields: this.page(view.columns, variables.columns),
+                    sortByFields: this.page(view.sortBy, variables.sorts),
+                },
+            })
+        }
         if (query.includes("createProjectV2(")) {
             const project: FakeProject = {
                 id: `project-${this.projects.length + 1}`,
@@ -180,7 +277,8 @@ class FakeGitHub {
         }
         if (query.includes("node(id: $id)")) {
             const project = this.project(String(variables.id))
-            return graph({ node: details(project) })
+            const result = details(project)
+            return graph({ node: { ...result, fields: this.page(result.fields.nodes, variables.after) } })
         }
         if (query.includes("projectsV2(first: 50")) {
             const root = query.includes("organization(login") ? "organization" : "user"
@@ -195,6 +293,38 @@ class FakeGitHub {
             })
         }
         return graph(undefined, [{ message: "unexpected GraphQL operation" }])
+    }
+
+    projectViews(project: FakeProject): FakeView[] {
+        if (!this.views.has(project.id))
+            this.views.set(
+                project.id,
+                Array.from({ length: this.initialViewCount }, (_, index) => this.defaultView(project, index + 1)),
+            )
+        return this.views.get(project.id)!
+    }
+
+    private defaultView(project: FakeProject, number: number): FakeView {
+        return {
+            id: `view-${project.number}-${number}`,
+            number,
+            name: `View ${number}`,
+            layout: "TABLE_LAYOUT",
+            filter: "",
+            visibleFieldIds: [builtins[0].id],
+            groupBy: [],
+            columns: [],
+            sortBy: [],
+        }
+    }
+
+    private page<T>(nodes: T[], after: unknown) {
+        const start = after ? Number(after) : 0
+        const end = Math.min(start + this.pageSize, nodes.length)
+        return {
+            nodes: nodes.slice(start, end),
+            pageInfo: { hasNextPage: end < nodes.length, endCursor: end < nodes.length ? String(end) : null },
+        }
     }
 
     private project(id: string): FakeProject {
@@ -225,8 +355,9 @@ function details(project: FakeProject) {
         ...summary(project),
         items: { totalCount: project.itemCount },
         fields: {
-            nodes: project.fields.map((field) => ({
+            nodes: allFields(project).map((field) => ({
                 __typename: field.dataType === "SINGLE_SELECT" ? "ProjectV2SingleSelectField" : "ProjectV2Field",
+                isIssueField: false,
                 ...field,
             })),
             pageInfo: { hasNextPage: false, endCursor: null },
@@ -254,6 +385,12 @@ function projectContained(source: Record<string, unknown>) {
         repository: { owner: "acme", repo: "example" },
         projectOwner: { login: "alex", type: "user" },
         project: source,
+        presentation: {
+            ...defaults.presentation,
+            target:
+                source.mode === "new" ? { mode: "initial" } : { mode: "selected", viewId: `view-${source.number}-1` },
+        },
+        defaultRepository: source.associateRepository ? "setup-repository" : "unmanaged",
         labels: defaults.labels,
         fields: {
             status: defaults.status,
@@ -272,6 +409,16 @@ function organizationNative(source: Record<string, unknown>) {
         repository: { owner: "acme", repo: "example" },
         projectOwner: { login: "acme", type: "org" },
         project: source,
+        presentation: {
+            ...defaults.presentation,
+            // This fixture explicitly selects fields exposed on its Project; issue Priority is not attached.
+            visibleFields: defaults.presentation.visibleFields.filter(
+                (field) => !(field.kind === "workflow" && field.field === "priority"),
+            ),
+            target:
+                source.mode === "new" ? { mode: "initial" } : { mode: "selected", viewId: `view-${source.number}-1` },
+        },
+        defaultRepository: source.associateRepository ? "setup-repository" : "unmanaged",
         labels: defaults.labels,
         fields: {
             status: defaults.status,
@@ -837,6 +984,596 @@ describe("GitHub Project setup", () => {
             /Phase option names must be distinct/,
         )
         assert.equal(github.projects.length, 0)
+    })
+
+    const newSpecification = () =>
+        projectContained({ mode: "new", title: "Presentation", visibility: "private", associateRepository: true })
+    const apply = async (github: FakeGitHub, specification: unknown) => {
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "ready", JSON.stringify(preview))
+        return runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            setupOptions(github),
+        )
+    }
+    const seed = async (github: FakeGitHub) => {
+        await apply(github, newSpecification())
+        github.viewWrites = []
+        return projectContained({ mode: "existing", number: 1, visibility: "private", associateRepository: true })
+    }
+
+    it("encodes and verifies the confirmed Board defaults without claiming manual completion", async () => {
+        const github = new FakeGitHub()
+        const specification = newSpecification()
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(github.projects.length, 0)
+        assert.equal(github.viewWrites.length, 0)
+        assert.match(JSON.stringify(preview.actions), /configure-initial-view/)
+        const result = await apply(github, specification)
+        const view = result.view as Record<string, any>
+        assert.equal(view.name, "Board")
+        assert.equal(view.layout, "board")
+        assert.deepEqual(
+            view.visibleFieldIds.map(
+                (id: string) => allFields(github.projects[0]).find((field) => field.id === id)!.name,
+            ),
+            [
+                "Title",
+                "Assignees",
+                "Status",
+                "Linked pull requests",
+                "Sub-issues progress",
+                "Labels",
+                "Priority",
+                "Phase",
+            ],
+        )
+        assert.equal(
+            github.projects[0].fields.some((field) => field.name === "Kind"),
+            false,
+        )
+        assert.equal(github.deleteProjectFieldAttempts, 0)
+        assert.deepEqual(result.verification, { api: "verified", manual: "requires-user-confirmation" })
+        assert.equal((result.manualSteps as any[]).length, 6)
+        assert.match(JSON.stringify(result.manualSteps), /Save changes/)
+        assert.match(JSON.stringify(result.manualSteps), /No grouping/)
+        const steps = result.manualSteps as Array<{ setting: string; desired: string; instructions: string }>
+        assert.equal(steps.find((step) => step.setting === "swimlanes")!.desired, "none")
+        assert.equal(steps.find((step) => step.setting === "sortBy")!.desired, "Priority: Urgent → High → Medium → Low")
+        assert.match(
+            steps.find((step) => step.setting === "sortBy")!.instructions,
+            /remove other sorts and select Priority/,
+        )
+        assert.deepEqual(GITHUB_PROJECT_DEFAULTS.board, {
+            columnBy: "status",
+            swimlanes: "none",
+            sortBy: { field: "priority", order: "configured-option-order" },
+            fieldSum: "count",
+            sliceBy: "none",
+        })
+        assert.match(JSON.stringify(result.manualSteps), /Count only/)
+        assert.match(JSON.stringify(result.manualSteps), /No slicing/)
+        assert.match(JSON.stringify(result.manualSteps), /acme\/example/)
+        assert.equal((result.trackerConfig as any).presentation, undefined)
+        assert.equal(GITHUB_PROJECT_DEFAULTS.associateRepository, true)
+        assert.equal(GITHUB_PROJECT_DEFAULTS.defaultRepository, "setup-repository")
+        assert.deepEqual(Object.keys(github.viewWrites[0]).sort(), [
+            "configuration",
+            "layout",
+            "name",
+            "operation",
+            "viewId",
+        ])
+    })
+
+    it("creates a missing initial view and reconciles a lost create response without duplication", async () => {
+        const github = new FakeGitHub()
+        github.initialViewCount = 0
+        github.loseNextViewCreateResponse = true
+        await apply(github, newSpecification())
+        assert.equal(github.projectViews(github.projects[0]).length, 1)
+        assert.equal(github.viewWrites.length, 1)
+        assert.equal(github.viewWrites[0].operation, "create")
+    })
+
+    it("preserves multiple initial views for explicit selection", async () => {
+        const github = new FakeGitHub()
+        github.initialViewCount = 2
+        await assert.rejects(apply(github, newSpecification()), /multiple initial views/)
+        assert.equal(github.projects.length, 1)
+        assert.equal(github.projectViews(github.projects[0]).length, 2)
+        assert.equal(github.viewWrites.length, 0)
+    })
+
+    it("updates only the selected view, preserving filters, grouping, sorting and other views", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        const views = github.projectViews(github.projects[0])
+        const view = views[0]
+        Object.assign(view, {
+            name: "Old",
+            layout: "TABLE_LAYOUT",
+            filter: "is:open",
+            groupBy: [github.projects[0].fields[0]],
+            sortBy: [{ field: github.projects[0].fields[0], direction: "ASC" }],
+        })
+        views.push({ ...structuredClone(view), id: "other-view", number: 2 })
+        const other = structuredClone(views[1])
+        await apply(github, specification)
+        assert.equal(view.filter, "is:open")
+        assert.equal(view.groupBy.length, 1)
+        assert.equal(view.sortBy[0].direction, "ASC")
+        assert.deepEqual(views[1], other)
+        assert.equal(github.viewWrites.length, 1)
+        github.viewWrites = []
+        await apply(github, specification)
+        assert.equal(github.viewWrites.length, 0)
+        const resumed = { ...specification, project: { ...specification.project, mode: "resume-created" } }
+        await apply(github, resumed)
+        assert.equal(github.viewWrites.length, 0)
+    })
+
+    it("reads every page of views, visible fields, grouping, columns and sorting without mutation", async () => {
+        const github = new FakeGitHub()
+        await seed(github)
+        const project = github.projects[0]
+        const view = github.projectViews(project)[0]
+        view.groupBy = allFields(project).slice(0, 3)
+        view.columns = allFields(project).slice(0, 4)
+        view.sortBy = allFields(project)
+            .slice(0, 5)
+            .map((field) => ({ field, direction: "ASC" }))
+        github.views.set(project.id, [
+            view,
+            { ...structuredClone(view), id: "view-two", number: 2 },
+            { ...structuredClone(view), id: "view-three", number: 3 },
+        ])
+        github.pageSize = 2
+        const result = await runGitHubProjectSetup(
+            {
+                operation: "inspectProject",
+                credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                projectOwner: { login: "alex", type: "user" },
+                projectNumber: 1,
+            },
+            setupOptions(github),
+        )
+        const views = result.views as any[]
+        assert.equal(views.length, 3)
+        assert.equal(views[0].visibleFieldIds.length, 8)
+        assert.equal(views[0].groupBy.length, 3)
+        assert.equal(views[0].verticalGroupBy.length, 4)
+        assert.equal(views[0].sortBy.length, 5)
+        assert.equal((result.project as any).fields.length, 9)
+        assert.equal(github.viewWrites.length, 0)
+        assert.deepEqual(result.unavailableSettings, ["defaultRepository", "fieldSum", "sliceBy"])
+    })
+
+    it("blocks a missing or foreign view and requires explicit targets", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        const wrongView = {
+            ...specification,
+            presentation: { ...specification.presentation, target: { mode: "selected", viewId: "foreign-view" } },
+        }
+        const result = await runGitHubProjectSetup(
+            { operation: "preview", specification: wrongView },
+            setupOptions(github),
+        )
+        assert.equal(result.state, "blocked")
+        assert.match(JSON.stringify(result.conflicts), /missing or does not belong/)
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "preview",
+                    specification: {
+                        ...specification,
+                        presentation: { ...specification.presentation, target: { mode: "initial" } },
+                    },
+                },
+                setupOptions(github),
+            ),
+            /require an exact selected view/,
+        )
+        assert.equal(github.viewWrites.length, 0)
+    })
+
+    it("rejects duplicate selections and reports unavailable or ambiguous Project fields", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        const duplicate = {
+            ...specification,
+            presentation: {
+                ...specification.presentation,
+                visibleFields: [
+                    { kind: "field", name: "Title" },
+                    { kind: "field", name: "Title" },
+                ],
+            },
+        }
+        await assert.rejects(
+            runGitHubProjectSetup({ operation: "preview", specification: duplicate }, setupOptions(github)),
+            /visible field names must be distinct/,
+        )
+        const missing = {
+            ...specification,
+            presentation: {
+                ...specification.presentation,
+                visibleFields: [{ kind: "field", name: "Issue Priority not attached" }],
+            },
+        }
+        const blocked = await runGitHubProjectSetup(
+            { operation: "preview", specification: missing },
+            setupOptions(github),
+        )
+        assert.equal(blocked.state, "blocked")
+        assert.match(JSON.stringify(blocked.conflicts), /not exposed on the Project/)
+        github.projects[0].fields.push({ id: "duplicate-title", name: "Title", dataType: "TEXT" })
+        const ambiguous = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(ambiguous.state, "blocked")
+        assert.match(JSON.stringify(ambiguous.conflicts), /ambiguous on the Project/)
+        assert.equal(github.viewWrites.length, 0)
+    })
+
+    it("resolves configured workflow field names instead of hardcoding default names", async () => {
+        const github = new FakeGitHub()
+        const base = newSpecification()
+        const specification = {
+            ...base,
+            fields: {
+                ...base.fields,
+                status: { ...base.fields.status, field: "Lifecycle" },
+                priority: { ...base.fields.priority, field: "Urgency" },
+                phase: { ...base.fields.phase, field: "Activity" },
+            },
+        }
+        const result = await apply(github, specification)
+        const view = result.view as any
+        const names = view.visibleFieldIds.map(
+            (id: string) => allFields(github.projects[0]).find((field) => field.id === id)!.name,
+        )
+        assert.ok(names.includes("Lifecycle"))
+        assert.ok(names.includes("Urgency"))
+        assert.ok(names.includes("Activity"))
+        assert.match(JSON.stringify(result.manualSteps), /Lifecycle/)
+        assert.match(JSON.stringify(result.manualSteps), /Urgency/)
+    })
+
+    it("blocks new Projects using incompatible organization Priority ordering", async () => {
+        const github = new FakeGitHub()
+        const specification = organizationNative({
+            mode: "new",
+            title: "Organization ordering",
+            visibility: "private",
+            associateRepository: true,
+        })
+        github.issueFields = [
+            {
+                id: 1,
+                name: "Priority",
+                data_type: "single_select",
+                options: specification.fields.priority.options.map((option, index) => ({
+                    ...option,
+                    id: index + 1,
+                    priority: [2, 1, 3, 4][index],
+                })),
+            },
+        ]
+        const original = structuredClone(github.issueFields)
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "blocked")
+        assert.match(
+            JSON.stringify(preview.conflicts),
+            /High → Urgent → Medium → Low cannot produce Urgent → High → Medium → Low/,
+        )
+        await assert.rejects(
+            runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            ),
+            /provisioning is blocked/,
+        )
+        assert.equal(github.projects.length, 0)
+        assert.equal(github.repositoryLabels.length, 0)
+        assert.deepEqual(github.issueFields, original)
+    })
+
+    it("uses numeric organization option priorities rather than response-array order", async () => {
+        const github = new FakeGitHub()
+        const specification = organizationNative({
+            mode: "new",
+            title: "Numeric ordering",
+            visibility: "private",
+            associateRepository: true,
+        })
+        github.issueFields = [
+            {
+                id: 1,
+                name: "Priority",
+                data_type: "single_select",
+                options: specification.fields.priority.options
+                    .map((option, index) => ({ ...option, id: index + 1, priority: index + 1 }))
+                    .reverse(),
+            },
+        ]
+        const original = structuredClone(github.issueFields[0])
+        const result = await apply(github, specification)
+        assert.equal(result.state, "provisioned")
+        assert.deepEqual(github.issueFields[0], original)
+    })
+
+    it("blocks unverifiable organization Priority ranks without guessing their order", async () => {
+        for (const rank of [undefined, null, 1]) {
+            const github = new FakeGitHub()
+            const specification = organizationNative({
+                mode: "new",
+                title: "Unknown ordering",
+                visibility: "private",
+                associateRepository: true,
+            })
+            github.issueFields = [
+                {
+                    id: 1,
+                    name: "Priority",
+                    data_type: "single_select",
+                    options: specification.fields.priority.options.map((option, index) => ({
+                        ...option,
+                        id: index + 1,
+                        priority: rank,
+                    })),
+                },
+            ]
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            assert.equal(preview.state, "blocked")
+            assert.match(JSON.stringify(preview.conflicts), /cannot verify.*option priorities/)
+            assert.equal(github.projects.length, 0)
+        }
+    })
+
+    it("blocks incompatible saved Priority ordering before existing/resumed setup writes", async () => {
+        for (const mode of ["existing", "resume-created"]) {
+            for (const scope of ["project", "issue"]) {
+                const github = new FakeGitHub()
+                const base = await seed(github)
+                const priority = github.projects[0].fields.find((field) => field.name === "Priority")!
+                priority.isIssueField = scope === "issue"
+                const [urgent, high, medium, low] = priority.options!
+                priority.options = [high, urgent, medium, low]
+                if (scope === "issue") {
+                    github.issueFields = [
+                        {
+                            id: 1,
+                            name: "Priority",
+                            data_type: "single_select",
+                            options: priority.options.map((option, index) => ({
+                                ...option,
+                                id: index + 1,
+                                priority: index + 1,
+                            })),
+                        },
+                    ]
+                }
+                const original = structuredClone(priority)
+                const specification = {
+                    ...base,
+                    project: { ...base.project, mode },
+                    fields: {
+                        ...base.fields,
+                        priority:
+                            scope === "project"
+                                ? base.fields.priority
+                                : {
+                                      ...base.fields.priority,
+                                      scope: "issue",
+                                      provisionMissing: true,
+                                      visibility: "all",
+                                  },
+                    },
+                }
+                const preview = await runGitHubProjectSetup(
+                    { operation: "preview", specification },
+                    setupOptions(github),
+                )
+                assert.equal(preview.state, "blocked")
+                assert.match(
+                    JSON.stringify(preview.conflicts),
+                    /High → Urgent → Medium → Low cannot produce Urgent → High → Medium → Low/,
+                )
+                assert.match(JSON.stringify(preview.conflicts), /field-wide and needs separate approval/)
+                assert.match(
+                    JSON.stringify(preview.conflicts),
+                    scope === "project" ? /Project Settings/ : /organization Issue Field settings/,
+                )
+                await assert.rejects(
+                    runGitHubProjectSetup(
+                        { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                        setupOptions(github),
+                    ),
+                    /provisioning is blocked/,
+                )
+                assert.deepEqual(priority, original)
+                assert.equal(github.viewWrites.length, 0)
+            }
+        }
+    })
+
+    it("accepts reversed Priority order and preserves unrelated options", async () => {
+        for (const mode of ["existing", "resume-created"]) {
+            const github = new FakeGitHub()
+            const base = await seed(github)
+            const priority = github.projects[0].fields.find((field) => field.name === "Priority")!
+            priority.options!.reverse()
+            priority.options!.splice(2, 0, {
+                id: "extra",
+                name: "Deferred",
+                description: "Unmanaged option",
+                color: "GRAY",
+            })
+            const original = structuredClone(priority)
+            const result = await apply(github, { ...base, project: { ...base.project, mode } })
+            assert.equal(
+                (result.manualSteps as Array<{ setting: string; desired: string }>).find(
+                    (step) => step.setting === "sortBy",
+                )!.desired,
+                "Priority: Urgent → High → Medium → Low",
+            )
+            assert.deepEqual(priority, original)
+            assert.equal(github.viewWrites.length, 0)
+        }
+    })
+
+    it("rejects stale view approval and read-back mismatches", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        const view = github.projectViews(github.projects[0])[0]
+        view.name = "Before"
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        view.name = "After"
+        await assert.rejects(
+            runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            ),
+            /changed after approval/,
+        )
+        assert.equal(github.viewWrites.length, 0)
+        github.ignoreViewUpdate = true
+        await assert.rejects(apply(github, specification), /view post-write verification failed/)
+    })
+
+    it("reconciles a lost update response from exact provider state", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        github.projectViews(github.projects[0])[0].name = "Old"
+        github.loseNextViewUpdateResponse = true
+        await apply(github, specification)
+        assert.equal(github.viewWrites.length, 1)
+    })
+
+    it("keeps association and default-repository choices separate in every combination", async () => {
+        for (const associateRepository of [true, false]) {
+            for (const defaultRepository of ["setup-repository", "unmanaged"]) {
+                const github = new FakeGitHub()
+                const base = newSpecification()
+                const specification = { ...base, project: { ...base.project, associateRepository }, defaultRepository }
+                const preview = await runGitHubProjectSetup(
+                    { operation: "preview", specification },
+                    setupOptions(github),
+                )
+                if (!associateRepository && defaultRepository === "setup-repository") {
+                    assert.equal(preview.state, "blocked")
+                    assert.match(
+                        JSON.stringify(preview.conflicts),
+                        /enable association or leave the default repository unmanaged/,
+                    )
+                    assert.equal(github.projects.length, 0)
+                } else {
+                    const result = await apply(github, specification)
+                    assert.equal(github.projects[0].repositoryIds.includes("repo-node"), associateRepository)
+                    assert.equal(
+                        (result.manualSteps as any[]).some((step) => step.setting === "defaultRepository"),
+                        defaultRepository === "setup-repository",
+                    )
+                }
+            }
+        }
+    })
+
+    it("does not substitute a custom Project field for issue-scoped workflow metadata", async () => {
+        const github = new FakeGitHub()
+        const base = await seed(github)
+        const specification = {
+            ...base,
+            fields: {
+                ...base.fields,
+                priority: {
+                    ...structuredClone(GITHUB_PROJECT_DEFAULTS.priority),
+                    scope: "issue",
+                    provisionMissing: true,
+                    visibility: "all",
+                },
+            },
+        }
+        const blocked = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(blocked.state, "blocked")
+        assert.match(JSON.stringify(blocked.conflicts), /Priority.*not exposed/)
+        assert.equal(github.viewWrites.length, 0)
+        github.projects[0].fields.push({
+            id: "issue-backed-priority",
+            name: "Priority",
+            dataType: "SINGLE_SELECT",
+            isIssueField: true,
+            options: options("Urgent", "High", "Medium", "Low"),
+        })
+        const result = await apply(github, specification)
+        assert.ok((result.view as any).visibleFieldIds.includes("issue-backed-priority"))
+        assert.equal(github.deleteProjectFieldAttempts, 0)
+    })
+
+    it("uses configured Priority option order in the guided sorting step", async () => {
+        const github = new FakeGitHub()
+        const base = newSpecification()
+        const names = ["Critical", "Important", "Routine", "Later"]
+        const specification = {
+            ...base,
+            fields: {
+                ...base.fields,
+                priority: {
+                    ...base.fields.priority,
+                    field: "Urgency",
+                    options: base.fields.priority.options.map((option, index) => ({ ...option, name: names[index] })),
+                },
+            },
+        }
+        const result = await apply(github, specification)
+        const steps = result.manualSteps as Array<{ setting: string; desired: string; verification: string }>
+        const sort = steps.find((step) => step.setting === "sortBy")!
+        assert.equal(sort.desired, "Urgency: Critical → Important → Routine → Later")
+        assert.match(sort.verification, /Critical → Important → Routine → Later/)
+        assert.equal(steps.find((step) => step.setting === "swimlanes")!.desired, "none")
+    })
+
+    it("supports table and roadmap layouts with their documented visible-field constraints", async () => {
+        for (const layout of ["table", "roadmap"]) {
+            const github = new FakeGitHub()
+            const base = newSpecification()
+            const specification = {
+                ...base,
+                presentation: {
+                    ...base.presentation,
+                    layout,
+                    visibleFields: layout === "roadmap" ? [] : base.presentation.visibleFields,
+                },
+            }
+            const result = await apply(github, specification)
+            assert.equal((result.view as any).layout, layout)
+            assert.equal(
+                (result.manualSteps as any[]).some((step) => step.setting === "columnBy"),
+                false,
+            )
+        }
+        const github = new FakeGitHub()
+        const base = newSpecification()
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "preview",
+                    specification: { ...base, presentation: { ...base.presentation, layout: "roadmap" } },
+                },
+                setupOptions(github),
+            ),
+            /roadmap views do not support visible fields/,
+        )
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "preview",
+                    specification: { ...base, presentation: { ...base.presentation, visibleFields: [] } },
+                },
+                setupOptions(github),
+            ),
+            /explicit visible-field selection/,
+        )
     })
 
     it("requires an environment-backed credential", async () => {

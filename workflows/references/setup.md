@@ -214,6 +214,56 @@ Example returned configuration for a Project-contained tracker (use actual provi
 }
 ```
 
+### GitHub Project presentation
+
+Presentation is a setup-only input to `provision_github_project`, not runtime tracker configuration. `inspect` returns owner-level discovery and editable defaults. `inspectProject` takes `credentialEnv`, `projectOwner`, and `projectNumber` and returns the selected Project's fields and views, with complete pagination. View reads include visible fields, grouping, columns, and sorting; default repository, field sum, and slicing are explicitly unavailable through the verified API.
+
+Every preview/apply specification includes:
+
+```json
+{
+    "defaultRepository": "setup-repository",
+    "presentation": {
+        "target": { "mode": "initial" },
+        "name": "Board",
+        "layout": "board",
+        "visibleFields": [
+            { "kind": "field", "name": "Title" },
+            { "kind": "field", "name": "Assignees" },
+            { "kind": "workflow", "field": "status" },
+            { "kind": "field", "name": "Linked pull requests" },
+            { "kind": "field", "name": "Sub-issues progress" },
+            { "kind": "field", "name": "Labels" },
+            { "kind": "workflow", "field": "priority" },
+            { "kind": "workflow", "field": "phase" }
+        ]
+    }
+}
+```
+
+A new Project uses `initial`: update its unique initial view, or create one when absent. Multiple initial views require explicit selection. Existing/resumed Projects require `target: { "mode": "selected", "viewId": "<exact selected ID>" }` from inspection. Layout supports `board`, `table`, or `roadmap`; roadmap requires an empty visible-field list. Semantic field references resolve configured names; missing or ambiguous fields block instead of being silently dropped. Internal ID stays provisioned but hidden; Kind is represented by repository labels.
+
+For an existing Priority field, its saved requested-option sequence must match the desired sequence forward or reversed. Other orders block preview before any setup writes. Organization Priority is checked before creating a new Project, using the [Issue Field API](https://docs.github.com/en/rest/orgs/issue-fields)'s numeric option priorities rather than response-array order. Missing or ambiguous priorities block as unverifiable; no array-order fallback is used. The conflict names the saved/desired order and the owning field settings: Project Settings → configured Priority for a Project field, or organization Issue Field settings for issue-backed Priority. Separately approve reordering existing options or changing the requested sequence, preserve every option value, then inspect and preview again. This is a field-wide change affecting other views; setup never performs it implicitly.
+
+Repository association (`project.associateRepository`) and default repository are separate choices, both offered enabled for the setup repository. Association lists the Project in the repository's **Projects** tab; the default routes new issues created from the Project. `defaultRepository: unmanaged` skips changing that setting, without clearing it. Setting a default also links the repository, so `setup-repository` with `associateRepository: false` is blocked. Both opt-outs are valid. Before removing an existing association, inspect the default in the UI and resolve a default pointing to that repository; stop when its state cannot be confirmed.
+
+Preview/hash approval covers exact view changes, repository effects, and manual steps. API writes change only the selected view's name/layout/visible fields, preserving its filter and other settings. Apply verifies provider read-back and returns `state: provisioned` with API verification and a separate manual-confirmation requirement. Preserve partial work after failure; inspect exact provider state before retrying uncertain creation. Use only `trackerConfig` in `.project/integrations.json`.
+
+#### Guided UI steps
+
+The documented GraphQL view update supports name, layout, filter, and visible fields. Current MCP has the same update boundary. REST view creation exposes additional grouping/sorting inputs but no existing-view update; do not replace views to simulate an update. The setup tool returns these manual steps with the Project/view links:
+
+1. Open the selected view → **View** → **Column by** (also called **Column field**) → configured Status. For Board layout only.
+2. **View** → **Swimlanes** (also called **Group by**) → **No grouping**.
+3. **View** → **Sort by** → configured Priority only. Choose the direction placing **Urgent → High → Medium → Low**; custom Priority options follow the selected metadata order. Save and verify the actual order, not just the icon.
+4. **View** → **Field sum** → **Count** only.
+5. **View** → **Slice by** → **No slicing**.
+6. Only with `defaultRepository: setup-repository`: Project menu → **Settings** → **Default repository** → setup repository → **Save changes**. This also links it.
+
+Save the view and reopen its options to confirm steps 1–5; reload Settings to confirm step 6. Re-read API-visible settings after manual changes; field sum, slicing, and default repository require user confirmation or a screenshot of saved state. Do not claim full setup complete while required manual work remains unconfirmed. Opting out omits step 6 and its completion requirement.
+
+Capability sources: [GraphQL Projects](https://docs.github.com/en/graphql/reference/projects), [REST view creation](https://docs.github.com/en/rest/projects/views), [Board customization](https://docs.github.com/en/issues/planning-and-tracking-with-projects/customizing-views-in-your-project/customizing-the-board-layout), and [default repository](https://docs.github.com/en/issues/planning-and-tracking-with-projects/managing-your-project/adding-your-project-to-a-repository). Use only documented APIs; repository association is not proof of the default repository.
+
 ### GitHub forge
 
 ```json
