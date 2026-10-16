@@ -242,6 +242,46 @@ describe("workflow instruction ownership", () => {
         )
     })
 
+    it("keeps reviewed overviews and lossless provider folding in the owning guidance", () => {
+        const artifacts = fs.readFileSync("workflows/references/artifacts.md", "utf-8")
+        assert.match(artifacts, /nonempty `## Overview` as the first content section/)
+        assert.match(artifacts, /subsequent nonempty level-two sections/)
+        assert.match(artifacts, /overview and details are one source document, reviewed and accepted together/)
+        assert.match(artifacts, /historical completed artifacts remain untouched/)
+        const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
+        assert.match(planning, /### Plan highlights/)
+        assert.match(planning, /not generated at publication time/)
+        const epic = fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8")
+        assert.match(epic, /## Overview/)
+        assert.match(epic, /### Plan highlights/)
+        assert.match(epic, /Overview and Plan highlights accurately represent the detailed contract/)
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        assert.match(deliverable, /key conclusion, and material uncertainty/)
+        assert.match(
+            deliverable,
+            /collapses every subsequent section, including Verification and any Not run explanation/,
+        )
+        assert.match(deliverable, /ordinary Markdown Implementation walkthrough section/)
+        const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
+        assert.match(shared, /Never summarize or condense during publication/)
+        assert.match(shared, /both visible and collapsed content/)
+        assert.match(shared, /require approval before rendering/)
+        assert.match(shared, /Folding is not a privacy boundary/)
+        assert.match(shared, /GitHub uses `<details>`\/`<summary>` without `open`/)
+        assert.match(shared, /Linear trackers use native `\+\+\+ Full plan`/)
+        assert.match(shared, /Supporting details include verification and any Not run explanation/)
+        assert.match(shared, /outside the closed fold/)
+        assert.match(shared, /deterministic collapse wrappers\/blank separation.*need no second approval/)
+        assert.match(shared, /substantive omission, rewrite, addition, or new summary requires/)
+        assert.match(shared, /incompatible source produces a local layout error/)
+        const review = fs.readFileSync("workflows/references/review.md", "utf-8")
+        assert.match(review, /Overview accurately represents the complete detailed contract or evidence/)
+        assert.match(review, /keeps material limitations visible/)
+        const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
+        assert.match(linear, /native `\+\+\+ Full plan`/)
+        assert.match(linear, /live issue\/Project UI rendering must be verified separately/)
+    })
+
     it("routes commits through the available skill and supplies an explicit squash title", () => {
         for (const file of [
             "workflows/skills/epic/SKILL.md",

@@ -59,11 +59,17 @@ The candidate minimum shape is:
 ```markdown
 # <Epic title>
 
-## What we are accomplishing
+## Overview
 
-<Briefly explain what the initiative is and aims to accomplish, including its user-visible or operational scope.>
+<Briefly explain the initiative, why it matters, and its user-visible or operational scope.>
 
-<Subject-specific sections needed to carry the settled initiative contract.>
+### Plan highlights
+
+- <A few concise highlights of settled scope, behavior, and important boundaries.>
+
+## <Subject-specific contract section>
+
+<Complete settled initiative details, with additional level-two sections as needed.>
 
 ## Ordered Tasks
 
@@ -77,6 +83,7 @@ Before review, rewrite the candidate until it satisfies all of these conditions:
 
 - It is the durable initiative contract, not a compressed architecture summary, and stands alone without the conversation or working brief.
 - It explains user, operator, or system outcomes before architecture. For infrastructure, migration, or internal work, use operational outcomes, invariants, boundaries, and observable changes rather than forcing product framing.
+- Its concise Overview and Plan highlights accurately represent the detailed contract and keep important boundaries visible. Both portions are reviewed together under the document shape in `../../references/artifacts.md`.
 - It carries every material settled behavior, scope boundary, configuration/state rule, workflow, failure contract, compatibility requirement, invariant, integration boundary, and migration state.
 - It includes concrete examples when they are needed to understand an agreed behavior or configuration.
 - It does not hide required contract details in `brief.md` or local notes; the accepted Epic must stand alone.

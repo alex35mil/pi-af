@@ -22,7 +22,7 @@ After initialization and on every resume, call `integration_context` with `initi
 - `enabled`: first follow `./integrations/shared.md`; then dispatch enabled roles by exact provider to `./integrations/tracker/github.md`, `./integrations/tracker/linear.md`, or `./integrations/forge/github.md`; report an unavailable role without blocking the other.
 - unavailable roles, permission denial, invalid configuration, or provider failure: follow the failure boundary in `./integrations/shared.md`. Preserve work; never bypass MCP permissions or substitute workflow authority for an unavailable tracker.
 
-After every accepted `plan.md` change, call tracker-only `artifactProjection` and follow `./integrations/shared.md` for projection, approval, and verification. Use `render_provider_body` to remove the root heading before writing the tracker body. Unversioned mode applies its existing restricted-content approval before rendering.
+After every accepted `plan.md` change, call tracker-only `artifactProjection` and follow `./integrations/shared.md` for projection, approval, and verification. Use `render_provider_body` to keep the reviewed Overview and Plan highlights visible and collapse all remaining plan sections before writing the complete tracker body. Unversioned mode applies its existing restricted-content approval before rendering.
 
 ## Material replanning
 
@@ -62,7 +62,7 @@ Follow the shared planning protocol. The plan defines scope, criteria, evidence 
 
 Follow the shared planning protocol. The plan defines the concrete maintenance outcome, affected configuration/docs/tooling/code, operational constraints, and verification. Execute only that maintenance scope. Final review checks the requested outcome and practical verification without imposing feature boilerplate.
 
-Use only relevant report sections. A report is a durable result, not a conversation transcript or substitute for the accepted plan.
+Use only relevant report sections. Follow the reviewed document shape in `./artifacts.md`: a concise `## Overview` states the question/scope, key conclusion, and material uncertainty; subsequent nonempty level-two sections preserve the evidence-rich findings, conclusions, and next steps. The overview is reviewed with the full report. A report is a durable result, not a conversation transcript or substitute for the accepted plan.
 
 ## Kind transitions
 
@@ -106,17 +106,14 @@ Research and Audit complete their evidence-rich root `report.md` before final su
 ```markdown
 # Result
 
-## What changed
+## Overview
 
-- A concise walkthrough of the actual delivered behavior and material implementation or integration changes.
+- A concise walkthrough of the actual delivered behavior, why it matters, and material implementation or integration changes.
 - Material limitations or intentionally unchanged boundaries.
 
-<details>
-<summary>Implementation walkthrough</summary>
+## Implementation walkthrough
 
-Optional deeper code and architecture explanation when it materially helps reviewers.
-
-</details>
+Optional deeper code and architecture explanation when it materially helps reviewers; omit this section when unnecessary.
 
 ## Verification
 
@@ -129,7 +126,7 @@ Optional deeper code and architecture explanation when it materially helps revie
 
 A Research/Audit continued into implementation keeps `report.md` unchanged as prior evidence and adds `result.md` before final subagent review of the implementation.
 
-Write actual outcomes, not planned work or a chronological transcript. `result.md` contains only delivered behavior, material implementation or integration changes, limitations, and verification of the deliverable itself. Exclude evidence that exists only to run or close the workflow: tracker or forge state and read-back, lifecycle or Priority, labels, review state, artifact projection, and branch, pull-request, or merge housekeeping. Keep the primary walkthrough concise and understandable without the conversation. Include the collapsible implementation walkthrough only when deeper code or architecture detail materially helps review. List verification that ran with its observed result. When a planned check did not run, add the compact `**Not run:**` list with its specific reason; omit that list when every planned check ran. Once `result.md` exists, update it after every user-review change, implementation revision, or verification rerun so it always describes the current result. A material implementation change requires another final subagent review; include the synchronized `result.md` in that rerun. Present the current completion artifact with every final user-review iteration and include it in final user approval. Keep provider metadata and links out of the artifact.
+Write actual outcomes, not planned work or a chronological transcript. `result.md` contains only delivered behavior, material implementation or integration changes, limitations, and verification of the deliverable itself. Exclude evidence that exists only to run or close the workflow: tracker or forge state and read-back, lifecycle or Priority, labels, review state, artifact projection, and branch, pull-request, or merge housekeeping. Keep the primary walkthrough concise and understandable without the conversation. Include the ordinary Markdown Implementation walkthrough section only when deeper code or architecture detail materially helps review. Keep Overview concise and accurate; the provider renderer collapses every subsequent section, including Verification and any Not run explanation, while retaining all text. List verification that ran with its observed result. When a planned check did not run, add the compact `**Not run:**` list with its specific reason; omit that list when every planned check ran. Once `result.md` exists, update it after every user-review change, implementation revision, or verification rerun so it always describes the current result. A material implementation change requires another final subagent review; include the synchronized `result.md` in that rerun. Present the current completion artifact with every final user-review iteration and include it in final user approval. Keep provider metadata and links out of the artifact.
 
 ## Implementation and verification
 
@@ -155,7 +152,7 @@ Submission starts only after final subagent approval, synchronized `result.md` o
 1. Acceptance of the final `result.md` or `report.md` diff starts submission by default: final commit and—when a forge is configured—push of the stored branch plus creation or recovery of the exact stored-head/stored-target PR. Do not ask for another delivery choice, title approval, or body approval. When the user explicitly requests commit-only, no push, or no PR, stop after the commit.
 2. Before the commit, for configured-forge submission (not commit-only/no-push/no-PR), request `pullRequest`. On the first approved creation, call `resource_ids` action `beginCreation`, role `forge`, to save immutable PR repository/head/target intent. Include the intent in the one reviewed submission commit. Existing intent or missing IDs require agent investigation through configured provider tools; do not prepare a replacement creation. Use the available `commit` skill for the commit, following its selection and message rules. Without one, use plain Git to create one focused commit containing only the exact reviewed implementation and durable artifacts, following repository commit conventions. Preserve every unrelated staged change and every unrelated path in Git or outside Git; never amend another commit unless explicitly requested.
 3. For an explicit commit-only/no-push/no-PR request, report the commit and stop.
-4. When a forge is configured, call `render_provider_body` with the complete synchronized `result.md` or `report.md`. It removes the root heading and, only for a bound GitHub tracker issue in the same repository, appends a horizontal rule, a blank line, and `Closes #<issue number>`. The exact approved entity title, without an internal or tracker identifier, is the PR title. The stored branch `name` is the head and stored `target` is the base; approval never changes this contract.
+4. When a forge is configured, call `render_provider_body` with the complete synchronized `result.md` or `report.md`. It removes the root heading, keeps the reviewed Overview visible, and collapses every remaining section under Supporting details using GitHub `<details>`. Only for a bound GitHub tracker issue in the same repository, it appends a horizontal rule, a blank line, and `Closes #<issue number>` outside the closed fold. The exact approved entity title, without an internal or tracker identifier, is the PR title. The stored branch `name` is the head and stored `target` is the base; approval never changes this contract.
 5. With a configured forge, push only the stored entity branch. First approved PR creation is one direct native call using the stored head/target and approved title/body, without preliminary discovery. Record its clear-success number/URL directly in the existing Resource IDs file; recording leaves versioned metadata unchanged and creates no metadata-only follow-up commit/push/CI run. Use locally recorded IDs. Missing/stale data and uncertain attempts require agent investigation through configured provider tools. Record an approved explicit PR choice in the IDs file; ask the user when investigation requires a selection. Never replace an ambiguous or closed PR. Without a forge, perform no submission Git remote or PR operation.
 6. After a synchronized and approved post-creation `result.md` or `report.md` change, rebuild and directly publish the complete body under `./integrations/shared.md`. Trust established clear success. After an uncertain or partial update, read the exact PR before retrying and retry only confirmed non-application; never create another PR.
 7. After successful creation or recovery of a reviewable PR, set lifecycle `inReview` through its authority and clear native Phase using `./phase.md`. A local commit or push without an external review submission does not set In Review. After successful approved resubmission, reconcile the same In Review/absent-Phase outcome; reuse native automation outcomes and skip already-applied writes.

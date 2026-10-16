@@ -30,7 +30,14 @@ import {
     type ReviewFinding,
     type ReviewReport,
 } from "./findings.js"
-import { fence, MAX_EMBEDDED_FILE_BYTES, readOptional, REVIEW_AUTHORITY_INSTRUCTIONS, truncate } from "./context.js"
+import {
+    fence,
+    MAX_EMBEDDED_FILE_BYTES,
+    readOptional,
+    REVIEW_AUTHORITY_INSTRUCTIONS,
+    REVIEW_DOCUMENT_INSTRUCTIONS,
+    truncate,
+} from "./context.js"
 
 const MAX_DIFF_BYTES = 180 * 1024
 const REVIEW_OUTCOME_FILE = "outcome.json"
@@ -602,6 +609,7 @@ export async function buildDeliverableReviewPrompt(
         "You are read-only. Do not modify files. Do not ask the user questions directly.",
         "Follow all rules supplied by the rules extension. If reviewing files that may match path-scoped rules, read those files first so the rules extension can load applicable rules. Treat rule violations as review findings.",
         ...REVIEW_AUTHORITY_INSTRUCTIONS,
+        REVIEW_DOCUMENT_INSTRUCTIONS,
         "Review the artifacts and repository state. Be specific, terse, and actionable.",
         parentEpic
             ? "The parent Epic is the canonical initiative contract. Verify that the Task aligns with it and that every user-approved contract change is reflected in epic.md. Unresolved drift blocks final signoff."

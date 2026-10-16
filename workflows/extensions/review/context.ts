@@ -6,6 +6,9 @@ export const REVIEW_AUTHORITY_INSTRUCTIONS = [
     "Within workflow guidance, established user decisions override Project Policies, and Project Policies override reusable workflow skills and references.",
 ] as const
 
+export const REVIEW_DOCUMENT_INSTRUCTIONS =
+    "For current plan/result/report documents, check that the nonempty ## Overview accurately represents the full supporting sections and keeps material limitations visible. Tracker overviews explain the brief with ### Plan highlights; completion overviews explain the delivered outcome or report conclusion and material uncertainty. Both portions are reviewed together; summaries never replace required contract or evidence."
+
 export async function readOptional(filePath: string): Promise<string> {
     try {
         return await fs.promises.readFile(filePath, "utf-8")

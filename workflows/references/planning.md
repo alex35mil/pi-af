@@ -17,7 +17,7 @@ Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define pl
 | Epic     | `.local/draft.md`   | `epic.md`                       |
 | Task/Gig | `.local/draft.md`   | `plan.md`                       |
 
-Write the smallest self-contained draft that carries every settled decision needed for that entity. Entity skills define its content and review criteria.
+Write the smallest self-contained draft that carries every settled decision needed for that entity. Follow the reviewed document shape in `./artifacts.md`: begin with `## Overview`, explaining the brief and why the work matters, then a few accepted-scope and behavior bullets under `### Plan highlights`. Keep all supporting contract sections below Overview. The overview is reviewed and accepted with those details, not generated at publication time; keep the highlights synchronized with plan changes. Entity skills define its content and review criteria.
 
 ## Material replanning
 

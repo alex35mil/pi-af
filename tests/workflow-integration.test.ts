@@ -681,12 +681,15 @@ describe("workflow integration configuration", () => {
             prepareArtifactPersistence(cwd)
             const entityDir = writeGitHubGigEntity(cwd)
             const ctx = { cwd } as ExtensionContext
-            const source = "# Result\n\nDelivered.\n"
+            const source = "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n"
+            const trackerBody =
+                "## Overview\n\nDelivered.\n\n<details>\n<summary>Full plan</summary>\n\n## Verification\n\nTests passed.\n\n</details>"
+            const prBody = trackerBody.replace("Full plan", "Supporting details")
 
-            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), "Delivered.\n")
+            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), trackerBody)
             assert.equal(
                 renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
-                "Delivered.\n\n---\n\nCloses #42",
+                `${prBody}\n\n---\n\nCloses #42`,
             )
 
             fs.writeFileSync(
@@ -696,10 +699,7 @@ describe("workflow integration configuration", () => {
                     forge: { ...forgeConfig(), repository: { owner: "alex", repo: "other" } },
                 }),
             )
-            assert.equal(
-                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
-                "Delivered.\n",
-            )
+            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }), prBody)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -738,9 +738,94 @@ describe("workflow integration configuration", () => {
                 renderEntityProviderBody({ cwd } as ExtensionContext, {
                     entityDir,
                     destination: "pullRequest",
-                    source: "# Result\n\nDelivered.\n",
+                    source: "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n",
                 }),
-                "Delivered.\n",
+                "## Overview\n\nDelivered.\n\n<details>\n<summary>Supporting details</summary>\n\n## Verification\n\nTests passed.\n\n</details>",
+            )
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("renders Epic and Gig trackers losslessly in both artifact modes without local mutations", () => {
+        for (const artifacts of ["versioned", "unversioned"] as const) {
+            for (const provider of ["github", "linear"] as const) {
+                for (const entity of ["epic", "gig"] as const) {
+                    const cwd = temporaryProject()
+                    try {
+                        prepareWorkflowProject(cwd, artifacts)
+                        fs.writeFileSync(
+                            path.join(cwd, ".project", "integrations.json"),
+                            JSON.stringify({ tracker: provider === "github" ? config() : linearConfig() }),
+                        )
+                        prepareArtifactPersistence(cwd)
+                        let entityDir = provider === "github" ? writeGitHubGigEntity(cwd) : writeLinearGigEntity(cwd)
+                        if (entity === "epic") {
+                            const original = path.join(cwd, entityDir)
+                            const { kind, ...metadata } = JSON.parse(
+                                fs.readFileSync(path.join(original, "metadata.json"), "utf-8"),
+                            )
+                            entityDir = entityDir.replace("gigs", "epics").replace(".GIG-", ".EPIC-")
+                            metadata.id = `EPIC-${metadata.rawId}`
+                            metadata.entity = "epic"
+                            metadata.taskTarget = "epic"
+                            if (provider === "linear") {
+                                metadata.integrations[0].resource = "project"
+                                metadata.integrations[0].external = { projectId: "linear-project-uuid" }
+                            }
+                            fs.mkdirSync(path.join(cwd, entityDir), { recursive: true })
+                            fs.writeFileSync(path.join(cwd, entityDir, "metadata.json"), JSON.stringify(metadata))
+                        }
+                        const before = fileSnapshot(cwd)
+                        const overview =
+                            "## Overview\n\nExplain the work.\n\n### Plan highlights\n\n- Preserve the contract."
+                        const details = "## Scope\n\nKeep every detail and `src/example.ts`."
+                        const fold =
+                            provider === "github"
+                                ? `<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
+                                : `+++ Full plan\n\n${details}\n\n+++`
+                        assert.equal(
+                            renderEntityProviderBody({ cwd } as ExtensionContext, {
+                                entityDir,
+                                destination: "tracker",
+                                source: `# Work\n\n${overview}\n\n${details}\n`,
+                            }),
+                            `${overview}\n\n${fold}`,
+                        )
+                        assert.deepEqual(fileSnapshot(cwd), before)
+                        assert.throws(
+                            () =>
+                                renderEntityProviderBody({ cwd } as ExtensionContext, {
+                                    entityDir,
+                                    destination: "pullRequest",
+                                    source: `# Work\n\n${overview}\n\n${details}\n`,
+                                }),
+                            /requires a configured forge/,
+                        )
+                    } finally {
+                        fs.rmSync(cwd, { recursive: true, force: true })
+                    }
+                }
+            }
+        }
+    })
+
+    it("renders forge-only PRs and requires a configured role for each destination", () => {
+        const cwd = temporaryProject()
+        try {
+            prepareWorkflowProject(cwd)
+            fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
+            prepareArtifactPersistence(cwd)
+            const entityDir = writeTrackerlessGigEntity(cwd)
+            const ctx = { cwd } as ExtensionContext
+            const source = "# Report\n\n## Overview\n\nConclusion and uncertainty.\n\n## Evidence\n\nAll findings.\n"
+            assert.equal(
+                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
+                "## Overview\n\nConclusion and uncertainty.\n\n<details>\n<summary>Supporting details</summary>\n\n## Evidence\n\nAll findings.\n\n</details>",
+            )
+            assert.throws(
+                () => renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }),
+                /requires a configured tracker/,
             )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -797,11 +882,11 @@ describe("workflow integration configuration", () => {
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
                 projection.projection.automaticPresentationNormalization,
-                /remove the first Markdown H1.*same-repository GitHub.*Closes/,
+                /remove the first Markdown H1.*GitHub <details>.*Linear \+\+\+ Full plan.*Closes.*outside the PR fold/,
             )
             assert.match(
                 projection.projection.changedCandidateGate,
-                /except for root-H1 removal and the same-repository GitHub closing reference.*exact diff.*every omission, rewrite, or addition.*approval/,
+                /deterministic collapse wrappers.*no second approval.*substantive omission.*exact diff.*explicit user approval.*both visible and collapsed content/,
             )
             assert.equal(projection.projection.ownership, "workflow")
             assert.match(projection.projection.outcomeProof, /complete rendered approved body.*clear provider success/)
