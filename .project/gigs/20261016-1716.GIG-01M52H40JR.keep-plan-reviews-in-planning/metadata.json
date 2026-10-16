@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M52H40JR",
+  "rawId": "01M52H40JR",
+  "slug": "keep-plan-reviews-in-planning",
+  "title": "Keep plan reviews in Planning",
+  "createdAt": "2026-10-16T14:16:10.584Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m52h40jr-keep-plan-reviews-in-planning",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 49
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m52h40jr-keep-plan-reviews-in-planning",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}

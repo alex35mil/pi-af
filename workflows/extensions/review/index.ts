@@ -109,7 +109,7 @@ const optionalPresentationProperties = {
     ),
 }
 
-export const PresentPlanSchema = Type.Union([
+export const PreparePlanPresentationSchema = Type.Union([
     Type.Object(
         {
             entity: Type.Literal("epic"),
@@ -135,7 +135,7 @@ export const PresentPlanSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
-type PresentPlanParams = Static<typeof PresentPlanSchema>
+type PreparePlanPresentationParams = Static<typeof PreparePlanPresentationSchema>
 
 interface ParentEpicContext {
     relDir: string
@@ -160,7 +160,7 @@ export default function (pi: ExtensionAPI) {
                 return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
             }
             assertReviewEntity(entityDir, input.entity)
-            assertSelfReview(entityDir)
+            assertReviewPhase(entityDir, phase)
 
             const round = await nextReviewRound(entityDir, phase)
             const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
@@ -295,14 +295,14 @@ export default function (pi: ExtensionAPI) {
     })
 
     pi.registerTool({
-        name: "present_plan",
-        label: "present_plan",
+        name: "prepare_plan_presentation",
+        label: "prepare_plan_presentation",
         description:
-            "Prepare an Epic, Task, or Gig's latest approved planning snapshot for user diff review via the write tool.",
-        parameters: PresentPlanSchema,
+            "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff.",
+        parameters: PreparePlanPresentationSchema,
 
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input: PresentPlanParams = Value.Parse(PresentPlanSchema, params)
+            const input: PreparePlanPresentationParams = Value.Parse(PreparePlanPresentationSchema, params)
             assertArtifactPersistencePrepared(ctx.cwd)
             const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
 
@@ -310,7 +310,7 @@ export default function (pi: ExtensionAPI) {
                 return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
             }
             assertReviewEntity(entityDir, input.entity)
-            assertSelfReview(entityDir)
+            assertReviewPhase(entityDir, "plan")
 
             const snapshotPath = input.snapshot
                 ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
@@ -337,11 +337,14 @@ function resolveEntityDir(cwd: string, raw: string): string {
     return resolveEntityPath(root, cwd, raw)
 }
 
-export function assertSelfReview(directory: string): void {
+export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
     const status = readEntityStatus(directory)
     assertEntityBranchReady(status)
-    if (status.phase !== "selfReview" || ("state" in status && status.state !== "inProgress")) {
-        throw new Error(`${status.id} review requires In Progress and Phase Self-Review`)
+    const requiredPhase = phase === "plan" ? "planning" : "selfReview"
+    if (status.phase !== requiredPhase || ("state" in status && status.state !== "inProgress")) {
+        throw new Error(
+            `${status.id} ${phase} review requires In Progress and Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
+        )
     }
 }
 

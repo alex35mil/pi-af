@@ -7,19 +7,20 @@ Phase describes the current activity; Status describes lifecycle. Every initiali
 | Activity/event | Status | Metadata Phase | Native Phase |
 | --- | --- | --- | --- |
 | Backlog/Todo queue | Backlog/Todo | no initialized entity | absent |
-| Initialization, plan drafting, material replanning | In Progress | Planning | Planning |
-| Accepted work or review corrections | In Progress | Execution | Execution |
-| Adversarial plan/interim/final review | In Progress | Self-Review | Self-Review |
-| Local user review, including waiting for approval | In Progress | Self-Review | Self-Review |
+| Initialization, investigation, plan drafting, material replanning | In Progress | Planning | Planning |
+| Plan review, corrections, presentation, waiting for plan approval | In Progress | Planning | Planning |
+| Accepted implementation or implementation corrections | In Progress | Execution | Execution |
+| Adversarial interim/final review of delivered work | In Progress | Self-Review | Self-Review |
+| Local user review of delivered work, including waiting for approval | In Progress | Self-Review | Self-Review |
 | Plan acceptance and continuation | In Progress | Execution | Execution |
 | Successful submission/resubmission for external human review | In Review | retain last Phase | absent |
-| Corrections on submitted work | In Progress | Execution | Execution |
-| Local review of corrections | In Progress | Self-Review | Self-Review |
+| Implementation corrections on submitted work | In Progress | Execution | Execution |
+| Local review of implementation corrections | In Progress | Self-Review | Self-Review |
 | Confirmed completion or cancellation | Done/Canceled | retain last Phase | absent |
 
-Use Execution for corrections to reviewed work, including a reviewed plan. Material replanning explicitly returns to Planning. Phase is not proof that implementation has started: accepted-plan, kind-transition, completion-artifact, and review-approval gates still apply. The review tool's `phase: plan | interim | final` identifies the review category, not workflow Phase.
+Keep the entire planning loop in Planning: drafting, review, corrections, presentation, and waiting for plan approval. Material replanning explicitly returns to Planning. Use Execution for accepted implementation and implementation corrections. Plan acceptance, completion artifacts, and review approval remain required for the work being performed. The review tool's `phase: plan | interim | final` identifies the review category, not workflow Phase.
 
-Enter Self-Review before every adversarial review and local user-review presentation; remain there while awaiting feedback. After corrections, repeat required adversarial and user review. Keep lifecycle In Progress throughout those local loops, including revisions to an already-open PR.
+Use Planning for `review` with category `plan` and for `prepare_plan_presentation`. Enter Self-Review before interim/final review and local user review of delivered work; remain there while awaiting feedback. After corrections, repeat the required review in the Phase for that activity. Keep lifecycle In Progress throughout those local loops, including revisions to an already-open PR.
 
 Set In Review only after work is actually submitted for external human review. First submission requires a successfully created/recovered reviewable PR; resubmission requires successful publication of approved revisions. A local commit is not submission. With no external submission route, do not set In Review. Existing delivery evidence may still allow direct completion. Epic acceptance returns to Execution and its existing explicit completion route remains In Progress to Done.
 

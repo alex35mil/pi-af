@@ -42,7 +42,7 @@ Follow the shared planning protocol. The plan covers intended behavior and inter
 2. When enough information exists to investigate, proceed directly into investigation.
 3. Investigate the symptom and evidence before editing product code. If investigation exposes an unresolved product/domain decision, stop and ask before selecting a cause or fix.
 4. Once the cause is evidenced, write `.local/draft.md` with Root cause, Symptom, Evidence, Cause, Proposed fix, and Verify.
-5. Use the shared plan review, immutable snapshot, `present_plan`, and user-diff acceptance flow. Do not edit product code before the root-cause-shaped plan is accepted.
+5. Use the shared plan review, immutable snapshot, `prepare_plan_presentation`, and user-diff acceptance flow. Do not edit product code before the root-cause-shaped plan is accepted.
 6. Apply only the accepted fix and run its verification.
 7. Final review checks that the evidenced cause is fixed without regressions.
 
@@ -56,7 +56,7 @@ Follow the shared planning protocol. The plan defines the question, evidence req
 
 ### `audit`
 
-Follow the shared planning protocol. The plan defines scope, criteria, evidence sources, boundaries, and report expectations. Inspect without remediating findings in product code. Write durable `report.md` with scope/criteria, evidence, findings, recommendations, and limitations. Final review checks that findings are evidenced, complete against scope, and actionable. Remediation requires an explicit kind transition or separately initialized work.
+Follow the shared planning protocol. The plan defines scope, criteria, evidence sources, boundaries, and report expectations. Inspect without remediating findings in product code. Write durable `report.md` with scope/criteria, evidence, findings, recommendations, and limitations. Final review checks that findings are evidenced, complete against scope, and actionable. Use an implementation kind for user-approved remediation.
 
 ### `chore`
 
@@ -64,36 +64,13 @@ Follow the shared planning protocol. The plan defines the concrete maintenance o
 
 Use only relevant report sections. Follow the reviewed document shape in `./artifacts.md`: a concise `## Overview` states the question/scope, key conclusion, and material uncertainty; subsequent nonempty level-two sections preserve the evidence-rich findings, conclusions, and next steps. The overview is reviewed with the full report. A report is a durable result, not a conversation transcript or substitute for the accepted plan.
 
-## Kind transitions
+## Changing kind
 
-Kind is current workflow strategy, not identity. The qualified ID, directory, ready branch, and Task parent remain unchanged. Linear branch provisioning is the sole pre-planning branch transition. Only the kind transitions below are supported, and each requires explicit user approval.
+When the user requests or approves a kind change, update `kind` in `metadata.json`. Any supported kind can change to any other supported kind at any lifecycle, including `done` and `canceled`.
 
-### Planning correction before execution
+Versioned GitHub reconciles the managed Kind label, preserving unrelated labels. Linear and unversioned GitHub keep Kind in workflow metadata only.
 
-The user may approve any target kind while lifecycle remains `inProgress` and execution of an accepted plan has not started. Phase may be Planning, Self-Review, or Execution during plan corrections; it is not proof of implementation start.
-
-1. Update kind while keeping lifecycle `inProgress` and setting `phase: planning`; reconcile native Phase through `./phase.md`.
-2. Keep `brief.md` unchanged, remove any stale candidate, and project the approved Kind through the configured provider when supported. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
-3. Continue by target:
-    - `bugfix`: use adaptive inquiry and investigation, then the shared review/acceptance flow with a root-cause-shaped `.local/draft.md`.
-    - `feature`, `refactor`, `research`, `audit`, or `chore`: replace `.local/draft.md` with the target kind's candidate and run shared planning review/acceptance.
-
-### Research/Audit implementation continuation
-
-After `report.md` passes final review, the user may approve one bounded continuation to `bugfix`, `feature`, `refactor`, or `chore`.
-
-1. Preserve `report.md` and the accepted root plan.
-2. Update kind and `phase: planning` in `metadata.json`; set lifecycle to `inProgress` when necessary and reconcile native Phase through `./phase.md`.
-3. Keep `brief.md` unchanged; project the approved Kind through the configured provider when supported and use native tracker Status when configured. Versioned GitHub reconciles its managed Kind label; Linear and unversioned GitHub keep Kind in workflow metadata only.
-4. Continue by target:
-    - `bugfix`: remove the previous candidate, validate the report's causal evidence, investigate remaining gaps, then use shared review/acceptance with a root-cause-shaped `.local/draft.md`.
-    - `feature`, `refactor`, or `chore`: write a new `.local/draft.md` and repeat shared planning review/acceptance.
-
-### Unsupported reclassification
-
-Do not reclassify any other started kind or any `done` Deliverable. Ask whether to revise the current approved scope or initialize separate follow-up work.
-
-Never infer a transition from findings or initialize replacement work automatically. Before accepting a transitioned Task's new plan, synchronize any resulting parent Epic contract change. Reuse the Deliverable only for one bounded continuation with the same identity and ownership; independently schedulable findings, different priorities, or work outside the accepted parent contract become separate user-approved Tasks/Gigs.
+Leave lifecycle, Phase, identity, branch, Task parent, `brief.md`, and existing artifacts unchanged for a kind-only update. Future work follows the current kind's strategy. Actual scope or behavior changes follow the normal planning and approval rules, separately from changing kind.
 
 ## Review handling
 

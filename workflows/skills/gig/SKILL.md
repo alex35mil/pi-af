@@ -4,7 +4,7 @@ description: "Use for standalone Deliverable work under <repo>/.project/gigs/. I
 allowed-tools:
     - "init"
     - "review"
-    - "present_plan"
+    - "prepare_plan_presentation"
     - "prepare_artifacts"
     - "render_provider_body"
     - "verify_artifact_projection"
