@@ -127,7 +127,7 @@ export default function (pi: ExtensionAPI): void {
         name: "provision_github_project",
         label: "provision_github_project",
         description:
-            "Inspect, preview, or apply an explicitly approved GitHub Project and field configuration through GitHub's HTTPS APIs without exposing credentials.",
+            "Inspect Projects and views, preview or apply explicitly approved fields, labels, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
         parameters: GitHubProjectSetupToolSchema,
         async execute(_toolCallId, params, signal) {
             const result = await runGitHubProjectSetup(params, { signal })

@@ -132,6 +132,32 @@ const IssueInternalIdSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const LayoutSchema = Type.Union([Type.Literal("table"), Type.Literal("board"), Type.Literal("roadmap")])
+const ViewTargetSchema = Type.Union([
+    Type.Object({ mode: Type.Literal("initial") }, { additionalProperties: false }),
+    Type.Object({ mode: Type.Literal("selected"), viewId: OneLineSchema }, { additionalProperties: false }),
+])
+const VisibleFieldSchema = Type.Union([
+    Type.Object({ kind: Type.Literal("field"), name: OneLineSchema }, { additionalProperties: false }),
+    Type.Object(
+        {
+            kind: Type.Literal("workflow"),
+            field: Type.Union([Type.Literal("status"), Type.Literal("priority"), Type.Literal("phase")]),
+        },
+        { additionalProperties: false },
+    ),
+])
+const PresentationSchema = Type.Object(
+    {
+        target: ViewTargetSchema,
+        name: OneLineSchema,
+        layout: LayoutSchema,
+        visibleFields: Type.Array(VisibleFieldSchema),
+    },
+    { additionalProperties: false },
+)
+const DefaultRepositorySchema = Type.Union([Type.Literal("setup-repository"), Type.Literal("unmanaged")])
+
 export const GitHubProjectSpecificationSchema = Type.Object(
     {
         credentialEnv: EnvironmentNameSchema,
@@ -139,6 +165,8 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         repository: RepositorySchema,
         projectOwner: ProjectOwnerSchema,
         project: ProjectSourceSchema,
+        presentation: PresentationSchema,
+        defaultRepository: DefaultRepositorySchema,
         labels: Type.Object(
             {
                 kind: Type.Object(
@@ -181,6 +209,15 @@ const inspectProperties = {
 export const GitHubProjectSetupToolSchema = Type.Union([
     Type.Object({ operation: Type.Literal("inspect"), ...inspectProperties }, { additionalProperties: false }),
     Type.Object(
+        {
+            operation: Type.Literal("inspectProject"),
+            credentialEnv: EnvironmentNameSchema,
+            projectOwner: ProjectOwnerSchema,
+            projectNumber: Type.Integer({ minimum: 1 }),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
         { operation: Type.Literal("preview"), specification: GitHubProjectSpecificationSchema },
         { additionalProperties: false },
     ),
@@ -196,6 +233,29 @@ export const GitHubProjectSetupToolSchema = Type.Union([
 export type GitHubProjectSetupToolInput = Static<typeof GitHubProjectSetupToolSchema>
 
 export const GITHUB_PROJECT_DEFAULTS = {
+    associateRepository: true,
+    defaultRepository: "setup-repository",
+    presentation: {
+        name: "Board",
+        layout: "board",
+        visibleFields: [
+            { kind: "field", name: "Title" },
+            { kind: "field", name: "Assignees" },
+            { kind: "workflow", field: "status" },
+            { kind: "field", name: "Linked pull requests" },
+            { kind: "field", name: "Sub-issues progress" },
+            { kind: "field", name: "Labels" },
+            { kind: "workflow", field: "priority" },
+            { kind: "workflow", field: "phase" },
+        ],
+    },
+    board: {
+        columnBy: "status",
+        swimlanes: "none",
+        sortBy: { field: "priority", order: "configured-option-order" },
+        fieldSum: "count",
+        sliceBy: "none",
+    },
     labels: {
         kind: {
             epic: {
@@ -296,12 +356,35 @@ interface ProjectField {
     id: string
     name: string
     dataType: string
+    isIssueField: boolean
     options?: Array<{ id: string; name: string; description: string; color: string }>
 }
 interface ProjectDetails extends ProjectSummary {
     itemCount: number
     fields: ProjectField[]
     repositoryIds: string[]
+}
+interface ProjectView {
+    id: string
+    number: number
+    name: string
+    layout: Static<typeof LayoutSchema>
+    filter: string | null
+    visibleFieldIds: string[]
+    groupBy: Array<{ id: string; name: string }>
+    verticalGroupBy: Array<{ id: string; name: string }>
+    sortBy: Array<{ field: { id: string; name: string }; direction: string }>
+}
+interface DesiredView {
+    name: string
+    layout: Static<typeof LayoutSchema>
+    fields: Array<{ name: string; source: "project" | "issue" | "any" }>
+}
+interface ManualStep {
+    setting: string
+    desired: string
+    instructions: string
+    verification: string
 }
 interface IssueField {
     id: number
@@ -342,6 +425,8 @@ type OrganizationAction = { description: string } & {
 type ProvisioningAction =
     | ProjectFieldAction
     | OrganizationAction
+    | { kind: "configure-initial-view"; description: string; details: DesiredView }
+    | { kind: "update-project-view"; description: string; details: { current: ProjectView; desired: DesiredView } }
     | ({ description: string } & (
           | {
                 kind: "create-project"
@@ -365,6 +450,7 @@ interface GitHubProjectPlan {
     candidates?: ProjectSummary[]
     actions: ProvisioningAction[]
     conflicts: string[]
+    manualSteps: ManualStep[]
     trackerConfig?: Record<string, unknown>
     planHash: string
 }
@@ -395,6 +481,19 @@ export async function runGitHubProjectSetup(
             projectOwner: input.projectOwner,
             projects: owner.projects,
             ...(organizationMetadata ? { organizationMetadata } : {}),
+            defaults: GITHUB_PROJECT_DEFAULTS,
+        }
+    }
+
+    if (input.operation === "inspectProject") {
+        const client = clientFor(input.credentialEnv, options)
+        const owner = await client.listOwnerProjects(input.projectOwner)
+        const selected = owner.projects.find((project) => project.number === input.projectNumber)
+        if (!selected) throw new Error(`Project ${input.projectNumber} is not owned by ${input.projectOwner.login}`)
+        return {
+            project: await client.getProject(selected.id),
+            views: await client.listProjectViews(selected.id),
+            unavailableSettings: ["defaultRepository", "fieldSum", "sliceBy"],
             defaults: GITHUB_PROJECT_DEFAULTS,
         }
     }
@@ -481,7 +580,7 @@ class GitHubClient {
                             fields(first: 50, after: $after) {
                                 nodes {
                                     __typename
-                                    ... on ProjectV2FieldCommon { id name dataType }
+                                    ... on ProjectV2FieldCommon { id name dataType isIssueField }
                                     ... on ProjectV2SingleSelectField {
                                         options { id name description color }
                                     }
@@ -500,7 +599,9 @@ class GitHubClient {
             for (const rawField of array(connection.nodes, "project field nodes")) {
                 const field = record(rawField, "project field")
                 if (field.__typename === "ProjectV2Repository" || field.__typename === "ProjectV2Milestone") continue
+                if (typeof field.isIssueField !== "boolean") throw new Error("invalid Project field origin")
                 fields.push({
+                    isIssueField: field.isIssueField,
                     id: text(field.id, "project field id"),
                     name: text(field.name, "project field name"),
                     dataType: text(field.dataType, "project field dataType"),
@@ -550,6 +651,145 @@ class GitHubClient {
         } while (repositoryAfter)
 
         return { ...summary!, itemCount, fields, repositoryIds }
+    }
+
+    async listProjectViews(projectId: string): Promise<ProjectView[]> {
+        const ids: string[] = []
+        let after: string | null = null
+        do {
+            const data = await this.graphql(
+                `query($projectId: ID!, $after: String) {
+                    node(id: $projectId) { ... on ProjectV2 {
+                        views(first: 50, after: $after) {
+                            nodes { id }
+                            pageInfo { hasNextPage endCursor }
+                        }
+                    } }
+                }`,
+                { projectId, after },
+            )
+            const connection = record(record(data.node, "Project").views, "Project views")
+            for (const node of array(connection.nodes, "view nodes")) ids.push(text(record(node, "view").id, "view id"))
+            const page = record(connection.pageInfo, "views pageInfo")
+            after = page.hasNextPage === true ? text(page.endCursor, "views endCursor") : null
+        } while (after)
+        return Promise.all(ids.map((id) => this.getProjectView(id, projectId)))
+    }
+
+    private async getProjectView(id: string, projectId: string): Promise<ProjectView> {
+        const keys = ["visible", "groups", "columns", "sorts"] as const
+        const cursors: Record<(typeof keys)[number], string | null> = {
+            visible: null,
+            groups: null,
+            columns: null,
+            sorts: null,
+        }
+        const nodes: Record<(typeof keys)[number], unknown[]> = { visible: [], groups: [], columns: [], sorts: [] }
+        const finished = new Set<string>()
+        let view: Record<string, unknown>
+        do {
+            const data = await this.graphql(
+                `query($viewId: ID!, $visible: String, $groups: String, $columns: String, $sorts: String) {
+                    node(id: $viewId) { ... on ProjectV2View {
+                        id number name layout filter project { id }
+                        configuration { visibleFields(first: 50, after: $visible) {
+                            nodes { ... on ProjectV2FieldCommon { id name } }
+                            pageInfo { hasNextPage endCursor }
+                        } }
+                        groupByFields(first: 50, after: $groups) {
+                            nodes { ... on ProjectV2FieldCommon { id name } }
+                            pageInfo { hasNextPage endCursor }
+                        }
+                        verticalGroupByFields(first: 50, after: $columns) {
+                            nodes { ... on ProjectV2FieldCommon { id name } }
+                            pageInfo { hasNextPage endCursor }
+                        }
+                        sortByFields(first: 50, after: $sorts) {
+                            nodes { direction field { ... on ProjectV2FieldCommon { id name } } }
+                            pageInfo { hasNextPage endCursor }
+                        }
+                    } }
+                }`,
+                { viewId: id, ...cursors },
+            )
+            view = record(data.node, `Project view ${id}`)
+            if (text(record(view.project, "view Project").id, "view Project id") !== projectId) {
+                throw new Error(`View ${id} does not belong to Project ${projectId}`)
+            }
+            const connections = {
+                visible: record(view.configuration, "view configuration").visibleFields,
+                groups: view.groupByFields,
+                columns: view.verticalGroupByFields,
+                sorts: view.sortByFields,
+            }
+            for (const key of keys) {
+                if (finished.has(key)) continue
+                const connection = record(connections[key], `view ${key}`)
+                nodes[key].push(...array(connection.nodes, `view ${key} nodes`))
+                const page = record(connection.pageInfo, `view ${key} pageInfo`)
+                if (page.hasNextPage === true) cursors[key] = text(page.endCursor, `view ${key} endCursor`)
+                else finished.add(key)
+            }
+        } while (finished.size < keys.length)
+        const field = (raw: unknown) => {
+            const value = record(raw, "view field")
+            return { id: text(value.id, "view field id"), name: text(value.name, "view field name") }
+        }
+        return {
+            id: text(view.id, "view id"),
+            number: number(view.number, "view number"),
+            name: text(view.name, "view name"),
+            layout: Value.Parse(
+                LayoutSchema,
+                text(view.layout, "view layout")
+                    .replace(/_LAYOUT$/, "")
+                    .toLowerCase(),
+            ),
+            filter: typeof view.filter === "string" ? view.filter : null,
+            visibleFieldIds: nodes.visible.map((node) => field(node).id),
+            groupBy: nodes.groups.map(field),
+            verticalGroupBy: nodes.columns.map(field),
+            sortBy: nodes.sorts.map((raw) => {
+                const sort = record(raw, "view sort")
+                return { field: field(sort.field), direction: text(sort.direction, "sort direction") }
+            }),
+        }
+    }
+
+    async createProjectView(projectId: string, desired: DesiredView, visibleFieldIds: string[]): Promise<string> {
+        const data = await this.graphql(
+            `mutation($input: CreateProjectV2ViewInput!) {
+                createProjectV2View(input: $input) { projectV2View { id } }
+            }`,
+            {
+                input: {
+                    projectId,
+                    name: desired.name,
+                    layout: `${desired.layout.toUpperCase()}_LAYOUT`,
+                    configuration: { visibleFieldIds },
+                },
+            },
+        )
+        return text(
+            record(record(data.createProjectV2View, "createProjectV2View").projectV2View, "created view").id,
+            "created view id",
+        )
+    }
+
+    async updateProjectView(viewId: string, desired: DesiredView, visibleFieldIds: string[]): Promise<void> {
+        await this.graphql(
+            `mutation($input: UpdateProjectV2ViewInput!) {
+                updateProjectV2View(input: $input) { projectV2View { id } }
+            }`,
+            {
+                input: {
+                    viewId,
+                    name: desired.name,
+                    layout: `${desired.layout.toUpperCase()}_LAYOUT`,
+                    configuration: { visibleFieldIds },
+                },
+            },
+        )
     }
 
     async createProject(ownerId: string, title: string, repositoryId: string | undefined): Promise<ProjectSummary> {
@@ -787,6 +1027,13 @@ async function previewGitHubProject(
     const conflicts: string[] = []
     let project: ProjectDetails | undefined
     let candidates: ProjectSummary[] | undefined
+    let view: ProjectView | undefined
+
+    if (!specification.project.associateRepository && specification.defaultRepository === "setup-repository") {
+        conflicts.push(
+            "setting the default repository also links it; enable association or leave the default repository unmanaged",
+        )
+    }
 
     if (specification.project.mode === "new") {
         const projectSource = specification.project
@@ -827,6 +1074,8 @@ async function previewGitHubProject(
                 actions,
                 conflicts,
             )
+            const orderConflict = projectPrioritySortConflict(specification, project.fields)
+            if (orderConflict) conflicts.push(orderConflict)
         }
     }
 
@@ -843,6 +1092,40 @@ async function previewGitHubProject(
         }
     }
 
+    const desired = desiredView(specification)
+    if (specification.project.mode === "new" && conflicts.length === 0) {
+        actions.push({
+            kind: "configure-initial-view",
+            description: `Configure the unique initial view, or create one when absent, as ${JSON.stringify(desired.name)} (${desired.layout}) with visible fields ${desired.fields.map((field) => field.name).join(", ")}`,
+            details: desired,
+        })
+    } else if (project && specification.presentation.target.mode === "selected") {
+        const target = specification.presentation.target
+        view = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === target.viewId)
+        if (!view) conflicts.push("selected view is missing or does not belong to the selected Project")
+        else {
+            const pendingNames = actions.flatMap((action) =>
+                action.kind === "create-project-field"
+                    ? [action.details.name]
+                    : action.kind === "update-native-status"
+                      ? [action.details.desired.name]
+                      : [],
+            )
+            try {
+                const ids = resolveViewFields(desired, project.fields, pendingNames)
+                if (!matchesView(view, desired, ids)) {
+                    actions.push({
+                        kind: "update-project-view",
+                        description: `Update view ${view.id} from ${JSON.stringify(view.name)} (${view.layout}) to ${JSON.stringify(desired.name)} (${desired.layout}); visible fields: ${desired.fields.map((field) => field.name).join(", ")}`,
+                        details: { current: view, desired },
+                    })
+                }
+            } catch (error) {
+                conflicts.push(error instanceof Error ? error.message : String(error))
+            }
+        }
+    }
+
     const trackerConfig =
         conflicts.length === 0 && project
             ? trackerConfigFor(specification, project.number)
@@ -854,8 +1137,10 @@ async function previewGitHubProject(
         specification,
         ...(project ? { project: projectSummary(project) } : {}),
         ...(candidates && candidates.length > 0 ? { candidates } : {}),
+        ...(view ? { view } : {}),
         actions,
         conflicts,
+        manualSteps: manualStepsFor(specification),
         ...(trackerConfig ? { trackerConfig } : {}),
     }
     return { ...unsigned, planHash: hash(unsigned) }
@@ -1029,6 +1314,24 @@ function planOrganizationField(desired: ReturnType<typeof desiredOrganizationFie
         !compatibleIssueField(matching[0], desired.dataType, "options" in desired ? desired.options : undefined)
     ) {
         conflicts.push(`organization issue field ${JSON.stringify(desired.name)} has incompatible type or options`)
+    } else if (desired.dataType === "single_select") {
+        const requestedNames = new Set(desired.options.map((option) => option.name))
+        const options = matching[0].options!.filter((option) => requestedNames.has(option.name))
+        const ranks = options.map((option) => option.priority)
+        if (ranks.includes(undefined) || new Set(ranks).size !== ranks.length) {
+            conflicts.push(
+                `cannot verify organization Priority order for ${JSON.stringify(desired.name)}: saved option priorities are missing or ambiguous; inspect and correct the organization Issue Field settings before approval`,
+            )
+        } else {
+            const saved = [...options]
+                .sort((left, right) => left.priority! - right.priority!)
+                .map((option) => option.name)
+            const orderConflict = priorityOrderConflict(
+                { field: desired.name, scope: "issue", options: desired.options },
+                saved,
+            )
+            if (orderConflict) conflicts.push(orderConflict)
+        }
     }
     return { actions, conflicts }
 }
@@ -1110,6 +1413,7 @@ async function applyGitHubProject(
     await provisionRepositoryLabel(specification, client)
     await provisionOrganizationMetadata(specification, repository, client)
 
+    const configuredView = await provisionProjectView(specification, await client.getProject(project.id), client)
     const verified = await client.getProject(project.id)
     const verificationActions: ProvisioningAction[] = []
     const conflicts: string[] = []
@@ -1125,9 +1429,180 @@ async function applyGitHubProject(
     return {
         state: "provisioned",
         project: projectSummary(verified),
+        view: configuredView,
+        verification: { api: "verified", manual: "requires-user-confirmation" },
+        manualSteps: manualStepsFor(specification, `${verified.url}/views/${configuredView.number}`),
         trackerConfig: trackerConfigFor(specification, verified.number),
         approvedPlanHash: approvedPlan.planHash,
     }
+}
+
+function desiredView(specification: GitHubProjectSpecification): DesiredView {
+    return {
+        name: specification.presentation.name,
+        layout: specification.presentation.layout,
+        fields: specification.presentation.visibleFields.map((field) => {
+            if (field.kind === "field") return { name: field.name, source: "any" }
+            return {
+                name: specification.fields[field.field].field,
+                source: field.field === "priority" ? specification.fields.priority.scope : "project",
+            }
+        }),
+    }
+}
+
+function resolveViewFields(desired: DesiredView, fields: ProjectField[], pendingNames: string[] = []): string[] {
+    return desired.fields.map(({ name, source }) => {
+        const matching = fields.filter(
+            (field) => field.name === name && (source === "any" || field.isIssueField === (source === "issue")),
+        )
+        if (matching.length > 1) throw new Error(`visible field ${JSON.stringify(name)} is ambiguous on the Project`)
+        if (source !== "issue" && pendingNames.includes(name)) return `pending:${name}`
+        if (matching.length === 0)
+            throw new Error(
+                `visible field ${JSON.stringify(name)} is not exposed on the Project; expose it or explicitly change the visible-field selection`,
+            )
+        return matching[0].id
+    })
+}
+
+function projectPrioritySortConflict(
+    specification: GitHubProjectSpecification,
+    fields: ProjectField[],
+): string | undefined {
+    const priority = specification.fields.priority
+    if (priority.scope !== "project") return undefined
+    const matching = fields.filter((field) => field.name === priority.field && !field.isIssueField)
+    // Missing, ambiguous, and structurally incompatible fields have their own provisioning checks.
+    if (matching.length !== 1 || !matching[0].options) return undefined
+    return priorityOrderConflict(
+        priority,
+        matching[0].options.map((option) => option.name),
+    )
+}
+
+function priorityOrderConflict(
+    priority: Pick<GitHubProjectSpecification["fields"]["priority"], "field" | "scope" | "options">,
+    savedNames: string[],
+): string | undefined {
+    const desired = priority.options.map((option) => option.name)
+    const desiredNames = new Set(desired)
+    const saved = savedNames.filter((name) => desiredNames.has(name))
+    if (saved.length !== desired.length) return undefined
+    const order = JSON.stringify(desired)
+    if (JSON.stringify(saved) === order || JSON.stringify([...saved].reverse()) === order) return undefined
+    const settings =
+        priority.scope === "project"
+            ? `Project Settings → ${JSON.stringify(priority.field)}`
+            : `the organization Issue Field settings for ${JSON.stringify(priority.field)}`
+    return `Priority option order ${saved.join(" → ")} cannot produce ${desired.join(" → ")} by changing sort direction. Open ${settings} and explicitly align the existing option order, or change the requested Priority order, then inspect and preview again. Reordering is field-wide and needs separate approval; preserve all option values.`
+}
+
+function matchesView(view: ProjectView, desired: DesiredView, ids: string[]): boolean {
+    return (
+        view.name === desired.name &&
+        view.layout === desired.layout &&
+        JSON.stringify(view.visibleFieldIds) === JSON.stringify(ids)
+    )
+}
+
+async function provisionProjectView(
+    specification: GitHubProjectSpecification,
+    project: ProjectDetails,
+    client: GitHubClient,
+): Promise<ProjectView> {
+    const orderConflict = projectPrioritySortConflict(specification, project.fields)
+    if (orderConflict) throw new Error(orderConflict)
+    const desired = desiredView(specification)
+    const ids = resolveViewFields(desired, project.fields)
+    const views = await client.listProjectViews(project.id)
+    const target = specification.presentation.target
+    let viewId: string
+    if (target.mode === "selected") {
+        const view = views.find((candidate) => candidate.id === target.viewId)
+        if (!view) throw new Error("selected view is missing or does not belong to the selected Project")
+        viewId = view.id
+    } else {
+        if (views.length > 1)
+            throw new Error("new Project has multiple initial views; inspect and select one explicitly before resuming")
+        if (views.length === 1) viewId = views[0].id
+        else {
+            try {
+                viewId = await client.createProjectView(project.id, desired, ids)
+            } catch (error) {
+                const recovered = await client.listProjectViews(project.id)
+                if (recovered.length !== 1 || !matchesView(recovered[0], desired, ids)) throw error
+                viewId = recovered[0].id
+            }
+        }
+    }
+    const current = views.find((candidate) => candidate.id === viewId)
+    if (current && !matchesView(current, desired, ids)) {
+        try {
+            await client.updateProjectView(viewId, desired, ids)
+        } catch (error) {
+            const recovered = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === viewId)
+            if (!recovered || !matchesView(recovered, desired, ids)) throw error
+        }
+    }
+    const verified = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === viewId)
+    if (!verified || !matchesView(verified, desired, ids))
+        throw new Error("GitHub Project view post-write verification failed")
+    return verified
+}
+
+function manualStepsFor(specification: GitHubProjectSpecification, viewUrl?: string): ManualStep[] {
+    const location = viewUrl ?? "the selected Project view (link returned after provisioning)"
+    const priority = specification.fields[GITHUB_PROJECT_DEFAULTS.board.sortBy.field]
+    const priorityOrder = priority.options.map((option) => option.name).join(" → ")
+    const steps: ManualStep[] = []
+    if (specification.presentation.layout === "board") {
+        steps.push({
+            setting: "columnBy",
+            desired: specification.fields.status.field,
+            instructions: `Open ${location} → View → Column by (Column field); select ${specification.fields.status.field}.`,
+            verification: "Save the view and reopen View options to confirm the column field.",
+        })
+    }
+    steps.push(
+        {
+            setting: "swimlanes",
+            desired: GITHUB_PROJECT_DEFAULTS.board.swimlanes,
+            instructions: `Open ${location} → View → Swimlanes (Group by) → No grouping.`,
+            verification: "Save the view and reopen View options to confirm no swimlanes.",
+        },
+        {
+            setting: "sortBy",
+            desired: `${priority.field}: ${priorityOrder}`,
+            instructions: `Open ${location} → View → Sort by; remove other sorts and select ${priority.field}. Choose the direction matching ${priorityOrder}.`,
+            verification: `Save the view, reopen Sort by, and confirm ${priorityOrder} in the actual item order rather than inferring it from an icon.`,
+        },
+        {
+            setting: "fieldSum",
+            desired: GITHUB_PROJECT_DEFAULTS.board.fieldSum,
+            instructions: `Open ${location} → View → Field sum; select Count only.`,
+            verification:
+                "Save the view and reopen the menu to confirm Count only; user confirmation or a screenshot is required.",
+        },
+        {
+            setting: "sliceBy",
+            desired: GITHUB_PROJECT_DEFAULTS.board.sliceBy,
+            instructions: `Open ${location} → View → Slice by → No slicing.`,
+            verification:
+                "Save the view and reopen the menu to confirm no slicing; user confirmation or a screenshot is required.",
+        },
+    )
+    if (specification.defaultRepository === "setup-repository") {
+        const repository = `${specification.repository.owner}/${specification.repository.repo}`
+        steps.push({
+            setting: "defaultRepository",
+            desired: repository,
+            instructions: `Open Project menu → Settings → Default repository; select ${repository} → Save changes. This also links the repository.`,
+            verification:
+                "Reload Settings and confirm the saved default repository; user confirmation or a screenshot is required. Repository association alone is not proof.",
+        })
+    }
+    return steps
 }
 
 async function provisionProjectFields(
@@ -1244,6 +1719,19 @@ function desiredProjectFields(specification: GitHubProjectSpecification): Projec
 }
 
 function assertSpecification(specification: GitHubProjectSpecification): void {
+    const initial = specification.presentation.target.mode === "initial"
+    if (initial !== (specification.project.mode === "new")) {
+        throw new Error(
+            "new Projects require an initial view target; existing/resumed Projects require an exact selected view",
+        )
+    }
+    const desired = desiredView(specification)
+    const visibleNames = desired.fields.map((field) => field.name)
+    if (new Set(visibleNames).size !== visibleNames.length) throw new Error("visible field names must be distinct")
+    if (desired.layout === "roadmap" && visibleNames.length > 0)
+        throw new Error("roadmap views do not support visible fields")
+    if (desired.layout !== "roadmap" && visibleNames.length === 0)
+        throw new Error("board/table views require an explicit visible-field selection")
     const statusNames = Object.values(specification.fields.status.options).map((option) => option.name)
     if (new Set(statusNames).size !== statusNames.length) throw new Error("GitHub Status option names must be distinct")
     const phaseNames = Object.values(specification.fields.phase.options).map((option) => option.name)

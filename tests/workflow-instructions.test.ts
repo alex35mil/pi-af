@@ -29,6 +29,40 @@ function guidanceGraph(entry: string, seen = new Set<string>()): Set<string> {
 }
 
 describe("workflow instruction ownership", () => {
+    it("keeps GitHub presentation setup and manual verification at the owning boundary", () => {
+        const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
+        const reference = fs.readFileSync("workflows/references/setup.md", "utf-8")
+        for (const requirement of [
+            /operation: inspectProject/,
+            /require explicit selection of one exact view ID/,
+            /separate choices, both enabled/,
+            /Before removing an existing association.*default repository in Settings/,
+            /Default-repository opt-out adds no manual completion requirement/,
+            /Do not claim full setup complete while required manual work remains unconfirmed/,
+            /presentation and manual confirmation stay outside runtime configuration/,
+            /Require explicit approval of that exact `planHash`/,
+        ])
+            assert.match(skill, requirement)
+        for (const requirement of [
+            /Presentation is a setup-only input/,
+            /"kind": "workflow", "field": "priority"/,
+            /defaultRepository: unmanaged/,
+            /setup-repository.*associateRepository: false.*blocked/,
+            /API writes change only the selected view's name\/layout\/visible fields/,
+            /No grouping/,
+            /Urgent → High → Medium → Low/,
+            /Other orders block preview before any setup writes/,
+            /Organization Priority is checked before creating a new Project/,
+            /numeric option priorities rather than response-array order/,
+            /field-wide change affecting other views/,
+            /Count.*only/,
+            /No slicing/,
+            /default repository require user confirmation or a screenshot of saved state/,
+            /Opting out omits step 6 and its completion requirement/,
+        ])
+            assert.match(reference, requirement)
+    })
+
     it("resolves every concrete Markdown dependency from its owning directory", () => {
         for (const file of markdownFiles("workflows")) {
             for (const dependency of dependencies(file)) {
