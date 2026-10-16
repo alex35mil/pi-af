@@ -15,3 +15,7 @@ Apply these rules to user-facing messages and every prose artifact created or up
 11. Prefer direct statements and specific outcomes over vague summaries, labels, or unexplained shorthand.
 12. Describe the current contract directly. Mention removed or rejected designs only when the intended reader needs migration, compatibility, or decision-history context.
 13. Improve concision while drafting and reviewing an artifact, with normal user/reviewer feedback. Once the user accepts text, preserve its exact meaning and content unless the user explicitly approves a change required by that text's owning workflow.
+
+## Workflow reporting opportunity
+
+After materially advancing the active task, briefly offer reporting when evidence shows a reproducible workflow defect or recurring workflow friction. Distinguish workflow behavior from consuming-project policy/configuration and a one-off agent mistake. Keep the task's scope and lifecycle unchanged. On an explicit request to report, use the Todo skill and [queue reporting guidance](./queue.md#prepare-a-workflow-report); nothing is transmitted before exact-content and destination approval.

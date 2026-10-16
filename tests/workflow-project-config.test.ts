@@ -22,6 +22,7 @@ import {
     loadProjectConfig,
     LOCAL_PROJECT_CONFIG_EXCLUDE,
     prepareArtifactPersistence,
+    resolveWorkflowProject,
     UNVERSIONED_PROJECT_EXCLUDE,
 } from "../workflows/extensions/__lib/project-config.ts"
 import { resolveLinearTrackerBranchRendererForInitialization } from "../workflows/extensions/integrations/tracker/linear.ts"
@@ -57,6 +58,97 @@ function git(root: string, args: string[]): string {
 }
 
 describe("workflow project configuration", () => {
+    it("resolves a private global workflow source while preserving branch settings", () => {
+        const root = repository()
+        const globalSettingsPath = path.join(root, "workflows.settings.json")
+        const localSettingsPath = path.join(root, ".project/config.local.json")
+        const options = { globalSettingsPath }
+        try {
+            writeConfig(root, config("versioned", { format: "username/identifier" }))
+            assert.throws(
+                () => resolveWorkflowProject(root, options),
+                (error: Error) =>
+                    error.message.includes("Set workflowProject") && error.message.includes(globalSettingsPath),
+            )
+            writeWorkflowSettings(globalSettingsPath, "global-user")
+            assert.equal(loadProjectConfig(root, options).branches.username, "global-user")
+            assert.throws(() => resolveWorkflowProject(root, options), /Set workflowProject/)
+
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ workflowProject: root }))
+            assert.equal(resolveWorkflowProject(root, options), fs.realpathSync(root))
+            assert.throws(() => loadProjectConfig(root, options), /username is required/)
+            writeWorkflowSettings(localSettingsPath, "local-user")
+            assert.equal(loadProjectConfig(root, options).branches.username, "local-user")
+
+            fs.writeFileSync(
+                globalSettingsPath,
+                JSON.stringify({ workflowProject: root, branches: { username: "global-user" } }),
+            )
+            assert.equal(loadProjectConfig(root, options).branches.username, "local-user")
+            fs.rmSync(localSettingsPath)
+            assert.equal(loadProjectConfig(root, options).branches.username, "global-user")
+
+            fs.writeFileSync(
+                localSettingsPath,
+                JSON.stringify({ workflowProject: root, branches: { username: "local-user" } }),
+            )
+            assert.throws(() => loadProjectConfig(root, options), /must not have additional properties/)
+            assert.equal(
+                resolveWorkflowProject(root, options),
+                fs.realpathSync(root),
+                "source selection reads global settings only",
+            )
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("rejects invalid source settings and roots without writing configuration", () => {
+        const root = repository()
+        const globalSettingsPath = path.join(root, "workflows.settings.json")
+        const options = { globalSettingsPath }
+        try {
+            for (const content of [
+                "not JSON",
+                "{}",
+                '{"extra":true}',
+                '{"workflowProject":7}',
+                '{"workflowProject":""}',
+            ]) {
+                fs.writeFileSync(globalSettingsPath, content)
+                assert.throws(
+                    () => resolveWorkflowProject(root, options),
+                    (error: Error) => error.message.includes(globalSettingsPath),
+                )
+                assert.equal(fs.readFileSync(globalSettingsPath, "utf-8"), content)
+            }
+            const nested = path.join(root, "nested")
+            fs.mkdirSync(nested)
+            for (const workflowProject of [
+                "relative/path",
+                path.join(root, "missing"),
+                path.join(root, "README.md"),
+                nested,
+            ]) {
+                const content = JSON.stringify({ workflowProject })
+                fs.writeFileSync(globalSettingsPath, content)
+                assert.throws(
+                    () => resolveWorkflowProject(root, options),
+                    (error: Error) => error.message.includes(globalSettingsPath),
+                )
+                assert.equal(fs.readFileSync(globalSettingsPath, "utf-8"), content)
+            }
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ workflowProject: path.join(root, "README.md") }))
+            assert.throws(() => resolveWorkflowProject(root, options), /path is not a directory/)
+            const alias = path.join(root, "alias")
+            fs.symlinkSync(root, alias, "dir")
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ workflowProject: alias }))
+            assert.equal(resolveWorkflowProject(root, options), fs.realpathSync(root))
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
     it("loads operational Markdown dependencies from workflow references", () => {
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
         const setupReference = fs.readFileSync("workflows/references/setup.md", "utf-8")

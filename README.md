@@ -29,4 +29,6 @@ My [pi](https://pi.dev) setup for coding agent workflows.
 - `/backlog` — optional integration-only future-work intake;
 - `/todo` — optional integration-only ready-work intake.
 
+Say “Report this workflow issue” to prepare ordinary Todo work in the workflow source project's tracker. Set `workflowProject` to that source checkout's absolute path in private global `workflows.settings.json` in Pi's agent directory; its existing tracker configuration stays authoritative. The exact sanitized report and destination require approval, with the named MCP tools available in the reporting session. Missing configuration errors with what to create and where, without starting setup. See [workflow reporting](workflows/README.md#report-a-workflow-problem).
+
 Authoritative `.project/` artifacts use either versioned or unversioned Git policy; unversioned mode excludes them from Git and never projects workflow-system traces. Optional tracker support includes GitHub or Linear; optional forge support currently uses GitHub. Runtime provider operations use Pi-registered MCP tools through the same permission extension as every other agent. Guided setup may additionally inspect Linear and provision an explicitly approved GitHub Project through credential-isolated direct APIs. See the [workflow setup and artifact guide](workflows/README.md).

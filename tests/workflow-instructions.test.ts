@@ -64,6 +64,45 @@ describe("workflow instruction ownership", () => {
         }
     })
 
+    it("routes natural-language workflow reports through ordinary Todo with privacy and exact approval", () => {
+        const todo = fs.readFileSync("workflows/skills/todo/SKILL.md", "utf-8")
+        assert.match(todo, /requests to report a workflow defect or friction/)
+        assert.match(todo, /Ordinary intake uses `target: "current"`/)
+        assert.match(todo, /Report this workflow issue.*`target: "workflow"`/)
+        assert.match(todo, /allowed-tools:\n    - "integration_context"\n---/)
+        const queue = fs.readFileSync("workflows/references/queue.md", "utf-8")
+        for (const requirement of [
+            /Ordinary.*`target: "current"`/,
+            /explicit request to report.*destination `todo`.*`target: "workflow"`/,
+            /same `target`/,
+            /exact selected tracker destination/,
+            /changed content or destination requires renewed approval/,
+            /Set|short corrective error/,
+            /Do not start setup questions or repair configuration automatically/,
+            /Known installed workflow version or source revision/,
+            /State unavailable or mismatched evidence plainly/,
+            /Replace project-specific values with synthetic examples/,
+            /Exclude consuming-project names, remotes, absolute paths, tracker links, workflow IDs/,
+            /Evidence that cannot be made safe stays local/,
+            /approving preparation is not approval to transmit/,
+            /Keep remote mutation tools outside skill-derived allow rules/,
+            /use the existing Todo\/Gig\/Task process/,
+            /Never bypass a denied or failed MCP tool with another client/,
+        ])
+            assert.match(queue, requirement)
+        for (const skill of ["epic", "task", "gig", "backlog", "todo", "project-setup"]) {
+            const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
+            assert.ok(graph.has("workflows/references/queue.md"), `${skill} must reach the shared reporting contract`)
+        }
+        const setup = fs.readFileSync("workflows/references/setup.md", "utf-8")
+        assert.match(setup, /"workflowProject": "\/absolute\/path\/to\/pi-af"/)
+        assert.match(setup, /existing private global/)
+        assert.match(setup, /source's `\.project\/integrations\.json` and `\.project\/config\.json`/)
+        assert.match(setup, /Stop the attempt without setup questions, automatic repair/)
+        const setupSkill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
+        assert.match(setupSkill, /`operation: inspect` and `target: "current"`/)
+    })
+
     it("keeps queue intent and planning projection explicit", () => {
         assert.match(fs.readFileSync("workflows/skills/backlog/SKILL.md", "utf-8"), /backlog it/)
         assert.match(fs.readFileSync("workflows/skills/todo/SKILL.md", "utf-8"), /todo it/)

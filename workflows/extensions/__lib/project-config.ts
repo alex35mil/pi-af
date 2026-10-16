@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { type Static, Type } from "typebox"
+import { type Static, type TSchema, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
@@ -39,16 +39,18 @@ export type ProjectConfig = PersistedProjectConfig & {
     branches: PersistedProjectConfig["branches"] & { username?: string }
 }
 
-const WorkflowSettingsSchema = Type.Object(
-    {
-        branches: Type.Object(
-            { username: Type.String({ minLength: 1, pattern: "^[^/\\r\\n]+$" }) },
-            { additionalProperties: false },
-        ),
-    },
+const BranchSettingsSchema = Type.Object(
+    { username: Type.String({ minLength: 1, pattern: "^[^/\\r\\n]+$" }) },
     { additionalProperties: false },
 )
-type WorkflowSettings = Static<typeof WorkflowSettingsSchema>
+const LocalWorkflowSettingsSchema = Type.Object({ branches: BranchSettingsSchema }, { additionalProperties: false })
+const WorkflowSettingsSchema = Type.Object(
+    {
+        branches: Type.Optional(BranchSettingsSchema),
+        workflowProject: Type.Optional(Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })),
+    },
+    { additionalProperties: false, minProperties: 1 },
+)
 
 export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: string } = {}): ProjectConfig {
     const root = project.resolveRootDir(cwd)
@@ -74,9 +76,9 @@ export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: s
     if (!formatUsesUsername(input.branches.format)) return input
 
     const settingsPaths = getWorkflowSettingsPaths(root, options)
-    const globalSettings = loadWorkflowSettings(settingsPaths.global)
-    const localSettings = loadWorkflowSettings(settingsPaths.local)
-    const username = localSettings?.branches.username ?? globalSettings?.branches.username
+    const globalSettings = loadWorkflowSettings(settingsPaths.global, WorkflowSettingsSchema)
+    const localSettings = loadWorkflowSettings(settingsPaths.local, LocalWorkflowSettingsSchema)
+    const username = localSettings?.branches.username ?? globalSettings?.branches?.username
     if (!username) {
         throw new Error(
             `invalid branch configuration: username is required in ${LOCAL_PROJECT_CONFIG_PATH} or global workflows.settings.json`,
@@ -95,6 +97,24 @@ export function getWorkflowSettingsPaths(cwd: string, options: { globalSettingsP
     return {
         global: options.globalSettingsPath ?? global,
         local: path.join(root, LOCAL_PROJECT_CONFIG_PATH),
+    }
+}
+
+export function resolveWorkflowProject(cwd: string, options: { globalSettingsPath?: string } = {}): string {
+    const settingsPath = getWorkflowSettingsPaths(cwd, options).global
+    const configured = loadWorkflowSettings(settingsPath, WorkflowSettingsSchema)?.workflowProject
+    const instruction = `Set workflowProject to the absolute workflow source repository root in ${settingsPath}.`
+    if (!configured) throw new Error(instruction)
+    if (!path.isAbsolute(configured)) throw new Error(instruction)
+    try {
+        const root = fs.realpathSync(configured)
+        if (!fs.statSync(root).isDirectory()) throw new Error("path is not a directory")
+        const repositoryRoot = fs.realpathSync(Git.run(root, ["rev-parse", "--show-toplevel"]))
+        if (root !== repositoryRoot) throw new Error("path is not the repository root")
+        return root
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Invalid workflowProject ${JSON.stringify(configured)}: ${message}. ${instruction}`)
     }
 }
 
@@ -157,7 +177,7 @@ function inspectArtifactPersistence(cwd: string) {
     return { config, excludePath, missing: undefined }
 }
 
-function loadWorkflowSettings(filePath: string): WorkflowSettings | undefined {
+function loadWorkflowSettings<S extends TSchema>(filePath: string, schema: S): Static<S> | undefined {
     if (!fs.existsSync(filePath)) return undefined
     let input: unknown
     try {
@@ -166,8 +186,8 @@ function loadWorkflowSettings(filePath: string): WorkflowSettings | undefined {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`invalid ${filePath}: ${message}`)
     }
-    if (!Value.Check(WorkflowSettingsSchema, input)) {
-        const details = [...Value.Errors(WorkflowSettingsSchema, input)]
+    if (!Value.Check(schema, input)) {
+        const details = [...Value.Errors(schema, input)]
             .map((error) => `${error.instancePath || "/"}: ${error.message}`)
             .join("; ")
         throw new Error(`invalid ${filePath}: ${details}`)

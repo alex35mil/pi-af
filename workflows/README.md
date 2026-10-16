@@ -35,6 +35,18 @@ Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help se
 
 See the [configuration reference](references/setup.md) for exact schemas, examples, credential handling, and manual setup. The [artifact reference](references/artifacts.md) owns directory layout, identity, persistence, and authority.
 
+## Report a workflow problem
+
+Say **“Report this workflow issue.”** The Todo skill prepares a minimal sanitized report and, after you approve the exact content, destination, and intake choices, creates ordinary Todo work in the workflow project's tracker. Maintainers pick it up through the existing workflows.
+
+Set the source reference once in private global `workflows.settings.json` in Pi's agent directory (`getAgentDir()`):
+
+```json
+{ "workflowProject": "/absolute/path/to/pi-af" }
+```
+
+The agent reads that source checkout's `.project/integrations.json` and `.project/config.json`, not the consuming project's tracker or policy. Missing or invalid configuration produces a short error naming what to fix and where; you lead the fix separately. Reporting requires the source tracker's named MCP tools to be registered in the current session. Nothing is transmitted without approval, and unsafe project details stay local. See [source configuration](references/setup.md#workflow-reporting-source) and [report preparation](references/queue.md#prepare-a-workflow-report).
+
 ## Working lifecycle
 
 ```text
