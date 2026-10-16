@@ -5,7 +5,13 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { PROJECT_ROOT } from "../__lib/domain.js"
-import { fence, MAX_EMBEDDED_FILE_BYTES, readOptional, REVIEW_AUTHORITY_INSTRUCTIONS } from "./context.js"
+import {
+    fence,
+    MAX_EMBEDDED_FILE_BYTES,
+    readOptional,
+    REVIEW_AUTHORITY_INSTRUCTIONS,
+    REVIEW_DOCUMENT_INSTRUCTIONS,
+} from "./context.js"
 import { reviewAgentOutputInstructions } from "./findings.js"
 
 export async function buildEpicReviewPrompt(
@@ -31,6 +37,7 @@ export async function buildEpicReviewPrompt(
         "You are an independent adversarial reviewer running in a fresh context.",
         "You are read-only. Do not modify files and do not ask the user questions directly.",
         ...REVIEW_AUTHORITY_INSTRUCTIONS,
+        REVIEW_DOCUMENT_INSTRUCTIONS,
         "Inspect repository context only where needed to validate the initiative contract and decomposition.",
         "Be terse. Do not demand implementation detail, test plans, success criteria, risk registers, status tracking, or other boilerplate.",
         "Apply product/user criteria only where relevant. For infrastructure, migration, or internal work, evaluate operational outcomes, invariants, boundaries, and observable system changes instead.",

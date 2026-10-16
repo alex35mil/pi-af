@@ -404,6 +404,9 @@ describe("workflow reviewer isolation", () => {
             for (const reviewPrompt of [prompt, deliverablePrompt]) {
                 assert.match(reviewPrompt, /user decisions override Project Policies/)
                 assert.match(reviewPrompt, /Project Policies override reusable workflow skills and references/)
+                assert.match(reviewPrompt, /## Overview accurately represents the full supporting sections/)
+                assert.match(reviewPrompt, /keeps material limitations visible/)
+                assert.match(reviewPrompt, /### Plan highlights/)
             }
             assert.match(deliverablePrompt, /Unique bugfix evidence/)
             assert.match(deliverablePrompt, /Bugfix focus: symptom evidence/)
@@ -417,7 +420,7 @@ describe("workflow reviewer isolation", () => {
             )
             fs.writeFileSync(
                 path.join(gigDir, "result.md"),
-                "# Result\n\n## What changed\n\n- Fixed the defect.\n\n## Verification\n\n- `test` — passed\n",
+                "# Result\n\n## Overview\n\n- Fixed the defect.\n\n## Verification\n\n- `test` — passed\n",
             )
             const pendingPath = path.join(gigDir, ".local", "pending.md")
             assert.equal(fs.existsSync(pendingPath), false)

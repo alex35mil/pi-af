@@ -36,6 +36,20 @@ For new work, present the cleaned title and Request together for approval. The u
 
 Choose concise lowercase kebab-case slugs with a soft cap around 48 characters; shorten at word boundaries. The tool normalizes the supplied slug before creating the directory and rendering the configured branch name. One branch format applies to every entity. Linear `tracker` uses exact issue branches for Task/Gig and reconstructs the current workspace format for Epic from read-only provider data.
 
+## Reviewed document shape
+
+Newly authored or revised accepted `epic.md`, `plan.md`, `result.md`, and `report.md` use ordinary, provider-neutral Markdown:
+
+1. The normal root H1 title.
+2. A nonempty `## Overview` as the first content section.
+3. One or more subsequent nonempty level-two sections carrying the complete supporting contract or evidence.
+
+For Epic/Plan sources, Overview explains the brief and why the work matters, followed by a few settled scope/behavior bullets under `### Plan highlights`. Preserve the approved Request's meaning without repeating the tracker title. Result overviews describe delivered behavior and material limitations; report overviews state the question/scope, key conclusion, and material uncertainty. Detailed sections retain all necessary contract, evidence, and verification; keep their headings subject-specific.
+
+The overview and details are one source document, reviewed and accepted together. Keep both synchronized when that source changes. The request-only `brief.md` remains unchanged. Source artifacts do not encode provider-specific collapse wrappers: the [shared integration renderer](./integrations/shared.md#provider-bodies) keeps Overview visible and folds the remaining sections without summarizing or dropping text.
+
+An older source is brought into this shape through its normal review and user-acceptance gates before its next publication. Reads never rewrite it automatically; historical completed artifacts remain untouched. This presentation change does not migrate entity metadata.
+
 ## IDs and initial branches
 
 A raw ID is the ten-character ULID timestamp component. Qualified IDs are `EPIC-...`, `TASK-...`, and `GIG-...`; the branch-format `identifier` token is the qualified ID in lowercase, while `title` is the normalized slug. Only initialized entities receive workflow identity, directories, and branches.

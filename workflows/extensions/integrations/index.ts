@@ -173,7 +173,7 @@ export default function (pi: ExtensionAPI): void {
         name: "render_provider_body",
         label: "render_provider_body",
         description:
-            "Render a tracker or pull-request body from an accepted artifact. Removes the root heading and adds the same-repository GitHub closing block when applicable. Reads workflow configuration and entity metadata without external mutation.",
+            "Render a reviewed ## Overview visibly and collapse the remaining accepted source using GitHub or Linear syntax for the configured destination. Preserves content and adds eligible GitHub PR closing references outside the fold. Reads local configuration and metadata without external mutation.",
         parameters: RenderProviderBodySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(RenderProviderBodySchema, params)
@@ -353,11 +353,11 @@ function readProjectIntegrationContext(cwd: string, input: IntegrationContextInp
                       mode: workflowPolicy.projection,
                       source: "exact accepted epic.md or plan.md",
                       contentPolicy:
-                          "lossless: preserve all structure, wording, technical detail, and ordinary repository paths; never summarize or condense",
+                          "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed ## Overview visible and collapse all remaining sections; never summarize or condense during publication",
                       automaticPresentationNormalization:
-                          "remove the first Markdown H1 and its following blank line; for same-repository GitHub tracker and forge work, append a horizontal rule, a blank line, and `Closes #<number>` in pull-request bodies",
+                          "remove the first Markdown H1 and its following blank line; use GitHub <details> or Linear +++ Full plan around tracker details, keep trackers in one Full plan fold without a new divider; for PRs insert <hr /> after Overview and one GitHub <details> fold per level-two section, using its heading as the summary label; keep Not run inside Verification; normalize only section separation; append the eligible same-repository horizontal rule, blank line, and `Closes #<number>` after all PR folds",
                       changedCandidateGate:
-                          "except for root-H1 removal and the same-repository GitHub closing reference, before mutation present the complete candidate or exact diff, list every omission, rewrite, or addition with its reason, and require explicit user approval",
+                          "root-H1 removal, deterministic collapse wrappers/separation, PR heading-to-summary placement, and the eligible GitHub closing reference need no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers both visible and collapsed content before rendering",
                       ownership: "workflow" as const,
                       outcomeProof:
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
@@ -409,23 +409,28 @@ export function renderEntityProviderBody(
     const entity = readWorkflowEntity(ctx.cwd, input.entityDir)
     assertEntityEnvironment(entity.status, environment)
 
-    if (
-        input.destination !== "pullRequest" ||
-        environment.tracker.kind !== "github" ||
-        environment.forge.kind !== "github" ||
-        environment.tracker.config.repository.owner.toLowerCase() !==
-            environment.forge.config.repository.owner.toLowerCase() ||
-        environment.tracker.config.repository.repo.toLowerCase() !==
-            environment.forge.config.repository.repo.toLowerCase()
-    ) {
-        return renderProviderBody(input.source)
+    if (input.destination === "tracker") {
+        if (environment.tracker.kind === "none") throw new Error("tracker rendering requires a configured tracker")
+        return renderProviderBody(input.source, {
+            kind: environment.tracker.kind === "github" ? "github-tracker" : "linear-tracker",
+        })
     }
+    if (environment.forge.kind === "none") throw new Error("pull-request rendering requires a configured forge")
 
-    const tracker = entity.status.integrations.find(
-        (integration) =>
-            integration.role === "tracker" && integration.provider === "github" && "external" in integration,
-    )
+    const sameRepository =
+        environment.tracker.kind === "github" &&
+        environment.tracker.config.repository.owner.toLowerCase() ===
+            environment.forge.config.repository.owner.toLowerCase() &&
+        environment.tracker.config.repository.repo.toLowerCase() ===
+            environment.forge.config.repository.repo.toLowerCase()
+    const tracker = sameRepository
+        ? entity.status.integrations.find(
+              (integration) =>
+                  integration.role === "tracker" && integration.provider === "github" && "external" in integration,
+          )
+        : undefined
     return renderProviderBody(input.source, {
+        kind: "github-pull-request",
         ...(tracker ? { githubIssueNumber: tracker.external.issueNumber } : {}),
     })
 }
