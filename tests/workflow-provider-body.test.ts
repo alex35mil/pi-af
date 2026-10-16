@@ -22,24 +22,52 @@ describe("workflow provider body renderer", () => {
         )
     })
 
-    it("folds all PR support, including verification and unrun checks", () => {
+    it("separates the PR overview from one fold per section, keeping Not run inside Verification", () => {
         const summary = "## Overview\n\nDelivered the concise layout. Live UI rendering is unverified."
         const support =
             "## Implementation\n\nOne shared renderer.\n\n## Verification\n\n- `npm test` — passed.\n\n**Not run:**\n\n- Live Linear rendering — no approved test entry."
         const result = `# Result\n\n${summary}\n\n${support}\n`
         assert.equal(
             renderProviderBody(result, { kind: "github-pull-request" }),
-            `${summary}\n\n<details>\n<summary>Supporting details</summary>\n\n${support}\n\n</details>`,
+            `${summary}\n\n<hr />\n\n<details>\n<summary>Implementation</summary>\n\nOne shared renderer.\n\n</details>\n\n<details>\n<summary>Verification</summary>\n\n- \`npm test\` — passed.\n\n**Not run:**\n\n- Live Linear rendering — no approved test entry.\n\n</details>`,
         )
     })
 
     it("places the eligible closing reference after the closed PR fold", () => {
-        const expected = github.replace("Full plan", "Supporting details")
+        const expected = `${overview}\n\n<hr />\n\n<details>\n<summary>Behavior</summary>\n\n${details.slice("## Behavior\n\n".length)}\n\n</details>`
         assert.equal(
             renderProviderBody(source, { kind: "github-pull-request", githubIssueNumber: 21 }),
             `${expected}\n\n---\n\nCloses #21`,
         )
         assert.equal(renderProviderBody(source, { kind: "github-pull-request" }), expected)
+    })
+
+    it("keeps nested subsections and fenced headings inside their owning PR section", () => {
+        const content = "Evidence.\n\n### Nested details\n\n```markdown\n## Example, not a section\n```"
+        assert.equal(
+            renderProviderBody(
+                `## Overview\n\nConclusion.\n\n## Findings\n\n${content}\n\n## Verification\n\nChecked.\n`,
+                { kind: "github-pull-request" },
+            ),
+            `## Overview\n\nConclusion.\n\n<hr />\n\n<details>\n<summary>Findings</summary>\n\n${content}\n\n</details>\n\n<details>\n<summary>Verification</summary>\n\nChecked.\n\n</details>`,
+        )
+    })
+
+    it("uses technical section headings as literal HTML-safe summary labels", () => {
+        assert.equal(
+            renderProviderBody('## Overview\n\nSummary.\n\n## API <T> & "options"\n\nKeep the body.\n', {
+                kind: "github-pull-request",
+            }),
+            "## Overview\n\nSummary.\n\n<hr />\n\n<details>\n<summary>API &lt;T&gt; &amp; &quot;options&quot;</summary>\n\nKeep the body.\n\n</details>",
+        )
+    })
+
+    it("preserves CRLF in per-section PR folds and the divider", () => {
+        const input = "## Overview\r\n\r\nSummary.\r\n\r\n## Verification\r\n\r\nPassed.\r\n"
+        assert.equal(
+            renderProviderBody(input, { kind: "github-pull-request" }),
+            "## Overview\r\n\r\nSummary.\r\n\r\n<hr />\r\n\r\n<details>\r\n<summary>Verification</summary>\r\n\r\nPassed.\r\n\r\n</details>",
+        )
     })
 
     it("accepts approved sanitized sources without a root title and removes only a leading H1", () => {

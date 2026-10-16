@@ -68,7 +68,7 @@ Submitting and finishing are separate. Submission commits the work and opens or 
 
 ## Readable tracker and PR bodies
 
-Accepted plans and completion artifacts keep a concise `## Overview` with the full supporting sections in the same reviewed document. Tracker entries show the brief and a few Plan highlights above a collapsed Full plan. GitHub PRs show the delivered outcome or report conclusion above Supporting details, including verification. GitHub uses `<details>`; Linear trackers use native `+++` sections. No content is summarized or discarded during publication.
+Accepted plans and completion artifacts keep a concise `## Overview` with the full supporting sections in the same reviewed document. Tracker entries show the brief and a few Plan highlights above a collapsed Full plan. GitHub PRs show the delivered outcome or report conclusion, then a divider and one fold per supporting section labeled with its heading. Not run stays inside Verification. Tracker layout is unchanged. GitHub uses `<details>`; Linear trackers use native `+++` sections. No content is summarized or discarded during publication.
 
 Unversioned disclosure approval covers visible and hidden content alike. Older source documents are updated through their normal review and acceptance gates before publication; reads do not rewrite completed artifacts. Local tests verify generated Markdown, not live Linear issue/Project rendering. See the [document shape](references/artifacts.md#reviewed-document-shape) and [provider-body contract](references/integrations/shared.md#provider-bodies).
 

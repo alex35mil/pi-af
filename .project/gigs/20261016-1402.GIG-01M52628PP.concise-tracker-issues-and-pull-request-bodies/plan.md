@@ -2,7 +2,7 @@
 
 ## Overview
 
-Workflow tracker entries and pull requests must be easy to scan without losing the detailed contract or evidence. Tracker entries show the brief plus a few highlights of the accepted plan, with the remaining plan collapsed. Pull requests show a concise account of the delivered outcome, with supporting details and verification collapsed.
+Workflow tracker entries and pull requests must be easy to scan without losing the detailed contract or evidence. Tracker entries show the brief plus a few highlights of the accepted plan, with the remaining plan collapsed. Pull requests show a concise account of the delivered outcome, followed by `<hr />` and one collapsed fold per supporting section, including Verification.
 
 ### Plan highlights
 
@@ -15,7 +15,7 @@ Workflow tracker entries and pull requests must be easy to scan without losing t
 
 After plan acceptance, an initialized tracker entry shows a concise brief explaining the work and why it matters, followed by a few highlights of settled behavior, scope, and important boundaries. This is the user-approved brief-plus-highlights choice. A reader can expand **Full plan** to read the remaining complete plan or Epic contract. The visible portion and collapsed portion together preserve the complete accepted document, apart from its root title and presentation whitespace.
 
-A GitHub pull request shows a concise overview of what was delivered, its material limitations, and why it matters. All supporting sections, including implementation detail, verification results, and any Not run explanation, sit inside **Supporting details**. Research/Audit reports use the same layout: the visible overview states the question or scope, key conclusion, and material uncertainty; evidence, findings, recommendations, and supporting detail remain available inside the fold.
+A GitHub pull request shows a concise overview of what was delivered, its material limitations, and why it matters. A literal `<hr />` separates this visible Overview from the folds. Each subsequent level-two section has its own initially collapsed `<details>` block, labeled with that section's heading. The heading becomes the summary label rather than being repeated inside the fold; section content remains unchanged. Not run stays inside Verification and does not receive a separate fold. Research/Audit reports use the same layout: the visible overview states the question or scope, key conclusion, and material uncertainty; each evidence, findings, recommendations, or other supporting section gets its own fold. Tracker bodies retain one Full plan fold without the new divider.
 
 Backlog/Todo creation and initial tracker binding still publish the approved Request under their existing intake rules. There is no accepted plan to fold at that point. This change does not add queue summaries, migrate completed entries, modify tracker lifecycle/Kind/Priority, or introduce live test records.
 
@@ -39,7 +39,7 @@ An older accepted document is not rewritten on read or silently summarized. Befo
 
 Extend `workflows/extensions/integrations/projection.ts` to separate a reviewed document into its visible Overview and complete detailed remainder, then render the required destination presentation. Use a required discriminated presentation type for GitHub tracker, Linear tracker, or GitHub pull request; do not infer a provider from the presence of a closing issue number or retain the old generic render default.
 
-Remove only the leading root H1 and its following blank line as today. Recognize the first `## Overview` and the following top-level level-two section boundary outside fenced code. Preserve subsection headings, code samples, tables, lists, ordinary repository paths, and all detailed text. Backtick and tilde fenced samples containing headings are supported and must not become document boundaries. Keep retained content unchanged; normalize only blank separation needed to join the two portions and the provider wrapper.
+Remove only the leading root H1 and its following blank line as today. Recognize the first `## Overview` and each following top-level level-two section boundary outside fenced code. Preserve subsection headings, code samples, tables, lists, ordinary repository paths, and all detailed text. Backtick and tilde fenced samples containing headings are supported and must not become document boundaries. Keep retained content unchanged; normalize only blank separation needed to join portions and wrappers. PR section titles move into their summary labels, with HTML-sensitive characters escaped so technical headings display as text. Nested subsections and bold Not run labels remain within their owning level-two section.
 
 Require the current explicit source layout. Empty Overview, missing supporting content, or an incompatible document produces a clear local error naming the expected shape before any provider write. Do not guess which paragraphs are a summary, hide everything under an empty overview, or publish the old expanded layout as an alternate path.
 
@@ -47,9 +47,9 @@ Render the visible Overview, then:
 
 - **GitHub tracker:** `<details>` with `<summary>Full plan</summary>`, blank separation around the complete detailed remainder, and `</details>`. Omit `open` so it starts collapsed.
 - **Linear tracker:** `+++ Full plan`, blank separation, the same complete detailed remainder, then a standalone closing `+++`.
-- **GitHub pull request:** `<details>` with `<summary>Supporting details</summary>` around the complete detailed remainder, initially collapsed.
+- **GitHub pull request:** visible Overview, blank separation, a literal `<hr />`, then one initially collapsed `<details>` block for each subsequent level-two section in source order. Each `<summary>` uses that section's title; its `<details>` block encloses only that section's content. No aggregate Supporting details fold, and no new top-level Not run section. GitHub and Linear tracker output remains unchanged, with a single Full plan fold and no new divider.
 
-A bound GitHub tracker issue in the forge's exact repository still adds the existing horizontal rule and `Closes #<number>` block after the closed fold. A Linear tracker, different-repository tracker, or forge-only entity still adds no closing reference. Both GitHub PR rendering and its collapse layout depend on the forge destination, not on the tracker provider.
+A bound GitHub tracker issue in the forge's exact repository still adds the existing horizontal rule and `Closes #<number>` block after the last closed PR fold. A Linear tracker, different-repository tracker, or forge-only entity still adds no closing reference. Both GitHub PR rendering and its collapse layout depend on the forge destination, not on the tracker provider.
 
 `render_provider_body` keeps its entity directory, destination, and complete source inputs. `renderEntityProviderBody` derives the required presentation from the selected configured role and existing semantic relationships, then delegates to the shared renderer. A tracker destination requires its configured tracker role; a PR destination requires its configured forge role. Rendering remains local/read-only and makes no provider calls, source rewrites, or index changes.
 
@@ -57,7 +57,7 @@ A bound GitHub tracker issue in the forge's exact repository still adds the exis
 
 Update runtime integration context and shared/provider guidance together so they describe the same positive contract: the complete accepted source is retained, its reviewed overview is visible, and the remaining text is folded by the destination renderer. Lossless preservation refers to content, not unchanged provider markup.
 
-Root-title removal, wrapper/separator insertion, and the existing same-repository closing block are deterministic presentation operations authorized by the accepted layout. They do not require a second content-approval round. Any substantive omission, rewrite, new summary, or changed source still follows the existing exact-candidate/diff approval rules. Keep discussion in comments and requirements in the authoritative source.
+Root-title removal, wrapper/separator insertion, PR section-heading placement in summary labels, and the existing same-repository closing block are deterministic presentation operations authorized by the accepted layout. They do not require a second content-approval round. Any substantive omission, rewrite, new summary, or changed source still follows the existing exact-candidate/diff approval rules. Keep discussion in comments and requirements in the authoritative source.
 
 Unversioned mode still requires the agent to remove or minimally rewrite forbidden content and obtain explicit approval of the complete sanitized candidate before rendering. This applies to both overview and detailed content; folding is not a privacy boundary. Preserve the existing allowed/forbidden content policy and ordinary-path allowance, with no disclosure bypass for hidden text. The sanitized candidate retains the same Overview/details shape and removes forbidden workflow-system headings or content under that approval gate.
 
@@ -70,9 +70,9 @@ Publish the complete rendered body through the same configured native MCP mutati
 | Initial Request or unstarted Backlog/Todo entry | Existing approved intake body; no plan folding. |
 | Accepted Epic/Task/Gig definition, GitHub tracker | Brief plus reviewed highlights visible; all remaining plan sections in Full plan `<details>`. |
 | Accepted Epic/Task/Gig definition, Linear tracker | Same content layout using native `+++ Full plan` syntax. |
-| Result or report, GitHub forge | Outcome/conclusion overview visible; all remaining sections, including verification/evidence, inside Supporting details `<details>`. |
+| Result or report, GitHub forge | Outcome/conclusion overview visible, then `<hr />`, then one `<details>` fold per level-two section; Not run stays inside Verification. |
 | GitHub forge with a Linear tracker or another repository's GitHub tracker | GitHub PR fold; no closing reference. |
-| Same-repository bound GitHub issue and GitHub forge | Existing closing block outside the fold. |
+| Same-repository bound GitHub issue and GitHub forge | Existing closing block after all PR folds. |
 | Unversioned source contains forbidden material | Sanitize both portions and obtain exact approval before rendering or publication. |
 | Source does not meet the explicit layout | Clear local error; revise and approve that source through the existing gates before publication. |
 | Old or completed artifact merely read/resumed | No automatic source rewrite or retrospective provider update. |
@@ -98,7 +98,7 @@ The real failure risk is publishing accepted long plans or results while losing 
 
 ## Verification
 
-- Unit tests: exact GitHub tracker, Linear tracker, and GitHub PR output; overview remains outside folds; all detailed content remains inside; verification and Not run content remain present but collapsed; closing reference appears once outside the fold only for its supported relationship.
+- Unit tests: exact unchanged GitHub/Linear tracker bodies with one Full plan fold and no new divider; GitHub PR Overview followed by one literal `<hr />` and one fold per level-two section, in source order and labeled with its heading; nested subsections stay with their parent; Verification includes Not run without an extra fold; section titles and content are retained; closing reference appears once after all folds only for its supported relationship.
 - Structural tests: root-title removal, source without root H1 after approved sanitization, LF/CRLF, code fences with heading-like lines, nested subsections, tables/lists/paths, and clear failure on missing/empty Overview or supporting content. Fixtures use realistic plan/result/report examples, including snippets of the collapse syntax itself.
 - Integration tests: Epic and Deliverable sources, both tracker providers, GitHub forge with GitHub/Linear/no tracker, same/different repository, absent requested role, both artifact modes, read-only rendering, and updated policy text. No new provider calls are introduced.
 - Instruction checks: current source shape, brief-plus-highlights choice, report/result overview and hidden verification, provider-specific syntax, complete-content preservation, unversioned approval/disclosure, deterministic presentation approval, and unchanged uncertainty recovery.

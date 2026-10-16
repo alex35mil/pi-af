@@ -4,25 +4,53 @@ export type ProviderBodyPresentation =
     | { kind: "github-pull-request"; githubIssueNumber?: number }
 
 export function renderProviderBody(source: string, presentation: ProviderBodyPresentation): string {
-    const { overview, details, newline } = splitProviderSource(removeRootHeading(source))
+    const { overview, sections, newline } = splitProviderSource(removeRootHeading(source))
     const separation = newline.repeat(2)
-    const label = presentation.kind === "github-pull-request" ? "Supporting details" : "Full plan"
-    const folded =
-        presentation.kind === "linear-tracker"
-            ? `+++ ${label}${separation}${details}${separation}+++`
-            : `<details>${newline}<summary>${label}</summary>${separation}${details}${separation}</details>`
-    const body = `${overview}${separation}${folded}`
+    let body: string
+    if (presentation.kind === "github-pull-request") {
+        const folds = sections.map((section) =>
+            renderGitHubDetails(
+                section.title,
+                trimSectionEnd(section.content.replace(/^(?:[ \t]*\r?\n)+/, "")),
+                newline,
+            ),
+        )
+        body = `${overview}${separation}<hr />${separation}${folds.join(separation)}`
+    } else {
+        const details = trimSectionEnd(sections.map((section) => section.heading + section.content).join(""))
+        const folded =
+            presentation.kind === "linear-tracker"
+                ? `+++ Full plan${separation}${details}${separation}+++`
+                : renderGitHubDetails("Full plan", details, newline)
+        body = `${overview}${separation}${folded}`
+    }
     return presentation.kind === "github-pull-request" && presentation.githubIssueNumber !== undefined
         ? `${body}${separation}---${separation}Closes #${presentation.githubIssueNumber}`
         : body
 }
 
-function splitProviderSource(body: string): { overview: string; details: string; newline: string } {
+interface ProviderSourceSection {
+    title: string
+    heading: string
+    content: string
+}
+
+function renderGitHubDetails(title: string, content: string, newline: string): string {
+    const label = title
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+    const separation = newline.repeat(2)
+    return `<details>${newline}<summary>${label}</summary>${separation}${content}${separation}</details>`
+}
+
+function splitProviderSource(body: string): { overview: string; sections: ProviderSourceSection[]; newline: string } {
     const expected = "Provider body requires a nonempty ## Overview followed by nonempty level-two detail sections."
     const overviewHeading = /^##[ \t]+Overview[ \t]*(?:\r\n|\n|$)/.exec(body)
     if (!overviewHeading) throw new Error(expected)
 
-    const sections: { start: number; content: number }[] = []
+    const sections: { start: number; content: number; title: string; heading: string }[] = []
     let fence: { marker: string; length: number } | undefined
     for (const match of body.matchAll(/[^\n]*(?:\n|$)/g)) {
         const line = match[0].replace(/\r?\n$/, "")
@@ -36,7 +64,13 @@ function splitProviderSource(body: string): { overview: string; details: string;
             fence = { marker: marker[1][0], length: marker[1].length }
             continue
         }
-        if (/^##[ \t]+\S/.test(line)) sections.push({ start: match.index, content: match.index + match[0].length })
+        if (/^##[ \t]+\S/.test(line))
+            sections.push({
+                start: match.index,
+                content: match.index + match[0].length,
+                title: line.replace(/^##[ \t]+/, "").trimEnd(),
+                heading: match[0],
+            })
     }
     if (fence) throw new Error(`${expected} Close the fenced code block before rendering.`)
     if (sections.length < 2) throw new Error(expected)
@@ -48,7 +82,11 @@ function splitProviderSource(body: string): { overview: string; details: string;
     const boundary = sections[1].start
     return {
         overview: trimSectionEnd(body.slice(0, boundary)),
-        details: trimSectionEnd(body.slice(boundary)),
+        sections: sections.slice(1).map((section, index) => ({
+            title: section.title,
+            heading: section.heading,
+            content: body.slice(section.content, sections[index + 2]?.start ?? body.length),
+        })),
         newline: overviewHeading[0].endsWith("\r\n") ? "\r\n" : "\n",
     }
 }

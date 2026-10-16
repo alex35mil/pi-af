@@ -257,10 +257,7 @@ describe("workflow instruction ownership", () => {
         assert.match(epic, /Overview and Plan highlights accurately represent the detailed contract/)
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(deliverable, /key conclusion, and material uncertainty/)
-        assert.match(
-            deliverable,
-            /collapses every subsequent section, including Verification and any Not run explanation/,
-        )
+        assert.match(deliverable, /collapses each subsequent level-two section separately under its section heading/)
         assert.match(deliverable, /ordinary Markdown Implementation walkthrough section/)
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
         assert.match(shared, /Never summarize or condense during publication/)
@@ -269,8 +266,11 @@ describe("workflow instruction ownership", () => {
         assert.match(shared, /Folding is not a privacy boundary/)
         assert.match(shared, /GitHub uses `<details>`\/`<summary>` without `open`/)
         assert.match(shared, /Linear trackers use native `\+\+\+ Full plan`/)
-        assert.match(shared, /Supporting details include verification and any Not run explanation/)
-        assert.match(shared, /outside the closed fold/)
+        assert.match(shared, /Tracker bodies retain one \*\*Full plan\*\* fold.*no new divider/)
+        assert.match(shared, /PRs use a literal `<hr \/>` after Overview/)
+        assert.match(shared, /one GitHub `<details>` fold per subsequent level-two section/)
+        assert.match(shared, /Not run stays inside Verification/)
+        assert.match(shared, /after all closed PR folds/)
         assert.match(shared, /deterministic collapse wrappers\/blank separation.*need no second approval/)
         assert.match(shared, /substantive omission, rewrite, addition, or new summary requires/)
         assert.match(shared, /incompatible source produces a local layout error/)

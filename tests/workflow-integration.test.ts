@@ -684,7 +684,8 @@ describe("workflow integration configuration", () => {
             const source = "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n"
             const trackerBody =
                 "## Overview\n\nDelivered.\n\n<details>\n<summary>Full plan</summary>\n\n## Verification\n\nTests passed.\n\n</details>"
-            const prBody = trackerBody.replace("Full plan", "Supporting details")
+            const prBody =
+                "## Overview\n\nDelivered.\n\n<hr />\n\n<details>\n<summary>Verification</summary>\n\nTests passed.\n\n</details>"
 
             assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), trackerBody)
             assert.equal(
@@ -740,7 +741,7 @@ describe("workflow integration configuration", () => {
                     destination: "pullRequest",
                     source: "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n",
                 }),
-                "## Overview\n\nDelivered.\n\n<details>\n<summary>Supporting details</summary>\n\n## Verification\n\nTests passed.\n\n</details>",
+                "## Overview\n\nDelivered.\n\n<hr />\n\n<details>\n<summary>Verification</summary>\n\nTests passed.\n\n</details>",
             )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -821,7 +822,7 @@ describe("workflow integration configuration", () => {
             const source = "# Report\n\n## Overview\n\nConclusion and uncertainty.\n\n## Evidence\n\nAll findings.\n"
             assert.equal(
                 renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
-                "## Overview\n\nConclusion and uncertainty.\n\n<details>\n<summary>Supporting details</summary>\n\n## Evidence\n\nAll findings.\n\n</details>",
+                "## Overview\n\nConclusion and uncertainty.\n\n<hr />\n\n<details>\n<summary>Evidence</summary>\n\nAll findings.\n\n</details>",
             )
             assert.throws(
                 () => renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }),
@@ -882,7 +883,7 @@ describe("workflow integration configuration", () => {
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
                 projection.projection.automaticPresentationNormalization,
-                /remove the first Markdown H1.*GitHub <details>.*Linear \+\+\+ Full plan.*Closes.*outside the PR fold/,
+                /remove the first Markdown H1.*GitHub <details>.*Linear \+\+\+ Full plan.*<hr \/>.*one GitHub <details> fold per level-two section.*Closes.*after all PR folds/,
             )
             assert.match(
                 projection.projection.changedCandidateGate,
