@@ -25,20 +25,19 @@ When an accepted `epic.md` or `plan.md` must change materially after execution b
 
 1. Reject replanning for lifecycle `done`; separately initialized work owns any later change.
 2. Restore lifecycle to `inProgress` when it is `inReview`: update `.local/status.md` for workflow authority or update and re-read the provider's native Status for tracker authority.
-3. Record `phase: planning` in `metadata.json`.
-4. Reconcile native Phase through `./phase.md`; trackerless Phase remains metadata-only.
-5. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance records `phase: execution` while lifecycle remains `inProgress`.
+3. Call `set_workflow_phase` for Planning and apply any returned native assignment through `./phase.md`.
+4. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance enters Execution while lifecycle remains `inProgress`.
 
 Editorial changes that do not alter behavior, strategy, scope, or decomposition do not enter material replanning.
 
 ## Planning review and acceptance
 
-1. Keep metadata `phase: planning` and lifecycle `inProgress`, and reconcile native Phase through `./phase.md`. Then call `review` with the exact entity, `entityDir`, and `phase: "plan"`. The tool creates `.local/reviews/plan-NNN/`, snapshots `.local/draft.md` to `candidate.md`, validates the structured reviewer report, renders canonical `review.md`, and stores request/transcript/raw diagnostics in that round directory.
+1. Use `set_workflow_phase` for Planning and reconcile through `./phase.md`, retaining lifecycle `inProgress`. Then call `review` with the exact entity, `entityDir`, and `phase: "plan"`. The tool owns the immutable candidate snapshot and numbered review artifacts.
 2. Follow `./review.md`: adjudicate every finding through `record_review_response`, present its exact returned Markdown in chat, and continue until review is approved with no unresolved user decision.
 3. When review approves, remain in Planning while calling `prepare_plan_presentation` with the same entity and `entityDir` and waiting for user diff approval. The tool selects a validated approved snapshot and returns its source and target paths. Read the snapshot and write that exact content to the authoritative target through the configured write/edit user-diff gate; the write tool presents the approval diff. Do not print the candidate first.
 4. A rejection or unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
 5. Compare any user-modified authoritative artifact with the reviewed snapshot. Editorial changes may proceed; a material change to behavior, strategy, or decomposition must become the mutable draft and pass a new review before implementation.
 6. Keep `phase: planning` while correcting the reviewed plan, rerunning planning review, presenting it, and waiting for user approval. Plan acceptance is required before implementation.
-7. Before acceptance, incorporate every material user note into the authoritative artifact or `.local/notes.md`, according to ownership. The root `epic.md` or `plan.md` is the sole accepted plan. Proceed only when no note remains blocking. On acceptance, set metadata `phase: execution`, retain lifecycle `inProgress`, and reconcile native Phase through `./phase.md`.
+7. Before acceptance, incorporate every material user note into the authoritative artifact or `.local/notes.md`, according to ownership. The root `epic.md` or `plan.md` is the sole accepted plan. Proceed only when no note remains blocking. On acceptance, call `set_workflow_phase` for Execution and reconcile through `./phase.md`, retaining lifecycle `inProgress`.
 
 Review criteria and downstream lifecycle remain entity-specific; local round identity, adjudication, exact signoff parsing, and user diff presentation do not.

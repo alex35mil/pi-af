@@ -1,3 +1,4 @@
+import type { EntityStatus } from "../__lib/entity.js"
 import type { ProjectConfig } from "../__lib/project-config.js"
 import type { IntegrationConfig, GitHubForge, GitHubTracker, LinearTracker } from "./config.js"
 
@@ -74,6 +75,58 @@ export function resolveWorkflowEnvironment(
         ? { kind: "github", config: integrationConfig.forge }
         : { kind: "none" }
     return { artifacts, tracker, forge }
+}
+
+export function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvironment): void {
+    const forgeRecord = status.integrations.find((integration) => integration.role === "forge")
+    switch (environment.tracker.kind) {
+        case "none":
+            if (status.authority.kind !== "workflow") {
+                throw new Error(`${status.id} requires tracker migration before using the current configuration`)
+            }
+            break
+        case "github":
+        case "linear":
+            if (status.authority.kind !== "tracker" || status.authority.provider !== environment.tracker.kind) {
+                throw new Error(
+                    `${status.id} requires tracker migration before using the current configuration; see workflows/MIGRATIONS.md`,
+                )
+            }
+            if (environment.tracker.kind === "github") {
+                const tracker = status.integrations.find((entry) => entry.role === "tracker")
+                if (
+                    !tracker ||
+                    tracker.provider !== "github" ||
+                    tracker.repository.owner.toLowerCase() !==
+                        environment.tracker.config.repository.owner.toLowerCase() ||
+                    tracker.repository.repo.toLowerCase() !== environment.tracker.config.repository.repo.toLowerCase()
+                ) {
+                    throw new Error(`${status.id} tracker repository changed; see workflows/MIGRATIONS.md`)
+                }
+            }
+            break
+        default:
+            environment.tracker satisfies never
+    }
+    switch (environment.forge.kind) {
+        case "none":
+            if (forgeRecord)
+                throw new Error(`${status.id} requires forge migration before removing its configured forge`)
+            break
+        case "github":
+            if (
+                forgeRecord &&
+                (forgeRecord.repository.owner.toLowerCase() !==
+                    environment.forge.config.repository.owner.toLowerCase() ||
+                    forgeRecord.repository.repo.toLowerCase() !==
+                        environment.forge.config.repository.repo.toLowerCase())
+            ) {
+                throw new Error(`${status.id} forge repository changed; see workflows/MIGRATIONS.md`)
+            }
+            break
+        default:
+            environment.forge satisfies never
+    }
 }
 
 export function resolveWorkflowPolicy(environment: WorkflowEnvironment): WorkflowPolicy {

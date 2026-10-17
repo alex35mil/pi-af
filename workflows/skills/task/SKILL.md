@@ -6,6 +6,8 @@ allowed-tools:
     - "review"
     - "prepare_plan_presentation"
     - "prepare_artifacts"
+    - "set_workflow_phase"
+    - "confirm_tracker_initialization"
     - "render_provider_body"
     - "verify_artifact_projection"
     - "integration_context"

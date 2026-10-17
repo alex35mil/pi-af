@@ -882,12 +882,12 @@ describe("workflow integration configuration", () => {
             assert.equal(projection.projection.source, "exact accepted epic.md or plan.md")
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
-                projection.projection.automaticPresentationNormalization,
-                /remove the first Markdown H1.*GitHub <details>.*Linear \+\+\+ Full plan.*<hr \/>.*one GitHub <details> fold per level-two section.*Closes.*after all PR folds/,
+                projection.projection.rendering,
+                /render_provider_body.*complete approved source.*exact returned markdown/,
             )
             assert.match(
                 projection.projection.changedCandidateGate,
-                /deterministic collapse wrappers.*no second approval.*substantive omission.*exact diff.*explicit user approval.*both visible and collapsed content/,
+                /deterministic renderer output.*no second approval.*substantive omission.*exact diff.*explicit user approval.*complete source/,
             )
             assert.equal(projection.projection.ownership, "workflow")
             assert.match(projection.projection.outcomeProof, /complete rendered approved body.*clear provider success/)

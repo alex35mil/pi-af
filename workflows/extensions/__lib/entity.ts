@@ -418,7 +418,9 @@ export function writeEntityStatus(entityDirectory: string, status: EntityStatus)
             throw new Error(`cannot write invalid entity metadata: ${entityDirectory}`)
         }
         writeTextAtomically(path.join(entityDirectory, ENTITY_METADATA_FILE), `${JSON.stringify(metadata, null, 2)}\n`)
-        writeTextAtomically(statusPath, `# Status\n\n\`\`\`json\n${JSON.stringify({ state }, null, 2)}\n\`\`\`\n`)
+        const localStatus = `# Status\n\n\`\`\`json\n${JSON.stringify({ state }, null, 2)}\n\`\`\`\n`
+        if (!fs.existsSync(statusPath) || fs.readFileSync(statusPath, "utf-8") !== localStatus)
+            writeTextAtomically(statusPath, localStatus)
         return
     }
     if (fs.existsSync(statusPath)) {
