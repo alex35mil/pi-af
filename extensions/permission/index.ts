@@ -375,8 +375,132 @@ function mergePermissions(
     }
 }
 
+export interface PermissionSource {
+    tier: "global" | "project" | "local"
+    path: string
+    settings: PermissionSettings
+}
+
+export function readPermissionSettings(file: string): PermissionSettings {
+    if (!fs.existsSync(file)) return {}
+    let value: unknown
+    try {
+        value = JSON.parse(fs.readFileSync(file, "utf-8"))
+    } catch (error) {
+        throw new Error(`Invalid JSON in ${file}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`invalid permission settings ${file}: expected an object`)
+    }
+    return validatePermissionSettings(value as PermissionSettings)
+}
+
+export function inspectPersistentPermissions(cwd: string) {
+    const paths = project.getExtensionSettingsPaths(EXTENSION, cwd)
+    const sources = (["global", "project", "local"] as const).map((tier) => ({
+        tier,
+        path: paths[tier],
+        settings: readPermissionSettings(paths[tier]),
+    }))
+    return {
+        sources,
+        settings: sources.reduce<PermissionSettings>(
+            (settings, source) => mergePermissions(settings, source.settings),
+            {},
+        ),
+    }
+}
+
 function loadSettings(cwd: string) {
-    return project.loadExtensionSettings<PermissionSettings>(EXTENSION, cwd, mergePermissions)
+    return inspectPersistentPermissions(cwd).settings
+}
+
+// These checks describe persistent policy, never temporary session or skill grants.
+export function inspectMcpAllowRules(rules: string[], sources: readonly PermissionSource[], catalog: McpToolCatalog) {
+    validatePermissionSettings({ allow: rules })
+    const configured = sources.flatMap((source) =>
+        (["allow", "ask", "deny"] as const).flatMap((mode) =>
+            (source.settings[mode] ?? []).map((rule) => ({ tier: source.tier, path: source.path, mode, rule })),
+        ),
+    )
+    const settings = sources.reduce<PermissionSettings>(
+        (settings, source) => mergePermissions(settings, source.settings),
+        {},
+    )
+    return rules.map((rule) => {
+        const candidate = parseMcpRule(rule)
+        if (!candidate) throw new Error(`expected an MCP allow rule: ${JSON.stringify(rule)}`)
+        const tools = [...catalog.entries()]
+            .filter(([, metadata]) => matchesMcpRule(candidate, metadata))
+            .map(([name, metadata]) => ({
+                name,
+                server: metadata.serverName,
+                tool: metadata.serverToolName,
+                readOnlyHint: metadata.annotations?.readOnlyHint ?? null,
+                mode: resolveSingleMode(settings, name, "", metadata),
+                blockers: configured.filter(
+                    (entry) => entry.mode !== "allow" && matchesAnyRule([entry.rule], name, "", metadata),
+                ),
+            }))
+        const coveredBy = configured.filter(
+            (entry) => entry.mode === "allow" && coversMcpRule(entry.rule, candidate, catalog),
+        )
+        const unverifiedConflicts = configured.filter((entry) => {
+            if (entry.mode === "allow") return false
+            const parsed = parseMcpRule(entry.rule)
+            return (
+                (entry.rule === "*" || (parsed && mcpRulesMayOverlap(candidate, parsed, catalog))) &&
+                !tools.some((tool) => tool.blockers.includes(entry))
+            )
+        })
+        const status =
+            tools.length === 0
+                ? "unavailable"
+                : coveredBy.length > 0
+                  ? "covered"
+                  : tools.every((tool) => tool.blockers.length > 0)
+                    ? "blocked"
+                    : "available"
+        return { rule, status, coveredBy, tools, unverifiedConflicts }
+    })
+}
+
+function coversMcpRule(existing: string, candidate: ParsedMcpRule, catalog: McpToolCatalog): boolean {
+    if (existing === "*") return true
+    const parsed = parseMcpRule(existing)
+    if (!parsed || (parsed.server !== "*" && parsed.server !== candidate.server)) return false
+    if (parsed.selector.type === "tool" && parsed.selector.value === "*") return true
+    if (parsed.selector.type === candidate.selector.type && parsed.selector.value === candidate.selector.value)
+        return true
+    if (
+        parsed.selector.type !== "hint" ||
+        candidate.selector.type !== "tool" ||
+        candidate.server === "*" ||
+        candidate.selector.value === "*"
+    )
+        return false
+    return [...catalog.values()].some(
+        (tool) =>
+            tool.serverName === candidate.server &&
+            tool.serverToolName === candidate.selector.value &&
+            tool.annotations?.readOnlyHint === true,
+    )
+}
+
+function mcpRulesMayOverlap(left: ParsedMcpRule, right: ParsedMcpRule, catalog: McpToolCatalog): boolean {
+    if (left.server !== "*" && right.server !== "*" && left.server !== right.server) return false
+    if (left.selector.type !== right.selector.type) {
+        const exact = left.selector.type === "tool" ? left.selector : right.selector
+        const server = left.server === "*" ? right.server : left.server
+        if (exact.value !== "*" && server !== "*") {
+            const metadata = [...catalog.values()].find(
+                (tool) => tool.serverName === server && tool.serverToolName === exact.value,
+            )
+            if (metadata) return metadata.annotations?.readOnlyHint === true
+        }
+        return true
+    }
+    return left.selector.value === "*" || right.selector.value === "*" || left.selector.value === right.selector.value
 }
 
 function tryLoadPermissionSettings(load: () => PermissionSettings): SettingsResult {

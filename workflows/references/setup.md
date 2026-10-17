@@ -341,14 +341,47 @@ Example:
 - Override automatic submission after final-artifact acceptance: commit locally, then wait for a separate explicit user request before pushing or creating a PR.
 ```
 
+## Integration convenience permissions
+
+Offer these independently selectable options only for selected active integration providers, replacing `<server>` with the exact selected MCP server name. Deduplicate shared tracker/forge servers. Number choices, include decline-all, explain access beside each choice, and recommend the frequent tracker writes to avoid repeated Status/Phase and plan-publication prompts.
+
+| Selected role/provider        | Recommended allow               | Access and frequent use                                                                                                                                                         |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any active integration server | `mcp(<server>, hint: readOnly)` | All tools advertised by that server with explicit `readOnlyHint: true`; useful for repeated tracker/PR reads. Trusts the server's annotation; missing/false hints do not match. |
+| GitHub tracker                | `mcp(<server>, projects_write)` | Entire Project mutation tool, including item/field updates for Status/Phase/Internal ID and its other supported mutations.                                                      |
+| GitHub tracker                | `mcp(<server>, issue_write)`    | Entire issue create/update tool, including body, labels, fields, and state; useful for intake and plan publication.                                                             |
+| Linear tracker                | `mcp(<server>, save_issue)`     | Entire issue save tool, including creation, descriptions, labels, lifecycle, priority, and relationships.                                                                       |
+| Linear tracker                | `mcp(<server>, save_project)`   | Entire Project save tool for Epics, including creation, description, labels, lifecycle, priority, and other supported updates.                                                  |
+
+A forge-only GitHub server gets read-only access, not tracker write recommendations. Omit inactive servers and unavailable tools. Do not recommend whole-server write wildcards, PR merge allows, or unrelated writes. These rules are not restricted by tool arguments, repository, or Project: they cover the server credential's accessible resources. Tool permissions remove prompts, not workflow content, submission, or finish approval gates. Existing permissions are not revoked.
+
+Before offering new rules, call `inspect_permissions` with `{ "rules": ["mcp(<server>, hint: readOnly)", "mcp(<server>, issue_write)"] }`, using only the selected providers' candidates. This read-only tool uses live advertised metadata and the permission engine's global/project/local loading and matcher; it makes no provider call and changes no files. Required workflow read tools lacking true annotations remain uncovered: inspect their exact selectors as needed to report that limitation, without automatically granting those diagnostic selectors.
+
+Results contain each candidate's `status`, `coveredBy` source rules, currently matching `tools` with existing modes and `blockers`, and `unverifiedConflicts` where overlap lacks metadata. These are persistent settings only; session overrides and skill-derived allows are excluded. Read-only rules cover future tools that the server annotates true; inspection describes only currently advertised tools and does not promise future annotations.
+
+| Result                        | Setup/merge behavior                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `covered`                     | An equivalent or broader existing allow proves selector coverage. Skip the addition; still report ask/deny blockers. |
+| `available`, no blockers      | Offer the new allow for explicit user selection.                                                                     |
+| `available`, partial blockers | Offer only with disclosure that listed tools remain asked/denied; the broad rule benefits the remaining tools.       |
+| `blocked`                     | All currently matching tools have ask/deny blockers. Report them and skip the ineffective addition.                  |
+| `unavailable`                 | No advertised tool matches. Skip; do not claim access, even when a covering persistent rule exists.                  |
+
+Coverage uses selector containment, including equivalent internal spacing, server/tool wildcards, and verified annotations for hint-to-exact coverage. Exact allows for all today's read tools do not cover a future-facing read-only selector. Deny wins over ask, which wins over allow. Preserve all existing rule strings, order, and ask/deny constraints; report blockers with their source paths and never silently weaken them. Unverified overlap is not a proven match.
+
+After user selection, ask once for local or project permission persistence independently of artifact/MCP persistence. Preview exact `allow`/`ask` additions, skipped rules, conflicts, target, and local exclusion before approval. Then call `configure_permissions` with strict `{ target: "project" | "local", allow: string[], ask: string[] }`; both lists are explicit and at least one requested rule is required. Only MCP selectors are accepted as new allows. Use `[]` for an unselected list. Declining all new rules calls no permission writer.
+
+The writer rechecks current persistent settings and live metadata, skips covered/blocked/unavailable allows and exact target-file ask duplicates, and merges only accepted additions. It reports actual `added`, `skipped`, and `inspection` results, preserving unrelated keys, default mode, keybindings, deny rules, and existing lists. Invalid settings/rules fail before mutation. A no-op leaves files and permission exclusions untouched. Read-back validates the result; a skipped rule is not a new grant.
+
 ## Accepted-artifact permission gates
 
-Workflow skills allow routine `.project/` bookkeeping. When the user accepts explicit diff gates, call `configure_permissions` with the selected target and exact rules. The tool validates and merges them into `ask` without replacing unrelated settings. Use repository-relative workflow write/edit paths so the gates match consistently:
+Workflow skills allow routine `.project/` bookkeeping. Offer explicit artifact diff gates independently of integration allows. When accepted, merge the exact gates through the same `configure_permissions` call; use repository-relative workflow paths so the gates match consistently. This ask-only example uses an empty allow list:
 
 ```json
 {
     "target": "local",
-    "rules": [
+    "allow": [],
+    "ask": [
         "write(.project/*/epic.md)",
         "edit(.project/*/epic.md)",
         "write(.project/*/plan.md)",
@@ -361,4 +394,4 @@ Workflow skills allow routine `.project/` bookkeeping. When the user accepts exp
 }
 ```
 
-The target is either committed `.agents/permission.settings.json` (`project`) or local `.agents/permission.settings.local.json` (`local`). For local settings, the tool verifies that the file is outside Git and adds exact `/.agents/permission.settings.local.json` to `.git/info/exclude`. Artifact persistence and permission-settings persistence are separate user decisions.
+The target is either committed `.agents/permission.settings.json` (`project`) or local `.agents/permission.settings.local.json` (`local`). Before changing local settings, the tool verifies that the file is outside Git and ensures exact `/.agents/permission.settings.local.json` in `.git/info/exclude`; it never changes the index. A no-op adds no exclusion. Artifact persistence and permission-settings persistence are separate user decisions.

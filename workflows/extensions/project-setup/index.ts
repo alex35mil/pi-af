@@ -1,21 +1,37 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { Value } from "typebox/value"
 
+import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
 import * as Git from "../__lib/git.js"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
 import { inspectLinearWorkspace, LinearWorkspaceInspectionToolSchema } from "../integrations/tracker/linear.js"
 import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-project.js"
 import { configureProjectMcp, ProjectMcpConfigurationSchema } from "./mcp.js"
-import { configureProjectPermissions, ProjectPermissionConfigurationSchema } from "./permissions.js"
+import {
+    configureProjectPermissions,
+    inspectProjectPermissions,
+    PermissionInspectionSchema,
+    ProjectPermissionConfigurationSchema,
+} from "./permissions.js"
 
 const EmptySchema = Type.Object({}, { additionalProperties: false })
 
 export default function (pi: ExtensionAPI): void {
+    let mcpCatalog: McpToolCatalog = new Map()
+    const disposeCatalog = pi.events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
+        mcpCatalog = data instanceof Map ? new Map(data as McpToolCatalog) : new Map()
+    })
+    pi.on("session_shutdown", () => {
+        disposeCatalog()
+        mcpCatalog = new Map()
+    })
+
     pi.registerCommand("project-setup", {
         description: "Interactively configure project workflows for this repository",
         handler: async (args, ctx) => {
@@ -87,22 +103,34 @@ export default function (pi: ExtensionAPI): void {
     })
 
     pi.registerTool({
+        name: "inspect_permissions",
+        label: "inspect_permissions",
+        description:
+            "Inspect candidate MCP allow rules against persistent global/project/local permissions and live MCP annotations. Report coverage, unavailable tools, and ask/deny conflicts without changing settings or calling providers.",
+        parameters: PermissionInspectionSchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const inspected = inspectProjectPermissions(ctx.cwd, params, mcpCatalog)
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(inspected, null, 2) }],
+                details: inspected,
+            }
+        },
+    })
+
+    pi.registerTool({
         name: "configure_permissions",
         label: "configure_permissions",
         description:
-            "Add approved ask rules to committed or local project permission settings while preserving unrelated settings and keeping local settings outside Git.",
+            "Merge approved MCP allow and ask rules into project or local permission settings. Skip covered or blocked allows, preserve ask/deny and unrelated settings, and keep local settings outside Git.",
         parameters: ProjectPermissionConfigurationSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const configured = configureProjectPermissions(ctx.cwd, params)
+            const parsed = Value.Parse(ProjectPermissionConfigurationSchema, params)
+            const file = getExtensionSettingsPaths("permission", ctx.cwd)[parsed.target]
+            const configured = await withFileMutationQueue(file, async () =>
+                configureProjectPermissions(ctx.cwd, parsed, mcpCatalog),
+            )
             return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: configured.changed
-                            ? `Configured permission gates in ${configured.file}.`
-                            : `The requested permission gates are already configured in ${configured.file}.`,
-                    },
-                ],
+                content: [{ type: "text" as const, text: JSON.stringify(configured, null, 2) }],
                 details: configured,
             }
         },
