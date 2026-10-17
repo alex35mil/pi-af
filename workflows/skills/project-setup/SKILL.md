@@ -5,6 +5,7 @@ allowed-tools:
     - "inspect_project_setup"
     - "prepare_artifacts"
     - "configure_mcp"
+    - "inspect_permissions"
     - "configure_permissions"
     - "inspect_linear_workspace"
     - "provision_github_project"
@@ -130,7 +131,7 @@ Ask the setup decisions in this order:
 5. Branch naming, filtered by the selected tracker provider and informed by Linear inspection when applicable.
 6. Exact provider configuration, only for selected roles.
 7. Whether to enable user confirmation after a positive number of consecutive blocked reviews. Disabled omits `reviews`; never write `false`, zero, or an empty object.
-8. Whether the user wants optional Project Policies or accepted-artifact diff permission gates.
+8. Optional Project Policies, then integration convenience permissions and independently selectable accepted-artifact diff gates.
 
 For a Linear tracker, obtain the credential environment-variable name from the recognized effective MCP registration when available; otherwise ask only for an environment-variable name, never its value. Call `inspect_linear_workspace` after the MCP server is active and before branch naming. The operation reads only workspace identity, authenticated viewer Full Name and Username, accessible teams, team issue statuses, applicable Project statuses, and the workspace branch template. A missing variable, denied access, or API/GraphQL failure stops automatic discovery: report the exact failure and ask whether the user wants to correct access or explicitly continue with manual status/team values. Never silently fall back. `tracker` branch format additionally requires the configured MCP registration to expose that recognized credential environment reference because every Epic initialization re-reads current branch settings.
 
@@ -170,12 +171,20 @@ For GitHub forge, reuse the known repository and selected MCP server. With forge
 
 Briefly explain the Project Policy boundary from `../../references/setup.md` and precedence from `../../references/artifacts.md`, then ask whether the user wants help creating them. If not, omit `.project/policies.md` without inspecting the broader repository. If yes, ask which workflow behavior they want to add to or override, then inspect only the relevant workflow and repository guidance. Keep generic repository instructions in their existing harness-owned location. Propose evidence-backed policies naming the affected workflow stage or behavior and the specific addition or override; present each for acceptance.
 
-Offer the accepted-artifact diff gates defined in `../../references/setup.md`. If the user declines, write nothing. If the user accepts, ask where the permission configuration should be stored before preparing the final file proposal:
+### Optional permissions
+
+Offer convenience permissions only for selected active integration providers, using the recommendation matrix in `../../references/setup.md`. Use each selected server's exact name and deduplicate a server shared by tracker and forge. Recommend provider-scoped read-only access plus the available frequent tracker writes: GitHub `projects_write`/`issue_write`, or Linear `save_issue`/`save_project`. A forge-only GitHub server gets the read-only option, not tracker writes. With no integrations, omit convenience options and still offer accepted-artifact diff gates independently.
+
+Call read-only `inspect_permissions` with candidate MCP rules before presenting the choices. It uses the live MCP catalog and persistent global/project/local settings. Omit unavailable, fully blocked, and already-covered candidates from new additions; report their status and existing blockers. For partial read-only conflicts, show the blocked tools and rules and let the user select the rule for its remaining access. Preserve existing `ask` and `deny` rules; never remove or weaken them to make an allow work. Unverified conflicts are not proven matches. Session overrides and skill-derived allows are temporary and do not prove persistent coverage. Report required workflow read tools missing true annotations by inspecting their exact selectors as needed; do not claim the hint covers them or automatically add those diagnostic selectors.
+
+Present numbered, independently selectable options, including decline-all. Explain beside each rule what it grants and why it avoids frequent prompts. `hint: readOnly` trusts the server's explicit `readOnlyHint: true`; missing/false hints do not match. Each write-tool allow grants the entire tool, including mutations beyond the workflow examples, across the server credential's accessible resources—not just this repository or Project. Workflow content, submission, and finish approvals still apply. Do not recommend whole-server write wildcards, PR merge allows, or unrelated write tools. Do not revoke any existing allows.
+
+Offer the accepted-artifact diff gates defined in `../../references/setup.md` independently of integration allows. Declining every new permission changes no permission file or exclusion. Once new rules are selected, ask once where the combined permission configuration should be stored before preparing the final file proposal:
 
 1. Local checkout configuration (`local`) — `.agents/permission.settings.local.json`
 2. Committed project configuration (`project`) — `.agents/permission.settings.json`
 
-Accept the number or exact value and confirm it as muted context. Never infer this choice from artifact or MCP persistence. Include the selected target and exact gates in the final proposal; `configure_permissions` owns validated merging, unrelated-setting preservation, and local exclusion.
+Accept the number or exact value and confirm it as muted context. Never infer this choice from artifact or MCP persistence. Include the selected target, exact `allow` and `ask` additions, skipped rules, and conflicts in the final proposal. `configure_permissions` owns validated merging, rechecking current coverage/conflicts, unrelated-setting preservation, and local exclusion; do not edit permission settings manually.
 
 ## Preview and approval
 
@@ -194,8 +203,8 @@ GitHub provider provisioning has its own exact preview/hash approval above and m
     ```
 
 - for versioned mode, mention `.git/info/exclude` for `.project/config.local.json` only when that local file already exists or is proposed: either report the existing exact exclusion as a no-op or propose the exact `/.project/config.local.json` append; when no local file exists or is proposed, omit this exclusion entirely;
-- the selected permission-settings target and exact ask rules when permission gates are selected;
-- for local permission settings, that `configure_permissions` will keep `.agents/permission.settings.local.json` outside Git and ensure exact `/.agents/permission.settings.local.json` in `.git/info/exclude`.
+- the selected permission-settings target, exact `allow` and `ask` additions, skipped rules, and conflicts when new permissions are selected;
+- for local permission additions, that `configure_permissions` will keep `.agents/permission.settings.local.json` outside Git and ensure exact `/.agents/permission.settings.local.json` in `.git/info/exclude`; an unchanged permission configuration adds no exclusion.
 
 Require explicit approval of that proposal. Workflow-owned JSON must satisfy the current documented shapes, contain no credentials, and end with a newline. Do not infer missing product rules, lifecycle mappings, field scopes, provider identities, or policy text.
 
@@ -205,7 +214,7 @@ After approval:
 
 1. Create or edit only the approved workflow files, preserving unrelated content. Create `.project/` when absent.
 2. In versioned mode, add only missing local-file rules to `.gitignore`. In unversioned mode, do not add any `.project/` ignore rule there.
-3. When permission gates are selected, call `configure_permissions` once with the approved target and exact rules. Do not write or merge permission settings manually.
+3. When new permissions are selected, call `configure_permissions` once with the approved `target` and exact `allow` and `ask` arrays (use `[]` for an unselected list). Report actual additions, skipped rules, and conflicts; a skipped rule is not newly granted access. Do not write or merge permission settings manually. A changed conflict requiring a different grant needs renewed approval; never weaken existing rules.
 4. Call `prepare_artifacts`. Stop on any Git-membership/exclusion conflict; never repair it by changing the index.
 5. If integrations are configured, call `integration_context` with `operation: inspect` and `target: "current"` to confirm operational configuration and roles. Validate each role independently, reusing native metadata facts already verified during setup/provisioning and obtaining only missing facts through registered read-only provider tools. Configured roles do not establish provider availability. Report unavailable roles without removing or changing another valid role.
 6. Re-read every created/edited file and confirm strict configuration loads. Trust returned tool results for Git safety; do not run shell-based Git verification.

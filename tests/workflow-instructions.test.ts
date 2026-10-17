@@ -405,6 +405,29 @@ describe("workflow instruction ownership", () => {
         assert.deepEqual(Object.keys(DeliveryCleanupSchema.properties).sort(), ["completion", "entityDir", "merge"])
     })
 
+    it("offers useful integration permissions with explicit selection and preserved constraints", () => {
+        const setup = fs.readFileSync("workflows/references/setup.md", "utf-8")
+        const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
+        for (const tool of ["projects_write", "issue_write", "save_issue", "save_project"]) {
+            assert.ok(setup.includes(`mcp(<server>, ${tool})`))
+            assert.ok(skill.includes(`\`${tool}\``))
+        }
+        assert.match(skill, /- "inspect_permissions"/)
+        assert.match(skill, /only for selected active integration providers/)
+        assert.match(skill, /forge-only GitHub server gets the read-only option/)
+        assert.match(skill, /numbered, independently selectable options, including decline-all/)
+        assert.match(skill, /write-tool allow grants the entire tool/)
+        assert.match(skill, /Preserve existing `ask` and `deny` rules/)
+        assert.match(skill, /Do not recommend whole-server write wildcards, PR merge allows/)
+        assert.match(skill, /ask once where the combined permission configuration/)
+        assert.match(skill, /exact `allow` and `ask` additions, skipped rules, and conflicts/)
+        assert.match(skill, /call `configure_permissions` once/)
+        assert.match(setup, /missing\/false hints do not match/)
+        assert.match(setup, /session overrides and skill-derived allows are excluded/)
+        assert.match(setup, /A no-op leaves files and permission exclusions untouched/)
+        assert.match(setup, /"allow": \[\],\n    "ask": \[/)
+    })
+
     it("keeps configuration examples and exact permission gates in the setup reference", () => {
         const setup = fs.readFileSync("workflows/references/setup.md", "utf-8")
         for (const literal of [

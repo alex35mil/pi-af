@@ -14,13 +14,123 @@ import {
 } from "../extensions/__lib/mcp.ts"
 import { analyzeBash } from "../extensions/permission/bash.ts"
 import permissionExtension, {
+    inspectMcpAllowRules,
     resolveMode,
     validatePermissionSettings,
     type Mode,
     type PermissionSettings,
+    type PermissionSource,
 } from "../extensions/permission/index.ts"
 
 const noOverrides = new Map<string, Mode>()
+
+function source(settings: PermissionSettings, tier: PermissionSource["tier"] = "global"): PermissionSource {
+    return { tier, path: `/${tier}/permission.settings.json`, settings }
+}
+
+function catalog(...tools: McpToolMetadata[]): McpToolCatalog {
+    return new Map(tools.map((tool) => [getMcpToolName(tool.serverName, tool.serverToolName), tool]))
+}
+
+describe("persistent MCP allow inspection", () => {
+    const read = metadata("work", "issue_read", true)
+    const write = metadata("work", "issue_write", false)
+    const live = catalog(read, write)
+    const hint = "mcp(work, hint: readOnly)"
+    const exact = "mcp(work, issue_read)"
+
+    it("proves equivalent and broader selector coverage across persistent tiers", () => {
+        for (const tier of ["global", "project", "local"] as const) {
+            for (const allow of [
+                "*",
+                "mcp(*, *)",
+                "mcp(work, *)",
+                "mcp(*, hint: readOnly)",
+                "mcp(work,hint:readOnly)",
+            ]) {
+                const result = inspectMcpAllowRules([hint], [source({ allow: [allow] }, tier)], live)[0]
+                assert.equal(result.status, "covered")
+                assert.equal(result.coveredBy[0].tier, tier)
+                assert.equal(result.coveredBy[0].rule, allow)
+            }
+        }
+    })
+
+    it("does not mistake today's exact allows for future hint coverage", () => {
+        assert.equal(inspectMcpAllowRules([hint], [source({ allow: [exact] })], live)[0].status, "available")
+        assert.equal(inspectMcpAllowRules([exact], [source({ allow: [hint] })], live)[0].status, "covered")
+        assert.equal(
+            inspectMcpAllowRules(["mcp(*, issue_read)"], [source({ allow: [hint] })], live)[0].status,
+            "available",
+        )
+        assert.equal(inspectMcpAllowRules(["mcp(work, *)"], [source({ allow: [hint] })], live)[0].status, "available")
+    })
+
+    it("uses only true annotations for coverage and matching", () => {
+        for (const annotation of [false, undefined]) {
+            const tools = catalog(metadata("work", "issue_read", annotation))
+            assert.equal(inspectMcpAllowRules([hint], [], tools)[0].status, "unavailable")
+            assert.equal(inspectMcpAllowRules([exact], [source({ allow: [hint] })], tools)[0].status, "available")
+        }
+    })
+
+    it("retains source evidence and deny-before-ask precedence despite an allow", async () => {
+        const sources = [source({ allow: [hint], ask: [exact] }), source({ deny: [exact] }, "local")]
+        const result = inspectMcpAllowRules([exact], sources, live)[0]
+        assert.equal(result.status, "covered")
+        assert.equal(result.tools[0].mode, "deny")
+        assert.deepEqual(
+            result.tools[0].blockers.map((blocker) => [blocker.mode, blocker.tier]),
+            [
+                ["ask", "global"],
+                ["deny", "local"],
+            ],
+        )
+        assert.equal(await resolveMcp({ allow: [hint], ask: [exact], deny: [exact] }, read), result.tools[0].mode)
+    })
+
+    it("distinguishes completely and partially blocked selectors", () => {
+        assert.equal(inspectMcpAllowRules([exact], [source({ ask: [exact] })], live)[0].status, "blocked")
+        const reads = catalog(read, metadata("work", "list_issues", true))
+        const result = inspectMcpAllowRules([hint], [source({ deny: [exact] })], reads)[0]
+        assert.equal(result.status, "available")
+        assert.deepEqual(
+            result.tools.map((tool) => tool.blockers.length),
+            [1, 0],
+        )
+        assert.equal(inspectMcpAllowRules([hint], [source({ ask: [hint] })], reads)[0].status, "blocked")
+    })
+
+    it("reports unavailable metadata without inventing hint conflicts", () => {
+        const sources = [source({ ask: [hint] })]
+        const absent = inspectMcpAllowRules([exact], sources, new Map())[0]
+        assert.equal(absent.status, "unavailable")
+        assert.equal(absent.unverifiedConflicts.length, 1)
+        const knownWrite = inspectMcpAllowRules(["mcp(work, issue_write)"], sources, live)[0]
+        assert.equal(knownWrite.unverifiedConflicts.length, 0)
+        const unknown = inspectMcpAllowRules([hint], [source({ deny: ["mcp(work, future_read)"] })], live)[0]
+        assert.equal(unknown.unverifiedConflicts.length, 1)
+    })
+
+    it("excludes unrelated servers and non-MCP patterns", () => {
+        for (const allow of ["mcp(other, *)", "read", "mcp*"]) {
+            const result = inspectMcpAllowRules([exact], [source({ allow: [allow], deny: ["mcp(other, *)"] })], live)[0]
+            assert.equal(result.status, "available")
+            assert.equal(result.tools[0].blockers.length, 0)
+            assert.equal(result.unverifiedConflicts.length, 0)
+        }
+    })
+
+    it("requires valid MCP candidates and does not mutate input sources", () => {
+        for (const candidate of ["read", "*", "mcp(work, hint: unknown)", "mcp__work__issue_read"]) {
+            assert.throws(() => inspectMcpAllowRules([candidate], [], live))
+        }
+        const sources = [source({ allow: ["read"], deny: ["mcp(work, issue_write)"] })]
+        const before = structuredClone(sources)
+        inspectMcpAllowRules([hint, exact], sources, live)
+        assert.deepEqual(sources, before)
+    })
+})
 
 function metadata(serverName: string, serverToolName: string, readOnlyHint?: boolean): McpToolMetadata {
     return {

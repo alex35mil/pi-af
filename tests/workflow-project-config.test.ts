@@ -167,6 +167,8 @@ describe("workflow project configuration", () => {
         let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined
         const tools: string[] = []
         const pi = {
+            events: { on: () => () => {} },
+            on() {},
             registerCommand: (name: string, command: typeof setup) => {
                 if (name === "project-setup") setup = command
             },
@@ -193,6 +195,7 @@ describe("workflow project configuration", () => {
             assert.ok(tools.includes("inspect_project_setup"))
             assert.ok(tools.includes("configure_mcp"))
             assert.ok(tools.includes("configure_permissions"))
+            assert.ok(tools.includes("inspect_permissions"))
             assert.ok(tools.includes("inspect_linear_workspace"))
             assert.ok(tools.includes("provision_github_project"))
             await setup.handler("Use unversioned artifact mode", { cwd: root })
@@ -263,6 +266,8 @@ describe("workflow project configuration", () => {
             let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined
             let sent = ""
             const pi = {
+                events: { on: () => () => {} },
+                on() {},
                 registerCommand: (name: string, command: typeof setup) => {
                     if (name === "project-setup") setup = command
                 },
@@ -628,9 +633,9 @@ describe("workflow project configuration", () => {
             const indexBefore = git(root, ["ls-files", "--stage"])
             const rules = ["write(.project/*/plan.md)", "edit(.project/*/plan.md)"]
 
-            const configured = configureProjectPermissions(root, { target: "local", rules })
+            const configured = configureProjectPermissions(root, { target: "local", allow: [], ask: rules }, new Map())
 
-            assert.deepEqual(configured.addedRules, rules)
+            assert.deepEqual(configured.added, { allow: [], ask: rules })
             assert.equal(configured.changed, true)
             assert.equal(configured.localExclusionChanged, true)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
@@ -648,15 +653,22 @@ describe("workflow project configuration", () => {
             assert.deepEqual(settings.ask, ["write(existing.md)", ...rules])
             assert.deepEqual(settings.keybindings, { autoAcceptEdits: "ctrl+shift+a" })
 
-            assert.deepEqual(configureProjectPermissions(root, { target: "local", rules }), {
+            assert.deepEqual(configureProjectPermissions(root, { target: "local", allow: [], ask: rules }, new Map()), {
                 target: "local",
                 file: ".agents/permission.settings.local.json",
-                addedRules: [],
+                added: { allow: [], ask: [] },
+                skipped: { allow: [], ask: rules },
+                inspection: [],
                 changed: false,
                 localExclusionChanged: false,
             })
             assert.throws(
-                () => configureProjectPermissions(root, { target: "project", rules: ["mcp__github__issue_read"] }),
+                () =>
+                    configureProjectPermissions(
+                        root,
+                        { target: "project", allow: [], ask: ["mcp__github__issue_read"] },
+                        new Map(),
+                    ),
                 /legacy mcp__ rules are not supported/,
             )
         } finally {
