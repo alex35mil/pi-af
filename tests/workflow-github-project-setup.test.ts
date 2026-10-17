@@ -4,6 +4,7 @@ import { describe, it } from "node:test"
 import { GITHUB_PROJECT_DEFAULTS, runGitHubProjectSetup } from "../workflows/extensions/project-setup/github-project.ts"
 
 interface FakeField {
+    databaseId?: number | null
     id: string
     name: string
     dataType: string
@@ -39,7 +40,7 @@ const builtins = ["Title", "Assignees", "Linked pull requests", "Sub-issues prog
     name,
     dataType: "TEXT",
 }))
-const allFields = (project: FakeProject) => [...builtins, ...project.fields]
+const allFields = (project: FakeProject): FakeField[] => [...builtins, ...project.fields]
 
 class FakeGitHub {
     projects: FakeProject[] = []
@@ -57,14 +58,60 @@ class FakeGitHub {
     loseNextProjectCreateResponse = false
     loseNextRepositoryLabelCreateResponse = false
     nextField = 10
+    repositoryOwnerType = "Organization"
+    restRequests: string[] = []
+    onBoardCreate?: (project: FakeProject, view: FakeView) => void
+    onProjectCreate?: (project: FakeProject) => void
+    loseNextViewDeleteResponse = false
+    failViewDelete = false
+    ignoreViewDelete = false
 
     readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
         const url = String(input)
         const headers = new Headers(init?.headers)
         this.authorizationHeaders.push(headers.get("Authorization") ?? "")
         if (url.endsWith("/graphql")) return this.graphql(String(init?.body ?? ""))
+        this.restRequests.push(`${init?.method ?? "GET"} ${url}`)
         if (url.endsWith("/repos/acme/example")) {
-            return json({ node_id: "repo-node", owner: { type: "Organization" } })
+            return json({
+                node_id: "repo-node",
+                name: "example",
+                owner: { login: "acme", type: this.repositoryOwnerType },
+            })
+        }
+        if (url.endsWith("/users/alex")) return json({ id: 42, login: "alex", type: "User" })
+        const route = /\/(users\/42|orgs\/acme)\/projectsV2\/(\d+)\/views$/.exec(url)
+        if (route && init?.method === "POST") {
+            const project = this.projects.find((project) => project.number === Number(route[2]))!
+            const fields = details(project).fields.nodes
+            const field = (id: number) => {
+                assert.equal(typeof id, "number")
+                const result = fields.find((field) => field.databaseId === id)
+                assert.ok(result, `unknown numeric field ${id}`)
+                return result
+            }
+            const body = JSON.parse(String(init.body))
+            const views = this.projectViews(project)
+            const view = this.defaultView(project, Math.max(0, ...views.map((view) => view.number)) + 1)
+            Object.assign(view, {
+                name: body.name,
+                layout: `${body.layout.toUpperCase()}_LAYOUT`,
+                visibleFieldIds: body.visible_fields.map((id: number) => field(id).id),
+                columns: body.vertical_group_by.map(field),
+                groupBy: body.group_by.map(field),
+                sortBy: body.sort_by.map(([id, direction]: [number, string]) => ({
+                    field: field(id),
+                    direction: direction.toUpperCase(),
+                })),
+            })
+            views.push(view)
+            this.viewWrites.push({ operation: "rest-create", route: route[1], ...body })
+            this.onBoardCreate?.(project, view)
+            if (this.loseNextViewCreateResponse) {
+                this.loseNextViewCreateResponse = false
+                return json({ message: "response lost after view creation" }, 500)
+            }
+            return json({ value: { node_id: view.id, id: view.number, number: view.number, ...body } }, 201)
         }
         if (url.endsWith("/repos/acme/example/labels")) {
             if (init?.method !== "POST") return json({ message: "method not allowed" }, 405)
@@ -144,7 +191,23 @@ class FakeGitHub {
             }
             return graph({ updateProjectV2View: { projectV2View: { id: view.id } } })
         }
-        if (query.includes("views(first: 50")) {
+        if (query.includes("deleteProjectV2View(")) {
+            this.viewWrites.push({ operation: "delete", viewId: variables.viewId })
+            if (this.failViewDelete) return graph(undefined, [{ message: "view deletion forbidden" }])
+            if (!this.ignoreViewDelete)
+                for (const [projectId, views] of this.views) {
+                    this.views.set(
+                        projectId,
+                        views.filter((view) => view.id !== variables.viewId),
+                    )
+                }
+            if (this.loseNextViewDeleteResponse) {
+                this.loseNextViewDeleteResponse = false
+                return graph(undefined, [{ message: "response lost after deletion" }])
+            }
+            return graph({ deleteProjectV2View: { projectV2View: { id: variables.viewId } } })
+        }
+        if (query.includes("views(first: 50") && !query.includes("createProjectV2(")) {
             const project = this.project(String(variables.projectId))
             return graph({
                 node: {
@@ -200,11 +263,20 @@ class FakeGitHub {
                 repositoryIds: variables.repositoryId ? [String(variables.repositoryId)] : [],
             }
             this.projects.push(project)
+            this.onProjectCreate?.(project)
+            const initialViews = this.projectViews(project).map(({ id }) => ({ id }))
             if (this.loseNextProjectCreateResponse) {
                 this.loseNextProjectCreateResponse = false
                 return graph(undefined, [{ message: "response lost after Project creation" }])
             }
-            return graph({ createProjectV2: { projectV2: summary(project) } })
+            return graph({
+                createProjectV2: {
+                    projectV2: {
+                        ...summary(project),
+                        views: { nodes: initialViews, pageInfo: { hasNextPage: false } },
+                    },
+                },
+            })
         }
         if (query.includes("updateProjectV2(")) {
             const project = this.project(String(variables.projectId))
@@ -355,7 +427,8 @@ function details(project: FakeProject) {
         ...summary(project),
         items: { totalCount: project.itemCount },
         fields: {
-            nodes: allFields(project).map((field) => ({
+            nodes: allFields(project).map((field, index) => ({
+                databaseId: field.databaseId === undefined ? 100 + index : field.databaseId,
                 __typename: field.dataType === "SINGLE_SELECT" ? "ProjectV2SingleSelectField" : "ProjectV2Field",
                 isIssueField: false,
                 ...field,
@@ -411,7 +484,8 @@ function organizationNative(source: Record<string, unknown>) {
         project: source,
         presentation: {
             ...defaults.presentation,
-            // This fixture explicitly selects fields exposed on its Project; issue Priority is not attached.
+            // Metadata-only scenarios use the existing table path; their issue Priority is not exposed on the Project.
+            layout: "table",
             visibleFields: defaults.presentation.visibleFields.filter(
                 (field) => !(field.kind === "workflow" && field.field === "priority"),
             ),
@@ -491,7 +565,7 @@ describe("GitHub Project setup", () => {
         assert.doesNotMatch(JSON.stringify(applied), /secret-token/)
     })
 
-    it("continues from provider state after a lost Project-create response", async () => {
+    it("preserves views and requires explicit recovery after a lost Project-create response", async () => {
         const github = new FakeGitHub()
         const specification = projectContained({
             mode: "new",
@@ -501,12 +575,16 @@ describe("GitHub Project setup", () => {
         })
         const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
         github.loseNextProjectCreateResponse = true
-        const applied = await runGitHubProjectSetup(
-            { operation: "apply", specification, approvedPlanHash: preview.planHash },
-            setupOptions(github),
+        await assert.rejects(
+            runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            ),
+            /select it as resume-created/,
         )
-        assert.equal(applied.state, "provisioned")
         assert.equal(github.projects.length, 1)
+        assert.equal(github.projectViews(github.projects[0]).length, 1)
+        assert.deepEqual(github.viewWrites, [])
     })
 
     it("reuses exact managed labels and blocks conflicting label metadata", async () => {
@@ -928,6 +1006,7 @@ describe("GitHub Project setup", () => {
             visibility: "private",
             associateRepository: false,
         })
+        existing.presentation.target = { mode: "selected", viewId: github.projectViews(github.projects[0])[0].id }
         const reused = await runGitHubProjectSetup(
             { operation: "preview", specification: existing },
             setupOptions(github),
@@ -997,9 +1076,16 @@ describe("GitHub Project setup", () => {
         )
     }
     const seed = async (github: FakeGitHub) => {
-        await apply(github, newSpecification())
+        const result = await apply(github, newSpecification())
         github.viewWrites = []
-        return projectContained({ mode: "existing", number: 1, visibility: "private", associateRepository: true })
+        const specification = projectContained({
+            mode: "existing",
+            number: 1,
+            visibility: "private",
+            associateRepository: true,
+        })
+        specification.presentation.target = { mode: "selected", viewId: (result.view as any).id }
+        return specification
     }
 
     it("encodes and verifies the confirmed Board defaults without claiming manual completion", async () => {
@@ -1008,7 +1094,8 @@ describe("GitHub Project setup", () => {
         const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
         assert.equal(github.projects.length, 0)
         assert.equal(github.viewWrites.length, 0)
-        assert.match(JSON.stringify(preview.actions), /configure-initial-view/)
+        assert.match(JSON.stringify(preview.actions), /create-board-view/)
+        assert.match(JSON.stringify(preview.actions), /delete-created-default-view/)
         const result = await apply(github, specification)
         const view = result.view as Record<string, any>
         assert.equal(view.name, "Board")
@@ -1034,15 +1121,23 @@ describe("GitHub Project setup", () => {
         )
         assert.equal(github.deleteProjectFieldAttempts, 0)
         assert.deepEqual(result.verification, { api: "verified", manual: "requires-user-confirmation" })
-        assert.equal((result.manualSteps as any[]).length, 6)
+        assert.deepEqual(
+            (result.manualSteps as any[]).map((step) => step.setting),
+            ["fieldSum", "sliceBy", "defaultRepository"],
+        )
         assert.match(JSON.stringify(result.manualSteps), /Save changes/)
-        assert.match(JSON.stringify(result.manualSteps), /No grouping/)
-        const steps = result.manualSteps as Array<{ setting: string; desired: string; instructions: string }>
-        assert.equal(steps.find((step) => step.setting === "swimlanes")!.desired, "none")
-        assert.equal(steps.find((step) => step.setting === "sortBy")!.desired, "Priority: Urgent → High → Medium → Low")
-        assert.match(
-            steps.find((step) => step.setting === "sortBy")!.instructions,
-            /remove other sorts and select Priority/,
+        assert.deepEqual(view.groupBy, [])
+        assert.equal(view.verticalGroupBy[0].name, "Status")
+        assert.equal(view.sortBy[0].field.name, "Priority")
+        assert.equal(view.sortBy[0].direction, "ASC")
+        assert.deepEqual(
+            github.viewWrites.map((write) => write.operation),
+            ["rest-create", "delete"],
+        )
+        assert.equal(github.viewWrites[1].viewId, "view-1-1")
+        assert.deepEqual(
+            github.projectViews(github.projects[0]).map((view) => view.id),
+            [view.id],
         )
         assert.deepEqual(GITHUB_PROJECT_DEFAULTS.board, {
             columnBy: "status",
@@ -1058,12 +1153,17 @@ describe("GitHub Project setup", () => {
         assert.equal(GITHUB_PROJECT_DEFAULTS.associateRepository, true)
         assert.equal(GITHUB_PROJECT_DEFAULTS.defaultRepository, "setup-repository")
         assert.deepEqual(Object.keys(github.viewWrites[0]).sort(), [
-            "configuration",
+            "group_by",
             "layout",
             "name",
             "operation",
-            "viewId",
+            "route",
+            "sort_by",
+            "vertical_group_by",
+            "visible_fields",
         ])
+        assert.equal(github.viewWrites[0].route, "users/42")
+        assert.ok(github.viewWrites[0].visible_fields.every((id: unknown) => typeof id === "number"))
     })
 
     it("creates a missing initial view and reconciles a lost create response without duplication", async () => {
@@ -1073,7 +1173,7 @@ describe("GitHub Project setup", () => {
         await apply(github, newSpecification())
         assert.equal(github.projectViews(github.projects[0]).length, 1)
         assert.equal(github.viewWrites.length, 1)
-        assert.equal(github.viewWrites[0].operation, "create")
+        assert.equal(github.viewWrites[0].operation, "rest-create")
     })
 
     it("preserves multiple initial views for explicit selection", async () => {
@@ -1235,8 +1335,8 @@ describe("GitHub Project setup", () => {
         assert.ok(names.includes("Lifecycle"))
         assert.ok(names.includes("Urgency"))
         assert.ok(names.includes("Activity"))
-        assert.match(JSON.stringify(result.manualSteps), /Lifecycle/)
-        assert.match(JSON.stringify(result.manualSteps), /Urgency/)
+        assert.equal(view.verticalGroupBy[0].name, "Lifecycle")
+        assert.equal(view.sortBy[0].field.name, "Urgency")
     })
 
     it("blocks new Projects using incompatible organization Priority ordering", async () => {
@@ -1510,7 +1610,7 @@ describe("GitHub Project setup", () => {
         assert.equal(github.deleteProjectFieldAttempts, 0)
     })
 
-    it("uses configured Priority option order in the guided sorting step", async () => {
+    it("uses configured Priority option order for a fresh Board", async () => {
         const github = new FakeGitHub()
         const base = newSpecification()
         const names = ["Critical", "Important", "Routine", "Later"]
@@ -1526,11 +1626,15 @@ describe("GitHub Project setup", () => {
             },
         }
         const result = await apply(github, specification)
-        const steps = result.manualSteps as Array<{ setting: string; desired: string; verification: string }>
-        const sort = steps.find((step) => step.setting === "sortBy")!
-        assert.equal(sort.desired, "Urgency: Critical → Important → Routine → Later")
-        assert.match(sort.verification, /Critical → Important → Routine → Later/)
-        assert.equal(steps.find((step) => step.setting === "swimlanes")!.desired, "none")
+        const view = result.view as any
+        assert.equal(view.sortBy[0].field.name, "Urgency")
+        assert.equal(view.sortBy[0].direction, "ASC")
+        assert.deepEqual(view.groupBy, [])
+        const priority = github.projects[0].fields.find((field) => field.name === "Urgency")!
+        assert.deepEqual(
+            priority.options!.map((option) => option.name),
+            names,
+        )
     })
 
     it("supports table and roadmap layouts with their documented visible-field constraints", async () => {
@@ -1574,6 +1678,205 @@ describe("GitHub Project setup", () => {
             ),
             /explicit visible-field selection/,
         )
+    })
+
+    it("discovers canonical repository ownership and title without a Project owner", async () => {
+        for (const ownerType of ["User", "Organization"]) {
+            const github = new FakeGitHub()
+            github.repositoryOwnerType = ownerType
+            const inspected = await runGitHubProjectSetup(
+                {
+                    operation: "inspectRepository",
+                    credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                    repository: { owner: "acme", repo: "example" },
+                },
+                setupOptions(github),
+            )
+            assert.deepEqual(inspected, {
+                repository: { owner: "acme", repo: "example", ownerType: ownerType === "User" ? "user" : "org" },
+                suggestedProjectTitle: "example",
+            })
+            assert.deepEqual(github.restRequests, ["GET https://api.github.com/repos/acme/example"])
+            for (const title of [inspected.suggestedProjectTitle, "Explicit title"]) {
+                const base = newSpecification()
+                const specification = { ...base, project: { ...base.project, title } }
+                const preview = await runGitHubProjectSetup(
+                    { operation: "preview", specification },
+                    setupOptions(github),
+                )
+                assert.equal(
+                    (preview.actions as any[]).find((action) => action.kind === "create-project").details.title,
+                    title,
+                )
+            }
+        }
+    })
+
+    it("rejects unsupported ownership and personal issue scope without organization discovery", async () => {
+        const github = new FakeGitHub()
+        github.repositoryOwnerType = "Unknown"
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "inspectRepository",
+                    credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                    repository: { owner: "acme", repo: "example" },
+                },
+                setupOptions(github),
+            ),
+            /unsupported repository owner/,
+        )
+        github.repositoryOwnerType = "User"
+        const specification = organizationNative({
+            mode: "new",
+            title: "Personal",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        assert.equal(preview.state, "blocked")
+        assert.match(JSON.stringify(preview.conflicts), /require a repository owned by an organization/)
+        assert.ok(!github.restRequests.some((request) => request.includes("issue-fields")))
+        assert.equal(github.projects.length, 0)
+    })
+
+    it("uses the organization REST route and sorts hidden reversed Priority without reordering it", async () => {
+        const github = new FakeGitHub()
+        const names = ["Low", "Medium", "High", "Urgent"]
+        github.onProjectCreate = (project) =>
+            project.fields.push({
+                id: "priority",
+                name: "Priority",
+                dataType: "SINGLE_SELECT",
+                options: options(...names),
+            })
+        const base = newSpecification()
+        const specification = {
+            ...base,
+            projectOwner: { login: "acme", type: "org" },
+            presentation: {
+                ...base.presentation,
+                visibleFields: base.presentation.visibleFields.filter(
+                    (field) => !(field.kind === "workflow" && field.field === "priority"),
+                ),
+            },
+        }
+        const result = await apply(github, specification)
+        assert.equal(github.viewWrites[0].route, "orgs/acme")
+        assert.deepEqual(github.viewWrites[0].sort_by, [[106, "desc"]])
+        assert.equal((result.view as any).sortBy[0].direction, "DESC")
+        assert.ok(!(result.view as any).visibleFieldIds.includes("priority"))
+        assert.deepEqual(
+            github.projects[0].fields.find((field) => field.id === "priority")!.options!.map((option) => option.name),
+            names,
+        )
+    })
+
+    it("uses numeric organization option priorities for an issue-backed Board sort", async () => {
+        const github = new FakeGitHub()
+        const names = ["Low", "Medium", "High", "Urgent"]
+        const nativeOptions = options(...names)
+        github.issueFields = [
+            {
+                id: 1,
+                name: "Priority",
+                data_type: "single_select",
+                options: nativeOptions
+                    .map((option, index) => ({ ...option, id: index + 1, priority: index + 1 }))
+                    .reverse(),
+            },
+        ]
+        github.onProjectCreate = (project) =>
+            project.fields.push({
+                id: "issue-priority",
+                name: "Priority",
+                dataType: "SINGLE_SELECT",
+                isIssueField: true,
+                options: nativeOptions,
+            })
+        const base = organizationNative({
+            mode: "new",
+            title: "Issue Board",
+            visibility: "private",
+            associateRepository: false,
+        })
+        const result = await apply(github, { ...base, presentation: { ...base.presentation, layout: "board" } })
+        assert.equal((result.view as any).sortBy[0].field.id, "issue-priority")
+        assert.equal((result.view as any).sortBy[0].direction, "DESC")
+        assert.equal(github.viewWrites[0].route, "orgs/acme")
+    })
+
+    it("preserves the default when numeric field identity is unavailable", async () => {
+        const github = new FakeGitHub()
+        github.onProjectCreate = (project) => {
+            project.fields[0].databaseId = null
+        }
+        await assert.rejects(apply(github, newSpecification()), /no usable numeric database ID/)
+        assert.deepEqual(github.viewWrites, [])
+        assert.equal(github.projectViews(github.projects[0]).length, 1)
+    })
+
+    for (const mismatch of ["columns", "swimlanes", "sort", "direction", "visible"])
+        it(`preserves the default when Board ${mismatch} verification fails`, async () => {
+            const github = new FakeGitHub()
+            github.onBoardCreate = (project, view) => {
+                if (mismatch === "columns") view.columns = []
+                if (mismatch === "swimlanes") view.groupBy = [project.fields[0]]
+                if (mismatch === "sort") view.sortBy = []
+                if (mismatch === "direction") view.sortBy[0].direction = "DESC"
+                if (mismatch === "visible") view.visibleFieldIds = [builtins[0].id]
+            }
+            await assert.rejects(apply(github, newSpecification()), /Board post-write verification failed/)
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create"],
+            )
+            assert.equal(github.projectViews(github.projects[0]).length, 2)
+        })
+
+    it("preserves an edited default and a Project that gained an item", async () => {
+        for (const change of ["edited", "nonempty"]) {
+            const github = new FakeGitHub()
+            github.onBoardCreate = (project) => {
+                if (change === "edited") github.projectViews(project)[0].filter = "is:open"
+                else project.itemCount = 1
+            }
+            await assert.rejects(apply(github, newSpecification()), /default view changed|no longer empty/)
+            assert.equal(github.projectViews(github.projects[0]).length, 2)
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create"],
+            )
+        }
+    })
+
+    it("preserves unrelated new views and recovers lost Board-create and delete responses", async () => {
+        const github = new FakeGitHub()
+        github.loseNextViewCreateResponse = true
+        github.loseNextViewDeleteResponse = true
+        github.onBoardCreate = (project, view) =>
+            github
+                .projectViews(project)
+                .push({ ...structuredClone(view), id: "user-view", number: 9, name: "User view", filter: "is:open" })
+        const result = await apply(github, newSpecification())
+        assert.deepEqual(
+            github.viewWrites.map((write) => write.operation),
+            ["rest-create", "delete"],
+        )
+        assert.deepEqual(
+            github.projectViews(github.projects[0]).map((view) => view.id),
+            [(result.view as any).id, "user-view"],
+        )
+    })
+
+    it("preserves both views when deletion is denied or fails read-back", async () => {
+        for (const failure of ["denied", "ignored"]) {
+            const github = new FakeGitHub()
+            github.failViewDelete = failure === "denied"
+            github.ignoreViewDelete = failure === "ignored"
+            await assert.rejects(apply(github, newSpecification()), /deletion forbidden|cleanup verification failed/)
+            assert.equal(github.projectViews(github.projects[0]).length, 2)
+        }
     })
 
     it("requires an environment-backed credential", async () => {
