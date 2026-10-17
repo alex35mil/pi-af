@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
+import { inspect } from "node:util"
 
 import { GITHUB_PROJECT_DEFAULTS, runGitHubProjectSetup } from "../workflows/extensions/project-setup/github-project.ts"
 
@@ -79,8 +80,8 @@ class FakeGitHub {
                 owner: { login: "acme", type: this.repositoryOwnerType },
             })
         }
-        if (url.endsWith("/users/alex")) return json({ id: 42, login: "alex", type: "User" })
-        const route = /\/(users\/42|orgs\/acme)\/projectsV2\/(\d+)\/views$/.exec(url)
+        // Verified against the personal REST API: numeric owner POST 404; login POST 201.
+        const route = /\/(users\/alex|orgs\/acme)\/projectsV2\/(\d+)\/views$/.exec(url)
         if (route && init?.method === "POST") {
             const project = this.projects.find((project) => project.number === Number(route[2]))!
             const fields = details(project).fields.nodes
@@ -1088,6 +1089,183 @@ describe("GitHub Project setup", () => {
         return specification
     }
 
+    it("creates personal Boards once through the verified owner-login route without an owner lookup", async () => {
+        const github = new FakeGitHub()
+        const result = await apply(github, newSpecification())
+        assert.equal(result.state, "provisioned")
+        assert.equal(github.viewWrites[0].route, "users/alex")
+        assert.deepEqual(
+            github.restRequests.filter((request) => request.includes("/users/")),
+            ["POST https://api.github.com/users/alex/projectsV2/1/views"],
+        )
+    })
+
+    it("reconciles a created Board when HTTP success omits the expected response envelope", async () => {
+        const github = new FakeGitHub()
+        const specification = newSpecification()
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        const fetch: typeof globalThis.fetch = async (input, init) => {
+            const response = await github.fetch(input, init)
+            // The live 201 response had no `value`; its complete shape was not retained.
+            return String(input).endsWith("/views") && init?.method === "POST" ? json({}, 201) : response
+        }
+        const result = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            { ...setupOptions(github), fetch },
+        )
+        assert.equal(result.state, "provisioned")
+        assert.deepEqual(
+            github.viewWrites.map((write) => write.operation),
+            ["rest-create", "delete"],
+        )
+        assert.deepEqual(
+            github.projectViews(github.projects[0]).map((view) => view.id),
+            [(result.view as any).id],
+        )
+    })
+
+    for (const failure of ["404", "403", "invalid-json", "network", "recovery-read"])
+        it(`preserves partial setup and safe Board request context after ${failure}`, async () => {
+            const github = new FakeGitHub()
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            let attempts = 0
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                if (String(input).endsWith("/views") && init?.method === "POST") {
+                    attempts++
+                    if (failure === "invalid-json") return new Response("not JSON secret-token", { status: 502 })
+                    if (failure === "network") throw new TypeError("secret-token with raw request details")
+                    return json({ message: "Board unavailable secret-token" }, failure === "403" ? 403 : 404)
+                }
+                if (attempts > 0 && failure === "recovery-read")
+                    return json({ errors: [{ message: "Recovery unavailable secret-token" }] })
+                return github.fetch(input, init)
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.match(error.message, /during Board setup/)
+                    assert.match(error.message, /POST \/users\/alex\/projectsV2\/1\/views/)
+                    if (failure === "invalid-json") assert.match(error.message, /invalid JSON.*502/)
+                    else if (failure === "network") assert.match(error.message, /network request failed/)
+                    else assert.match(error.message, failure === "403" ? /403/ : /404/)
+                    if (failure === "recovery-read") {
+                        assert.match(error.message, /recovery read failed/)
+                        assert.match(error.message, /POST \/graphql/)
+                        assert.match(error.message, /Recovery unavailable/)
+                    }
+                    assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization|raw request details/)
+                    return true
+                },
+            )
+            assert.equal(attempts, 1)
+            assert.equal(github.projects.length, 1)
+            assert.equal(github.projectViews(github.projects[0]).length, 1)
+            assert.equal(github.projectViews(github.projects[0])[0].name, "View 1")
+            assert.deepEqual(github.viewWrites, [])
+        })
+
+    it("reports safe discovery HTTP errors with method, path and stage", async () => {
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "inspectRepository",
+                    credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                    repository: { owner: "acme", repo: "example" },
+                },
+                {
+                    env: { GITHUB_TOKEN_FOR_TEST: "secret-token" },
+                    fetch: async () => json({ message: "Unavailable secret-token" }, 503),
+                },
+            ),
+            (error: Error) => {
+                assert.match(error.message, /during inspectRepository/)
+                assert.match(error.message, /GET \/repos\/acme\/example/)
+                assert.match(error.message, /503.*Unavailable/)
+                assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                return true
+            },
+        )
+    })
+
+    it("reports safe GraphQL errors during discovery", async () => {
+        const github = new FakeGitHub()
+        await assert.rejects(
+            runGitHubProjectSetup(
+                {
+                    operation: "inspect",
+                    credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                    repository: { owner: "acme", repo: "example" },
+                    projectOwner: { login: "alex", type: "user" },
+                    includeOrganizationMetadata: false,
+                },
+                {
+                    ...setupOptions(github),
+                    fetch: async (input, init) =>
+                        String(input).endsWith("/graphql")
+                            ? json({ errors: [{ message: "Query unavailable secret-token" }] })
+                            : github.fetch(input, init),
+                },
+            ),
+            (error: Error) => {
+                assert.match(error.message, /during inspect/)
+                assert.match(error.message, /POST \/graphql.*Query unavailable/)
+                assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                return true
+            },
+        )
+    })
+
+    for (const stage of [
+        "Project creation/settings",
+        "Project fields",
+        "repository labels",
+        "organization metadata",
+        "final verification",
+    ])
+        it(`identifies the ${stage} provisioning stage`, async () => {
+            const github = new FakeGitHub()
+            const specification =
+                stage === "organization metadata"
+                    ? organizationNative({
+                          mode: "new",
+                          title: "Probe",
+                          visibility: "private",
+                          associateRepository: false,
+                      })
+                    : newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                const url = String(input)
+                const query = url.endsWith("/graphql") ? JSON.parse(String(init?.body)).query : ""
+                const fail =
+                    (stage === "Project creation/settings" && query.includes("createProjectV2(")) ||
+                    (stage === "Project fields" && query.includes("createProjectV2Field(")) ||
+                    (stage === "repository labels" && init?.method === "POST" && url.endsWith("/labels")) ||
+                    (stage === "organization metadata" && init?.method === "POST" && url.endsWith("/issue-fields")) ||
+                    (stage === "final verification" &&
+                        url.includes("/labels/") &&
+                        github.viewWrites.some((write) => write.operation === "delete"))
+                if (fail) return json({ message: "Unavailable secret-token" }, 503)
+                return github.fetch(input, init)
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.ok(error.message.includes(`during ${stage}:`), error.message)
+                    assert.match(error.message, /(?:GET|POST) \/.*503/)
+                    assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                    return true
+                },
+            )
+        })
+
     it("encodes and verifies the confirmed Board defaults without claiming manual completion", async () => {
         const github = new FakeGitHub()
         const specification = newSpecification()
@@ -1162,7 +1340,7 @@ describe("GitHub Project setup", () => {
             "vertical_group_by",
             "visible_fields",
         ])
-        assert.equal(github.viewWrites[0].route, "users/42")
+        assert.equal(github.viewWrites[0].route, "users/alex")
         assert.ok(github.viewWrites[0].visible_fields.every((id: unknown) => typeof id === "number"))
     })
 

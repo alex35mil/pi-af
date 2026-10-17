@@ -487,55 +487,65 @@ export async function runGitHubProjectSetup(
     options: GitHubProjectSetupOptions = {},
 ): Promise<Record<string, unknown>> {
     const input = Value.Parse(GitHubProjectSetupToolSchema, rawInput)
-    if (input.operation === "inspectRepository") {
-        const repository = await clientFor(input.credentialEnv, options).getRepository(input.repository)
-        return {
-            repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
-            suggestedProjectTitle: repository.repo,
+    let stage: string = input.operation
+    try {
+        if (input.operation === "inspectRepository") {
+            const repository = await clientFor(input.credentialEnv, options).getRepository(input.repository)
+            return {
+                repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
+                suggestedProjectTitle: repository.repo,
+            }
         }
-    }
-    if (input.operation === "inspect") {
-        const client = clientFor(input.credentialEnv, options)
-        const [repository, owner] = await Promise.all([
-            client.getRepository(input.repository),
-            client.listOwnerProjects(input.projectOwner),
-        ])
-        const organizationMetadata =
-            input.includeOrganizationMetadata && repository.ownerType === "org"
-                ? { issueFields: await client.listIssueFields(input.repository.owner) }
-                : undefined
-        return {
-            repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
-            suggestedProjectTitle: repository.repo,
-            projectOwner: input.projectOwner,
-            projects: owner.projects,
-            ...(organizationMetadata ? { organizationMetadata } : {}),
-            defaults: GITHUB_PROJECT_DEFAULTS,
+        if (input.operation === "inspect") {
+            const client = clientFor(input.credentialEnv, options)
+            const [repository, owner] = await Promise.all([
+                client.getRepository(input.repository),
+                client.listOwnerProjects(input.projectOwner),
+            ])
+            const organizationMetadata =
+                input.includeOrganizationMetadata && repository.ownerType === "org"
+                    ? { issueFields: await client.listIssueFields(input.repository.owner) }
+                    : undefined
+            return {
+                repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
+                suggestedProjectTitle: repository.repo,
+                projectOwner: input.projectOwner,
+                projects: owner.projects,
+                ...(organizationMetadata ? { organizationMetadata } : {}),
+                defaults: GITHUB_PROJECT_DEFAULTS,
+            }
         }
-    }
 
-    if (input.operation === "inspectProject") {
-        const client = clientFor(input.credentialEnv, options)
-        const owner = await client.listOwnerProjects(input.projectOwner)
-        const selected = owner.projects.find((project) => project.number === input.projectNumber)
-        if (!selected) throw new Error(`Project ${input.projectNumber} is not owned by ${input.projectOwner.login}`)
-        return {
-            project: await client.getProject(selected.id),
-            views: await client.listProjectViews(selected.id),
-            unavailableSettings: ["defaultRepository", "fieldSum", "sliceBy"],
-            defaults: GITHUB_PROJECT_DEFAULTS,
+        if (input.operation === "inspectProject") {
+            const client = clientFor(input.credentialEnv, options)
+            const owner = await client.listOwnerProjects(input.projectOwner)
+            const selected = owner.projects.find((project) => project.number === input.projectNumber)
+            if (!selected) throw new Error(`Project ${input.projectNumber} is not owned by ${input.projectOwner.login}`)
+            return {
+                project: await client.getProject(selected.id),
+                views: await client.listProjectViews(selected.id),
+                unavailableSettings: ["defaultRepository", "fieldSum", "sliceBy"],
+                defaults: GITHUB_PROJECT_DEFAULTS,
+            }
         }
-    }
 
-    const specification = Value.Parse(GitHubProjectSpecificationSchema, input.specification)
-    const client = clientFor(specification.credentialEnv, options)
-    const plan = await previewGitHubProject(specification, client)
-    if (input.operation === "preview") return plan as unknown as Record<string, unknown>
-    if (plan.planHash !== input.approvedPlanHash) {
-        throw new Error("GitHub Project provisioning changed after approval; preview and approve the new exact plan")
+        const specification = Value.Parse(GitHubProjectSpecificationSchema, input.specification)
+        const client = clientFor(specification.credentialEnv, options)
+        stage = "preview"
+        const plan = await previewGitHubProject(specification, client)
+        if (input.operation === "preview") return plan as unknown as Record<string, unknown>
+        if (plan.planHash !== input.approvedPlanHash) {
+            throw new Error(
+                "GitHub Project provisioning changed after approval; preview and approve the new exact plan",
+            )
+        }
+        if (plan.state !== "ready")
+            throw new Error(`GitHub Project provisioning is blocked: ${plan.conflicts.join("; ")}`)
+        stage = "apply"
+        return await applyGitHubProject(specification, client, plan)
+    } catch (error) {
+        throw contextError(`GitHub setup failed during ${stage}`, error)
     }
-    if (plan.state !== "ready") throw new Error(`GitHub Project provisioning is blocked: ${plan.conflicts.join("; ")}`)
-    return applyGitHubProject(specification, client, plan)
 }
 
 class GitHubClient {
@@ -833,12 +843,7 @@ class GitHubClient {
         project: ProjectDetails,
         configuration: BoardConfiguration,
     ): Promise<string> {
-        let route: string
-        if (owner.type === "org") route = `/orgs/${encodeURIComponent(owner.login)}`
-        else {
-            const user = record(await this.rest("GET", `/users/${encodeURIComponent(owner.login)}`), "Project owner")
-            route = `/users/${databaseId(user.id, "Project owner")}`
-        }
+        const route = `/${owner.type === "org" ? "orgs" : "users"}/${encodeURIComponent(owner.login)}`
         const numericId = (id: string) =>
             databaseId(project.fields.find((field) => field.id === id)?.databaseId, "Project field")
         const result = record(
@@ -1051,20 +1056,17 @@ class GitHubClient {
     }
 
     private async graphql(query: string, variables: Record<string, unknown>): Promise<Record<string, unknown>> {
-        const response = await this.fetchImpl("https://api.github.com/graphql", {
-            method: "POST",
-            headers: this.headers(),
-            body: JSON.stringify({ query, variables }),
-            signal: this.signal,
-        })
-        const result = await responseJson(response)
-        if (!response.ok) throw githubError(response.status, result)
-        const root = record(result, "GitHub GraphQL response")
-        if (Array.isArray(root.errors) && root.errors.length > 0) {
-            const messages = root.errors.map((error) => String(record(error, "GraphQL error").message)).join("; ")
-            throw new Error(`GitHub GraphQL failed: ${messages}`)
+        const result = await this.rest("POST", "/graphql", { query, variables })
+        try {
+            const root = record(result, "GitHub GraphQL response")
+            if (Array.isArray(root.errors) && root.errors.length > 0) {
+                const messages = root.errors.map((error) => String(record(error, "GraphQL error").message)).join("; ")
+                throw new Error(`GitHub GraphQL failed: ${messages}`)
+            }
+            return record(root.data, "GitHub GraphQL data")
+        } catch (error) {
+            throw this.requestError("POST", "/graphql", error)
         }
-        return record(root.data, "GitHub GraphQL data")
     }
 
     private async rest(
@@ -1073,16 +1075,33 @@ class GitHubClient {
         body?: Record<string, unknown>,
         allowNotFound = false,
     ): Promise<unknown> {
-        const response = await this.fetchImpl(`https://api.github.com${pathname}`, {
-            method,
-            headers: this.headers(),
-            ...(body ? { body: JSON.stringify(body) } : {}),
-            signal: this.signal,
-        })
-        const result = response.status === 204 ? null : await responseJson(response)
-        if (allowNotFound && response.status === 404) return undefined
-        if (!response.ok) throw githubError(response.status, result)
-        return result
+        try {
+            let response: Response
+            try {
+                response = await this.fetchImpl(`https://api.github.com${pathname}`, {
+                    method,
+                    headers: this.headers(),
+                    ...(body ? { body: JSON.stringify(body) } : {}),
+                    signal: this.signal,
+                })
+            } catch (error) {
+                // Fetch errors can carry raw request objects; retain only the safe failure category.
+                throw new Error(`network request failed (${error instanceof Error ? error.name : "unknown error"})`)
+            }
+            const result = response.status === 204 ? null : await responseJson(response)
+            if (allowNotFound && response.status === 404) return undefined
+            if (!response.ok) throw githubError(response.status, result)
+            return result
+        } catch (error) {
+            throw this.requestError(method, pathname, error)
+        }
+    }
+
+    private requestError(method: string, pathname: string, error: unknown): Error {
+        const redact = (value: string) => value.replaceAll(this.token, "[REDACTED]")
+        // Preserve the safe reason, not provider/fetch objects or their unsanitized causes.
+        const cause = new Error(redact(errorMessage(error)))
+        return contextError(redact(`${method} ${pathname}`), cause)
     }
 
     private headers(): Record<string, string> {
@@ -1469,103 +1488,114 @@ async function applyGitHubProject(
     client: GitHubClient,
     approvedPlan: GitHubProjectPlan,
 ): Promise<Record<string, unknown>> {
-    const repository = await client.getRepository(specification.repository)
-    const owner = await client.listOwnerProjects(specification.projectOwner)
-    let project: ProjectDetails
-    let initialViews: ProjectView[] = []
-    if (specification.project.mode === "new") {
-        const projectSource = specification.project
-        let created: ProjectSummary
-        let initialViewIds: string[] = []
-        try {
-            const creation = await client.createProject(
-                owner.ownerId,
-                projectSource.title,
-                projectSource.associateRepository ? repository.id : undefined,
-            )
-            created = creation.project
-            initialViewIds = creation.initialViewIds
-        } catch (error) {
-            const candidates = (await client.listOwnerProjects(specification.projectOwner)).projects.filter(
-                (candidate) => candidate.title === projectSource.title,
-            )
-            if (candidates.length === 1) {
-                if (isFreshBoard(specification))
-                    throw new Error(
-                        `Project creation response was uncertain; inspect ${candidates[0].url} and select it as resume-created. Default-view provenance is unavailable; no views were deleted.`,
-                        { cause: error },
+    let stage = "provisioning discovery"
+    try {
+        const repository = await client.getRepository(specification.repository)
+        const owner = await client.listOwnerProjects(specification.projectOwner)
+        stage = "Project creation/settings"
+        let project: ProjectDetails
+        let initialViews: ProjectView[] = []
+        if (specification.project.mode === "new") {
+            const projectSource = specification.project
+            let created: ProjectSummary
+            let initialViewIds: string[] = []
+            try {
+                const creation = await client.createProject(
+                    owner.ownerId,
+                    projectSource.title,
+                    projectSource.associateRepository ? repository.id : undefined,
+                )
+                created = creation.project
+                initialViewIds = creation.initialViewIds
+            } catch (error) {
+                const candidates = (
+                    await readAfterFailure(error, () => client.listOwnerProjects(specification.projectOwner))
+                ).projects.filter((candidate) => candidate.title === projectSource.title)
+                if (candidates.length === 1) {
+                    if (isFreshBoard(specification))
+                        throw contextError(
+                            `Project creation response was uncertain; inspect ${candidates[0].url} and select it as resume-created. Default-view provenance is unavailable; no views were deleted.`,
+                            error,
+                        )
+                    created = candidates[0]
+                } else if (candidates.length === 0) throw error
+                else {
+                    throw contextError(
+                        `GitHub Project creation could not be reconciled because multiple exact-title Projects exist: ${candidates.map((candidate) => `${candidate.number} ${candidate.url}`).join(", ")}`,
+                        error,
                     )
-                created = candidates[0]
-            } else if (candidates.length === 0) throw error
-            else {
-                throw new Error(
-                    `GitHub Project creation could not be reconciled because multiple exact-title Projects exist: ${candidates.map((candidate) => `${candidate.number} ${candidate.url}`).join(", ")}`,
-                    { cause: error },
-                )
+                }
             }
+            if (isFreshBoard(specification)) {
+                if (initialViewIds.length > 1)
+                    throw new Error(
+                        "new Project has multiple initial views; inspect and select one explicitly before resuming",
+                    )
+                const views = await client.listProjectViews(created.id)
+                initialViews = initialViewIds.map((id) => {
+                    const view = views.find((view) => view.id === id)
+                    if (!view) throw new Error("captured initial view is missing; inspect the Project before resuming")
+                    return view
+                })
+            }
+            await client.setProjectVisibility(created.id, projectSource.visibility === "public")
+            project = await client.getProject(created.id)
+        } else {
+            const projectSource = specification.project
+            const selected = owner.projects.find((candidate) => candidate.number === projectSource.number)
+            if (!selected) throw new Error(`Project ${projectSource.number} is no longer available`)
+            project = await client.getProject(selected.id)
+            if (project.public !== (projectSource.visibility === "public")) {
+                await client.setProjectVisibility(project.id, projectSource.visibility === "public")
+            }
+            const associated = project.repositoryIds.includes(repository.id)
+            if (associated !== projectSource.associateRepository) {
+                await client.setRepositoryAssociation(project.id, repository.id, projectSource.associateRepository)
+            }
+            project = await client.getProject(project.id)
         }
-        if (isFreshBoard(specification)) {
-            if (initialViewIds.length > 1)
-                throw new Error(
-                    "new Project has multiple initial views; inspect and select one explicitly before resuming",
-                )
-            const views = await client.listProjectViews(created.id)
-            initialViews = initialViewIds.map((id) => {
-                const view = views.find((view) => view.id === id)
-                if (!view) throw new Error("captured initial view is missing; inspect the Project before resuming")
-                return view
-            })
-        }
-        await client.setProjectVisibility(created.id, projectSource.visibility === "public")
-        project = await client.getProject(created.id)
-    } else {
-        const projectSource = specification.project
-        const selected = owner.projects.find((candidate) => candidate.number === projectSource.number)
-        if (!selected) throw new Error(`Project ${projectSource.number} is no longer available`)
-        project = await client.getProject(selected.id)
-        if (project.public !== (projectSource.visibility === "public")) {
-            await client.setProjectVisibility(project.id, projectSource.visibility === "public")
-        }
-        const associated = project.repositoryIds.includes(repository.id)
-        if (associated !== projectSource.associateRepository) {
-            await client.setRepositoryAssociation(project.id, repository.id, projectSource.associateRepository)
-        }
-        project = await client.getProject(project.id)
-    }
 
-    await provisionProjectFields(
-        specification,
-        project,
-        client,
-        specification.project.mode === "new" || specification.project.mode === "resume-created",
-    )
-    await provisionRepositoryLabel(specification, client)
-    await provisionOrganizationMetadata(specification, repository, client)
-
-    const currentProject = await client.getProject(project.id)
-    const configuredView = isFreshBoard(specification)
-        ? await provisionFreshBoard(specification, currentProject, initialViews, client)
-        : await provisionProjectView(specification, currentProject, client)
-    const verified = await client.getProject(project.id)
-    const verificationActions: ProvisioningAction[] = []
-    const conflicts: string[] = []
-    planProjectSettings(specification.project, verified, repository, verificationActions)
-    planProjectFields(specification, verified, false, verificationActions, conflicts)
-    await planRepositoryLabel(specification, client, verificationActions, conflicts)
-    await planOrganizationMetadata(specification, repository, client, verificationActions, conflicts)
-    if (conflicts.length > 0 || verificationActions.length > 0) {
-        throw new Error(
-            `GitHub Project post-write verification failed: ${[...conflicts, ...verificationActions.map((action) => action.description)].join("; ")}`,
+        stage = "Project fields"
+        await provisionProjectFields(
+            specification,
+            project,
+            client,
+            specification.project.mode === "new" || specification.project.mode === "resume-created",
         )
-    }
-    return {
-        state: "provisioned",
-        project: projectSummary(verified),
-        view: configuredView,
-        verification: { api: "verified", manual: "requires-user-confirmation" },
-        manualSteps: manualStepsFor(specification, `${verified.url}/views/${configuredView.number}`),
-        trackerConfig: trackerConfigFor(specification, verified.number),
-        approvedPlanHash: approvedPlan.planHash,
+        stage = "repository labels"
+        await provisionRepositoryLabel(specification, client)
+        stage = "organization metadata"
+        await provisionOrganizationMetadata(specification, repository, client)
+
+        stage = isFreshBoard(specification) ? "Board setup" : "view setup"
+        const currentProject = await client.getProject(project.id)
+        const configuredView = isFreshBoard(specification)
+            ? await provisionFreshBoard(specification, currentProject, initialViews, client)
+            : await provisionProjectView(specification, currentProject, client)
+        stage = "final verification"
+        const verified = await client.getProject(project.id)
+        const verificationActions: ProvisioningAction[] = []
+        const conflicts: string[] = []
+        planProjectSettings(specification.project, verified, repository, verificationActions)
+        planProjectFields(specification, verified, false, verificationActions, conflicts)
+        await planRepositoryLabel(specification, client, verificationActions, conflicts)
+        await planOrganizationMetadata(specification, repository, client, verificationActions, conflicts)
+        if (conflicts.length > 0 || verificationActions.length > 0) {
+            throw new Error(
+                `GitHub Project post-write verification failed: ${[...conflicts, ...verificationActions.map((action) => action.description)].join("; ")}`,
+            )
+        }
+        return {
+            state: "provisioned",
+            project: projectSummary(verified),
+            view: configuredView,
+            verification: { api: "verified", manual: "requires-user-confirmation" },
+            manualSteps: manualStepsFor(specification, `${verified.url}/views/${configuredView.number}`),
+            trackerConfig: trackerConfigFor(specification, verified.number),
+            approvedPlanHash: approvedPlan.planHash,
+        }
+    } catch (error) {
+        throw contextError(`GitHub setup failed during ${stage}`, error)
     }
 }
 
@@ -1741,7 +1771,7 @@ async function provisionFreshBoard(
     try {
         viewId = await client.createBoardView(specification.projectOwner, project, desired)
     } catch (error) {
-        const recovered = (await client.listProjectViews(project.id)).filter(
+        const recovered = (await readAfterFailure(error, () => client.listProjectViews(project.id))).filter(
             (view) => !beforeIds.has(view.id) && matchesBoard(view, desired),
         )
         if (recovered.length !== 1) throw error
@@ -1760,7 +1790,12 @@ async function provisionFreshBoard(
         try {
             await client.deleteProjectView(initial.id)
         } catch (error) {
-            if ((await client.listProjectViews(project.id)).some((view) => view.id === initial.id)) throw error
+            if (
+                (await readAfterFailure(error, () => client.listProjectViews(project.id))).some(
+                    (view) => view.id === initial.id,
+                )
+            )
+                throw error
         }
     }
     const after = await client.listProjectViews(project.id)
@@ -1798,7 +1833,7 @@ async function provisionProjectView(
             try {
                 viewId = await client.createProjectView(project.id, desired, ids)
             } catch (error) {
-                const recovered = await client.listProjectViews(project.id)
+                const recovered = await readAfterFailure(error, () => client.listProjectViews(project.id))
                 if (recovered.length !== 1 || !matchesView(recovered[0], desired, ids)) throw error
                 viewId = recovered[0].id
             }
@@ -1809,7 +1844,9 @@ async function provisionProjectView(
         try {
             await client.updateProjectView(viewId, desired, ids)
         } catch (error) {
-            const recovered = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === viewId)
+            const recovered = (await readAfterFailure(error, () => client.listProjectViews(project.id))).find(
+                (candidate) => candidate.id === viewId,
+            )
             if (!recovered || !matchesView(recovered, desired, ids)) throw error
         }
     }
@@ -1930,12 +1967,15 @@ async function provisionRepositoryLabel(
         try {
             await client.createRepositoryLabel(specification.repository, action.details)
         } catch (error) {
-            const existing = await client.getRepositoryLabel(specification.repository, action.details.name)
+            const existing = await readAfterFailure(error, () =>
+                client.getRepositoryLabel(specification.repository, action.details.name),
+            )
             if (!existing) throw error
             if (!compatibleRepositoryLabel(existing, action.details)) {
-                throw new Error(`repository label ${JSON.stringify(action.details.name)} has incompatible state`, {
-                    cause: error,
-                })
+                throw contextError(
+                    `repository label ${JSON.stringify(action.details.name)} has incompatible state`,
+                    error,
+                )
             }
         }
     }
@@ -2182,8 +2222,26 @@ async function responseJson(response: Response): Promise<unknown> {
 
 function githubError(status: number, result: unknown): Error {
     const detail =
-        result && typeof result === "object" && "message" in result ? String(result.message) : JSON.stringify(result)
+        result && typeof result === "object" && "message" in result ? String(result.message) : "no error message"
     return new Error(`GitHub API failed with status ${status}: ${detail}`)
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "unknown failure"
+}
+
+function contextError(context: string, cause: unknown): Error {
+    return new Error(`${context}: ${errorMessage(cause)}`, { cause })
+}
+
+async function readAfterFailure<T>(writeError: unknown, read: () => Promise<T>): Promise<T> {
+    try {
+        return await read()
+    } catch (readError) {
+        throw new Error(`${errorMessage(writeError)}; recovery read failed: ${errorMessage(readError)}`, {
+            cause: new AggregateError([writeError, readError], "write and recovery read failed"),
+        })
+    }
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

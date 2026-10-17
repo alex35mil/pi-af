@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M54Z9TVV",
+  "rawId": "01M54Z9TVV",
+  "slug": "fix-personal-github-project-board-provisioning",
+  "title": "Fix personal GitHub Project Board provisioning failing with 404",
+  "createdAt": "2026-10-17T13:02:30.267Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m54z9tvv-fix-personal-github-project-board-provisioning",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 55
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m54z9tvv-fix-personal-github-project-board-provisioning",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}
