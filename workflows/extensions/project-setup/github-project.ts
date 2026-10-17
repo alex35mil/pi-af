@@ -207,6 +207,14 @@ const inspectProperties = {
 }
 
 export const GitHubProjectSetupToolSchema = Type.Union([
+    Type.Object(
+        {
+            operation: Type.Literal("inspectRepository"),
+            credentialEnv: EnvironmentNameSchema,
+            repository: RepositorySchema,
+        },
+        { additionalProperties: false },
+    ),
     Type.Object({ operation: Type.Literal("inspect"), ...inspectProperties }, { additionalProperties: false }),
     Type.Object(
         {
@@ -353,6 +361,7 @@ interface ProjectSummary {
     closed: boolean
 }
 interface ProjectField {
+    databaseId: number | null
     id: string
     name: string
     dataType: string
@@ -394,6 +403,8 @@ interface IssueField {
 }
 interface RepositoryDetails {
     id: string
+    owner: string
+    repo: string
     ownerType: "user" | "org"
 }
 interface RepositoryLabel {
@@ -426,6 +437,16 @@ type ProvisioningAction =
     | ProjectFieldAction
     | OrganizationAction
     | { kind: "configure-initial-view"; description: string; details: DesiredView }
+    | {
+          kind: "create-board-view"
+          description: string
+          details: { view: DesiredView; columns: string; priority: string; optionOrder: string[] }
+      }
+    | {
+          kind: "delete-created-default-view"
+          description: string
+          details: { only: "captured-unchanged-default"; after: "verified-board" }
+      }
     | { kind: "update-project-view"; description: string; details: { current: ProjectView; desired: DesiredView } }
     | ({ description: string } & (
           | {
@@ -466,6 +487,13 @@ export async function runGitHubProjectSetup(
     options: GitHubProjectSetupOptions = {},
 ): Promise<Record<string, unknown>> {
     const input = Value.Parse(GitHubProjectSetupToolSchema, rawInput)
+    if (input.operation === "inspectRepository") {
+        const repository = await clientFor(input.credentialEnv, options).getRepository(input.repository)
+        return {
+            repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
+            suggestedProjectTitle: repository.repo,
+        }
+    }
     if (input.operation === "inspect") {
         const client = clientFor(input.credentialEnv, options)
         const [repository, owner] = await Promise.all([
@@ -477,7 +505,8 @@ export async function runGitHubProjectSetup(
                 ? { issueFields: await client.listIssueFields(input.repository.owner) }
                 : undefined
         return {
-            repository: { ...input.repository, ownerType: repository.ownerType },
+            repository: { owner: repository.owner, repo: repository.repo, ownerType: repository.ownerType },
+            suggestedProjectTitle: repository.repo,
             projectOwner: input.projectOwner,
             projects: owner.projects,
             ...(organizationMetadata ? { organizationMetadata } : {}),
@@ -529,8 +558,11 @@ class GitHubClient {
             "repository",
         )
         const owner = record(result.owner, "repository owner")
+        if (owner.type !== "Organization" && owner.type !== "User") throw new Error("unsupported repository owner type")
         return {
             id: text(result.node_id, "repository node_id"),
+            owner: text(owner.login, "repository owner login"),
+            repo: text(result.name, "repository name"),
             ownerType: owner.type === "Organization" ? "org" : "user",
         }
     }
@@ -581,7 +613,10 @@ class GitHubClient {
                                 nodes {
                                     __typename
                                     ... on ProjectV2FieldCommon { id name dataType isIssueField }
+                                    ... on ProjectV2Field { databaseId }
+                                    ... on ProjectV2IterationField { databaseId }
                                     ... on ProjectV2SingleSelectField {
+                                        databaseId
                                         options { id name description color }
                                     }
                                 }
@@ -601,6 +636,7 @@ class GitHubClient {
                 if (field.__typename === "ProjectV2Repository" || field.__typename === "ProjectV2Milestone") continue
                 if (typeof field.isIssueField !== "boolean") throw new Error("invalid Project field origin")
                 fields.push({
+                    databaseId: typeof field.databaseId === "number" ? field.databaseId : null,
                     isIssueField: field.isIssueField,
                     id: text(field.id, "project field id"),
                     name: text(field.name, "project field name"),
@@ -792,16 +828,67 @@ class GitHubClient {
         )
     }
 
-    async createProject(ownerId: string, title: string, repositoryId: string | undefined): Promise<ProjectSummary> {
+    async createBoardView(
+        owner: Static<typeof ProjectOwnerSchema>,
+        project: ProjectDetails,
+        configuration: BoardConfiguration,
+    ): Promise<string> {
+        let route: string
+        if (owner.type === "org") route = `/orgs/${encodeURIComponent(owner.login)}`
+        else {
+            const user = record(await this.rest("GET", `/users/${encodeURIComponent(owner.login)}`), "Project owner")
+            route = `/users/${databaseId(user.id, "Project owner")}`
+        }
+        const numericId = (id: string) =>
+            databaseId(project.fields.find((field) => field.id === id)?.databaseId, "Project field")
+        const result = record(
+            await this.rest("POST", `${route}/projectsV2/${project.number}/views`, {
+                name: configuration.view.name,
+                layout: "board",
+                visible_fields: configuration.visibleIds.map(numericId),
+                vertical_group_by: [numericId(configuration.columnId)],
+                group_by: [],
+                sort_by: [[numericId(configuration.priorityId), configuration.direction]],
+            }),
+            "created Board response",
+        )
+        return text(record(result.value, "created Board").node_id, "created Board node_id")
+    }
+
+    async deleteProjectView(viewId: string): Promise<void> {
+        await this.graphql(
+            `mutation($viewId: ID!) {
+                deleteProjectV2View(input: { viewId: $viewId }) { projectV2View { id } }
+            }`,
+            { viewId },
+        )
+    }
+
+    async createProject(
+        ownerId: string,
+        title: string,
+        repositoryId: string | undefined,
+    ): Promise<{ project: ProjectSummary; initialViewIds: string[] }> {
         const data = await this.graphql(
             `mutation($ownerId: ID!, $title: String!, $repositoryId: ID) {
                 createProjectV2(input: { ownerId: $ownerId, title: $title, repositoryId: $repositoryId }) {
-                    projectV2 { id number title url public closed }
+                    projectV2 { id number title url public closed
+                        views(first: 50) { nodes { id } pageInfo { hasNextPage } }
+                    }
                 }
             }`,
             { ownerId, title, repositoryId: repositoryId ?? null },
         )
-        return projectSummary(record(record(data.createProjectV2, "createProjectV2").projectV2, "created Project"))
+        const created = record(record(data.createProjectV2, "createProjectV2").projectV2, "created Project")
+        const views = record(created.views, "created Project views")
+        if (record(views.pageInfo, "created views pageInfo").hasNextPage !== false)
+            throw new Error("created Project initial views require explicit inspection")
+        return {
+            project: projectSummary(created),
+            initialViewIds: array(views.nodes, "created view nodes").map((node) =>
+                text(record(node, "created view").id, "created view id"),
+            ),
+        }
     }
 
     async setProjectVisibility(projectId: string, visible: boolean): Promise<void> {
@@ -1094,11 +1181,31 @@ async function previewGitHubProject(
 
     const desired = desiredView(specification)
     if (specification.project.mode === "new" && conflicts.length === 0) {
-        actions.push({
-            kind: "configure-initial-view",
-            description: `Configure the unique initial view, or create one when absent, as ${JSON.stringify(desired.name)} (${desired.layout}) with visible fields ${desired.fields.map((field) => field.name).join(", ")}`,
-            details: desired,
-        })
+        if (isFreshBoard(specification)) {
+            actions.push(
+                {
+                    kind: "create-board-view",
+                    description: `Create Board ${JSON.stringify(desired.name)} through REST with visible fields ${desired.fields.map((field) => field.name).join(", ")}; columns: ${specification.fields.status.field}; no swimlanes; sole sort: ${specification.fields.priority.field}, ${specification.fields.priority.options.map((option) => option.name).join(" → ")}`,
+                    details: {
+                        view: desired,
+                        columns: specification.fields.status.field,
+                        priority: specification.fields.priority.field,
+                        optionOrder: specification.fields.priority.options.map((option) => option.name),
+                    },
+                },
+                {
+                    kind: "delete-created-default-view",
+                    description:
+                        "After verifying the new Board, delete only the captured, unchanged automatically generated default view of this newly created empty Project; preserve all other views",
+                    details: { only: "captured-unchanged-default", after: "verified-board" },
+                },
+            )
+        } else
+            actions.push({
+                kind: "configure-initial-view",
+                description: `Configure the unique initial view, or create one when absent, as ${JSON.stringify(desired.name)} (${desired.layout}) with visible fields ${desired.fields.map((field) => field.name).join(", ")}`,
+                details: desired,
+            })
     } else if (project && specification.presentation.target.mode === "selected") {
         const target = specification.presentation.target
         view = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === target.viewId)
@@ -1365,27 +1472,49 @@ async function applyGitHubProject(
     const repository = await client.getRepository(specification.repository)
     const owner = await client.listOwnerProjects(specification.projectOwner)
     let project: ProjectDetails
+    let initialViews: ProjectView[] = []
     if (specification.project.mode === "new") {
         const projectSource = specification.project
         let created: ProjectSummary
+        let initialViewIds: string[] = []
         try {
-            created = await client.createProject(
+            const creation = await client.createProject(
                 owner.ownerId,
                 projectSource.title,
                 projectSource.associateRepository ? repository.id : undefined,
             )
+            created = creation.project
+            initialViewIds = creation.initialViewIds
         } catch (error) {
             const candidates = (await client.listOwnerProjects(specification.projectOwner)).projects.filter(
                 (candidate) => candidate.title === projectSource.title,
             )
-            if (candidates.length === 1) created = candidates[0]
-            else if (candidates.length === 0) throw error
+            if (candidates.length === 1) {
+                if (isFreshBoard(specification))
+                    throw new Error(
+                        `Project creation response was uncertain; inspect ${candidates[0].url} and select it as resume-created. Default-view provenance is unavailable; no views were deleted.`,
+                        { cause: error },
+                    )
+                created = candidates[0]
+            } else if (candidates.length === 0) throw error
             else {
                 throw new Error(
                     `GitHub Project creation could not be reconciled because multiple exact-title Projects exist: ${candidates.map((candidate) => `${candidate.number} ${candidate.url}`).join(", ")}`,
                     { cause: error },
                 )
             }
+        }
+        if (isFreshBoard(specification)) {
+            if (initialViewIds.length > 1)
+                throw new Error(
+                    "new Project has multiple initial views; inspect and select one explicitly before resuming",
+                )
+            const views = await client.listProjectViews(created.id)
+            initialViews = initialViewIds.map((id) => {
+                const view = views.find((view) => view.id === id)
+                if (!view) throw new Error("captured initial view is missing; inspect the Project before resuming")
+                return view
+            })
         }
         await client.setProjectVisibility(created.id, projectSource.visibility === "public")
         project = await client.getProject(created.id)
@@ -1413,7 +1542,10 @@ async function applyGitHubProject(
     await provisionRepositoryLabel(specification, client)
     await provisionOrganizationMetadata(specification, repository, client)
 
-    const configuredView = await provisionProjectView(specification, await client.getProject(project.id), client)
+    const currentProject = await client.getProject(project.id)
+    const configuredView = isFreshBoard(specification)
+        ? await provisionFreshBoard(specification, currentProject, initialViews, client)
+        : await provisionProjectView(specification, currentProject, client)
     const verified = await client.getProject(project.id)
     const verificationActions: ProvisioningAction[] = []
     const conflicts: string[] = []
@@ -1504,6 +1636,142 @@ function matchesView(view: ProjectView, desired: DesiredView, ids: string[]): bo
         view.layout === desired.layout &&
         JSON.stringify(view.visibleFieldIds) === JSON.stringify(ids)
     )
+}
+
+interface BoardConfiguration {
+    view: DesiredView
+    visibleIds: string[]
+    columnId: string
+    priorityId: string
+    direction: "asc" | "desc"
+}
+
+function isFreshBoard(specification: GitHubProjectSpecification): boolean {
+    return specification.project.mode === "new" && specification.presentation.layout === "board"
+}
+
+function databaseId(value: unknown, label: string): number {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+        throw new Error(`${label} has no usable numeric database ID; inspect provider metadata before provisioning`)
+    return value
+}
+
+async function boardConfiguration(
+    specification: GitHubProjectSpecification,
+    project: ProjectDetails,
+    client: GitHubClient,
+): Promise<BoardConfiguration> {
+    const view = desiredView(specification)
+    const priority = specification.fields.priority
+    const [columnId, priorityId] = resolveViewFields(
+        {
+            ...view,
+            fields: [
+                { name: specification.fields.status.field, source: "project" },
+                { name: priority.field, source: priority.scope },
+            ],
+        },
+        project.fields,
+    )
+    let savedNames: string[]
+    if (priority.scope === "project")
+        savedNames = (project.fields.find((field) => field.id === priorityId)!.options ?? []).map(
+            (option) => option.name,
+        )
+    else {
+        const fields = await client.listIssueFields(specification.repository.owner)
+        const desired = desiredOrganizationFields(specification).find((field) => field.name === priority.field)!
+        const decision = planOrganizationField(desired, fields)
+        if (decision.conflicts.length || decision.actions.length)
+            throw new Error("cannot verify organization Priority order: " + decision.conflicts.join("; "))
+        savedNames = [...fields.find((field) => field.name === priority.field)!.options!]
+            .sort((left, right) => left.priority! - right.priority!)
+            .map((option) => option.name)
+    }
+    const requested = priority.options.map((option) => option.name)
+    const saved = savedNames.filter((name) => requested.includes(name))
+    const conflict = priorityOrderConflict(priority, saved)
+    if (conflict) throw new Error(conflict)
+    if (saved.length !== requested.length)
+        throw new Error("cannot verify configured Priority options before Board creation")
+    return {
+        view,
+        visibleIds: resolveViewFields(view, project.fields),
+        columnId,
+        priorityId,
+        direction: JSON.stringify(saved) === JSON.stringify(requested) ? "asc" : "desc",
+    }
+}
+
+function matchesBoard(view: ProjectView, desired: BoardConfiguration): boolean {
+    return (
+        matchesView(view, desired.view, desired.visibleIds) &&
+        view.groupBy.length === 0 &&
+        view.verticalGroupBy.length === 1 &&
+        view.verticalGroupBy[0].id === desired.columnId &&
+        view.sortBy.length === 1 &&
+        view.sortBy[0].field.id === desired.priorityId &&
+        view.sortBy[0].direction.toLowerCase() === desired.direction
+    )
+}
+
+function viewFingerprint(view: ProjectView): string {
+    return JSON.stringify({
+        name: view.name,
+        layout: view.layout,
+        filter: view.filter,
+        visible: view.visibleFieldIds,
+        groups: view.groupBy.map((field) => field.id),
+        columns: view.verticalGroupBy.map((field) => field.id),
+        sorts: view.sortBy.map((sort) => [sort.field.id, sort.direction]),
+    })
+}
+
+async function provisionFreshBoard(
+    specification: GitHubProjectSpecification,
+    project: ProjectDetails,
+    initialViews: ProjectView[],
+    client: GitHubClient,
+): Promise<ProjectView> {
+    if (project.itemCount !== 0) throw new Error("new Project is no longer empty; inspect before creating its Board")
+    const desired = await boardConfiguration(specification, project, client)
+    const before = await client.listProjectViews(project.id)
+    const beforeIds = new Set(before.map((view) => view.id))
+    let viewId: string
+    try {
+        viewId = await client.createBoardView(specification.projectOwner, project, desired)
+    } catch (error) {
+        const recovered = (await client.listProjectViews(project.id)).filter(
+            (view) => !beforeIds.has(view.id) && matchesBoard(view, desired),
+        )
+        if (recovered.length !== 1) throw error
+        viewId = recovered[0].id
+    }
+    const views = await client.listProjectViews(project.id)
+    const verified = views.find((view) => view.id === viewId)
+    if (!verified || beforeIds.has(viewId) || !matchesBoard(verified, desired))
+        throw new Error("GitHub Board post-write verification failed; default view preserved")
+    if ((await client.getProject(project.id)).itemCount !== 0)
+        throw new Error("new Project is no longer empty; default view preserved")
+    for (const initial of initialViews) {
+        const current = views.find((view) => view.id === initial.id)
+        if (!current || viewFingerprint(current) !== viewFingerprint(initial))
+            throw new Error("captured default view changed; inspect the Project before cleanup; no views deleted")
+        try {
+            await client.deleteProjectView(initial.id)
+        } catch (error) {
+            if ((await client.listProjectViews(project.id)).some((view) => view.id === initial.id)) throw error
+        }
+    }
+    const after = await client.listProjectViews(project.id)
+    const board = after.find((view) => view.id === viewId)
+    if (
+        !board ||
+        !matchesBoard(board, desired) ||
+        after.some((view) => initialViews.some((initial) => initial.id === view.id))
+    )
+        throw new Error("GitHub Board/default-view cleanup verification failed; inspect the Project before resuming")
+    return board
 }
 
 async function provisionProjectView(
@@ -1602,7 +1870,9 @@ function manualStepsFor(specification: GitHubProjectSpecification, viewUrl?: str
                 "Reload Settings and confirm the saved default repository; user confirmation or a screenshot is required. Repository association alone is not proof.",
         })
     }
-    return steps
+    return isFreshBoard(specification)
+        ? steps.filter((step) => !["columnBy", "swimlanes", "sortBy"].includes(step.setting))
+        : steps
 }
 
 async function provisionProjectFields(

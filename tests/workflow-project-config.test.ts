@@ -213,6 +213,42 @@ describe("workflow project configuration", () => {
         }
     })
 
+    it("extracts only safe GitHub identities from fetch remotes without changing Git state", () => {
+        const root = repository()
+        try {
+            assert.deepEqual(inspectProjectSetup(root).repositoryIdentity.githubCandidates, [])
+            const remotes = [
+                [
+                    "origin",
+                    "https://user:remote-secret@github.com/Owner/Example.git?token=query-secret#fragment-secret",
+                ],
+                ["ssh", "git@github.com:owner/example.git"],
+                ["url", "ssh://git@github.com/Owner/Example.git"],
+                ["upstream", "https://github.com/Upstream/Example"],
+                ["other", "https://private-secret.example/hidden-secret/repo"],
+                ["alias", "git@github-personal:hidden-secret/repo"],
+                ["local", "/tmp/private-secret/repo"],
+            ]
+            for (const [name, url] of remotes) git(root, ["remote", "add", name, url])
+            git(root, ["remote", "set-url", "--push", "origin", "https://github.com/PushOnly/Example.git"])
+            const before = fs.readFileSync(path.join(root, ".git/config"))
+            const index = git(root, ["ls-files", "--stage"])
+            const snapshot = inspectProjectSetup(root)
+            assert.deepEqual(snapshot.repositoryIdentity.githubCandidates, [
+                { owner: "Owner", repo: "Example", remotes: ["origin", "ssh", "url"] },
+                { owner: "Upstream", repo: "Example", remotes: ["upstream"] },
+            ])
+            assert.doesNotMatch(
+                JSON.stringify(snapshot),
+                /remote-secret|query-secret|fragment-secret|private-secret|hidden-secret|PushOnly|defaultBranch/,
+            )
+            assert.deepEqual(fs.readFileSync(path.join(root, ".git/config")), before)
+            assert.equal(git(root, ["ls-files", "--stage"]), index)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
     for (const scenario of [
         { name: "missing", project: undefined, integrations: undefined },
         { name: "existing", project: JSON.stringify(config("versioned")), integrations: undefined },
@@ -221,6 +257,7 @@ describe("workflow project configuration", () => {
     ]) {
         it(`shares a read-only command/tool snapshot with ${scenario.name} setup`, async () => {
             const root = repository()
+            git(root, ["remote", "add", "origin", "https://snapshot-secret@github.com/owner/example.git"])
             type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
             const tools = new Map<string, Tool>()
             let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined

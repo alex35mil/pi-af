@@ -48,7 +48,7 @@ describe("workflow instruction ownership", () => {
             /"kind": "workflow", "field": "priority"/,
             /defaultRepository: unmanaged/,
             /setup-repository.*associateRepository: false.*blocked/,
-            /API writes change only the selected view's name\/layout\/visible fields/,
+            /Existing\/resumed Projects change only the selected view’s name\/layout\/visible fields/,
             /No grouping/,
             /Urgent → High → Medium → Low/,
             /Other orders block preview before any setup writes/,

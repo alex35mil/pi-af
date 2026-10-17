@@ -27,7 +27,7 @@ export default function (pi: ExtensionAPI): void {
         name: "inspect_project_setup",
         label: "inspect_project_setup",
         description:
-            "Read project setup files, Git safety facts, tracker bindings, and credential-redacted MCP registrations without modifying files or requiring valid workflow configuration.",
+            "Read credential-safe GitHub repository identity, project setup files, Git safety facts, tracker bindings, and credential-redacted MCP registrations without modifying files or requiring valid workflow configuration.",
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             Value.Parse(EmptySchema, params)
@@ -155,6 +155,7 @@ export function inspectProjectSetup(cwd: string) {
     const workflowSettings = getWorkflowSettingsPaths(root)
     return {
         repositoryRoot: root,
+        repositoryIdentity: inspectRepositoryIdentity(root),
         files: PROJECT_SETUP_FILES.map((file) => snapshotFile(root, file)),
         globalWorkflowSettings: snapshotAbsoluteFile(root, workflowSettings.global),
         localExclude: snapshotAbsoluteFile(root, excludePath),
@@ -175,6 +176,43 @@ export function projectSetupKickoffPrompt(request: string, context: ReturnType<t
         "",
         "Use the project-setup skill. Use this snapshot instead of running Git or shell discovery. Ask only the required configuration questions; do not initialize work. Linear setup API access is read-only; mutate providers only through an exact approved GitHub Project provisioning preview.",
     ].join("\n")
+}
+
+function inspectRepositoryIdentity(root: string) {
+    const candidates = new Map<string, { owner: string; repo: string; remotes: string[] }>()
+    for (const remote of splitLines(Git.run(root, ["remote"]))) {
+        // Never expose remote URLs or Git diagnostics: both can contain credentials.
+        for (const url of splitLines(Git.tryRun(root, ["remote", "get-url", "--all", remote]))) {
+            const identity = githubRemoteIdentity(url)
+            if (!identity) continue
+            const key = `${identity.owner}/${identity.repo}`.toLowerCase()
+            const candidate = candidates.get(key)
+            if (candidate) {
+                if (!candidate.remotes.includes(remote)) candidate.remotes.push(remote)
+            } else candidates.set(key, { ...identity, remotes: [remote] })
+        }
+    }
+    return { githubCandidates: [...candidates.values()] }
+}
+
+function githubRemoteIdentity(value: string): { owner: string; repo: string } | undefined {
+    let pathname: string
+    const scp = /^(?:[^@/\s]+@)?github\.com:([^?#]+)(?:[?#].*)?$/i.exec(value)
+    if (scp) pathname = scp[1]
+    else {
+        try {
+            const url = new URL(value)
+            if (url.hostname !== "github.com" || !["https:", "ssh:"].includes(url.protocol)) return
+            pathname = url.pathname.replace(/^\//, "")
+        } catch {
+            return
+        }
+    }
+    const match = /^([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)\/?$/.exec(pathname)
+    if (!match) return
+    const repo = match[2].replace(/\.git$/, "")
+    if (!repo || repo === "." || repo === "..") return
+    return { owner: match[1], repo }
 }
 
 function snapshotFile(root: string, file: string) {

@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M54WK1ZT",
+  "rawId": "01M54WK1ZT",
+  "slug": "reduce-project-setup-friction",
+  "title": "Reduce unnecessary questions and manual steps during project setup",
+  "createdAt": "2026-10-17T12:15:06.746Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m54wk1zt-reduce-project-setup-friction",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 53
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m54wk1zt-reduce-project-setup-friction",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}
