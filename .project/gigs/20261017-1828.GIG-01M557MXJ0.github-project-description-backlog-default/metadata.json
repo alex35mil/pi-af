@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M557MXJ0",
+  "rawId": "01M557MXJ0",
+  "slug": "github-project-description-backlog-default",
+  "title": "Add repository descriptions and default to Backlog in GitHub Project setup",
+  "createdAt": "2026-10-17T15:28:22.080Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m557mxj0-github-project-description-backlog-default",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 58
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m557mxj0-github-project-description-backlog-default",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}
