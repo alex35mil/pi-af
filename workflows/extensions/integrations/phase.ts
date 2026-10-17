@@ -1,8 +1,12 @@
 import { type Static, Type } from "typebox"
 
-import { type LifecycleState, type Phase, projectedPhase } from "../__lib/domain.js"
+import { Value } from "typebox/value"
+
+import { LifecycleStateSchema, PhaseSchema, type LifecycleState, type Phase, projectedPhase } from "../__lib/domain.js"
 import type { EntityType } from "../__lib/domain.js"
+import { assertEntityBranchReady, type EntityStatus } from "../__lib/entity.js"
 import type { GitHubTracker, LinearTracker, PhaseLabelGroup, TrackerConfig } from "./config.js"
+import { assertEntityEnvironment, type WorkflowEnvironment } from "./policy.js"
 
 const NameSchema = Type.String({ minLength: 1 })
 const NullableNameSchema = Type.Union([NameSchema, Type.Null()])
@@ -48,6 +52,43 @@ export const NativePhaseFactsSchema = Type.Union([
 ])
 export type NativePhaseFacts = Static<typeof NativePhaseFactsSchema>
 type LinearFacts = Extract<NativePhaseFacts, { provider: "linear" }>
+
+const phaseProperties = { entityDir: NameSchema, phase: PhaseSchema }
+export const SetWorkflowPhaseSchema = Type.Union([
+    Type.Object({ ...phaseProperties, authority: Type.Literal("workflow") }, { additionalProperties: false }),
+    Type.Object(
+        {
+            ...phaseProperties,
+            authority: Type.Literal("tracker"),
+            lifecycle: LifecycleStateSchema,
+            native: NativePhaseFactsSchema,
+        },
+        { additionalProperties: false },
+    ),
+])
+export type SetWorkflowPhaseInput = Static<typeof SetWorkflowPhaseSchema>
+
+export function setWorkflowPhase(status: EntityStatus, environment: WorkflowEnvironment, input: SetWorkflowPhaseInput) {
+    Value.Parse(SetWorkflowPhaseSchema, input)
+    assertEntityEnvironment(status, environment)
+    assertEntityBranchReady(status)
+    if (status.authority.kind !== input.authority) throw new Error("Phase authority does not match the entity")
+    if (input.authority === "workflow") {
+        if (!("state" in status) || status.state !== "inProgress")
+            throw new Error("setting workflow Phase requires In Progress")
+        return { status: { ...status, phase: input.phase }, changed: status.phase !== input.phase }
+    }
+    if (input.lifecycle !== "inProgress") throw new Error("setting workflow Phase requires fresh native In Progress")
+    if (environment.tracker.kind === "none") throw new Error("tracker Phase requires a configured tracker")
+    const phaseMutation = planPhaseMutation(
+        environment.tracker.config,
+        status.entity,
+        input.phase,
+        input.lifecycle,
+        input.native,
+    )
+    return { status: { ...status, phase: input.phase }, changed: status.phase !== input.phase, phaseMutation }
+}
 
 export function phaseProjectionContract(phase: Phase, tracker: TrackerConfig, entity: EntityType) {
     const representation =

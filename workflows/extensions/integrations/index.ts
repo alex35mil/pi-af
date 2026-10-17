@@ -5,12 +5,7 @@ import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
-import {
-    assertEntityBranchReady,
-    readEntityStatus,
-    resolveEntityDirectory,
-    type EntityStatus,
-} from "../__lib/entity.js"
+import { assertEntityBranchReady, readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import { NativePhaseFactsSchema, phaseProjectionContract, planPhaseMutation } from "./phase.js"
@@ -20,13 +15,14 @@ import {
     resolveForgePolicy,
     resolveWorkflowEnvironment,
     resolveWorkflowPolicy,
-    type WorkflowEnvironment,
+    assertEntityEnvironment,
 } from "./policy.js"
 import { renderProviderBody, verifyMarkdownProjection } from "./projection.js"
 import { isResourceIdsKind, OperationResourceIdsMemo, readCachedResourceIds } from "./resource-ids.js"
 import { finishReadDecision, resolveResourceIdsContext, type FinishReadDecision } from "./resource-id-operations.js"
 import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { finalizeLinearBranch } from "./tracker/linear.js"
+import { registerWorkflowOperations } from "./operations.js"
 
 const FinalizeBranchSchema = Type.Object({ entityDir: Type.String({ minLength: 1 }) }, { additionalProperties: false })
 
@@ -109,6 +105,7 @@ export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 export default function (pi: ExtensionAPI): void {
     const resourceIdsMemo = new OperationResourceIdsMemo()
     registerResourceIds(pi, resourceIdsMemo)
+    registerWorkflowOperations(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
     pi.registerTool({
@@ -354,10 +351,10 @@ function readProjectIntegrationContext(cwd: string, input: IntegrationContextInp
                       source: "exact accepted epic.md or plan.md",
                       contentPolicy:
                           "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed ## Overview visible and collapse all remaining sections; never summarize or condense during publication",
-                      automaticPresentationNormalization:
-                          "remove the first Markdown H1 and its following blank line; use GitHub <details> or Linear +++ Full plan around tracker details, keep trackers in one Full plan fold without a new divider; for PRs insert <hr /> after Overview and one GitHub <details> fold per level-two section, using its heading as the summary label; keep Not run inside Verification; normalize only section separation; append the eligible same-repository horizontal rule, blank line, and `Closes #<number>` after all PR folds",
+                      rendering:
+                          "Call render_provider_body with the complete approved source and destination; publish its exact returned markdown.",
                       changedCandidateGate:
-                          "root-H1 removal, deterministic collapse wrappers/separation, PR heading-to-summary placement, and the eligible GitHub closing reference need no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers both visible and collapsed content before rendering",
+                          "deterministic renderer output needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers the complete source before rendering",
                       ownership: "workflow" as const,
                       outcomeProof:
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
@@ -433,58 +430,6 @@ export function renderEntityProviderBody(
         kind: "github-pull-request",
         ...(tracker ? { githubIssueNumber: tracker.external.issueNumber } : {}),
     })
-}
-
-function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvironment): void {
-    const forgeRecord = status.integrations.find((integration) => integration.role === "forge")
-    switch (environment.tracker.kind) {
-        case "none":
-            if (status.authority.kind !== "workflow") {
-                throw new Error(`${status.id} requires tracker migration before using the current configuration`)
-            }
-            break
-        case "github":
-        case "linear":
-            if (status.authority.kind !== "tracker" || status.authority.provider !== environment.tracker.kind) {
-                throw new Error(
-                    `${status.id} requires tracker migration before using the current configuration; see workflows/MIGRATIONS.md`,
-                )
-            }
-            if (environment.tracker.kind === "github") {
-                const tracker = status.integrations.find((entry) => entry.role === "tracker")
-                if (
-                    !tracker ||
-                    tracker.provider !== "github" ||
-                    tracker.repository.owner.toLowerCase() !==
-                        environment.tracker.config.repository.owner.toLowerCase() ||
-                    tracker.repository.repo.toLowerCase() !== environment.tracker.config.repository.repo.toLowerCase()
-                ) {
-                    throw new Error(`${status.id} tracker repository changed; see workflows/MIGRATIONS.md`)
-                }
-            }
-            break
-        default:
-            environment.tracker satisfies never
-    }
-    switch (environment.forge.kind) {
-        case "none":
-            if (forgeRecord)
-                throw new Error(`${status.id} requires forge migration before removing its configured forge`)
-            break
-        case "github":
-            if (
-                forgeRecord &&
-                (forgeRecord.repository.owner.toLowerCase() !==
-                    environment.forge.config.repository.owner.toLowerCase() ||
-                    forgeRecord.repository.repo.toLowerCase() !==
-                        environment.forge.config.repository.repo.toLowerCase())
-            ) {
-                throw new Error(`${status.id} forge repository changed; see workflows/MIGRATIONS.md`)
-            }
-            break
-        default:
-            environment.forge satisfies never
-    }
 }
 
 function readWorkflowEntity(cwd: string, raw: string) {

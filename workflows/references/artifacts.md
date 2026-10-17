@@ -14,7 +14,7 @@ Use these terms exactly across schemas, code, tests, agent guidance, and user do
 
 ## Initialization inputs
 
-Call `prepare_artifacts` before reading or writing entity artifacts or requesting entity integration context on initialization/resume. Stop on invalid configuration, unsafe Git membership, or an incomplete persistence-mode reversal.
+Initialization tools validate artifact persistence before creating artifacts. For resume, resolve the selected entity directory and call local `integration_context` with `operation: resume` before reading or editing its artifacts, including trackerless work. This validates persistence and entity compatibility; then read the artifacts below. Stop on invalid configuration, unsafe Git membership, or an incomplete persistence-mode reversal. Use `prepare_artifacts` for setup or a reported missing preparation requirement, then retry the validation; it does not repair tracked membership.
 
 Resume only an explicitly identified entity path, qualified ID, or uniquely identifiable existing entity. Resolve exactly one entity of the requested type; never initialize replacement work during resume.
 
@@ -166,7 +166,7 @@ Durable provider records retain semantic identity, exact relationships/branch in
 
 ## Persistence and authority
 
-Call `prepare_artifacts` before initialization and every resume. It validates required `.project/config.json` and never changes the Git index.
+The shared operational guard validates current `.project/config.json` and persistence safety, reusing a successful inspection only while relevant local inputs are unchanged. `prepare_artifacts` forces a full check during setup or configuration repair and adds only the permitted exclusions below. Neither operation changes the Git index.
 
 In `versioned` mode, put these durable artifacts in Git:
 

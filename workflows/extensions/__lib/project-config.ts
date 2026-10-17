@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
@@ -118,9 +119,15 @@ export function resolveWorkflowProject(cwd: string, options: { globalSettingsPat
     }
 }
 
+let validatedPersistenceInputs: string | undefined
+
 export function prepareArtifactPersistence(cwd: string) {
+    validatedPersistenceInputs = undefined
     const { config, excludePath, missing } = inspectArtifactPersistence(cwd)
-    if (missing) appendExcludeEntry(excludePath, missing.comment, missing.entry)
+    if (missing) {
+        appendExcludeEntry(excludePath, missing.comment, missing.entry)
+        assertArtifactPersistencePrepared(cwd)
+    }
     return { mode: config.artifacts, state: "ready" as const, excludePath }
 }
 
@@ -132,9 +139,11 @@ export function assertArtifactPersistencePrepared(cwd: string): ProjectConfig {
 
 function inspectArtifactPersistence(cwd: string) {
     const root = project.resolveRootDir(cwd)
-    assertGitRepository(root)
     const config = loadProjectConfig(root)
-    const excludePath = gitExcludePath(root)
+    const before = persistenceInputs(root, config)
+    const excludePath = before.excludePath
+    if (before.key === validatedPersistenceInputs) return { config, excludePath, missing: undefined }
+    validatedPersistenceInputs = undefined
     const hasExclude = hasUnversionedProjectExclude(excludePath)
 
     if (config.artifacts === "versioned") {
@@ -174,7 +183,56 @@ function inspectArtifactPersistence(cwd: string) {
             }
         }
     }
+    // Cache only the inputs actually inspected, never inputs changed during the scan.
+    if (persistenceInputs(root, config).key === before.key) validatedPersistenceInputs = before.key
     return { config, excludePath, missing: undefined }
+}
+
+function persistenceInputs(root: string, config: ProjectConfig) {
+    const paths = Git.run(root, [
+        "rev-parse",
+        "--path-format=absolute",
+        "--show-toplevel",
+        "--absolute-git-dir",
+        "--git-path",
+        "index",
+        "--git-path",
+        "info/exclude",
+    ]).split("\n")
+    const [repository, gitDirectory, indexPath, excludePath] = paths
+    if (paths.length !== 4) throw new Error("could not resolve artifact persistence Git paths")
+    const commit = Git.tryRun(root, ["rev-parse", "--verify", "HEAD"])
+    const head = commit
+        ? { kind: "commit", commit }
+        : { kind: "unborn", reference: Git.run(root, ["symbolic-ref", "--quiet", "HEAD"]) }
+    const files = [
+        indexPath,
+        excludePath,
+        path.join(root, ".gitignore"),
+        path.join(root, PROJECT_CONFIG_PATH),
+        path.join(root, LOCAL_PROJECT_CONFIG_PATH),
+    ]
+    return {
+        excludePath,
+        key: JSON.stringify({
+            repository,
+            gitDirectory,
+            indexPath,
+            excludePath,
+            head,
+            config,
+            files: files.map(fileFingerprint),
+        }),
+    }
+}
+
+function fileFingerprint(file: string): string | null {
+    try {
+        return createHash("sha256").update(fs.readFileSync(file)).digest("hex")
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+        throw error
+    }
 }
 
 function loadWorkflowSettings<S extends TSchema>(filePath: string, schema: S): Static<S> | undefined {
@@ -237,11 +295,6 @@ function assertEntityLocalStateOutsideGit(root: string): void {
     }
 }
 
-function gitExcludePath(root: string): string {
-    const value = Git.run(root, ["rev-parse", "--git-path", "info/exclude"])
-    return path.resolve(root, value)
-}
-
 function hasUnversionedProjectExclude(excludePath: string): boolean {
     return hasExcludeEntry(excludePath, UNVERSIONED_PROJECT_EXCLUDE)
 }
@@ -259,10 +312,6 @@ function appendExcludeEntry(excludePath: string, comment: string, entry: string)
     const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf-8") : ""
     const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
     fs.appendFileSync(excludePath, `${separator}${comment}\n${entry}\n`)
-}
-
-function assertGitRepository(root: string): void {
-    Git.run(root, ["rev-parse", "--show-toplevel"])
 }
 
 function relativeOrAbsolute(root: string, target: string): string {

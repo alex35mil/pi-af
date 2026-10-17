@@ -6,6 +6,8 @@ allowed-tools:
     - "review"
     - "prepare_plan_presentation"
     - "prepare_artifacts"
+    - "set_workflow_phase"
+    - "confirm_tracker_initialization"
     - "set_epic_task_target"
     - "integration_context"
     - "resource_ids"
@@ -32,7 +34,7 @@ For resume:
 
 1. Read `brief.md`, `metadata.json`, `.local/notes.md` when present, accepted `epic.md`, the relevant `.local/reviews/` round when present, and applicable `.project/policies.md`. Create missing local notes when continuing local work. Read `.local/status.md` only for workflow authority; for tracker authority require it to be absent and refresh native lifecycle/Priority through the tracker. Read `.local/scratch/` only when temporary context is relevant.
 2. Because the Epic is the primary active workflow here, switch to its exact stored branch before editing Epic artifacts. This does not apply when a Task updates its parent Epic from the Task branch.
-3. Call `integration_context` with `operation: "resume"`; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
+3. Reuse the initial `integration_context` resume result from the artifact gate; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
 4. After accepted `epic.md` changes, call tracker-only `artifactProjection`, then `render_provider_body` for the tracker destination and follow the shared complete-body publishing contract in `../../references/integrations/shared.md`: trust established clear success and reconcile uncertain outcomes before retry.
 5. Summarize current state and continue without creating another Epic.
 
@@ -96,7 +98,7 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `prepare_plan_presentation` selects the reviewed snapshot and `epic.md` target for the write tool's approval diff. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-Keep Planning during plan review, corrections, presentation, and waiting for user approval. On acceptance, set `phase: execution`; lifecycle remains `inProgress`. Follow `../../references/phase.md` to reconcile native Phase. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
+Keep Planning during plan review, corrections, presentation, and waiting for user approval. On acceptance, call `set_workflow_phase` for Execution and reconcile through `../../references/phase.md`; lifecycle remains `inProgress`. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 
