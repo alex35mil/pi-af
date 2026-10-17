@@ -41,6 +41,10 @@ describe("workflow instruction ownership", () => {
             /Do not claim full setup complete while required manual work remains unconfirmed/,
             /presentation and manual confirmation stay outside runtime configuration/,
             /Require explicit approval of that exact `planHash`/,
+            /short description to `Repository: https:\/\/github.com\/<owner>\/<repo>`/,
+            /exact existing description and replacement in preview\/hash approval/,
+            /`defaultStatus` manual follow-up note.*do not expose a setter.*not applied automatically/,
+            /Require user confirmation or a screenshot of the saved Status-field default before full setup completion, including with default-repository opt-out/,
         ])
             assert.match(skill, requirement)
         for (const requirement of [
@@ -57,8 +61,12 @@ describe("workflow instruction ownership", () => {
             /field-wide change affecting other views/,
             /Count.*only/,
             /No slicing/,
-            /default repository require user confirmation or a screenshot of saved state/,
-            /Opting out omits step 6 and its completion requirement/,
+            /default repository, and the saved Status-field default require user confirmation or a screenshot of saved state/,
+            /Opting out omits step 6 and its completion requirement; step 7 remains required/,
+            /`ProjectV2.shortDescription` to `Repository: https:\/\/github.com\/<owner>\/<repo>`/,
+            /both current and replacement text for existing\/resumed Projects/,
+            /`defaultStatus` manual follow-up note.*do not expose a setter.*not applied automatically/,
+            /Leave built-in automations and existing item values unchanged/,
         ])
             assert.match(reference, requirement)
     })

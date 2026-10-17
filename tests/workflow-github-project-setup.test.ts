@@ -13,6 +13,7 @@ interface FakeField {
     options?: Array<{ id: string; name: string; description: string; color: string }>
 }
 interface FakeProject {
+    shortDescription: string | null
     id: string
     number: number
     title: string
@@ -47,6 +48,7 @@ class FakeGitHub {
     projects: FakeProject[] = []
     views = new Map<string, FakeView[]>()
     viewWrites: Array<Record<string, any>> = []
+    projectWrites: Array<Record<string, unknown>> = []
     initialViewCount = 1
     pageSize = 50
     loseNextViewCreateResponse = false
@@ -249,6 +251,7 @@ class FakeGitHub {
                 id: `project-${this.projects.length + 1}`,
                 number: this.projects.length + 1,
                 title: String(variables.title),
+                shortDescription: null,
                 url: `https://github.com/users/alex/projects/${this.projects.length + 1}`,
                 public: false,
                 closed: false,
@@ -281,7 +284,9 @@ class FakeGitHub {
         }
         if (query.includes("updateProjectV2(")) {
             const project = this.project(String(variables.projectId))
-            project.public = variables.public === true
+            this.projectWrites.push(variables)
+            if ("public" in variables) project.public = variables.public === true
+            if ("shortDescription" in variables) project.shortDescription = String(variables.shortDescription)
             return graph({ updateProjectV2: { projectV2: { id: project.id } } })
         }
         if (query.includes("linkProjectV2ToRepository(")) {
@@ -426,6 +431,7 @@ function summary(project: FakeProject) {
 function details(project: FakeProject) {
     return {
         ...summary(project),
+        shortDescription: project.shortDescription,
         items: { totalCount: project.itemCount },
         fields: {
             nodes: allFields(project).map((field, index) => ({
@@ -659,6 +665,7 @@ describe("GitHub Project setup", () => {
             id: "project-1",
             number: 1,
             title: "Organization workflow",
+            shortDescription: null,
             url: "https://github.com/orgs/acme/projects/1",
             public: false,
             closed: false,
@@ -727,6 +734,7 @@ describe("GitHub Project setup", () => {
             url: "https://github.com/users/alex/projects/1",
             public: false,
             closed: false,
+            shortDescription: null,
             itemCount: 3,
             fields: [{ id: "status", name: "Status", dataType: "SINGLE_SELECT", options: existingOptions }],
             repositoryIds: [],
@@ -767,6 +775,7 @@ describe("GitHub Project setup", () => {
             url: "https://github.com/users/alex/projects/1",
             public: false,
             closed: false,
+            shortDescription: null,
             itemCount: 3,
             fields: [{ id: "status", name: "Status", dataType: "TEXT" }],
             repositoryIds: [],
@@ -813,6 +822,7 @@ describe("GitHub Project setup", () => {
         const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
         github.projects.push({
             id: "project-remote",
+            shortDescription: null,
             number: 9,
             title: "Changed remotely",
             url: "https://github.com/users/alex/projects/9",
@@ -841,6 +851,7 @@ describe("GitHub Project setup", () => {
                         id: "project-1",
                         number: 1,
                         title: "Resume",
+                        shortDescription: null,
                         url: "https://github.com/users/alex/projects/1",
                         public: false,
                         closed: false,
@@ -901,6 +912,7 @@ describe("GitHub Project setup", () => {
                 id: "project-1",
                 number: 1,
                 title: "Compatible native Status",
+                shortDescription: null,
                 url: "https://github.com/users/alex/projects/1",
                 public: false,
                 closed: false,
@@ -1088,6 +1100,203 @@ describe("GitHub Project setup", () => {
         specification.presentation.target = { mode: "selected", viewId: (result.view as any).id }
         return specification
     }
+
+    it("previews, writes, and inspects the setup repository description rather than the Project owner", async () => {
+        const github = new FakeGitHub()
+        const specification = newSpecification()
+        const desired = "Repository: https://github.com/acme/example"
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        const action = (preview.actions as any[]).find((action) => action.kind === "set-project-description")
+        assert.deepEqual(action.details, { current: null, desired })
+        assert.match(action.description, /null.*Repository: https:\/\/github.com\/acme\/example/)
+        assert.equal(github.projectWrites.length, 0)
+        await apply(github, specification)
+        assert.equal(github.projects[0].shortDescription, desired)
+        assert.deepEqual(github.projectWrites, [
+            { projectId: "project-1", public: false },
+            { projectId: "project-1", shortDescription: desired },
+        ])
+        const inspected = await runGitHubProjectSetup(
+            {
+                operation: "inspectProject",
+                credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                projectOwner: specification.projectOwner,
+                projectNumber: 1,
+            },
+            setupOptions(github),
+        )
+        assert.equal((inspected.project as any).shortDescription, desired)
+    })
+
+    it("replaces only differing descriptions on existing and resumed Projects", async () => {
+        const desired = "Repository: https://github.com/acme/example"
+        for (const mode of ["existing", "resume-created"]) {
+            for (const current of [null, "", "Custom description", desired]) {
+                const github = new FakeGitHub()
+                const specification = await seed(github)
+                specification.project.mode = mode
+                const project = github.projects[0]
+                project.shortDescription = current
+                project.repositoryIds.push("another-repository")
+                Object.assign(project, { readme: "Keep this README", itemValues: [{ status: "Todo" }] })
+                const before = structuredClone(project)
+                github.projectWrites = []
+                const preview = await runGitHubProjectSetup(
+                    { operation: "preview", specification },
+                    setupOptions(github),
+                )
+                const actions = (preview.actions as any[]).filter((action) => action.kind === "set-project-description")
+                assert.equal(actions.length, current === desired ? 0 : 1)
+                if (actions.length) assert.deepEqual(actions[0].details, { current, desired })
+                await apply(github, specification)
+                assert.deepEqual(project, { ...before, shortDescription: desired })
+                assert.deepEqual(
+                    github.projectWrites,
+                    current === desired ? [] : [{ projectId: project.id, shortDescription: desired }],
+                )
+                assert.equal(github.viewWrites.length, 0)
+                assert.equal(github.projects.length, 1)
+            }
+        }
+    })
+
+    it("invalidates description replacement approval when the current text changes", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        github.projects[0].shortDescription = "First description"
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        github.projects[0].shortDescription = "Changed by the user"
+        github.projectWrites = []
+        await assert.rejects(
+            runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            ),
+            /changed after approval/,
+        )
+        assert.equal(github.projects[0].shortDescription, "Changed by the user")
+        assert.deepEqual(github.projectWrites, [])
+    })
+
+    it("preserves partial Projects after failed or ignored description writes and resumes without replacement", async () => {
+        for (const failure of ["denied", "ignored", "lost-response"]) {
+            const github = new FakeGitHub()
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                const body = init?.body ? JSON.parse(String(init.body)) : undefined
+                if (body?.query?.includes("updateProjectV2(") && "shortDescription" in body.variables) {
+                    if (failure === "lost-response") await github.fetch(input, init)
+                    return failure === "ignored"
+                        ? graph({ updateProjectV2: { projectV2: { id: "project-1" } } })
+                        : json({ message: "description write failed secret-token" }, 503)
+                }
+                return github.fetch(input, init)
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.match(
+                        error.message,
+                        failure === "ignored"
+                            ? /final verification.*short description/
+                            : /Project creation\/settings.*POST \/graphql.*503/,
+                    )
+                    assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                    return true
+                },
+            )
+            assert.equal(github.projects.length, 1)
+            const project = github.projects[0]
+            const resumed = projectContained({
+                mode: "resume-created",
+                number: project.number,
+                visibility: "private",
+                associateRepository: true,
+            })
+            resumed.presentation.target = { mode: "selected", viewId: github.projectViews(project)[0].id }
+            github.projectWrites = []
+            await apply(github, resumed)
+            assert.equal(github.projects.length, 1)
+            assert.equal(project.shortDescription, "Repository: https://github.com/acme/example")
+            assert.equal(github.projectWrites.length, failure === "lost-response" ? 0 : 1)
+        }
+    })
+
+    it("returns a saved-state manual default-Status follow-up in every mode and layout, including repository opt-out", async () => {
+        for (const mode of ["new", "existing", "resume-created"]) {
+            for (const layout of ["board", "table", "roadmap"]) {
+                for (const defaultRepository of ["setup-repository", "unmanaged"]) {
+                    const github = new FakeGitHub()
+                    const defaults = newSpecification()
+                    const initial = {
+                        ...defaults,
+                        fields: {
+                            ...defaults.fields,
+                            status: {
+                                ...defaults.fields.status,
+                                field: "Work state",
+                                options: {
+                                    ...defaults.fields.status.options,
+                                    backlog: { ...defaults.fields.status.options.backlog, name: "Ideas" },
+                                },
+                            },
+                        },
+                    }
+                    const base =
+                        mode === "new"
+                            ? initial
+                            : {
+                                  ...projectContained({
+                                      mode,
+                                      number: 1,
+                                      visibility: "private",
+                                      associateRepository: true,
+                                  }),
+                                  fields: initial.fields,
+                              }
+                    if (mode !== "new") {
+                        const seeded = await apply(github, initial)
+                        base.presentation.target = { mode: "selected", viewId: (seeded.view as any).id }
+                    }
+                    const specification = {
+                        ...base,
+                        defaultRepository,
+                        presentation: {
+                            ...base.presentation,
+                            layout,
+                            visibleFields: layout === "roadmap" ? [] : base.presentation.visibleFields,
+                        },
+                    }
+                    const preview = await runGitHubProjectSetup(
+                        { operation: "preview", specification },
+                        setupOptions(github),
+                    )
+                    const previewNote = (preview.manualSteps as any[]).find((step) => step.setting === "defaultStatus")
+                    assert.equal(previewNote.desired, "Ideas")
+                    const result = await apply(github, specification)
+                    const note = (result.manualSteps as any[]).find((step) => step.setting === "defaultStatus")
+                    assert.equal(note.desired, "Ideas")
+                    assert.match(note.instructions, /not applied automatically.*do not expose a setter/)
+                    assert.ok(
+                        note.instructions.includes(
+                            `${github.projects[0].url} → Project menu → Settings → Work state → Default value`,
+                        ),
+                    )
+                    assert.doesNotMatch(note.instructions, /\/views\//)
+                    assert.match(
+                        note.verification,
+                        /Reload.*Work state's saved default is Ideas.*user confirmation or a screenshot.*before full setup completion/,
+                    )
+                    assert.deepEqual(result.verification, { api: "verified", manual: "requires-user-confirmation" })
+                    assert.equal((result.trackerConfig as any).defaultStatus, undefined)
+                }
+            }
+        }
+    })
 
     it("creates personal Boards once through the verified owner-login route without an owner lookup", async () => {
         const github = new FakeGitHub()
@@ -1301,7 +1510,7 @@ describe("GitHub Project setup", () => {
         assert.deepEqual(result.verification, { api: "verified", manual: "requires-user-confirmation" })
         assert.deepEqual(
             (result.manualSteps as any[]).map((step) => step.setting),
-            ["fieldSum", "sliceBy", "defaultRepository"],
+            ["fieldSum", "sliceBy", "defaultRepository", "defaultStatus"],
         )
         assert.match(JSON.stringify(result.manualSteps), /Save changes/)
         assert.deepEqual(view.groupBy, [])
@@ -1424,7 +1633,7 @@ describe("GitHub Project setup", () => {
         assert.equal(views[0].sortBy.length, 5)
         assert.equal((result.project as any).fields.length, 9)
         assert.equal(github.viewWrites.length, 0)
-        assert.deepEqual(result.unavailableSettings, ["defaultRepository", "fieldSum", "sliceBy"])
+        assert.deepEqual(result.unavailableSettings, ["defaultRepository", "fieldSum", "sliceBy", "defaultStatus"])
     })
 
     it("blocks a missing or foreign view and requires explicit targets", async () => {

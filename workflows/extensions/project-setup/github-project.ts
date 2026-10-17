@@ -369,6 +369,7 @@ interface ProjectField {
     options?: Array<{ id: string; name: string; description: string; color: string }>
 }
 interface ProjectDetails extends ProjectSummary {
+    shortDescription: string | null
     itemCount: number
     fields: ProjectField[]
     repositoryIds: string[]
@@ -458,6 +459,7 @@ type ProvisioningAction =
           | { kind: "configure-native-status"; details: ProjectFieldDefinition }
           | { kind: "create-repository-label"; details: Static<typeof RepositoryLabelSchema> }
           | { kind: "set-project-visibility"; details: { visibility: "private" | "public" } }
+          | { kind: "set-project-description"; details: { current: string | null; desired: string } }
           | {
                 kind: "associate-repository" | "remove-repository-association"
                 details: Static<typeof RepositorySchema> | { repositoryId: string; associated: boolean }
@@ -524,7 +526,7 @@ export async function runGitHubProjectSetup(
             return {
                 project: await client.getProject(selected.id),
                 views: await client.listProjectViews(selected.id),
-                unavailableSettings: ["defaultRepository", "fieldSum", "sliceBy"],
+                unavailableSettings: ["defaultRepository", "fieldSum", "sliceBy", "defaultStatus"],
                 defaults: GITHUB_PROJECT_DEFAULTS,
             }
         }
@@ -611,13 +613,14 @@ class GitHubClient {
         const fields: ProjectField[] = []
         let after: string | null = null
         let summary: ProjectSummary | undefined
+        let shortDescription: string | null = null
         let itemCount = 0
         do {
             const data = await this.graphql(
                 `query($id: ID!, $after: String) {
                     node(id: $id) {
                         ... on ProjectV2 {
-                            id number title url public closed
+                            id number title url public closed shortDescription
                             items(first: 1) { totalCount }
                             fields(first: 50, after: $after) {
                                 nodes {
@@ -639,6 +642,9 @@ class GitHubClient {
             )
             const node = record(data.node, `Project ${id}`)
             summary ??= projectSummary(node)
+            if (node.shortDescription !== null && typeof node.shortDescription !== "string")
+                throw new Error("invalid Project short description")
+            shortDescription = node.shortDescription
             itemCount = number(record(node.items, "project items").totalCount, "project item count")
             const connection = record(node.fields, "project fields")
             for (const rawField of array(connection.nodes, "project field nodes")) {
@@ -696,7 +702,7 @@ class GitHubClient {
                 pageInfo.hasNextPage === true ? text(pageInfo.endCursor, "Project repositories endCursor") : null
         } while (repositoryAfter)
 
-        return { ...summary!, itemCount, fields, repositoryIds }
+        return { ...summary!, shortDescription, itemCount, fields, repositoryIds }
     }
 
     async listProjectViews(projectId: string): Promise<ProjectView[]> {
@@ -902,6 +908,15 @@ class GitHubClient {
                 updateProjectV2(input: { projectId: $projectId, public: $public }) { projectV2 { id } }
             }`,
             { projectId, public: visible },
+        )
+    }
+
+    async setProjectDescription(projectId: string, shortDescription: string): Promise<void> {
+        await this.graphql(
+            `mutation($projectId: ID!, $shortDescription: String!) {
+                updateProjectV2(input: { projectId: $projectId, shortDescription: $shortDescription }) { projectV2 { id } }
+            }`,
+            { projectId, shortDescription },
         )
     }
 
@@ -1152,6 +1167,7 @@ async function previewGitHubProject(
                 description: `Create ${projectSource.visibility} Project ${JSON.stringify(projectSource.title)} owned by ${specification.projectOwner.type} ${specification.projectOwner.login}`,
                 details: { ...projectSource, owner: specification.projectOwner },
             })
+            planProjectDescription(null, repository, actions)
             if (projectSource.associateRepository) {
                 actions.push({
                     kind: "associate-repository",
@@ -1272,12 +1288,32 @@ async function previewGitHubProject(
     return { ...unsigned, planHash: hash(unsigned) }
 }
 
+function desiredProjectDescription(repository: RepositoryDetails): string {
+    return `Repository: https://github.com/${repository.owner}/${repository.repo}`
+}
+
+function planProjectDescription(
+    current: string | null,
+    repository: RepositoryDetails,
+    actions: ProvisioningAction[],
+): void {
+    const desired = desiredProjectDescription(repository)
+    if (current !== desired) {
+        actions.push({
+            kind: "set-project-description",
+            description: `Change Project short description from ${JSON.stringify(current)} to ${JSON.stringify(desired)}`,
+            details: { current, desired },
+        })
+    }
+}
+
 function planProjectSettings(
     source: GitHubProjectSpecification["project"],
     project: ProjectDetails,
     repository: RepositoryDetails,
     actions: ProvisioningAction[],
 ): void {
+    planProjectDescription(project.shortDescription, repository, actions)
     const desiredPublic = source.visibility === "public"
     if (project.public !== desiredPublic) {
         actions.push({
@@ -1555,6 +1591,11 @@ async function applyGitHubProject(
             project = await client.getProject(project.id)
         }
 
+        const description = desiredProjectDescription(repository)
+        if (project.shortDescription !== description) {
+            await client.setProjectDescription(project.id, description)
+        }
+
         stage = "Project fields"
         await provisionProjectFields(
             specification,
@@ -1590,7 +1631,10 @@ async function applyGitHubProject(
             project: projectSummary(verified),
             view: configuredView,
             verification: { api: "verified", manual: "requires-user-confirmation" },
-            manualSteps: manualStepsFor(specification, `${verified.url}/views/${configuredView.number}`),
+            manualSteps: manualStepsFor(specification, {
+                project: verified.url,
+                view: `${verified.url}/views/${configuredView.number}`,
+            }),
             trackerConfig: trackerConfigFor(specification, verified.number),
             approvedPlanHash: approvedPlan.planHash,
         }
@@ -1856,8 +1900,12 @@ async function provisionProjectView(
     return verified
 }
 
-function manualStepsFor(specification: GitHubProjectSpecification, viewUrl?: string): ManualStep[] {
-    const location = viewUrl ?? "the selected Project view (link returned after provisioning)"
+function manualStepsFor(
+    specification: GitHubProjectSpecification,
+    links?: { project: string; view: string },
+): ManualStep[] {
+    const location = links?.view ?? "the selected Project view (link returned after provisioning)"
+    const projectLocation = links?.project ?? "the Project (link returned after provisioning)"
     const priority = specification.fields[GITHUB_PROJECT_DEFAULTS.board.sortBy.field]
     const priorityOrder = priority.options.map((option) => option.name).join(" → ")
     const steps: ManualStep[] = []
@@ -1907,6 +1955,12 @@ function manualStepsFor(specification: GitHubProjectSpecification, viewUrl?: str
                 "Reload Settings and confirm the saved default repository; user confirmation or a screenshot is required. Repository association alone is not proof.",
         })
     }
+    steps.push({
+        setting: "defaultStatus",
+        desired: specification.fields.status.options.backlog.name,
+        instructions: `Manual follow-up: this field default was not applied automatically because the available MCP tools and documented public APIs do not expose a setter. Open ${projectLocation} → Project menu → Settings → ${specification.fields.status.field} → Default value; select ${specification.fields.status.options.backlog.name} and save.`,
+        verification: `Reload the field settings and confirm ${specification.fields.status.field}'s saved default is ${specification.fields.status.options.backlog.name}; user confirmation or a screenshot is required before full setup completion.`,
+    })
     return isFreshBoard(specification)
         ? steps.filter((step) => !["columnBy", "swimlanes", "sortBy"].includes(step.setting))
         : steps
