@@ -1309,29 +1309,39 @@ describe("GitHub Project setup", () => {
         )
     })
 
-    it("reconciles a created Board when HTTP success omits the expected response envelope", async () => {
-        const github = new FakeGitHub()
-        const specification = newSpecification()
-        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
-        const fetch: typeof globalThis.fetch = async (input, init) => {
-            const response = await github.fetch(input, init)
-            // The live 201 response had no `value`; its complete shape was not retained.
-            return String(input).endsWith("/views") && init?.method === "POST" ? json({}, 201) : response
-        }
-        const result = await runGitHubProjectSetup(
-            { operation: "apply", specification, approvedPlanHash: preview.planHash },
-            { ...setupOptions(github), fetch },
-        )
-        assert.equal(result.state, "provisioned")
-        assert.deepEqual(
-            github.viewWrites.map((write) => write.operation),
-            ["rest-create", "delete"],
-        )
-        assert.deepEqual(
-            github.projectViews(github.projects[0]).map((view) => view.id),
-            [(result.view as any).id],
-        )
-    })
+    for (const responseKind of ["normal", "missing-envelope", "lost"])
+        it(`accepts reordered Board visibility with a ${responseKind} create response`, async () => {
+            const github = new FakeGitHub()
+            github.onBoardCreate = (_project, view) => {
+                view.visibleFieldIds.reverse()
+            }
+            github.loseNextViewCreateResponse = responseKind === "lost"
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                const response = await github.fetch(input, init)
+                // The live 201 response had no `value`; its complete shape was not retained.
+                return responseKind === "missing-envelope" &&
+                    String(input).endsWith("/views") &&
+                    init?.method === "POST"
+                    ? json({}, 201)
+                    : response
+            }
+            const result = await runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                { ...setupOptions(github), fetch },
+            )
+            assert.equal(result.state, "provisioned")
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create", "delete"],
+            )
+            assert.equal(github.viewWrites[1].viewId, "view-1-1")
+            assert.deepEqual(
+                github.projectViews(github.projects[0]).map((view) => view.id),
+                [(result.view as any).id],
+            )
+        })
 
     for (const failure of ["404", "403", "invalid-json", "network", "recovery-read"])
         it(`preserves partial setup and safe Board request context after ${failure}`, async () => {
@@ -1488,9 +1498,9 @@ describe("GitHub Project setup", () => {
         assert.equal(view.name, "Board")
         assert.equal(view.layout, "board")
         assert.deepEqual(
-            view.visibleFieldIds.map(
-                (id: string) => allFields(github.projects[0]).find((field) => field.id === id)!.name,
-            ),
+            view.visibleFieldIds
+                .map((id: string) => allFields(github.projects[0]).find((field) => field.id === id)!.name)
+                .sort(),
             [
                 "Title",
                 "Assignees",
@@ -1500,7 +1510,7 @@ describe("GitHub Project setup", () => {
                 "Labels",
                 "Priority",
                 "Phase",
-            ],
+            ].sort(),
         )
         assert.equal(
             github.projects[0].fields.some((field) => field.name === "Kind"),
@@ -2203,17 +2213,39 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projectViews(github.projects[0]).length, 1)
     })
 
-    for (const mismatch of ["columns", "swimlanes", "sort", "direction", "visible"])
-        it(`preserves the default when Board ${mismatch} verification fails`, async () => {
+    for (const [mismatch, diagnostic] of [
+        ["columns", /columns expected/],
+        ["swimlanes", /swimlanes expected none/],
+        ["sort", /sort expected sole Priority field/],
+        ["sort-field", /sort expected sole Priority field/],
+        ["direction", /sort direction expected asc/],
+        ["visible", /visible fields missing/],
+        ["extra", /visible fields unexpected/],
+        ["duplicate", /visible fields duplicate/],
+        ["name", /name expected "Board"/],
+        ["layout", /layout expected board/],
+    ] as const)
+        it(`preserves the default and explains Board ${mismatch} verification failure`, async () => {
             const github = new FakeGitHub()
             github.onBoardCreate = (project, view) => {
                 if (mismatch === "columns") view.columns = []
                 if (mismatch === "swimlanes") view.groupBy = [project.fields[0]]
                 if (mismatch === "sort") view.sortBy = []
+                if (mismatch === "sort-field") view.sortBy[0].field = project.fields[0]
                 if (mismatch === "direction") view.sortBy[0].direction = "DESC"
                 if (mismatch === "visible") view.visibleFieldIds = [builtins[0].id]
+                if (mismatch === "extra")
+                    view.visibleFieldIds.push(project.fields.find((field) => field.name === "Internal ID")!.id)
+                if (mismatch === "duplicate") view.visibleFieldIds.push(view.visibleFieldIds[0])
+                if (mismatch === "name") view.name = "secret-token unexpected name"
+                if (mismatch === "layout") view.layout = "TABLE_LAYOUT"
             }
-            await assert.rejects(apply(github, newSpecification()), /Board post-write verification failed/)
+            await assert.rejects(apply(github, newSpecification()), (error: Error) => {
+                assert.match(error.message, /during Board setup.*POST \/graphql.*Board post-write verification failed/)
+                assert.match(error.message, diagnostic)
+                assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                return true
+            })
             assert.deepEqual(
                 github.viewWrites.map((write) => write.operation),
                 ["rest-create"],
@@ -2261,9 +2293,267 @@ describe("GitHub Project setup", () => {
             const github = new FakeGitHub()
             github.failViewDelete = failure === "denied"
             github.ignoreViewDelete = failure === "ignored"
-            await assert.rejects(apply(github, newSpecification()), /deletion forbidden|cleanup verification failed/)
+            await assert.rejects(apply(github, newSpecification()), (error: Error) => {
+                assert.match(error.message, /during Board setup.*POST \/graphql/)
+                assert.match(
+                    error.message,
+                    failure === "denied"
+                        ? /deletion forbidden/
+                        : /cleanup verification failed.*captured default views still present.*view-1-1/,
+                )
+                return true
+            })
             assert.equal(github.projectViews(github.projects[0]).length, 2)
         }
+    })
+
+    for (const invalid of ["ownership", "layout"])
+        it(`keeps safe request context for Board read-back ${invalid} errors`, async () => {
+            const github = new FakeGitHub()
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            let created = false
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                const response = await github.fetch(input, init)
+                if (String(input).endsWith("/views") && init?.method === "POST") created = true
+                const body = JSON.parse(String(init?.body ?? "{}"))
+                if (created && body.query?.includes("... on ProjectV2View")) {
+                    const data = await response.json()
+                    if (invalid === "ownership") data.data.node.project.id = "foreign-secret-token"
+                    else data.data.node.layout = "secret-token"
+                    return json(data)
+                }
+                return response
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.match(error.message, /during Board setup.*POST \/graphql/)
+                    if (invalid === "ownership") assert.match(error.message, /does not belong to Project/)
+                    assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization/)
+                    return true
+                },
+            )
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create"],
+            )
+            assert.equal(github.projectViews(github.projects[0]).length, 2)
+        })
+
+    for (const mode of ["existing", "resume-created"])
+        it(`keeps equivalent Board visibility stable during ${mode} preview and apply`, async () => {
+            const github = new FakeGitHub()
+            const base = await seed(github)
+            const specification = { ...base, project: { ...base.project, mode } }
+            const view = github.projectViews(github.projects[0])[0]
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            view.visibleFieldIds.reverse()
+            const repeated = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            assert.equal(repeated.planHash, preview.planHash)
+            const result = await runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            )
+            assert.equal(result.state, "provisioned")
+            assert.deepEqual(github.viewWrites, [])
+        })
+
+    it("reconciles reordered Board visibility after an uncertain selected-view update", async () => {
+        const github = new FakeGitHub()
+        const specification = await seed(github)
+        const view = github.projectViews(github.projects[0])[0]
+        view.name = "Before"
+        github.loseNextViewUpdateResponse = true
+        const fetch: typeof globalThis.fetch = async (input, init) => {
+            const response = await github.fetch(input, init)
+            const body = JSON.parse(String(init?.body ?? "{}"))
+            if (body.query?.includes("updateProjectV2View(")) view.visibleFieldIds.reverse()
+            return response
+        }
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        const result = await runGitHubProjectSetup(
+            { operation: "apply", specification, approvedPlanHash: preview.planHash },
+            { ...setupOptions(github), fetch },
+        )
+        assert.equal(result.state, "provisioned")
+        assert.equal(github.viewWrites.length, 1)
+    })
+
+    it("retains table field-order reconciliation and order-sensitive approval", async () => {
+        const github = new FakeGitHub()
+        const base = await seed(github)
+        const specification = { ...base, presentation: { ...base.presentation, layout: "table" } }
+        await apply(github, specification)
+        github.viewWrites = []
+        const view = github.projectViews(github.projects[0])[0]
+        const expected = [...view.visibleFieldIds]
+        const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+        view.visibleFieldIds.reverse()
+        await assert.rejects(
+            runGitHubProjectSetup(
+                { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                setupOptions(github),
+            ),
+            /changed after approval/,
+        )
+        await apply(github, specification)
+        assert.deepEqual(view.visibleFieldIds, expected)
+        assert.equal(github.viewWrites.length, 1)
+    })
+
+    for (const layout of ["board", "table"])
+        it(`uses ${layout} visibility semantics for captured-default cleanup`, async () => {
+            const github = new FakeGitHub()
+            github.onProjectCreate = (project) => {
+                const initial = github.projectViews(project)[0]
+                initial.layout = `${layout.toUpperCase()}_LAYOUT`
+                initial.visibleFieldIds = builtins.slice(0, 3).map((field) => field.id)
+            }
+            github.onBoardCreate = (project) => {
+                github.projectViews(project)[0].visibleFieldIds.reverse()
+            }
+            if (layout === "board") {
+                await apply(github, newSpecification())
+                assert.deepEqual(
+                    github.viewWrites.map((write) => write.operation),
+                    ["rest-create", "delete"],
+                )
+            } else {
+                await assert.rejects(apply(github, newSpecification()), /captured default view changed/)
+                assert.deepEqual(
+                    github.viewWrites.map((write) => write.operation),
+                    ["rest-create"],
+                )
+            }
+        })
+
+    for (const identity of ["missing", "pre-existing"])
+        it(`reports a ${identity} returned Board identity without deleting views`, async () => {
+            const github = new FakeGitHub()
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                const response = await github.fetch(input, init)
+                return String(input).endsWith("/views") && init?.method === "POST"
+                    ? json({ value: { node_id: identity === "missing" ? "absent-view" : "view-1-1" } }, 201)
+                    : response
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.match(
+                        error.message,
+                        /during Board setup.*POST \/graphql.*Board post-write verification failed/,
+                    )
+                    assert.match(
+                        error.message,
+                        identity === "missing" ? /view is missing/ : /already existed before creation/,
+                    )
+                    return true
+                },
+            )
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create"],
+            )
+            assert.equal(github.projectViews(github.projects[0]).length, 2)
+        })
+
+    for (const recovery of ["mismatch", "ambiguous", "read-failure"])
+        it(`retains safe create-response context with ${recovery} recovery`, async () => {
+            const github = new FakeGitHub()
+            github.onBoardCreate = (project, view) => {
+                if (recovery === "mismatch") view.name = "secret-token wrong name"
+                if (recovery === "ambiguous")
+                    github
+                        .projectViews(project)
+                        .push({ ...structuredClone(view), id: "second-secret-token", number: 3 })
+            }
+            const specification = newSpecification()
+            const preview = await runGitHubProjectSetup({ operation: "preview", specification }, setupOptions(github))
+            let attempted = false
+            const fetch: typeof globalThis.fetch = async (input, init) => {
+                if (attempted && recovery === "read-failure")
+                    return graph(undefined, [{ message: "secret-token recovery unavailable" }])
+                const response = await github.fetch(input, init)
+                if (String(input).endsWith("/views") && init?.method === "POST") {
+                    attempted = true
+                    return json({}, 201)
+                }
+                return response
+            }
+            await assert.rejects(
+                runGitHubProjectSetup(
+                    { operation: "apply", specification, approvedPlanHash: preview.planHash },
+                    { ...setupOptions(github), fetch },
+                ),
+                (error: Error) => {
+                    assert.match(error.message, /during Board setup/)
+                    assert.match(error.message, /POST \/users\/alex\/projectsV2\/1\/views: invalid created Board/)
+                    assert.match(error.message, /POST \/graphql/)
+                    if (recovery === "mismatch") {
+                        assert.match(error.message, /0 matching new views.*view-1-2.*name expected/)
+                        assert.match(error.message, /resume-created.*creation not retried/)
+                    }
+                    if (recovery === "ambiguous")
+                        assert.match(error.message, /2 matching new views.*view-1-2.*second-\[REDACTED\]/)
+                    if (recovery === "read-failure")
+                        assert.match(error.message, /recovery read failed.*recovery unavailable/)
+                    assert.doesNotMatch(inspect(error, { depth: 20 }), /secret-token|Authorization|visible_fields/)
+                    return true
+                },
+            )
+            assert.deepEqual(
+                github.viewWrites.map((write) => write.operation),
+                ["rest-create"],
+            )
+            assert.equal(github.projects.length, 1)
+        })
+
+    it("resumes a failed Board setup only through the explicitly selected existing view", async () => {
+        const github = new FakeGitHub()
+        github.onBoardCreate = (_project, view) => {
+            view.visibleFieldIds.pop()
+        }
+        await assert.rejects(apply(github, newSpecification()), /visible fields missing/)
+        const inspection = await runGitHubProjectSetup(
+            {
+                operation: "inspectProject",
+                credentialEnv: "GITHUB_TOKEN_FOR_TEST",
+                projectOwner: { login: "alex", type: "user" },
+                projectNumber: 1,
+            },
+            setupOptions(github),
+        )
+        const board = (inspection.views as any[]).find((view) => view.name === "Board")
+        const views = github.projectViews(github.projects[0])
+        const defaultView = structuredClone(views[0])
+        views.push({ ...structuredClone(views[1]), id: "user-view", number: 9, name: "User view", filter: "is:open" })
+        const unrelated = structuredClone(views[2])
+        const base = newSpecification()
+        const specification = {
+            ...base,
+            project: { mode: "resume-created", number: 1, visibility: "private", associateRepository: true },
+            presentation: { ...base.presentation, target: { mode: "selected", viewId: board.id } },
+        }
+        const result = await apply(github, specification)
+        assert.equal(result.state, "provisioned")
+        assert.equal(github.projects.length, 1)
+        assert.deepEqual(
+            github.viewWrites.map((write) => write.operation),
+            ["rest-create", "update"],
+        )
+        assert.equal(github.viewWrites[1].viewId, board.id)
+        assert.deepEqual(views[0], defaultView)
+        assert.deepEqual(views[2], unrelated)
+        assert.equal(views.length, 3)
     })
 
     it("requires an environment-backed credential", async () => {
