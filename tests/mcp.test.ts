@@ -1,11 +1,21 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import {
+    createEventBus,
+    type ExtensionAPI,
+    type ExtensionContext,
+    type ToolDefinition,
+} from "@earendil-works/pi-coding-agent"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
-import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../extensions/__lib/mcp.ts"
+import {
+    MCP_TOOL_CATALOG_EVENT,
+    MCP_TOOL_DECORATORS_EVENT,
+    type McpToolCatalog,
+    type McpToolDecorators,
+} from "../extensions/__lib/mcp.ts"
 import { createServerTransport, registerMcpServers, resolveServerConfig } from "../extensions/mcp/index.ts"
 
 type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown
@@ -14,22 +24,20 @@ function createMcpHarness() {
     const handlers = new Map<string, EventHandler>()
     const publications: McpToolCatalog[] = []
     const registeredTools: string[] = []
+    const definitions = new Map<string, ToolDefinition>()
     const order: string[] = []
+    const events = createEventBus()
+    events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
+        publications.push(data as McpToolCatalog)
+        order.push("catalog")
+    })
     const pi = {
-        events: {
-            emit(channel: string, data: unknown) {
-                assert.equal(channel, MCP_TOOL_CATALOG_EVENT)
-                publications.push(data as McpToolCatalog)
-                order.push("catalog")
-            },
-            on() {
-                return () => undefined
-            },
-        },
+        events,
         on(event: string, handler: EventHandler) {
             handlers.set(event, handler)
         },
-        registerTool(tool: { name: string }) {
+        registerTool(tool: ToolDefinition) {
+            definitions.set(tool.name, tool)
             registeredTools.push(tool.name)
             order.push(`tool:${tool.name}`)
         },
@@ -38,6 +46,8 @@ function createMcpHarness() {
     const ctx = { ui: { setWidget() {} } } as unknown as ExtensionContext
     return {
         handlers,
+        definitions,
+        ctx,
         order,
         pi,
         publications,
@@ -50,8 +60,9 @@ function createMcpHarness() {
 function createFakeClient(
     tools: Array<Record<string, unknown>> = [],
     listError?: Error,
-): { client: never; closeCount: () => number } {
+): { client: never; closeCount: () => number; requests: unknown[][] } {
     let closes = 0
+    const requests: unknown[][] = []
     return {
         client: {
             async connect() {},
@@ -59,7 +70,8 @@ function createFakeClient(
                 if (listError) throw listError
                 return { tools }
             },
-            async callTool() {
+            async callTool(...args: unknown[]) {
+                requests.push(args)
                 return { content: [] }
             },
             async close() {
@@ -67,6 +79,7 @@ function createFakeClient(
             },
         } as never,
         closeCount: () => closes,
+        requests,
     }
 }
 
@@ -204,6 +217,100 @@ describe("MCP extension lifecycle", () => {
             assert.equal(second.closeCount(), 1)
         })
     })
+})
+
+describe("MCP tool decoration", () => {
+    for (const [url, name, field] of [
+        ["https://api.githubcopilot.com/mcp/", "issue_write", "body"],
+        ["https://mcp.linear.app/mcp", "save_issue", "description"],
+    ]) {
+        it(`preserves native ${name} schemas, descriptions, and arguments without decorators`, async () => {
+            const h = createMcpHarness()
+            const schema = { type: "object", properties: { [field]: { type: "string" } }, additionalProperties: false }
+            const fake = createFakeClient([{ name, description: "Native description", inputSchema: schema }])
+            registerMcpServers(h.pi, { alias: { url } }, () => fake.client)
+            try {
+                await h.start()
+                const tool = h.definitions.get(`mcp__alias__${name}`)!
+                assert.deepEqual(JSON.parse(JSON.stringify(tool.parameters)), schema)
+                assert.equal(tool.description, "Native description")
+                const input = { [field]: "Unchanged text." }
+                await tool.execute("native", input, undefined, undefined, h.ctx)
+                assert.deepEqual(fake.requests, [[{ name, arguments: input }, undefined, undefined]])
+                assert.deepEqual(input, { [field]: "Unchanged text." })
+                assert.deepEqual(h.publications[0].get(tool.name)!.inputSchema, schema)
+            } finally {
+                await h.shutdown()
+            }
+        })
+    }
+
+    for (const config of [
+        { command: "noop", env: { SECRET: "private-value" } },
+        { url: "https://example.com/mcp", headers: { Authorization: "Bearer private-value" } },
+    ]) {
+        it(`supports a provider-neutral decorator with ${"command" in config ? "stdio" : "HTTP"} transport identity`, async () => {
+            const h = createMcpHarness()
+            const fake = createFakeClient([mcpTool("echo")])
+            const seen: unknown[] = []
+            h.pi.events.on(MCP_TOOL_DECORATORS_EVENT, (registration) => {
+                ;(registration as McpToolDecorators).use((native, metadata, transport) => {
+                    seen.push(transport)
+                    assert.equal(metadata.serverToolName, "echo")
+                    assert.deepEqual(metadata.inputSchema, { type: "object" })
+                    return {
+                        ...native,
+                        description: "Decorated description",
+                        execute(id, _params, signal, onUpdate, ctx) {
+                            return native.execute(id, { value: "decorated" }, signal, onUpdate, ctx)
+                        },
+                    }
+                })
+            })
+            registerMcpServers(h.pi, { alias: config }, () => fake.client)
+            try {
+                await h.start()
+                assert.deepEqual(seen, [
+                    "command" in config ? { type: "stdio" } : { type: "streamable-http", url: config.url },
+                ])
+                const tool = h.definitions.get("mcp__alias__echo")!
+                assert.equal(tool.description, "Decorated description")
+                const signal = new AbortController().signal
+                assert.deepEqual(await tool.execute("echo", {}, signal, undefined, h.ctx), {
+                    content: [],
+                    details: undefined,
+                })
+                assert.deepEqual(fake.requests, [
+                    [{ name: "echo", arguments: { value: "decorated" } }, undefined, { signal }],
+                ])
+                assert.deepEqual(h.order, ["catalog", "tool:mcp__alias__echo"])
+            } finally {
+                await h.shutdown()
+            }
+        })
+    }
+
+    for (const failure of ["throw", "rename"] as const) {
+        it(`closes clients and registers no tools after decorator ${failure}`, async () => {
+            await suppressErrors(async () => {
+                const h = createMcpHarness()
+                const fake = createFakeClient([mcpTool("first"), mcpTool("second")])
+                h.pi.events.on(MCP_TOOL_DECORATORS_EVENT, (registration) => {
+                    ;(registration as McpToolDecorators).use((native, metadata) => {
+                        if (metadata.serverToolName === "first") return native
+                        if (failure === "throw") throw new Error("decoration failed")
+                        return { ...native, name: "changed" }
+                    })
+                })
+                registerMcpServers(h.pi, { alias: { command: "noop" } }, () => fake.client)
+                await h.start()
+                assert.deepEqual(h.registeredTools, [])
+                assert.deepEqual([...h.publications[0]], [])
+                assert.equal(fake.closeCount(), 1)
+                assert.deepEqual(fake.requests, [])
+            })
+        })
+    }
 })
 
 describe("MCP server config", () => {

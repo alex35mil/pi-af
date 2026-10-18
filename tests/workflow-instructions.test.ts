@@ -327,9 +327,21 @@ describe("workflow instruction ownership", () => {
         assert.doesNotMatch(fs.readFileSync("workflows/README.md", "utf-8"), /Integration roles and Links/)
 
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
-        assert.match(shared, /workflow owns the entire provider body/)
+        assert.match(shared, /workflow owns the provider's task-definition or result content/)
+        assert.match(shared, /workflow publication layer owns its attribution footer/)
+        const publication = fs.readFileSync("workflows/extensions/integrations/publication.ts", "utf-8")
+        assert.doesNotMatch(publication, /^import\b/m)
+        const wrapper = fs.readFileSync("workflows/extensions/integrations/publication-tool.ts", "utf-8")
+        assert.deepEqual(
+            [...wrapper.matchAll(/from "([^"]+)"/g)].map((match) => match[1]),
+            ["node:fs", "node:path", "@earendil-works/pi-coding-agent", "typebox", "./publication.js"],
+        )
+        assert.match(
+            fs.readFileSync("workflows/extensions/integrations/index.ts", "utf-8"),
+            /from "\.\/publication-mcp\.js"/,
+        )
         assert.match(shared, /Discussion.*belong in comments/)
-        assert.match(shared, /Preserve the exact rendered request/)
+        assert.match(shared, /Preserve the exact rendered content in the request/)
         assert.match(shared, /Trust an established clear provider success/)
         assert.match(shared, /uncertain or partial update, read the exact body/)
         assert.doesNotMatch(shared, /render_artifact_links|artifactLinks|## Shared Links section/)
@@ -365,7 +377,10 @@ describe("workflow instruction ownership", () => {
         assert.match(shared, /require approval before rendering/)
         assert.match(shared, /Folding is not a privacy boundary/)
         assert.match(shared, /Call `render_provider_body`.*complete approved candidate/)
-        assert.match(shared, /Deterministic renderer output needs no second approval/)
+        assert.match(
+            shared,
+            /Deterministic renderer output and the code-owned attribution treatment need no second approval/,
+        )
         assert.match(shared, /substantive omission, rewrite, addition, or new summary requires/)
         assert.match(shared, /incompatible source produces a local layout error/)
         const review = fs.readFileSync("workflows/references/review.md", "utf-8")

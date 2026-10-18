@@ -23,6 +23,7 @@ import { finishReadDecision, resolveResourceIdsContext, type FinishReadDecision 
 import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { finalizeLinearBranch } from "./tracker/linear.js"
 import { registerWorkflowOperations } from "./operations.js"
+import { registerWorkflowPublication } from "./publication-mcp.js"
 
 const FinalizeBranchSchema = Type.Object({ entityDir: Type.String({ minLength: 1 }) }, { additionalProperties: false })
 
@@ -103,6 +104,7 @@ export const IntegrationContextSchema = Type.Union([
 export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 
 export default function (pi: ExtensionAPI): void {
+    registerWorkflowPublication(pi)
     const resourceIdsMemo = new OperationResourceIdsMemo()
     registerResourceIds(pi, resourceIdsMemo)
     registerWorkflowOperations(pi)
@@ -352,9 +354,11 @@ function readProjectIntegrationContext(cwd: string, input: IntegrationContextInp
                       contentPolicy:
                           "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed ## Overview visible and collapse all remaining sections; never summarize or condense during publication",
                       rendering:
-                          "Call render_provider_body with the complete approved source and destination; publish its exact returned markdown.",
+                          "Call render_provider_body with the complete approved source and destination; publish its exact returned markdown. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
+                      attribution:
+                          "AI-assisted text is signed by workflow publication code using current runtime identity. Automatically select local __pi_authorship: user-verbatim for complete unchanged user-written messages, without special user opt-out wording; generated or reworded content remains ai-assisted. Code strips the local mode before sending. Use complete text, not patches or template-only content.",
                       changedCandidateGate:
-                          "deterministic renderer output needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers the complete source before rendering",
+                          "deterministic renderer output needs no second approval; code-owned communication attribution also needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers the complete source before rendering",
                       ownership: "workflow" as const,
                       outcomeProof:
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",

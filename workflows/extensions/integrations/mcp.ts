@@ -6,6 +6,15 @@ import { Value } from "typebox/value"
 import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
 import { readMcpSettings } from "../__lib/mcp.js"
 
+export type WorkflowMcpService = "github" | "linear" | "other"
+
+export function identifyMcpService(config: unknown): WorkflowMcpService {
+    if (!config || typeof config !== "object" || !("url" in config)) return "other"
+    if (config.url === "https://api.githubcopilot.com/mcp/") return "github"
+    if (config.url === "https://mcp.linear.app/mcp") return "linear"
+    return "other"
+}
+
 const ProviderRegistrationSchema = Type.Record(Type.String(), Type.Unknown())
 
 export function inspectProjectMcp(cwd: string) {
@@ -72,12 +81,8 @@ function inspectSettingsFile(tier: "global" | "project" | "local", filePath: str
 
 function inspectServer(name: string, value: unknown) {
     if (!Value.Check(ProviderRegistrationSchema, value)) return { name }
-    const provider =
-        value.url === "https://mcp.linear.app/mcp"
-            ? ("linear" as const)
-            : value.url === "https://api.githubcopilot.com/mcp/"
-              ? ("github" as const)
-              : undefined
+    const service = identifyMcpService(value)
+    const provider = service === "other" ? undefined : service
     const headers = Value.Check(ProviderRegistrationSchema, value.headers) ? value.headers : undefined
     const authorization = headers?.Authorization
     const credentialMatch =
