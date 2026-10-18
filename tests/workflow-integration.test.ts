@@ -367,6 +367,7 @@ describe("workflow-source queue context", () => {
         type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
         const tools = new Map<string, Tool>()
         registerIntegrations({
+            events: { on: () => () => {} },
             on: () => {},
             registerCommand: () => {},
             registerTool: (tool: Tool) => tools.set(tool.name, tool),

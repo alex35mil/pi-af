@@ -4,7 +4,7 @@ Registers `/backlog`, `/todo`, local `integration_context`, local `resource_ids`
 
 `integration_context` reads local workflow configuration and state without external operations or configuration changes. Its `inspect` and `queueIntake` operations require `target: "current" | "workflow"` and return `target`/`projectRoot`. The workflow target resolves private global `workflowProject` through `../__lib/project-config.ts`, then reuses the source project's existing tracker schema, artifact policy, and readiness checks. It works independently of consuming-project setup; missing configuration produces a small corrective error, not automatic setup. Entity-bound operations remain current-project scoped. It does not inspect provider-tool schemas. Initialized context exposes the shared [Phase](../../references/phase.md) projection contract. `trackerMutation` with `change: phase` validates supplied fresh native facts and calculates an absolute field/full-label assignment locally; the agent applies it through registered MCP tools. Before merging, `finishMerge` checks that GitHub's PR details match the saved PR and the local branch's commit. It returns squash-merge arguments locked to that commit, confirms the PR is already merged, or explains what prevents merging. The agent supplies the commit title using the selected commit skill's message rules.
 
-`render_provider_body` accepts the complete approved source and configured destination, then delegates presentation to `projection.ts`. Publish its exact returned Markdown. It performs no provider calls or source/index writes; invalid source layout fails locally. See [source shape](../../references/artifacts.md#reviewed-document-shape) and [publication/approval rules](../../references/integrations/shared.md#provider-bodies).
+`render_provider_body` accepts the complete approved source and configured destination, then delegates presentation to `projection.ts`. Publish its exact returned Markdown; the workflow publication layer applies the message's attribution separately. The renderer and source artifacts stay signature-free. It performs no provider calls or source/index writes; invalid source layout fails locally. See [source shape](../../references/artifacts.md#reviewed-document-shape) and [publication/approval rules](../../references/integrations/shared.md#provider-bodies).
 
 `set_workflow_phase` validates active lifecycle and observed native facts before updating existing Phase metadata, and returns any native reconciliation assignment. `confirm_tracker_initialization` validates normalized observed outcomes against pending intent before confirming the existing binding. Neither executes provider calls or changes branch/lifecycle. Pure operations live with `phase.ts` and `initialization.ts`; `operations.ts` owns thin Pi registration, per-file mutation queues and persistence. No new stored-state schema or script runtime is introduced. See [Phase](../../references/phase.md) and [confirmation inputs](../../references/integrations/shared.md#confirm-initialized-tracker-outcomes).
 
@@ -15,3 +15,29 @@ Before submission, forge `beginCreation` saves immutable repository/head/target 
 - Configuration: [setup](../../references/setup.md).
 - Procedures: [shared integrations](../../references/integrations/shared.md), [Queue](../../references/queue.md), [tracker](tracker/README.md) and [forge](forge/README.md).
 - Owned-data implementations: `config.ts`, `records.ts`, `mcp.ts`, `policy.ts`, `resource-ids.ts`, `resource-id-operations.ts`, `resource-id-tool.ts`, `creation.ts`, `projection.ts`, `phase.ts`, `initialization.ts`, `operations.ts` and `tracker/linear.ts` (branch finalization).
+
+## Communication attribution
+
+Workflows own communication attribution for the official GitHub (`https://api.githubcopilot.com/mcp/`) and Linear (`https://mcp.linear.app/mcp`) registrations. Loading the workflow integration extension installs publication independently of consuming-project configuration or initialized entities. Generic MCP alone leaves native communication unchanged.
+
+AI-assisted communication receives a code-owned footer:
+
+```text
+Sent via Pi. Model: provider/model-id.
+```
+
+The harness name comes from the running Pi package (`Pi` for the default harness; custom names are preserved). Provider/model ID come from the current execution context, including configured gateway names and full IDs. GitHub uses `<sub>…</sub>`; Linear uses Markdown italics. The footer is a final paragraph without a new divider, outside folds and after closing references. Content edits replace a terminal signature, including the earlier bracket format; repeated preparation does not duplicate it. Repository files and source artifacts remain signature-free.
+
+Mapped tools expose local `__pi_authorship: "ai-assisted" | "user-verbatim"`. The agent automatically chooses `user-verbatim` for a complete user-written message relayed unchanged; no special opt-out wording is required. This preserves the exact text without adding or removing a footer and needs no model identity. Agent-written, reworded, expanded, or generated/quoted messages use `ai-assisted`, also the default when omitted. The agent identifies authorship intent; code enforces that per-call choice and strips the local field before native execution.
+
+Coverage includes GitHub issue/PR bodies, comments, replies, textual reviews and Project status updates; Linear issue/Project descriptions, comments, documents, milestones, releases, release notes and status updates. Initialization, queues, accepted artifacts, and external discussions use the same boundary. Only explicit operation/content mappings are prepared. Metadata-only changes, reactions, controls, reads, deletions, titles, labels, attachments, repository/file content, and Git operations remain unchanged. Unknown services and arbitrary stdio aliases are not inferred to be GitHub/Linear.
+
+Content edits require complete text. Patch-only or template-only content writes stop locally with a request for complete text; needed reads remain explicit registered calls under normal permissions. Nonempty AI-assisted text requires current model identity. Signing adds no prompt, preview, approval lane, hidden provider call, retry, or permission bypass. Existing workflow lanes and permission settings alone govern confirmations.
+
+### Publication boundaries
+
+- [publication.ts](publication.ts): transport-independent operation/identity types, mappings, authorship, schema/guidance preparation, formatting, and wire cleanup. It has no MCP or Pi execution dependency.
+- [publication-tool.ts](publication-tool.ts): Pi tool-definition wrapping and lazy runtime identity. It delegates once, preserves native execution arguments/context/results and unrelated definition fields, and knows no custom MCP naming, configuration, catalog, or events.
+- [publication-mcp.ts](publication-mcp.ts): current bridge metadata conversion and registration only, using the generic [tool-decoration contract](../../../extensions/mcp/README.md#tool-decorators). Official-provider recognition is shared with workflow MCP setup inspection.
+
+Backend-specific registration and original operation identity belong in the binding. Changing the MCP backend leaves publication policy and the reusable Pi wrapper independent of its configuration, catalog, events, and generated tool names.

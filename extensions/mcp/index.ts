@@ -24,7 +24,7 @@
  * }
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { ParseError, Value } from "typebox/value"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -34,7 +34,11 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import {
     getMcpToolName,
     MCP_TOOL_CATALOG_EVENT,
+    MCP_TOOL_DECORATORS_EVENT,
+    type McpServerTransport,
     type McpToolCatalog,
+    type McpToolDecorator,
+    type McpToolDecorators,
     type McpToolMetadata,
     validateMcpName,
 } from "../__lib/mcp.js"
@@ -89,6 +93,7 @@ type CreateMcpClient = (name: string) => McpClient
 
 interface DiscoveredServer {
     name: string
+    transport: McpServerTransport
     client: McpClient
     tools: McpTool[]
 }
@@ -119,7 +124,8 @@ export function registerMcpServers(
 
     async function discoverServer(name: string, config: unknown): Promise<DiscoveredServer> {
         validateMcpName("server", name)
-        const transport = createServerTransport(config)
+        const resolved = resolveServerConfig(config)
+        const transport = transportFromResolved(resolved)
         const client = createClient(name)
 
         try {
@@ -128,7 +134,13 @@ export function registerMcpServers(
 
             const { tools } = await client.listTools()
             for (const tool of tools) validateMcpName("tool", tool.name)
-            return { name, client, tools }
+            return {
+                name,
+                transport:
+                    resolved.type === "stdio" ? { type: "stdio" } : { type: "streamable-http", url: resolved.url.href },
+                client,
+                tools,
+            }
         } catch (error) {
             await closeClient(name, client)
             throw error
@@ -155,15 +167,12 @@ export function registerMcpServers(
         return catalog
     }
 
-    function registerTool(server: DiscoveredServer, tool: McpTool) {
-        const toolName = getMcpToolName(server.name, tool.name)
-        const params = jsonSchemaToTypebox(tool.inputSchema as Record<string, unknown>)
-
-        pi.registerTool({
-            name: toolName,
+    function createTool(server: DiscoveredServer, tool: McpTool): ToolDefinition {
+        return {
+            name: getMcpToolName(server.name, tool.name),
             label: tool.annotations?.title ?? tool.name,
             description: tool.description ?? `MCP tool from ${server.name}: ${tool.name}`,
-            parameters: params,
+            parameters: jsonSchemaToTypebox(tool.inputSchema as Record<string, unknown>),
 
             async execute(_toolCallId, execParams, signal) {
                 const result = await server.client.callTool(
@@ -208,7 +217,7 @@ export function registerMcpServers(
                     details: undefined,
                 }
             },
-        })
+        }
     }
 
     const startServers = async (ctx: ExtensionContext) => {
@@ -226,19 +235,37 @@ export function registerMcpServers(
         }
 
         let catalog: McpToolCatalog
+        let definitions: ToolDefinition[] = []
         try {
             catalog = buildCatalog(discoveredServers)
+            const decorators: McpToolDecorator[] = []
+            pi.events.emit(MCP_TOOL_DECORATORS_EVENT, {
+                use: (decorate) => {
+                    decorators.push(decorate)
+                },
+            } satisfies McpToolDecorators)
+            for (const server of discoveredServers) {
+                for (const tool of server.tools) {
+                    const native = createTool(server, tool)
+                    const metadata = catalog.get(native.name)!
+                    const decorated = decorators.reduce(
+                        (definition, decorate) => decorate(definition, metadata, server.transport),
+                        native,
+                    )
+                    if (decorated.name !== native.name) throw new Error("MCP decorators must preserve tool names")
+                    definitions.push(decorated)
+                }
+            }
         } catch (error) {
             console.error("[mcp] Failed to build tool catalog:", error)
             await closeClients()
             catalog = new Map()
+            definitions = []
             discoveredServers.length = 0
         }
 
         pi.events.emit(MCP_TOOL_CATALOG_EVENT, catalog)
-        for (const server of discoveredServers) {
-            for (const tool of server.tools) registerTool(server, tool)
-        }
+        for (const definition of definitions) pi.registerTool(definition)
 
         if (discoveredServers.length === 0) return
         const lines = discoveredServers.map((server) => `- ${server.name}: ${server.tools.length} tools`)
@@ -266,8 +293,10 @@ export function createServerTransport(
     config: unknown,
     environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-    const resolved = resolveServerConfig(config, environment)
+    return transportFromResolved(resolveServerConfig(config, environment))
+}
 
+function transportFromResolved(resolved: ResolvedServerConfig) {
     switch (resolved.type) {
         case "stdio":
             return new StdioClientTransport({
