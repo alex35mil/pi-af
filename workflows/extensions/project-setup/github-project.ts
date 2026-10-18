@@ -706,11 +706,12 @@ class GitHubClient {
     }
 
     async listProjectViews(projectId: string): Promise<ProjectView[]> {
-        const ids: string[] = []
-        let after: string | null = null
-        do {
-            const data = await this.graphql(
-                `query($projectId: ID!, $after: String) {
+        try {
+            const ids: string[] = []
+            let after: string | null = null
+            do {
+                const data = await this.graphql(
+                    `query($projectId: ID!, $after: String) {
                     node(id: $projectId) { ... on ProjectV2 {
                         views(first: 50, after: $after) {
                             nodes { id }
@@ -718,14 +719,18 @@ class GitHubClient {
                         }
                     } }
                 }`,
-                { projectId, after },
-            )
-            const connection = record(record(data.node, "Project").views, "Project views")
-            for (const node of array(connection.nodes, "view nodes")) ids.push(text(record(node, "view").id, "view id"))
-            const page = record(connection.pageInfo, "views pageInfo")
-            after = page.hasNextPage === true ? text(page.endCursor, "views endCursor") : null
-        } while (after)
-        return Promise.all(ids.map((id) => this.getProjectView(id, projectId)))
+                    { projectId, after },
+                )
+                const connection = record(record(data.node, "Project").views, "Project views")
+                for (const node of array(connection.nodes, "view nodes"))
+                    ids.push(text(record(node, "view").id, "view id"))
+                const page = record(connection.pageInfo, "views pageInfo")
+                after = page.hasNextPage === true ? text(page.endCursor, "views endCursor") : null
+            } while (after)
+            return await Promise.all(ids.map((id) => this.getProjectView(id, projectId)))
+        } catch (error) {
+            throw this.requestError("POST", "/graphql", error)
+        }
     }
 
     private async getProjectView(id: string, projectId: string): Promise<ProjectView> {
@@ -787,18 +792,22 @@ class GitHubClient {
             const value = record(raw, "view field")
             return { id: text(value.id, "view field id"), name: text(value.name, "view field name") }
         }
+        const layout = Value.Parse(
+            LayoutSchema,
+            text(view.layout, "view layout")
+                .replace(/_LAYOUT$/, "")
+                .toLowerCase(),
+        )
         return {
             id: text(view.id, "view id"),
             number: number(view.number, "view number"),
             name: text(view.name, "view name"),
-            layout: Value.Parse(
-                LayoutSchema,
-                text(view.layout, "view layout")
-                    .replace(/_LAYOUT$/, "")
-                    .toLowerCase(),
-            ),
+            layout,
             filter: typeof view.filter === "string" ? view.filter : null,
-            visibleFieldIds: nodes.visible.map((node) => field(node).id),
+            visibleFieldIds: visibleFieldSelection(
+                layout,
+                nodes.visible.map((node) => field(node).id),
+            ),
             groupBy: nodes.groups.map(field),
             verticalGroupBy: nodes.columns.map(field),
             sortBy: nodes.sorts.map((raw) => {
@@ -852,18 +861,21 @@ class GitHubClient {
         const route = `/${owner.type === "org" ? "orgs" : "users"}/${encodeURIComponent(owner.login)}`
         const numericId = (id: string) =>
             databaseId(project.fields.find((field) => field.id === id)?.databaseId, "Project field")
-        const result = record(
-            await this.rest("POST", `${route}/projectsV2/${project.number}/views`, {
-                name: configuration.view.name,
-                layout: "board",
-                visible_fields: configuration.visibleIds.map(numericId),
-                vertical_group_by: [numericId(configuration.columnId)],
-                group_by: [],
-                sort_by: [[numericId(configuration.priorityId), configuration.direction]],
-            }),
-            "created Board response",
-        )
-        return text(record(result.value, "created Board").node_id, "created Board node_id")
+        const pathname = `${route}/projectsV2/${project.number}/views`
+        const response = await this.rest("POST", pathname, {
+            name: configuration.view.name,
+            layout: "board",
+            visible_fields: configuration.visibleIds.map(numericId),
+            vertical_group_by: [numericId(configuration.columnId)],
+            group_by: [],
+            sort_by: [[numericId(configuration.priorityId), configuration.direction]],
+        })
+        try {
+            const result = record(response, "created Board response")
+            return text(record(result.value, "created Board").node_id, "created Board node_id")
+        } catch (error) {
+            throw this.requestError("POST", pathname, error)
+        }
     }
 
     async deleteProjectView(viewId: string): Promise<void> {
@@ -1110,6 +1122,10 @@ class GitHubClient {
         } catch (error) {
             throw this.requestError(method, pathname, error)
         }
+    }
+
+    viewVerificationError(message: string): Error {
+        return this.requestError("POST", "/graphql", new Error(message))
     }
 
     private requestError(method: string, pathname: string, error: unknown): Error {
@@ -1704,12 +1720,37 @@ function priorityOrderConflict(
     return `Priority option order ${saved.join(" → ")} cannot produce ${desired.join(" → ")} by changing sort direction. Open ${settings} and explicitly align the existing option order, or change the requested Priority order, then inspect and preview again. Reordering is field-wide and needs separate approval; preserve all option values.`
 }
 
-function matchesView(view: ProjectView, desired: DesiredView, ids: string[]): boolean {
-    return (
-        view.name === desired.name &&
-        view.layout === desired.layout &&
-        JSON.stringify(view.visibleFieldIds) === JSON.stringify(ids)
+function visibleFieldSelection(layout: ProjectView["layout"], ids: string[]): string[] {
+    // Board visibility is membership, not card-field order. Retain duplicates for verification.
+    return layout === "board" ? [...ids].sort() : ids
+}
+
+function viewDifferences(view: ProjectView | undefined, desired: DesiredView, ids: string[]): string[] {
+    if (!view) return ["view is missing"]
+    const differences: string[] = []
+    if (view.name !== desired.name)
+        differences.push(`name expected ${JSON.stringify(desired.name)}, got ${JSON.stringify(view.name)}`)
+    if (view.layout !== desired.layout) differences.push(`layout expected ${desired.layout}, got ${view.layout}`)
+    const actualIds = view.visibleFieldIds
+    const missing = ids.filter((id) => !actualIds.includes(id))
+    const extra = actualIds.filter((id) => !ids.includes(id))
+    const duplicates = actualIds.filter((id, index) => actualIds.indexOf(id) !== index)
+    if (missing.length) differences.push(`visible fields missing ${JSON.stringify(missing)}`)
+    if (extra.length) differences.push(`visible fields unexpected ${JSON.stringify(extra)}`)
+    if (duplicates.length) differences.push(`visible fields duplicate ${JSON.stringify(duplicates)}`)
+    if (
+        !missing.length &&
+        !extra.length &&
+        !duplicates.length &&
+        JSON.stringify(visibleFieldSelection(desired.layout, actualIds)) !==
+            JSON.stringify(visibleFieldSelection(desired.layout, ids))
     )
+        differences.push(`visible field order expected ${JSON.stringify(ids)}, got ${JSON.stringify(actualIds)}`)
+    return differences
+}
+
+function matchesView(view: ProjectView, desired: DesiredView, ids: string[]): boolean {
+    return viewDifferences(view, desired, ids).length === 0
 }
 
 interface BoardConfiguration {
@@ -1777,16 +1818,28 @@ async function boardConfiguration(
     }
 }
 
+function boardDifferences(view: ProjectView | undefined, desired: BoardConfiguration): string[] {
+    const differences = viewDifferences(view, desired.view, desired.visibleIds)
+    if (!view) return differences
+    if (view.groupBy.length !== 0)
+        differences.push(`swimlanes expected none, got ${JSON.stringify(view.groupBy.map((field) => field.id))}`)
+    if (view.verticalGroupBy.length !== 1 || view.verticalGroupBy[0].id !== desired.columnId)
+        differences.push(
+            `columns expected ${JSON.stringify([desired.columnId])}, got ${JSON.stringify(view.verticalGroupBy.map((field) => field.id))}`,
+        )
+    if (view.sortBy.length !== 1 || view.sortBy[0].field.id !== desired.priorityId)
+        differences.push(
+            `sort expected sole Priority field ${JSON.stringify(desired.priorityId)}, got ${JSON.stringify(view.sortBy.map((sort) => sort.field.id))}`,
+        )
+    if (view.sortBy.length === 1 && view.sortBy[0].direction.toLowerCase() !== desired.direction)
+        differences.push(
+            `sort direction expected ${desired.direction}, got ${JSON.stringify(view.sortBy[0].direction)}`,
+        )
+    return differences
+}
+
 function matchesBoard(view: ProjectView, desired: BoardConfiguration): boolean {
-    return (
-        matchesView(view, desired.view, desired.visibleIds) &&
-        view.groupBy.length === 0 &&
-        view.verticalGroupBy.length === 1 &&
-        view.verticalGroupBy[0].id === desired.columnId &&
-        view.sortBy.length === 1 &&
-        view.sortBy[0].field.id === desired.priorityId &&
-        view.sortBy[0].direction.toLowerCase() === desired.direction
-    )
+    return boardDifferences(view, desired).length === 0
 }
 
 function viewFingerprint(view: ProjectView): string {
@@ -1815,22 +1868,43 @@ async function provisionFreshBoard(
     try {
         viewId = await client.createBoardView(specification.projectOwner, project, desired)
     } catch (error) {
-        const recovered = (await readAfterFailure(error, () => client.listProjectViews(project.id))).filter(
-            (view) => !beforeIds.has(view.id) && matchesBoard(view, desired),
+        const candidates = (await readAfterFailure(error, () => client.listProjectViews(project.id))).filter(
+            (view) => !beforeIds.has(view.id),
         )
-        if (recovered.length !== 1) throw error
+        const recovered = candidates.filter((view) => matchesBoard(view, desired))
+        if (recovered.length !== 1) {
+            const details = candidates.map((view) => {
+                const differences = boardDifferences(view, desired)
+                return `${JSON.stringify(view.id)}: ${differences.length ? differences.join("; ") : "matches approved Board"}`
+            })
+            throw contextError(
+                errorMessage(
+                    client.viewVerificationError(
+                        `Board creation recovery found ${recovered.length} matching new views; expected exactly one. ${details.length ? details.join(" | ") : "No new views found."} Inspect the Project and explicitly select a view as resume-created; no views deleted and creation not retried`,
+                    ),
+                ),
+                error,
+            )
+        }
         viewId = recovered[0].id
     }
     const views = await client.listProjectViews(project.id)
     const verified = views.find((view) => view.id === viewId)
-    if (!verified || beforeIds.has(viewId) || !matchesBoard(verified, desired))
-        throw new Error("GitHub Board post-write verification failed; default view preserved")
+    const differences = boardDifferences(verified, desired)
+    if (beforeIds.has(viewId))
+        differences.push(`returned view ${JSON.stringify(viewId)} already existed before creation`)
+    if (differences.length)
+        throw client.viewVerificationError(
+            `GitHub Board post-write verification failed for ${JSON.stringify(viewId)}: ${differences.join("; ")}; default view preserved`,
+        )
     if ((await client.getProject(project.id)).itemCount !== 0)
-        throw new Error("new Project is no longer empty; default view preserved")
+        throw client.viewVerificationError("new Project is no longer empty; default view preserved")
     for (const initial of initialViews) {
         const current = views.find((view) => view.id === initial.id)
         if (!current || viewFingerprint(current) !== viewFingerprint(initial))
-            throw new Error("captured default view changed; inspect the Project before cleanup; no views deleted")
+            throw client.viewVerificationError(
+                `captured default view changed (${JSON.stringify(initial.id)}); inspect the Project before cleanup; no views deleted`,
+            )
         try {
             await client.deleteProjectView(initial.id)
         } catch (error) {
@@ -1844,12 +1918,16 @@ async function provisionFreshBoard(
     }
     const after = await client.listProjectViews(project.id)
     const board = after.find((view) => view.id === viewId)
-    if (
-        !board ||
-        !matchesBoard(board, desired) ||
-        after.some((view) => initialViews.some((initial) => initial.id === view.id))
-    )
-        throw new Error("GitHub Board/default-view cleanup verification failed; inspect the Project before resuming")
+    const cleanupDifferences = boardDifferences(board, desired)
+    const remainingDefaults = after.filter((view) => initialViews.some((initial) => initial.id === view.id))
+    if (remainingDefaults.length)
+        cleanupDifferences.push(
+            `captured default views still present: ${JSON.stringify(remainingDefaults.map((view) => view.id))}`,
+        )
+    if (!board || cleanupDifferences.length)
+        throw client.viewVerificationError(
+            `GitHub Board/default-view cleanup verification failed for ${JSON.stringify(viewId)}: ${cleanupDifferences.join("; ")}; inspect the Project before resuming`,
+        )
     return board
 }
 
@@ -1895,8 +1973,11 @@ async function provisionProjectView(
         }
     }
     const verified = (await client.listProjectViews(project.id)).find((candidate) => candidate.id === viewId)
-    if (!verified || !matchesView(verified, desired, ids))
-        throw new Error("GitHub Project view post-write verification failed")
+    const differences = viewDifferences(verified, desired, ids)
+    if (!verified || differences.length)
+        throw client.viewVerificationError(
+            `GitHub Project view post-write verification failed for ${JSON.stringify(viewId)}: ${differences.join("; ")}`,
+        )
     return verified
 }
 

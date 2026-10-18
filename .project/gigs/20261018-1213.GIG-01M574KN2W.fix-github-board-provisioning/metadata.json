@@ -1,0 +1,46 @@
+{
+  "id": "GIG-01M574KN2W",
+  "rawId": "01M574KN2W",
+  "slug": "fix-github-board-provisioning",
+  "title": "Fix GitHub Board provisioning rejection and unsupported field-order expectations",
+  "createdAt": "2026-10-18T09:13:43.772Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m574kn2w-fix-github-board-provisioning",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 61
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m574kn2w-fix-github-board-provisioning",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}
