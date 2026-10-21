@@ -45,6 +45,8 @@ const itemScope = {
 }
 const pr = {
     number: 7,
+    state: "open",
+    draft: false,
     html_url: "https://github.com/alex/example/pull/7",
     head: { ref: "gig-branch", repo: { full_name: "alex/example" } },
     base: { ref: "main", repo: { full_name: "alex/example" } },

@@ -13,6 +13,7 @@ import { inspectProjectMcp } from "../integrations/mcp.js"
 import { inspectLinearWorkspace, LinearWorkspaceInspectionToolSchema } from "../integrations/tracker/linear.js"
 import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-project.js"
 import { configureProjectMcp, ProjectMcpConfigurationSchema } from "./mcp.js"
+import { INCOMING_PR_WORKFLOW_PATH, IncomingPrIntakeSchema, renderIncomingPrIntake } from "./incoming-pr-intake.js"
 import {
     configureProjectPermissions,
     inspectProjectPermissions,
@@ -152,6 +153,21 @@ export default function (pi: ExtensionAPI): void {
     })
 
     pi.registerTool({
+        name: "render_incoming_pr_intake",
+        label: "render_incoming_pr_intake",
+        description:
+            "Render an opt-in fork-only Project membership workflow from approved GitHub forge/tracker configuration and an Actions secret name. Returns an exact local file candidate and activation prerequisites; no writes, credentials, provider calls or deployment. Uses native Backlog defaults and never changes existing item Status.",
+        parameters: IncomingPrIntakeSchema,
+        async execute(_toolCallId, params) {
+            const result = renderIncomingPrIntake(params)
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                details: result,
+            }
+        },
+    })
+
+    pi.registerTool({
         name: "provision_github_project",
         label: "provision_github_project",
         description:
@@ -175,6 +191,7 @@ const PROJECT_SETUP_FILES = [
     ".gitignore",
     ".agents/permission.settings.json",
     ".agents/permission.settings.local.json",
+    INCOMING_PR_WORKFLOW_PATH,
 ] as const
 
 export function inspectProjectSetup(cwd: string) {

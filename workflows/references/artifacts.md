@@ -80,7 +80,13 @@ Tasks and Gigs use Markdown task-list entries for current-scope work discovered 
   integrations.json    # Optional non-secret provider configuration; never authoritative entity state.
   epics/               # Initialized Epics and their child Tasks.
   gigs/                # Initialized standalone Gigs.
+  .local/              # Private project working state; always outside Git.
+    pull-requests/     # Incoming PR evidence; no initialized entities.
 ```
+
+### Incoming PR evidence
+
+[Incoming PRs](./pr/incoming.md) target the current configured repository and keep private evidence under `.project/.local/pull-requests/<number>/`. An approved independent nested Git repository lives at `checkout/`, with its own .git, HEAD and index. Registered `incoming_pull_request_checkout` owns preparation, checkout/review setup, inspection, validated transitions and approved standard rebase with immediate SHA-pinned lease-protected contributor update; agents do not reconstruct those operations in Bash. `checkout.json` records original evidence/revision, merge-base, separate observed target/source tips, native rebase progress, pinned lease, publication outcome and current working baseline; `checkout-inspection.json` records observed state/phase validation. `checkout-contribution.diff`, `checkout-rebase.diff`, `checkout-conflicts.diff`, `checkout-fixes.diff` and `checkout-untracked.json` are complete mutable inspection inputs for later immutable reviewer snapshots. These records are not approvals. Safety assessments and notes stay outside that checkout. Checkout files, state/diffs and working evidence stay at the PR root. Each exact `reviews/<base-sha>-<head-sha>/review-NNN/inputs/` holds that pass's write-once source/diff/dependency files, including successive uncommitted drafts at the same PR head. Each `review-NNN/` directory also holds: `revision.json`, actual provider `evidence.json`, saved dossier `evidence.md`, `source-files.json` mapping original paths to immutable source snapshots, and shared request/report/review/response/transcript/agent/outcome files. Existing review records are not moved or rewritten automatically; current round lookup uses the `reviews/` namespace only. Full repository identities remain in the revision metadata; PR number and commit SHAs identify local evidence. The entire incoming-PR area is covered by the existing `.project/**/.local/` ignore rule in versioned mode and the `.project/` exclusion in unversioned mode. No root entity metadata, accepted plan/result, workflow ID, lifecycle, branch contract, or approval token is created; fresh provider reads establish current state. Do not stage, commit, or publish these private artifacts.
 
 ## Project Policy precedence
 

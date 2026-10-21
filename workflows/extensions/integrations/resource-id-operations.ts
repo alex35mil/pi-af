@@ -16,7 +16,7 @@ import {
     type ResourceIdsScope,
 } from "./resource-ids.js"
 import { resolveWorkflowEnvironment } from "./policy.js"
-import type { DeliveryCleanupInput } from "../deliverable/cleanup.js"
+import { planGitHubMerge, type GitHubMergeDecision } from "./forge/github/merge.js"
 
 export type ResourceKind = ResourceIdsScope["kind"]
 export interface ProviderEvidence {
@@ -222,60 +222,28 @@ export function resourceIdsFromRead(scope: ResourceIdsScope, evidence: ProviderE
     }
 }
 
-export type FinishReadDecision =
-    | { state: "blocked"; reason: string }
-    | {
-          state: "merge-needed"
-          arguments: {
-              owner: string
-              repo: string
-              pullNumber: number
-              merge_method: "squash"
-              expectedHeadSha: string
-          }
-      }
-    | { state: "merged"; merge: Extract<DeliveryCleanupInput["merge"], { kind: "github-pr" }> }
-
 export function finishReadDecision(
     scope: Extract<ResourceIdsScope, { kind: "github-pull-request" }>,
     evidence: ProviderEvidence,
     localHeadSha: string,
     expectedPrNumber: number,
-): FinishReadDecision {
+): GitHubMergeDecision {
     try {
         const resourceIds = resourceIdsFromRead(scope, evidence)
         if (!isResourceIdsKind(resourceIds, "github-pull-request")) throw new Error("finish requires exact PR evidence")
         if (resourceIds.value.number !== expectedPrNumber)
             throw new Error("finish PR does not match the locally recorded PR")
-        const response = responseObject(evidence)
-        const headCommitSha = text(object(response.head, "PR head").sha, "PR head SHA")
-        if (!/^[0-9a-fA-F]{40,64}$/.test(localHeadSha) || headCommitSha.toLowerCase() !== localHeadSha.toLowerCase())
-            throw new Error("finish PR head does not match the local Deliverable head")
-        if (response.merged === false)
-            return {
-                state: "merge-needed",
-                arguments: {
-                    ...scope.repository,
-                    pullNumber: resourceIds.value.number,
-                    merge_method: "squash",
-                    expectedHeadSha: localHeadSha,
-                },
-            }
-        if (response.merged !== true) throw new Error("exact PR get does not establish merged state")
-        return {
-            state: "merged",
-            merge: {
-                kind: "github-pr",
-                source: "pull_request_read:get",
+        return planGitHubMerge(
+            {
+                mcpServer: scope.mcpServer,
                 repository: scope.repository,
-                pullRequestNumber: resourceIds.value.number,
-                merged: true,
-                mergedAt: text(response.merged_at, "PR merge timestamp"),
-                head: scope.head,
-                headCommitSha,
+                number: expectedPrNumber,
                 base: scope.target,
+                head: { repository: scope.repository, ref: scope.head },
+                expectedHeadSha: localHeadSha,
             },
-        }
+            evidence,
+        )
     } catch (error) {
         return { state: "blocked", reason: error instanceof Error ? error.message : String(error) }
     }

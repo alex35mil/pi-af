@@ -1,0 +1,33 @@
+# Ship or cancel an incoming PR
+
+An explicit maintainer ship/merge request for the exact ready PR and reviewed head authorizes conditional merge, confirmed Project Done and safe local checkout cleanup together, like Deliverable finish. Do not ask a second merge or cleanup question. Ordinary resume, local signoff and a generic ready comment are not shipment approval. Changed relevant facts require reassessment.
+
+Follow the [one repository merge contract](../integrations/forge/merge.md), [Project procedure](./project.md) and [checkout contract](./checkout.md). Incoming identity, native Project status and independent checkout cleanup differ from a Deliverable; merge policy does not.
+
+## Readiness and local fixes
+
+1. Read fresh selected PR identity, requirements/discussion, reviews, checks, repository merge requirements and Project membership/Status. Present the final contribution/fix diff, inspected coverage, unresolved concerns and exact checks not run. Required unavailable verification blocks merging, not independent approved static work. No automatic contributor execution or CI-trigger workaround.
+2. Inspect an existing managed checkout through `incoming_pull_request_checkout`. Unexplained source/index/HEAD, native rebase, pending commit or uncertain publication must be resolved through the registered operation before shipment; do not hide local drafts or use manual Git. A remote-only contribution needs no checkout created merely to ship it.
+3. With uncommitted maintainer fixes, obtain final diff acceptance and explicit approval of the exact paths/message. Use `commitFixes` with those checkout-relative `paths` and `message`. It stages only the complete approved fix set and creates one additive commit without pushing. Follow available commit-skill selection/message rules; the registered tool owns Git, not a generic parent-repository commit route. Refused staging, extra ignored/untracked work or an incomplete intent is preserved rather than reset or adopted.
+4. Obtain separate approval of the exact fix result and contributor repository/ref before `publishFixes`. It uses the recorded commit and a normal non-forced SSH push. Already-present results are confirmed without another push; unexpected/missing remote heads stop. It does not rebase, refresh a lease, amend or force. Contributor consent and authenticated fork access remain separate required facts; board membership grants neither.
+5. Obtain actual fresh PR-get evidence for the confirmed published head and repeat required verification/private review. No unpublished fixes means no commit/push step or invented empty commit. Keep Project In Review through all feedback, drafts, rebase, fix publication and checks.
+
+A recorded interrupted commit can be recovered only with its exact approved `commitFixes` paths/message; the tool validates parent/tree/message and never blindly creates a second commit. Failed/uncertain fix publication uses `publishFixes` after actual remote reconciliation, not a recommit. Existing rebase recovery remains `publishRebase` with its original SHA-pinned lease, never another rebase or checkout recreation.
+
+## Merge, Done and cleanup
+
+1. Once readiness is established, use the exact ship/merge request and call `integration_context` operation `incomingPullRequestMerge` with the selected reference, actual final `reviewedEvidence` and fresh actual `evidence`. Reuse the existing exact approval; resolve only missing PR/head scope or changed facts, not a strategy choice.
+2. Pass the common operation's merge arguments unchanged to configured `merge_pull_request`, with the common commit-title/message rules. A blocked/rejected operation stops; no protection bypass, alternative strategy or automatic history update.
+3. Confirm merged state, exact association/head and merge timestamp through actual exact PR-get evidence. Reuse a complete already-merged proof instead of merging again. Use the Project planner/native tool to set Done only after that proof, skipping an already-applied assignment.
+4. Within the same ship/merge request, call `incoming_pull_request_checkout` operation `cleanup` with the actual merged PR evidence. For a configured GitHub Project, supply `completion: { kind: "project", fieldEvidence, itemEvidence }` proving this exact item is Done; complete scoped native write success may supply item evidence, otherwise read missing facts. Only a genuinely unconfigured board uses `{ kind: "forgeOnly" }`.
+5. Cleanup verifies managed identity/published head, phase representation, no extra/unpublished work and safe independent metadata. Establish unsaved-editor-buffer safety before destruction. It removes only the managed checkout, retaining PR-root notes, original evidence, inspection/diffs and immutable reviews. No parent switch/fetch/fast-forward/file/index/config change, contributor/base/remote branch deletion, whole-PR-directory removal or `cleanup_delivery_branch` call.
+
+A pristine prepared or contributor-review representation is removable without treating known staged contributor code as our draft. Dirty/staged maintainer edits, untracked/ignored files, pending commits/rebases, additional local refs/worktrees or unsafe metadata block cleanup. No managed checkout is a no-op, not a reason to initialize one; an unmanaged existing path is preserved.
+
+Owned retirement/removal states preserve inspection and retry after interruption. The tool never deletes new work later created at the original checkout path. A board failure after merge stops before cleanup; a cleanup failure preserves confirmed merge/Done. Resume only the known unfinished step under the same approved scope, not another merge or cleanup approval. Report merge, board update and cleanup separately; claim complete finalization only when every applicable step is confirmed.
+
+## Cancel
+
+An explicit cancel request approves closing the exact PR and setting its Project item Canceled. Read fresh identity, execute the scoped configured `update_pull_request` close call, confirm closed and not merged, then reconcile only that item's Status through the Project planner. Closure failure/uncertainty is not Canceled; read the exact outcome before retrying. An already-merged PR is Done, never Canceled or closed again.
+
+Cancellation preserves checkout files, staged/unstaged work, unpublished commits, native progress, private evidence and all branches. It does not commit/push fixes, abort/restart rebase, stash, reset or clean up. Available forge operations and a blocked board update have separate outcomes: report confirmed closure and the pending board step rather than claim everything succeeded or change credentials/settings.

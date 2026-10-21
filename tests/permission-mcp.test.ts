@@ -393,6 +393,36 @@ describe("MCP permission lifecycle", () => {
         }
     })
 
+    it("blocks incoming PR posting and merging without a UI when permission is ask", async () => {
+        const project = createProjectSettings(JSON.stringify({ allow: ["mcp(github, *)"], ask: ["mcp(github, *)"] }))
+        try {
+            const harness = createPermissionHarness()
+            const context = createContext(project.cwd)
+            const ctx = { ...context.ctx, hasUI: false } as ExtensionContext
+            for (const name of [
+                "pull_request_review_write",
+                "add_comment_to_pending_review",
+                "add_reply_to_pull_request_comment",
+                "add_issue_comment",
+                "merge_pull_request",
+            ]) {
+                const toolName = getMcpToolName("github", name)
+                harness.eventBus.bus.emit(
+                    MCP_TOOL_CATALOG_EVENT,
+                    new Map([[toolName, metadata("github", name, false)]]),
+                )
+                const result = (await harness.handler("tool_call")({ toolName, toolCallId: name, input: {} }, ctx)) as {
+                    block: boolean
+                    reason: string
+                }
+                assert.equal(result.block, true)
+                assert.match(result.reason, /no UI for confirmation/)
+            }
+        } finally {
+            project.cleanup()
+        }
+    })
+
     it("replaces annotation metadata and disposes listeners across reload", async () => {
         const project = createProjectSettings(
             JSON.stringify({ defaultMode: "deny", allow: ["mcp(github, hint: readOnly)"] }),

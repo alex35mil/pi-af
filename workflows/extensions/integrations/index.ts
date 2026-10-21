@@ -19,11 +19,23 @@ import {
 } from "./policy.js"
 import { renderProviderBody, verifyMarkdownProjection } from "./projection.js"
 import { isResourceIdsKind, OperationResourceIdsMemo, readCachedResourceIds } from "./resource-ids.js"
-import { finishReadDecision, resolveResourceIdsContext, type FinishReadDecision } from "./resource-id-operations.js"
+import { finishReadDecision, resolveResourceIdsContext } from "./resource-id-operations.js"
+import type { GitHubMergeDecision } from "./forge/github/merge.js"
 import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { finalizeLinearBranch } from "./tracker/linear.js"
 import { registerWorkflowOperations } from "./operations.js"
 import { registerWorkflowPublication } from "./publication-mcp.js"
+import { incomingPullRequestContext } from "./forge/github/incoming-pr-context.js"
+import {
+    IncomingMergeContextSchema,
+    incomingMergeContext,
+    type IncomingMergeContextInput,
+} from "./forge/github/incoming-pr-merge.js"
+import {
+    IncomingProjectContextSchema,
+    incomingProjectContext,
+    type IncomingProjectContextInput,
+} from "./forge/github/incoming-pr-project.js"
 
 const FinalizeBranchSchema = Type.Object({ entityDir: Type.String({ minLength: 1 }) }, { additionalProperties: false })
 
@@ -47,6 +59,12 @@ export const RenderProviderBodySchema = Type.Object(
 const ContextEntitySchema = Type.Union([Type.Literal("epic"), Type.Literal("task"), Type.Literal("gig")])
 const ContextTargetSchema = Type.Union([Type.Literal("current"), Type.Literal("workflow")])
 export const IntegrationContextSchema = Type.Union([
+    IncomingMergeContextSchema,
+    IncomingProjectContextSchema,
+    Type.Object(
+        { operation: Type.Literal("incomingPullRequest"), reference: Type.String({ minLength: 1 }) },
+        { additionalProperties: false },
+    ),
     Type.Object({ operation: Type.Literal("inspect"), target: ContextTargetSchema }, { additionalProperties: false }),
     Type.Object(
         {
@@ -204,7 +222,7 @@ export default function (pi: ExtensionAPI): void {
         name: "integration_context",
         label: "integration_context",
         description:
-            "Read tracker/forge configuration and entity state. For inspect/queueIntake, select the current project or globally referenced workflow source project explicitly. Validate finish evidence without external operations or configuration changes.",
+            "Read tracker/forge configuration and entity state. incomingPullRequest resolves a PR reference without an entity; incomingPullRequestMerge uses the shared repository merge operation for reviewed/fresh evidence; incomingPullRequestProject plans scoped native membership/Status/close calls without executing them. For inspect/queueIntake, select current or workflow explicitly. Validate finish evidence without external operations or configuration changes.",
         parameters: IntegrationContextSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(IntegrationContextSchema, params)
@@ -218,9 +236,37 @@ export default function (pi: ExtensionAPI): void {
     })
 }
 
+type IncomingContextInput = Extract<IntegrationContextInput, { operation: "incomingPullRequest" }>
+type WorkflowContextInput = Exclude<
+    IntegrationContextInput,
+    IncomingContextInput | IncomingMergeContextInput | IncomingProjectContextInput
+>
+type WorkflowContext = ReturnType<typeof buildWorkflowIntegrationContext>
+type IncomingContext = ReturnType<typeof incomingPullRequestContext>
+type IncomingMergeContext = ReturnType<typeof incomingMergeContext>
+type IncomingProjectContext = ReturnType<typeof incomingProjectContext>
+
+export function buildIntegrationContext(ctx: ExtensionContext, input: IncomingContextInput): IncomingContext
+export function buildIntegrationContext(ctx: ExtensionContext, input: IncomingMergeContextInput): IncomingMergeContext
+export function buildIntegrationContext(
+    ctx: ExtensionContext,
+    input: IncomingProjectContextInput,
+): IncomingProjectContext
+export function buildIntegrationContext(ctx: ExtensionContext, input: WorkflowContextInput): WorkflowContext
+export function buildIntegrationContext(
+    ctx: ExtensionContext,
+    input: IntegrationContextInput,
+): IncomingContext | IncomingMergeContext | IncomingProjectContext | WorkflowContext
 export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput) {
     if (!Value.Check(IntegrationContextSchema, input))
         throw new Error("invalid integration context request: select the exact operation and its required inputs")
+    if (input.operation === "incomingPullRequest") return incomingPullRequestContext(ctx.cwd, input.reference)
+    if (input.operation === "incomingPullRequestMerge") return incomingMergeContext(ctx.cwd, input)
+    if (input.operation === "incomingPullRequestProject") return incomingProjectContext(ctx.cwd, input)
+    return buildWorkflowIntegrationContext(ctx, input)
+}
+
+function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowContextInput) {
     const selection =
         "target" in input
             ? {
@@ -240,7 +286,7 @@ export function buildIntegrationContext(ctx: ExtensionContext, input: Integratio
     }
 }
 
-function readProjectIntegrationContext(cwd: string, input: IntegrationContextInput) {
+function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput) {
     const operation = input.operation
     const entityDir = "entityDir" in input ? input.entityDir : undefined
     const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
@@ -280,7 +326,7 @@ function readProjectIntegrationContext(cwd: string, input: IntegrationContextInp
     if (forgeOnly && entity) assertEntityBranchReady(entity.status)
     if ((operation === "finishRead" || operation === "finishMerge") && entity?.status.entity === "epic")
         throw new Error("finish operations require a Task or Gig")
-    let finish: FinishReadDecision | undefined
+    let finish: GitHubMergeDecision | undefined
     if (input.operation === "finishMerge") {
         const status = entity!.status
         assertEntityBranchReady(status)

@@ -18,9 +18,12 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 /gig <details or existing Gig>
 /backlog <potential work>
 /todo <queued work>
+/pr <GitHub PR URL or #NN>
 ```
 
 Only `/backlog` and `/todo` require a tracker. Prospective Tasks and queued Backlog/Todo objects do not receive workflow identity until explicitly initialized.
+
+`/pr` requires a configured GitHub forge, not a tracker or initialized entity. It privately reviews an existing contribution and requests separate approval for exact review text/verdict/comments, fixes, pushes and merging. Existing permission prompts can enforce per-call confirmation without new approval machinery. Fork heads retain their own repository identity; PR title/body and branches stay intact. An explicitly approved standard rebase rewrites the contribution onto the separately observed target and immediately updates the same contributor branch with a SHA-pinned `--force-with-lease`, after approved conflict resolutions and before later fixes/testing. Before checkout, it presents a 1–5 malicious-code safety score with evidence and limitations; every score requires explicit approval. Registered `incoming_pull_request_checkout` tooling owns object preparation, exact nested checkout, contributor-only review setup, inspection, validated clean-head transitions, target observation, standard rebase/continuation and immediate lease-protected publication before later approved uncommitted fixes. It returns paths/revision/phase/diff state, preserves unexpected work and verifies the parent repository is untouched; the agent does not reconstruct Git orchestration in Bash. Static work is available now; contributor-code execution requires separate command/environment approval, and unavailable runtime checks are reported as not run. The agent/editor remain rooted in the parent repository; this does not add nested-checkout browsing support to Delta or pi.nvim. See [incoming PR handling](references/pr/incoming.md).
 
 ## Setup
 

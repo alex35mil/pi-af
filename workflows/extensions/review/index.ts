@@ -19,17 +19,10 @@ import {
     resolveEntityPath,
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
-import { renderReviewTranscript, runReviewAgent } from "./agent.js"
+import { executeReviewRound, recordRoundResponse } from "./round.js"
+import { registerPullRequestReview } from "./pull-request.js"
 import { buildEpicReviewPrompt } from "./epic.js"
-import {
-    parseReviewReport,
-    renderReviewDocument,
-    reviewAgentOutputInstructions,
-    renderReviewFindings,
-    ReviewResponseFindingSchema,
-    type ReviewFinding,
-    type ReviewReport,
-} from "./findings.js"
+import { renderReviewDocument, reviewAgentOutputInstructions, ReviewResponseFindingSchema } from "./findings.js"
 import {
     fence,
     MAX_EMBEDDED_FILE_BYTES,
@@ -143,6 +136,7 @@ interface ParentEpicContext {
 }
 
 export default function (pi: ExtensionAPI) {
+    registerPullRequestReview(pi)
     pi.registerTool({
         name: "review",
         label: "review",
@@ -165,13 +159,7 @@ export default function (pi: ExtensionAPI) {
             const round = await nextReviewRound(entityDir, phase)
             const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
             const reviewedPlanPath = phase === "plan" ? await snapshotPlan(entityDir, round) : undefined
-            const reviewPath = path.join(reviewRoundDir, "review.md")
-            const reportPath = path.join(reviewRoundDir, REVIEW_REPORT_FILE)
             const requestPath = path.join(reviewRoundDir, "request.md")
-            const transcriptPath = path.join(reviewRoundDir, "transcript.md")
-            const jsonlPath = path.join(reviewRoundDir, "agent.jsonl")
-            const stderrPath = path.join(reviewRoundDir, "stderr.txt")
-            const outcomePath = path.join(reviewRoundDir, REVIEW_OUTCOME_FILE)
 
             const prompt =
                 input.entity === "epic"
@@ -190,62 +178,20 @@ export default function (pi: ExtensionAPI) {
                           input.subject,
                           reviewedPlanPath,
                       )
-            await fs.promises.writeFile(requestPath, prompt, "utf-8")
-
             onUpdate?.(textResult(`Review agent started: ${path.relative(ctx.cwd, requestPath)}`))
 
-            const result = await runReviewAgent({
+            const { report, artifactText } = await executeReviewRound({
                 cwd: ctx.cwd,
+                directory: reviewRoundDir,
+                additionalFiles: reviewedPlanPath ? [reviewedPlanPath] : [],
                 prompt,
                 signal,
                 model: input.model,
                 agentName: `${input.entity}-review`,
                 progressLabel: `${input.entity === "epic" ? "Epic" : "Deliverable"} review agent`,
-                jsonlPath,
                 onUpdate: (update) => onUpdate?.(textResult(update)),
             })
-            let report: ReviewReport | undefined
-            let reportError: Error | undefined
-            if (result.exitCode === 0) {
-                try {
-                    report = parseReviewReport(result.finalOutput)
-                } catch (error) {
-                    reportError = error instanceof Error ? error : new Error(String(error))
-                }
-            }
-            if (report) {
-                await fs.promises.writeFile(reviewPath, renderReviewDocument(report), "utf-8")
-                await fs.promises.writeFile(reportPath, `${JSON.stringify(report, null, 4)}\n`, "utf-8")
-            }
-            await fs.promises.writeFile(transcriptPath, renderReviewTranscript(result.events), "utf-8")
-            if (result.stderr.trim()) await fs.promises.writeFile(stderrPath, result.stderr, "utf-8")
-            const signoff = report?.signoff
-            await fs.promises.writeFile(
-                outcomePath,
-                `${JSON.stringify({ exitCode: result.exitCode, signoff: signoff ?? null }, null, 4)}\n`,
-                "utf-8",
-            )
-            const files = [
-                ...(reviewedPlanPath ? [reviewedPlanPath] : []),
-                ...(report ? [reviewPath, reportPath] : []),
-                requestPath,
-                transcriptPath,
-                jsonlPath,
-                outcomePath,
-            ]
-                .concat(result.stderr.trim() ? [stderrPath] : [])
-                .map((file) => `- ${path.relative(ctx.cwd, file)}`)
-                .join("\n")
-
-            const artifactText = ["Artifacts:", files].join("\n")
-            if (result.exitCode !== 0) {
-                throw new Error(`Review agent exited with code ${result.exitCode}.\n\n${artifactText}`)
-            }
-            if (!report || !signoff) {
-                throw new Error(
-                    `Review agent returned an invalid structured report: ${reportError?.message ?? "missing report"}.\n\n${artifactText}`,
-                )
-            }
+            const signoff = report.signoff
 
             const baseText = `${renderReviewDocument(report)}\n${artifactText}`
             const blockedGate = await blockedReviewGate(
@@ -276,21 +222,8 @@ export default function (pi: ExtensionAPI) {
             const roundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, roundName)
             const reportPath = path.join(roundDir, REVIEW_REPORT_FILE)
             if (!fs.existsSync(reportPath)) throw new Error(`review report does not exist: ${roundName}`)
-            const report = parseReviewReport(await fs.promises.readFile(reportPath, "utf-8"))
-            if (input.findings.length !== report.findings.length) {
-                throw new Error(`response must contain all ${report.findings.length} review findings`)
-            }
-
-            const findings: ReviewFinding[] = input.findings.map((finding, index) => {
-                const reviewed = report.findings[index]
-                if (finding.id !== reviewed.id) {
-                    throw new Error(`response finding ${index + 1} must retain review label ${reviewed.id}`)
-                }
-                return { ...finding, severity: reviewed.severity }
-            })
-            const content = `${renderReviewFindings(findings)}\n\n## Review status\n\n${input.status.trim()}\n`
-            await fs.promises.writeFile(path.join(roundDir, "response.md"), content, "utf-8")
-            return textResult(content, false, { round: roundName, findingCount: findings.length })
+            const content = await recordRoundResponse(roundDir, input.findings, input.status)
+            return textResult(content, false, { round: roundName, findingCount: input.findings.length })
         },
     })
 
