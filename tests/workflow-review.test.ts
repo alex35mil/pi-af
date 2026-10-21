@@ -27,6 +27,7 @@ import registerReviewTools, {
 } from "../workflows/extensions/review/index.ts"
 import registerEpic from "../workflows/extensions/epic/index.ts"
 import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
+import { recordRoundResponse } from "../workflows/extensions/review/round.ts"
 
 function reviewRoundDir(entity: string, phase: string, round: number): string {
     return path.join(entity, ".local", "reviews", `${phase}-${round.toString().padStart(3, "0")}`)
@@ -85,7 +86,13 @@ describe("workflow reviewer isolation", () => {
         }
         registerReviewTools(pi as never)
         registerEpic(pi as never)
-        assert.deepEqual(tools, ["review", "record_review_response", "prepare_plan_presentation"])
+        assert.deepEqual(tools, [
+            "review_pull_request",
+            "record_pull_request_review_response",
+            "review",
+            "record_review_response",
+            "prepare_plan_presentation",
+        ])
     })
 
     it("routes review categories and plan presentation through their required Phase", async () => {
@@ -203,7 +210,7 @@ describe("workflow reviewer isolation", () => {
             [
                 "## Review findings",
                 "",
-                "### 1. Payout can start before review (F1)",
+                "### 1. Payout can start before review (F1, warning)",
                 "",
                 "**Problem:** A valid recipient list is treated as ready before a person reviews it.",
                 "",
@@ -217,6 +224,13 @@ describe("workflow reviewer isolation", () => {
             ].join("\n"),
         )
         assert.equal(renderReviewDocument(report), `${findings}\n\n## Review status\n\n**Signoff:** blocked\n`)
+        for (const severity of ["critical", "warning", "suggestion", "question"] as const) {
+            const source = parseReviewReport(
+                JSON.stringify({ ...report, findings: [{ ...report.findings[0], severity }] }),
+            )
+            assert.ok(renderReviewFindings(source.findings).includes(`(F1, ${source.findings[0].severity})`))
+            assert.ok(renderReviewDocument(source).includes(`(F1, ${source.findings[0].severity})`))
+        }
 
         const technicalExample = ['Compare "- <pre>', "  * literal", '  </pre>".', "Use `first", "    second`."].join(
             "\n",
@@ -251,6 +265,22 @@ describe("workflow reviewer isolation", () => {
         assert.match(transcript, /## Review findings/)
         assert.match(transcript, /Invalid structured review output omitted/)
         assert.doesNotMatch(transcript, /uncanonical prose/)
+    })
+
+    it("renders adjudicated severity from the saved report", async () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-response-severity-"))
+        try {
+            const report = reviewReport("blocked")
+            const reportText = JSON.stringify(report)
+            fs.writeFileSync(path.join(directory, "report.json"), reportText)
+            const { severity, ...finding } = report.findings[0]
+            const response = await recordRoundResponse(directory, [finding], "Accepted correction.")
+            assert.ok(response.includes(`(F1, ${severity})`))
+            assert.equal(response, fs.readFileSync(path.join(directory, "response.md"), "utf-8"))
+            assert.equal(fs.readFileSync(path.join(directory, "report.json"), "utf-8"), reportText)
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true })
+        }
     })
 
     it("accepts only valid entity/phase review combinations", () => {

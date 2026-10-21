@@ -1,0 +1,45 @@
+import { Type, type Static } from "typebox"
+import { EvidenceSchema } from "../../resource-id-tool.js"
+import { incomingPullRequestContext, incomingRevision, sameIncomingAddress } from "./incoming-pr-context.js"
+import { planGitHubMerge, type GitHubMergeDecision } from "./merge.js"
+
+export const IncomingMergeContextSchema = Type.Object(
+    {
+        operation: Type.Literal("incomingPullRequestMerge"),
+        reference: Type.String({ minLength: 1 }),
+        reviewedEvidence: EvidenceSchema,
+        evidence: EvidenceSchema,
+    },
+    { additionalProperties: false },
+)
+export type IncomingMergeContextInput = Static<typeof IncomingMergeContextSchema>
+
+export function incomingMergeContext(cwd: string, input: IncomingMergeContextInput) {
+    const context = incomingPullRequestContext(cwd, input.reference)
+    const forge = context.roles.forge.config
+    let merge: GitHubMergeDecision
+    try {
+        const reviewed = incomingRevision(forge, context.incomingPullRequest, input.reviewedEvidence)
+        const current = incomingRevision(forge, context.incomingPullRequest, input.evidence)
+        if (!sameIncomingAddress(reviewed, current) || reviewed.head.sha !== current.head.sha)
+            throw new Error("Incoming PR identity/head changed after review; reassess before shipping")
+        const response = input.evidence.response as Record<string, unknown>
+        // Merge itself advances the target; an already-merged proof binds refs/head instead.
+        if (response.merged !== true && reviewed.base.sha !== current.base.sha)
+            throw new Error("Incoming PR base changed after review; reassess before shipping")
+        merge = planGitHubMerge(
+            {
+                mcpServer: forge.mcpServer,
+                repository: reviewed.repository,
+                number: reviewed.number,
+                base: reviewed.base.ref,
+                head: { repository: reviewed.head.repository, ref: reviewed.head.ref },
+                expectedHeadSha: reviewed.head.sha,
+            },
+            input.evidence,
+        )
+    } catch (error) {
+        merge = { state: "blocked", reason: error instanceof Error ? error.message : String(error) }
+    }
+    return { ...context, operation: "incomingPullRequestMerge" as const, merge }
+}

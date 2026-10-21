@@ -77,7 +77,7 @@ export function renderReviewFindings(findings: readonly ReviewFinding[]): string
 
     findings.forEach((finding, index) => {
         lines.push(
-            `### ${index + 1}. ${trimBoundaryWhitespace(finding.title)} (${finding.id})`,
+            `### ${index + 1}. ${trimBoundaryWhitespace(finding.title)} (${finding.id}, ${finding.severity})`,
             "",
             `**Problem:** ${trimBoundaryWhitespace(finding.problem)}`,
             "",

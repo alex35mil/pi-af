@@ -402,8 +402,12 @@ describe("workflow instruction ownership", () => {
             assert.doesNotMatch(source, /skills\/commit\/SKILL\.md/, file)
         }
         const forge = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
-        for (const field of ["commit_title", "metadata.title", "merge_method: squash", "expectedHeadSha"])
-            assert.ok(forge.includes(`\`${field}\``), `forge must retain ${field}`)
+        for (const field of ["commit_title", "metadata.title"])
+            assert.ok(forge.includes(`\`${field}\``), `forge must retain its ${field} data`)
+        assert.match(forge, /shared repository merge contract/)
+        const merge = fs.readFileSync("workflows/references/integrations/forge/merge.md", "utf-8")
+        for (const field of ["commit_title", "merge_method: squash", "expectedHeadSha"])
+            assert.ok(merge.includes(`\`${field}\``), `shared merge contract must own ${field}`)
     })
 
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {

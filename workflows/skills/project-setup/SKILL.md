@@ -9,6 +9,7 @@ allowed-tools:
     - "configure_permissions"
     - "inspect_linear_workspace"
     - "provision_github_project"
+    - "render_incoming_pr_intake"
     - "integration_context"
     - "read(.project/*)"
     - "write(.project/*)"
@@ -129,7 +130,7 @@ Ask the setup decisions in this order:
 3. Reuse or bootstrap required MCP registrations; restart and resume when new registrations are added.
 4. For Linear, run the read-only public API inspection below.
 5. Branch naming, filtered by the selected tracker provider and informed by Linear inspection when applicable.
-6. Exact provider configuration, only for selected roles.
+6. Exact provider configuration, only for selected roles; once GitHub forge and Project are known, offer optional fork-only incoming PR intake.
 7. Whether to enable user confirmation after a positive number of consecutive blocked reviews. Disabled omits `reviews`; never write `false`, zero, or an empty object.
 8. Optional Project Policies, then integration convenience permissions and independently selectable accepted-artifact diff gates.
 
@@ -171,6 +172,8 @@ Apply preserves a partially created Project on failure. Report the tool’s safe
 
 For GitHub forge, reuse the known repository and selected MCP server. With forge-only setup, use the same snapshot candidate selection rules; ask only for missing or ambiguous identity. When tracker and forge use the same repository/server, state reuse rather than asking twice.
 
+When both GitHub forge and GitHub Project configuration are known, offer the [fork-only intake option](../../references/setup.md#fork-only-incoming-pr-intake) as a numbered enable/decline choice. Same-repository PRs, including Deliverables, are excluded. The metadata-only Action adds membership and relies on the existing native Backlog default; it never updates an existing item's Status. Declining changes no file or setting. Enabling requires only a GitHub-valid Actions secret name with Project API access, never its value or copied MCP credentials. Call `render_incoming_pr_intake` with the selected `forge`, `tracker` and `tokenSecret`; include its exact file candidate and all returned prerequisites in the repository-file approval. Inspect the managed path from the setup snapshot and preserve unrelated files; existing content requires its exact reviewed diff, not silent replacement. Do not create secrets, weaken event policies, change native automation, deploy or run a probe. The reference distinguishes rendered/prepared files from confirmed active automation.
+
 Briefly explain the Project Policy boundary from `../../references/setup.md` and precedence from `../../references/artifacts.md`, then ask whether the user wants help creating them. If not, omit `.project/policies.md` without inspecting the broader repository. If yes, ask which workflow behavior they want to add to or override, then inspect only the relevant workflow and repository guidance. Keep generic repository instructions in their existing harness-owned location. Propose evidence-backed policies naming the affected workflow stage or behavior and the specific addition or override; present each for acceptance.
 
 ### Optional permissions
@@ -196,6 +199,7 @@ GitHub provider provisioning has its own exact preview/hash approval above and m
 - exact `.project/config.local.json` when a repository-local username is needed, or the existing global username source/no local file;
 - exact `.project/integrations.json`, or that it will be absent;
 - exact `.project/policies.md`, or that it will be absent;
+- for opted-in fork-only intake, the exact rendered `.github/workflows/incoming-pr-project.yml` diff, selected Project/repository, Actions secret name and activation prerequisites; otherwise preserve that path unchanged;
 - exact missing `.gitignore` lines for versioned mode;
 - for unversioned mode, either an explicit `info/exclude` no-op when `/.project/` already exists or this exact managed append:
 

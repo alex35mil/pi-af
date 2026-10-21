@@ -1,6 +1,8 @@
 # Project setup extension
 
-Registers `/project-setup` and the setup-owned `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, and `provision_github_project` tools.
+Registers `/project-setup` and the setup-owned `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, `provision_github_project`, and side-effect-free `render_incoming_pr_intake` tools.
+
+`incoming-pr-intake.ts` renders an opt-in fork-only metadata workflow with a verified full-commit Action pin, exact selected Project/repository, Actions secret name and activation prerequisites. It only adds membership, relying on the native Backlog default; no Status writes, contributor checkout/execution, credentials, provider changes or deployment. Setup inspection includes the managed `.github/workflows/incoming-pr-project.yml` path, and the exact local file requires approval. See [automation](../../references/pr/automation.md).
 
 The command and read-only inspection tool share `inspectProjectSetup`. Natural-language setup obtains the same credential-safe GitHub identities from fetch remotes, setup/Git/binding context, and credential-redacted MCP inventory without requiring valid workflow configuration, writing files, or calling providers. The tool returns JSON text and structured details; only the command injects a kickoff message. Provider availability and mutation approval remain separate from configured-registration inspection.
 

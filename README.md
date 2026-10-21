@@ -27,7 +27,8 @@ My [pi](https://pi.dev) setup for coding agent workflows.
 - `/task` — initialize or resume work belonging to one Epic;
 - `/gig` — initialize or resume standalone work;
 - `/backlog` — optional integration-only future-work intake;
-- `/todo` — optional integration-only ready-work intake.
+- `/todo` — optional integration-only ready-work intake;
+- `/pr` — privately inspect an incoming PR, score checkout safety, and request approval before an independent nested checkout managed by registered tooling, not agent-written Bash. Review contributor code first; an approved standard rebase resolves conflicts and immediately updates the same PR with a SHA-pinned `--force-with-lease`, then later approved fixes/testing proceed. Other commits, pushes, execution, publication and merge remain separate approvals. See [incoming PR handling](workflows/references/pr/incoming.md).
 
 Say “Report this workflow issue” to prepare ordinary Todo work in the workflow source project's tracker. Set `workflowProject` to that source checkout's absolute path in private global `workflows.settings.json` in Pi's agent directory; its existing tracker configuration stays authoritative. The exact sanitized report and destination require approval, with the named MCP tools available in the reporting session. Missing configuration errors with what to create and where, without starting setup. See [workflow reporting](workflows/README.md#report-a-workflow-problem).
 

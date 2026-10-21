@@ -294,6 +294,16 @@ Capability sources: [native field defaults](https://github.blog/changelog/2026-0
 
 When tracker and forge are both configured, place both role objects in the same integration object. Their servers and repositories follow the user's selections.
 
+### Fork-only incoming PR intake
+
+With a configured GitHub forge and GitHub Project, offer an explicit opt-in for [fork-only automatic intake](./pr/automation.md). Use `render_incoming_pr_intake` with the selected exact `forge`, `tracker` and `tokenSecret` name. It makes no provider or filesystem changes and returns one canonical `.github/workflows/incoming-pr-project.yml` candidate plus activation prerequisites. Include that exact file/diff in the bounded setup proposal; preserve other workflows and unmentioned configuration. Decline preserves existing files rather than enabling, deleting or disabling automation. For an existing setup, change only the requested automation scope, without reprovisioning unrelated Project fields/views.
+
+The workflow uses trusted default-branch metadata handling for fork PR opened/reopened events. It excludes same-repository PRs, including Deliverables, and adds only the actual PR's membership to the selected Project. The Project's already-required native Status default supplies the configured Backlog option to new items. No Status writer is generated; reruns return the existing item and cannot requeue In Review/terminal work. No checkout, contributor-code execution, installs, caches, private .project paths, workflow IDs or credential values belong in the file.
+
+The only credential input is a GitHub-valid Actions secret name with Project API and required repository PR-read access. The token value is supplied by the operator through GitHub, not by setup; never inspect/copy an MCP token, commit credentials, create secrets or silently reuse GITHUB_TOKEN/Git SSH authorization. Use the renderer's full-commit-pinned trusted action and safe static script; do not reconstruct executable code from PR text.
+
+Before declaring automation active, require confirmation of the native Backlog field default, selected secret/access, applicable pull_request_target event policy, and deployment through the repository's normal default-branch process. Inspect existing broad auto-add/Status rules with the user; changing them or event policies requires its own explicit scope. No automatic secret/policy changes, workflow runs or PR/Project-item probes are setup actions. Rendering or approving/writing a local file is prepared/pending, not active deployment. Same-repository or older PRs can still use explicit /pr intake; no automatic bulk backfill is included.
+
 ## Artifact persistence
 
 Read and follow `./artifacts.md` for the canonical persistence and authority contract, including exact ignore/exclude rules, Git-membership checks, and both mode transitions. For manual setup, create the configuration above, apply that contract's setup rule, then call `prepare_artifacts`. Call preparation again after configuration changes.
