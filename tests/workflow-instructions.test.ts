@@ -410,6 +410,20 @@ describe("workflow instruction ownership", () => {
             assert.ok(merge.includes(`\`${field}\``), `shared merge contract must own ${field}`)
     })
 
+    it("documents the GitHub finish decision handoff", () => {
+        const forge = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
+        assert.ok(forge.includes("Read `roles.forge.finish` from the returned context"))
+        for (const [state, field] of [
+            ["merge-needed", "arguments"],
+            ["merged", "merge"],
+            ["blocked", "reason"],
+        ]) {
+            const outcome = forge.split("\n").find((line) => line.trimStart().startsWith(`- \`${state}\`:`))
+            assert.ok(outcome?.includes(`\`roles.forge.finish.${field}\``), `${state} must name its result field`)
+        }
+        assert.ok(forge.includes("Inspect the returned decision before calling a provider mutation"))
+    })
+
     it("carries explicit ship intent through every remaining delivery step", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         for (const text of [
