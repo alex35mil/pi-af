@@ -1,4 +1,4 @@
-import { getMcpToolName } from "../../../../../extensions/__lib/mcp.js"
+import { isMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 
 interface Repository {
@@ -55,11 +55,15 @@ function repositoryName(repository: Repository): string {
 
 // Both workflow adapters establish readiness/approval and their own durable association.
 // This shared boundary alone owns the repository's merge strategy and native arguments.
-export function planGitHubMerge(subject: GitHubMergeSubject, evidence: ProviderEvidence): GitHubMergeDecision {
+export function planGitHubMerge(
+    subject: GitHubMergeSubject,
+    evidence: ProviderEvidence,
+    tools: McpToolCatalog,
+): GitHubMergeDecision {
     try {
         const args = evidence.arguments
         if (
-            evidence.tool !== getMcpToolName(subject.mcpServer, "pull_request_read") ||
+            !isMcpTool(evidence.tool, subject.mcpServer, "pull_request_read", tools) ||
             args.method !== "get" ||
             typeof args.owner !== "string" ||
             args.owner.toLowerCase() !== subject.repository.owner.toLowerCase() ||

@@ -2,7 +2,7 @@ import * as path from "node:path"
 
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent"
 
-import { getMcpToolName } from "../../../extensions/__lib/mcp.js"
+import { isMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { ENTITY_METADATA_FILE, readEntityStatus, resolveEntityDirectory, writeEntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
@@ -74,6 +74,7 @@ export async function recordProviderCreation(
     entityDir: string,
     role: CreationRole,
     evidence: ProviderEvidence,
+    tools: McpToolCatalog,
 ) {
     const { directory, environment, config } = environmentFor(cwd, entityDir)
     if (role === "forge") {
@@ -81,7 +82,7 @@ export async function recordProviderCreation(
         const { status, scope } = resolveResourceIdsContext(cwd, entityDir, "github-pull-request")
         if (scope.kind !== "github-pull-request") throw new Error("PR recording requires prepared forge intent")
         const response = record(evidence.response)
-        requireTool(evidence, scope.mcpServer, "create_pull_request")
+        requireTool(evidence, scope.mcpServer, "create_pull_request", tools)
         requireArguments(evidence, {
             ...scope.repository,
             head: scope.head,
@@ -110,7 +111,7 @@ export async function recordProviderCreation(
             throw new Error("tracker creation recording requires its durable attempted-create checkpoint")
         const tracker = environment.tracker
         if (existing.provider === "github" && tracker.kind === "github") {
-            requireTool(evidence, tracker.config.mcpServer, "issue_write")
+            requireTool(evidence, tracker.config.mcpServer, "issue_write", tools)
             requireArguments(evidence, {
                 method: "create",
                 ...existing.repository,
@@ -145,7 +146,7 @@ export async function recordProviderCreation(
                 team: tracker.config.team,
             }
             if (existing.resource === "project") {
-                requireTool(evidence, tracker.config.mcpServer, "save_project")
+                requireTool(evidence, tracker.config.mcpServer, "save_project", tools)
                 requireArguments(evidence, {
                     name: status.title,
                     addTeams: [tracker.config.team],
@@ -166,7 +167,7 @@ export async function recordProviderCreation(
                     }),
                 )
             } else {
-                requireTool(evidence, tracker.config.mcpServer, "save_issue")
+                requireTool(evidence, tracker.config.mcpServer, "save_issue", tools)
                 requireArguments(evidence, {
                     title: status.title,
                     team: tracker.config.team,
@@ -246,8 +247,8 @@ function parentProjectId(directory: string): string {
         throw new Error("Linear Task creation requires its identified parent Epic Project")
     return tracker.external.projectId
 }
-function requireTool(evidence: ProviderEvidence, server: string, name: string): void {
-    if (evidence.tool !== getMcpToolName(server, name))
+function requireTool(evidence: ProviderEvidence, server: string, name: string, tools: McpToolCatalog): void {
+    if (!isMcpTool(evidence.tool, server, name, tools))
         throw new Error("creation evidence must come from the configured registered tool")
 }
 function requireArguments(evidence: ProviderEvidence, expected: Record<string, unknown>): void {

@@ -223,7 +223,7 @@ describe("fork-only incoming PR intake", () => {
             fs.mkdirSync(path.join(root, ".github/workflows"), { recursive: true })
             fs.writeFileSync(path.join(root, INCOMING_PR_WORKFLOW_PATH), "existing intake\n")
             fs.writeFileSync(path.join(root, ".github/workflows/other.yml"), "unrelated\n")
-            const inspected = inspectProjectSetup(root)
+            const inspected = inspectProjectSetup(root, true)
             const existing = inspected.files.find((file) => file.path === INCOMING_PR_WORKFLOW_PATH)
             if (!existing?.exists) assert.fail("Existing managed workflow must appear in setup inspection")
             assert.equal(existing.content, "existing intake\n")

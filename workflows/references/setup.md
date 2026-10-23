@@ -49,7 +49,7 @@ Allowed formats are:
 
 Setup may select `tracker` only with a Linear tracker. It applies to every entity: Task/Gig use exact issue branch names, while Epic reconstructs the current Linear workspace template from read-only API data. GitHub and trackerless projects require a static format.
 
-A static format beginning with `username` requires `branches.username` in global `~/<agent-dir>/workflows.settings.json` or repository-local `.project/config.local.json`:
+A static format beginning with `username` requires `branches.username` in global `~/<agent-dir>/workflows.json` or repository-local `.project/config.local.json`:
 
 ```json
 {
@@ -71,7 +71,7 @@ To require a user confirmation checkpoint after consecutive blocked reviews, add
 
 ## Workflow reporting source
 
-To report workflow problems from any consuming project, set `workflowProject` in the existing private global `workflows.settings.json`, located in Pi's resolved `getAgentDir()` directory:
+To report workflow problems from any consuming project, set `workflowProject` in the existing private global `workflows.json`, located in Pi's resolved `getAgentDir()` directory:
 
 ```json
 {
@@ -83,7 +83,7 @@ It references the workflow source repository root. Existing global `branches.use
 
 `integration_context` operations `inspect` and `queueIntake` require `target: "current" | "workflow"`. `current` inspects the current repository and does not require the reference. `workflow` reads the referenced source's `.project/integrations.json` and `.project/config.json` using the existing tracker schema, artifact policy, validation, and read-only artifact-readiness checks. It returns the selected `target` and `projectRoot` alongside context. The path must identify the repository root; filesystem aliases are resolved consistently. Consuming-project setup is not a prerequisite for workflow-target inspection.
 
-A missing reference errors: `Set workflowProject to the absolute workflow source repository root in <resolved-agent-dir>/workflows.settings.json.` Invalid references or source configuration name their corrective location. Stop the attempt without setup questions, automatic repair, artifact preparation, or a fallback destination; the user leads any later configuration fix.
+A missing reference errors: `Set workflowProject to the absolute workflow source repository root in <resolved-agent-dir>/workflows.json.` Invalid references or source configuration name their corrective location. Stop the attempt without setup questions, automatic repair, artifact preparation, or a fallback destination; the user leads any later configuration fix.
 
 Use only the source tracker’s named MCP tools already registered in the reporting session under normal permissions. A tracker configuration does not prove provider access. Do not load or execute the source project's MCP settings or credentials. See [queue reporting](./queue.md#prepare-a-workflow-report) for the ordinary Todo intake and privacy/approval boundary.
 
@@ -312,19 +312,21 @@ Read and follow `./artifacts.md` for the canonical persistence and authority con
 
 MCP settings are shared Pi configuration, not workflow JSON. Use `configure_mcp`; do not compose server transport entries manually. It preserves unrelated settings and writes only environment-variable references.
 
-- Local target: `.agents/mcp.settings.local.json`; add exact `/.agents/mcp.settings.local.json` to `.git/info/exclude`.
-- Project target: `.agents/mcp.settings.json`.
+- Local target: `.agents/mcp.local.json`, with `mcpServers`; add exact `/.agents/mcp.local.json` to `.git/info/exclude`.
+- Project target: `.agents/mcp.json`, with `mcpServers`.
 - Linear default credential variable: `LINEAR_API_KEY`.
 - GitHub default credential variable: `GITHUB_PERSONAL_ACCESS_TOKEN`.
 - GitHub tracker enables `issues,projects`; GitHub forge enables `pull_requests`; selecting both enables all three.
 
-A new registration requires Pi restart or reload before setup validates capabilities and writes workflow configuration. The setup snapshot may report provider and credential environment-variable names for recognized official registrations; it never reports authorization header values or credential values.
+Global configuration is `<agent-dir>/mcp.json`, also with `mcpServers`. The adapter merges global, committed project, then local entries by exact name; later entries replace earlier entries. Both project tiers require trust. Every effective server is registered through `pi.registerMcpServer()` and native Pi owns its transport. Names differing only by `-` and `_` conflict. Preserve private project scope; never move a local registration into global settings. Inspection uses the same merge without executing credential commands or opening provider connections. Native `/mcp` enabled/exposure changes to these registrations last for the session.
 
-Example registrations produced by `configure_mcp` for Linear plus both GitHub roles:
+A new registration requires Pi restart or reload before setup validates capabilities and writes workflow configuration. The setup snapshot may report provider and credential environment-variable names for recognized official registrations; it never reports authorization header values or credential values. Untrusted-project inspection does not read project MCP files.
+
+Example project registrations produced by `configure_mcp` for the supported providers:
 
 ```json
 {
-    "servers": {
+    "mcpServers": {
         "linear": {
             "url": "https://mcp.linear.app/mcp",
             "headers": { "Authorization": "Bearer ${LINEAR_API_KEY}" }
@@ -407,4 +409,4 @@ Workflow skills allow routine `.project/` bookkeeping. Offer explicit artifact d
 }
 ```
 
-The target is either committed `.agents/permission.settings.json` (`project`) or local `.agents/permission.settings.local.json` (`local`). Before changing local settings, the tool verifies that the file is outside Git and ensures exact `/.agents/permission.settings.local.json` in `.git/info/exclude`; it never changes the index. A no-op adds no exclusion. Artifact persistence and permission-settings persistence are separate user decisions.
+The target is either committed `.agents/permissions.json` (`project`) or local `.agents/permissions.local.json` (`local`). Before changing local settings, the tool verifies that the file is outside Git and ensures exact `/.agents/permissions.local.json` in `.git/info/exclude`; it never changes the index. A no-op adds no exclusion. Artifact persistence and permission-settings persistence are separate user decisions.

@@ -27,6 +27,10 @@ import {
     selectPullRequestResourceIds,
 } from "../workflows/extensions/integrations/resource-id-operations.ts"
 
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+
+const mcpTools = workflowMcpCatalog("github", "linear")
+
 const repo = { owner: "alex", repo: "example" }
 const common = { entityId: "GIG-01M3S2H283", mcpServer: "github" }
 const prScope = {
@@ -208,21 +212,26 @@ describe("resource ID operations", () => {
                     },
                 },
                 new OperationResourceIdsMemo(),
+                mcpTools,
             )
             assert.deepEqual(
                 readResourceIdsCache(f.directory)!.resourceIds.map((x) => x.scope.kind),
                 ["github-project-item", "github-issue"],
             )
             assert.throws(
-                () => resourceIdsFromRead(prScope, { ...evidence, tool: "mcp__other__pull_request_read" }),
+                () => resourceIdsFromRead(prScope, { ...evidence, tool: "mcp__other__pull_request_read" }, mcpTools),
                 /configured registered tool/,
             )
             assert.throws(
                 () =>
-                    resourceIdsFromRead(prScope, {
-                        ...evidence,
-                        response: { ...pr, head: { ...pr.head, ref: "other" } },
-                    }),
+                    resourceIdsFromRead(
+                        prScope,
+                        {
+                            ...evidence,
+                            response: { ...pr, head: { ...pr.head, ref: "other" } },
+                        },
+                        mcpTools,
+                    ),
                 /exact durable/,
             )
         } finally {
@@ -234,14 +243,14 @@ describe("resource ID operations", () => {
         const f = fixture()
         try {
             const memo = new OperationResourceIdsMemo()
-            await selectPullRequestResourceIds(f.context(), evidence, memo)
+            await selectPullRequestResourceIds(f.context(), evidence, memo, mcpTools)
             await recordResourceIds(f.directory, [{ scope: itemScope, value: { itemId: 42 } }])
             await assert.rejects(
-                invalidateStaleResourceIds(f.context(), { ...evidence, response: "403 denied" }, memo),
+                invalidateStaleResourceIds(f.context(), { ...evidence, response: "403 denied" }, memo, mcpTools),
                 /invalid provider response/,
             )
             await assert.rejects(
-                invalidateStaleResourceIds(f.context(), evidence, memo),
+                invalidateStaleResourceIds(f.context(), evidence, memo, mcpTools),
                 /confirms the cached relationship/,
             )
             assert.equal(readResourceIdsCache(f.directory)!.resourceIds.length, 2)
@@ -249,6 +258,7 @@ describe("resource ID operations", () => {
                 f.context(),
                 { ...evidence, response: { ...pr, head: { ...pr.head, ref: "changed" } } },
                 memo,
+                mcpTools,
             )
             assert.equal(result.state, "missing")
             assert.equal("tool" in result, false)
@@ -271,8 +281,8 @@ describe("resource ID operations", () => {
             const sha = f.git(["rev-parse", prScope.head])
             const actual = { ...pr, head: { ...pr.head, sha }, merged: false }
             const read = { ...evidence, response: actual }
-            await selectPullRequestResourceIds(f.context(), read, new OperationResourceIdsMemo())
-            const decision = finishReadDecision(prScope, read, sha, 7)
+            await selectPullRequestResourceIds(f.context(), read, new OperationResourceIdsMemo(), mcpTools)
+            const decision = finishReadDecision(prScope, read, sha, 7, mcpTools)
             assert.deepEqual(decision, {
                 state: "merge-needed",
                 arguments: {
@@ -282,22 +292,26 @@ describe("resource ID operations", () => {
                     expectedHeadSha: sha,
                 },
             })
-            const context = buildIntegrationContext({ cwd: f.root } as never, {
-                operation: "finishMerge",
-                entityDir: f.directory,
-                evidence: read,
-            })
+            const context = buildIntegrationContext(
+                { cwd: f.root } as never,
+                {
+                    operation: "finishMerge",
+                    entityDir: f.directory,
+                    evidence: read,
+                },
+                mcpTools,
+            )
             if (context.state !== "enabled") assert.fail("enabled finish expected")
             assert.deepEqual(context.roles.forge?.finish, decision)
             const merged = { ...actual, merged: true, merged_at: "2026-10-01T08:10:44Z" }
-            assert.equal(finishReadDecision(prScope, { ...read, response: merged }, sha, 7).state, "merged")
+            assert.equal(finishReadDecision(prScope, { ...read, response: merged }, sha, 7, mcpTools).state, "merged")
             for (const response of [
                 { ...actual, number: 8, html_url: "https://github.com/alex/example/pull/8" },
                 { ...actual, head: { ...actual.head, sha: "0".repeat(40) } },
                 { ...actual, head: { ...actual.head, ref: "other" } },
                 { ...actual, merged: true },
             ])
-                assert.equal(finishReadDecision(prScope, { ...read, response }, sha, 7).state, "blocked")
+                assert.equal(finishReadDecision(prScope, { ...read, response }, sha, 7, mcpTools).state, "blocked")
             const selected = { ...actual, number: 8, html_url: "https://github.com/alex/example/pull/8" }
             await selectPullRequestResourceIds(
                 f.context(),
@@ -307,12 +321,17 @@ describe("resource ID operations", () => {
                     response: selected,
                 },
                 new OperationResourceIdsMemo(),
+                mcpTools,
             )
-            const mismatch = buildIntegrationContext({ cwd: f.root } as never, {
-                operation: "finishMerge",
-                entityDir: f.directory,
-                evidence: read,
-            })
+            const mismatch = buildIntegrationContext(
+                { cwd: f.root } as never,
+                {
+                    operation: "finishMerge",
+                    entityDir: f.directory,
+                    evidence: read,
+                },
+                mcpTools,
+            )
             if (mismatch.state !== "enabled") assert.fail("enabled finish expected")
             assert.equal(mismatch.roles.forge?.finish?.state, "blocked")
         } finally {
@@ -344,11 +363,17 @@ describe("resource ID operations", () => {
                 }),
             )
             await beginProviderCreation(f.root, f.directory, "tracker")
-            await recordProviderCreation(f.root, f.directory, "tracker", {
-                tool: "mcp__github__issue_write",
-                arguments: { method: "create", ...repo, title: "Example" },
-                response: { id: "101", url: "https://github.com/alex/example/issues/23" },
-            })
+            await recordProviderCreation(
+                f.root,
+                f.directory,
+                "tracker",
+                {
+                    tool: "mcp__github__issue_write",
+                    arguments: { method: "create", ...repo, title: "Example" },
+                    response: { id: "101", url: "https://github.com/alex/example/issues/23" },
+                },
+                mcpTools,
+            )
             assert.deepEqual(readEntityStatus(f.directory).authority, {
                 kind: "tracker",
                 provider: "github",
@@ -369,20 +394,26 @@ describe("resource ID operations", () => {
                 f.git(["add", "."])
                 f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
                 const committed = fs.readFileSync(f.file, "utf8")
-                const result = await recordProviderCreation(f.root, f.directory, "forge", {
-                    tool: "mcp__github__create_pull_request",
-                    arguments: {
-                        ...repo,
-                        head: prScope.head,
-                        base: prScope.target,
-                        title: "Example",
-                        body: "Approved",
+                const result = await recordProviderCreation(
+                    f.root,
+                    f.directory,
+                    "forge",
+                    {
+                        tool: "mcp__github__create_pull_request",
+                        arguments: {
+                            ...repo,
+                            head: prScope.head,
+                            base: prScope.target,
+                            title: "Example",
+                            body: "Approved",
+                        },
+                        response: { id: "4700971917", url: pr.html_url },
                     },
-                    response: { id: "4700971917", url: pr.html_url },
-                })
+                    mcpTools,
+                )
                 assert.deepEqual(Object.keys(result).sort(), ["entityId", "resourceIds", "role"])
                 assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
-                await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo())
+                await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
                 assert.equal(fs.readFileSync(f.file, "utf8"), committed)
                 assert.deepEqual(fs.readdirSync(path.join(f.directory, ".local")), ["metadata.json"])
                 assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")

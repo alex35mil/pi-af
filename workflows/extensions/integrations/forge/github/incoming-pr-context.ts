@@ -2,7 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
-import { getMcpToolName } from "../../../../../extensions/__lib/mcp.js"
+import { isMcpTool, resolveMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import * as project from "../../../../../extensions/__lib/project.js"
 import { assertArtifactPersistencePrepared } from "../../../__lib/project-config.js"
 import { loadIntegrationConfig, type GitHubForge } from "../../config.js"
@@ -59,7 +59,7 @@ function normalizeRepository(repository: Repository): Repository {
     return { owner: repository.owner.toLowerCase(), repo: repository.repo.toLowerCase() }
 }
 
-export function incomingPullRequestContext(cwd: string, reference: string) {
+export function incomingPullRequestContext(cwd: string, reference: string, tools: McpToolCatalog) {
     const root = project.resolveRootDir(cwd)
     const config = assertArtifactPersistencePrepared(root)
     const loaded = loadIntegrationConfig(root)
@@ -76,7 +76,7 @@ export function incomingPullRequestContext(cwd: string, reference: string) {
                   project: tracker.project,
                   status: tracker.fields.status,
                   lookup: {
-                      tool: getMcpToolName(tracker.mcpServer, "projects_list"),
+                      ...resolveMcpTool(tracker.mcpServer, "projects_list", tools),
                       arguments: {
                           method: "list_project_items",
                           owner: tracker.project.owner,
@@ -103,7 +103,7 @@ export function incomingPullRequestContext(cwd: string, reference: string) {
             checkoutDirectory: path.join(incomingLocalDirectory(selected), "checkout"),
             reviewsDirectory: incomingReviewsDirectory(selected),
             read: {
-                tool: getMcpToolName(forge.mcpServer, "pull_request_read"),
+                ...resolveMcpTool(forge.mcpServer, "pull_request_read", tools),
                 arguments: { method: "get", ...selected.repository, pullNumber: selected.number },
             },
         },
@@ -166,11 +166,12 @@ export function incomingRevision(
     forge: GitHubForge,
     selected: IncomingPullRequest,
     evidence: ProviderEvidence,
+    tools: McpToolCatalog,
 ): IncomingRevision {
     const identity = pullRequest(selected.repository, String(selected.number))
     const args = evidence.arguments
     if (
-        evidence.tool !== getMcpToolName(forge.mcpServer, "pull_request_read") ||
+        !isMcpTool(evidence.tool, forge.mcpServer, "pull_request_read", tools) ||
         args.method !== "get" ||
         args.pullNumber !== selected.number ||
         typeof args.owner !== "string" ||

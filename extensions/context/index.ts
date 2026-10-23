@@ -1,159 +1,176 @@
-/**
- * Context Extension
- *
- * Provides a /context command that shows session introspection:
- * model info, context usage breakdown, tools, skills, and session stats.
- */
+/** Session introspection: current context estimates, tool exposure, and complete billing. */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { getCurrentTools, type Tool, type Usage } from "@earendil-works/pi-ai"
+import {
+    estimateTokens as estimateMessageTokens,
+    type ExtensionAPI,
+    type ExtensionContext,
+    type SessionEntry,
+    type ToolInfo,
+} from "@earendil-works/pi-coding-agent"
+
+type ReportAPI = Pick<ExtensionAPI, "getAllTools" | "getActiveTools" | "getCommands">
+type ReportContext = Pick<ExtensionContext, "getContextUsage" | "getSystemPrompt" | "model" | "sessionManager">
+
+const RESOURCE_TOOLS = new Set(["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"])
 
 export default function (pi: ExtensionAPI) {
     pi.registerCommand("context", {
-        description: "Show context usage, tools, skills, and session stats",
+        description: "Show context usage, tools, skills, and session billing",
         handler: async (_args, ctx) => {
-            const lines: string[] = []
-
-            // --- Context Usage ---
-            const usage = ctx.getContextUsage()
-            const modelId = ctx.model?.id ?? "unknown"
-            if (usage) {
-                const used = formatTokens(usage.tokens ?? 0)
-                const total = formatTokens(usage.contextWindow)
-                const pct = usage.percent != null ? `${usage.percent.toFixed(0)}%` : "?%"
-                lines.push("Context Usage")
-                lines.push(`  ${modelId} · ${used}/${total} tokens (${pct})`)
-            } else {
-                lines.push("Context Usage")
-                lines.push(`  ${modelId} · no usage data`)
-            }
-            lines.push("")
-
-            // --- Token Breakdown ---
-            const allTools = pi.getAllTools()
-            const activeToolNames = new Set(pi.getActiveTools())
-
-            const builtinTools = allTools.filter((t) => !t.name.startsWith("mcp__") && activeToolNames.has(t.name))
-            const mcpTools = allTools.filter((t) => t.name.startsWith("mcp__") && activeToolNames.has(t.name))
-            const extensionTools = allTools.filter(
-                (t) =>
-                    !t.name.startsWith("mcp__") &&
-                    !["read", "bash", "edit", "write", "grep", "find", "ls"].includes(t.name) &&
-                    activeToolNames.has(t.name),
-            )
-
-            const toolTokens = (tools: typeof allTools) =>
-                tools.reduce(
-                    (sum, t) =>
-                        sum +
-                        estimateTokens(
-                            JSON.stringify({
-                                name: t.name,
-                                description: t.description,
-                                parameters: t.parameters,
-                            }),
-                        ),
-                    0,
-                )
-
-            const systemPrompt = ctx.getSystemPrompt()
-            const systemPromptTokens = estimateTokens(systemPrompt)
-
-            const builtinTokens = toolTokens(builtinTools)
-            const mcpTokenCount = toolTokens(mcpTools)
-            const extensionTokens = toolTokens(extensionTools)
-
-            // Message stats from session
-            let userCount = 0
-            let assistantCount = 0
-            let toolResultCount = 0
-            let inputTokens = 0
-            let outputTokens = 0
-            let totalCost = 0
-
-            for (const entry of ctx.sessionManager.getBranch()) {
-                if (entry.type !== "message") continue
-                const msg = entry.message
-                if (msg.role === "user") {
-                    userCount++
-                } else if (msg.role === "assistant") {
-                    assistantCount++
-                    const a = msg as any
-                    if (a.usage) {
-                        inputTokens += a.usage.input ?? 0
-                        outputTokens += a.usage.output ?? 0
-                        totalCost += a.usage.cost?.total ?? 0
-                    }
-                } else if (msg.role === "toolResult") {
-                    toolResultCount++
-                }
-            }
-
-            const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0
-            const usedTokens = usage?.tokens ?? 0
-            const freeTokens = Math.max(0, contextWindow - usedTokens)
-
-            lines.push("Token Breakdown (estimated)")
-            lines.push(`  System prompt:  ${formatTokens(systemPromptTokens)} tokens`)
-            lines.push(`  Built-in tools: ${formatTokens(builtinTokens)} tokens (${builtinTools.length} tools)`)
-            if (extensionTools.length > 0) {
-                lines.push(
-                    `  Extension tools: ${formatTokens(extensionTokens)} tokens (${extensionTools.length} tools)`,
-                )
-            }
-            if (mcpTools.length > 0) {
-                lines.push(`  MCP tools:      ${formatTokens(mcpTokenCount)} tokens (${mcpTools.length} tools)`)
-            }
-            lines.push(`  Messages:       ${formatTokens(inputTokens + outputTokens)} tokens`)
-            lines.push(`  Free space:     ${formatTokens(freeTokens)} tokens`)
-            lines.push("")
-
-            // --- Tools ---
-            const activeTools = allTools.filter((t) => activeToolNames.has(t.name))
-            lines.push(`Tools (${activeTools.length} active)`)
-            for (const t of activeTools) {
-                const tokens = estimateTokens(
-                    JSON.stringify({
-                        name: t.name,
-                        description: t.description,
-                        parameters: t.parameters,
-                    }),
-                )
-                lines.push(`  ${t.name} — ${formatTokens(tokens)} tokens`)
-            }
-            lines.push("")
-
-            // --- Skills ---
-            const skills = pi.getCommands().filter((c) => c.source === "skill")
-            if (skills.length > 0) {
-                lines.push("Skills")
-                for (const s of skills) {
-                    const sourcePath = s.sourceInfo?.path
-                    lines.push(`  ${s.name}${sourcePath ? ` — ${sourcePath}` : ""}`)
-                }
-                lines.push("")
-            }
-
-            // --- Session ---
-            const totalMessages = userCount + assistantCount + toolResultCount
-            lines.push("Session")
-            lines.push(
-                `  Messages: ${totalMessages} (${userCount} user, ${assistantCount} assistant, ${toolResultCount} tool results)`,
-            )
-            lines.push(`  Tokens: ${formatTokens(inputTokens)} in / ${formatTokens(outputTokens)} out`)
-            if (totalCost > 0) {
-                lines.push(`  Cost: $${totalCost.toFixed(2)}`)
-            }
-
-            await ctx.ui.editor("Context", lines.join("\n"))
+            await ctx.ui.editor("Context", renderContextReport(pi, ctx))
         },
     })
 }
 
-function estimateTokens(str: string): number {
-    return Math.ceil(str.length / 4)
+export function renderContextReport(pi: ReportAPI, ctx: ReportContext): string {
+    const lines = ["Context Usage"]
+    const usage = ctx.getContextUsage()
+    const modelId = ctx.model?.id ?? "unknown"
+    if (usage) {
+        const used = usage.tokens === null ? "unknown" : formatTokens(usage.tokens)
+        const percent = usage.percent === null ? "unknown" : `${usage.percent.toFixed(0)}%`
+        const free = usage.tokens === null ? "unknown" : formatTokens(Math.max(0, usage.contextWindow - usage.tokens))
+        lines.push(`  ${modelId} · ${used}/${formatTokens(usage.contextWindow)} tokens (${percent})`)
+        lines.push(`  Free space: ${free} tokens`)
+    } else {
+        lines.push(`  ${modelId} · no usage data`)
+        lines.push("  Free space: unknown")
+    }
+
+    const allTools = pi.getAllTools()
+    const byName = new Map(allTools.map((tool) => [tool.name, tool]))
+    const active = new Set(pi.getActiveTools())
+    const projection = ctx.sessionManager.buildSessionProjection()
+    const savedTools = getCurrentTools(projection.messages)
+    const savedByName = new Map(savedTools.map((tool) => [tool.name, tool]))
+    const groups = new Map<string, Tool[]>([
+        ["Built-in tools", []],
+        ["Extension tools", []],
+        ["MCP tools", []],
+        ["Tools awaiting metadata", []],
+    ])
+    for (const tool of savedTools) {
+        const metadata = byName.get(tool.name)
+        const group =
+            tool.name.startsWith("mcp__") || RESOURCE_TOOLS.has(tool.name)
+                ? "MCP tools"
+                : !metadata
+                  ? "Tools awaiting metadata"
+                  : metadata.sourceInfo.source === "builtin"
+                    ? "Built-in tools"
+                    : "Extension tools"
+        groups.get(group)!.push(tool)
+    }
+
+    lines.push("", "Saved Context Components (estimated)")
+    lines.push(`  System prompt: ${formatTokens(estimateTextTokens(ctx.getSystemPrompt()))} tokens`)
+    for (const [label, tools] of groups) {
+        if (tools.length > 0) {
+            const tokens = tools.reduce((sum, tool) => sum + estimateToolTokens(tool), 0)
+            lines.push(`  ${label}: ${formatTokens(tokens)} tokens (${tools.length} tools)`)
+        }
+    }
+    const messages = projection.messages.filter((message) => message.role !== "system")
+    const messageTokens = messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0)
+    lines.push(`  Projected messages: ${formatTokens(messageTokens)} tokens`)
+    lines.push("  Tool estimates use saved transcript declarations; final provider loadouts can differ.")
+    lines.push("  These estimates are not cumulative billed tokens or an exact sum of current occupancy.")
+
+    const callable = allTools.filter((tool) => isCallable(tool, active)).length
+    lines.push("", `Tools (${allTools.length} registered, ${active.size} active, ${callable} callable from tools)`)
+    for (const tool of allTools) {
+        const selection = active.has(tool.name) ? ", active" : ""
+        const saved = savedByName.get(tool.name)
+        const schema = saved ? `${formatTokens(estimateToolTokens(saved))} saved schema tokens` : "no saved declaration"
+        lines.push(`  ${tool.name} — ${tool.exposure}${selection}; ${schema}`)
+    }
+    lines.push("  Active selection, script-callable tools, and model declarations are different sets.")
+
+    const skills = pi.getCommands().filter((command) => command.source === "skill")
+    if (skills.length > 0) {
+        lines.push("", "Skills")
+        for (const skill of skills) lines.push(`  ${skill.name} — ${skill.sourceInfo.path}`)
+    }
+
+    const totals = sessionBilling(ctx.sessionManager.getEntries())
+    lines.push("", "Session Billing (all session branches)")
+    lines.push(
+        `  Messages: ${totals.messages} (${totals.user} user, ${totals.assistant} assistant, ${totals.toolResults} tool results, ${totals.other} other)`,
+    )
+    lines.push(`  Tokens: ${formatTokens(totals.input)} in / ${formatTokens(totals.output)} out`)
+    lines.push(`  Cache: ${formatTokens(totals.cacheRead)} read / ${formatTokens(totals.cacheWrite)} written`)
+    lines.push(
+        `  Total billed tokens: ${formatTokens(totals.input + totals.output + totals.cacheRead + totals.cacheWrite)}`,
+    )
+    lines.push(`  Cost: $${totals.cost.toFixed(2)}`)
+    return lines.join("\n")
 }
 
-function formatTokens(n: number): string {
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
-    return String(n)
+/** Match native session totals: nested usage is already aggregated into parent tool results. */
+export function sessionBilling(entries: readonly SessionEntry[]) {
+    const totals = {
+        messages: 0,
+        user: 0,
+        assistant: 0,
+        toolResults: 0,
+        other: 0,
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+    }
+    const add = (usage: Usage) => {
+        totals.input += usage.input
+        totals.output += usage.output
+        totals.cacheRead += usage.cacheRead
+        totals.cacheWrite += usage.cacheWrite
+        totals.cost += usage.cost.total
+    }
+    for (const entry of entries) {
+        if (entry.type === "usage") add(entry.usage)
+        else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) add(entry.usage)
+        if (entry.type !== "message") continue
+        totals.messages++
+        const message = entry.message
+        switch (message.role) {
+            case "user":
+                totals.user++
+                break
+            case "assistant":
+                totals.assistant++
+                add(message.usage)
+                break
+            case "toolResult":
+                totals.toolResults++
+                if (message.usage) add(message.usage)
+                break
+            default:
+                totals.other++
+        }
+    }
+    return totals
+}
+
+function isCallable(tool: ToolInfo, active: ReadonlySet<string>): boolean {
+    return (
+        tool.exposure === "codemode" ||
+        tool.exposure === "deferred" ||
+        (tool.exposure === "direct" && active.has(tool.name))
+    )
+}
+
+function estimateToolTokens(tool: Tool): number {
+    return estimateTextTokens(
+        JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters }),
+    )
+}
+
+function estimateTextTokens(text: string): number {
+    return Math.ceil(text.length / 4)
+}
+
+function formatTokens(tokens: number): string {
+    return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens)
 }

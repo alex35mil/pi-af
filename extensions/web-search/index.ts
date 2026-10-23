@@ -6,10 +6,10 @@
  *
  * Auth: BRAVE_SEARCH_API_KEY from env var or settings.
  *
- * Settings file: web-search.settings.json (3-tier loading)
- *   ~/<agent-dir>/web-search.settings.json             (global)
- *   <repo-root>/.agents/web-search.settings.json       (project, committed)
- *   <repo-root>/.agents/web-search.settings.local.json (project, gitignored)
+ * Settings file: web-search.json (3-tier loading)
+ *   ~/<agent-dir>/web-search.json             (global)
+ *   <repo-root>/.agents/web-search.json       (project, committed)
+ *   <repo-root>/.agents/web-search.local.json (project, gitignored)
  *
  * Schema:
  * {
@@ -59,7 +59,7 @@ export default async function (pi: ExtensionAPI) {
                     content: [
                         {
                             type: "text" as const,
-                            text: "Web search is not configured. Set BRAVE_SEARCH_API_KEY as an environment variable, or add apiKey to web-search.settings.json.",
+                            text: "Web search is not configured. Set BRAVE_SEARCH_API_KEY as an environment variable, or add apiKey to web-search.json.",
                         },
                     ],
                 }

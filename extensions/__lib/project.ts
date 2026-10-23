@@ -2,9 +2,9 @@
  * Shared project resolution and settings loader for extensions.
  *
  * Loads and merges settings from 3 tiers:
- *   1. Global:  <agent-dir>/<name>.settings.json
- *   2. Project: <repo-root>/.agents/<name>.settings.json
- *   3. Local:   <repo-root>/.agents/<name>.settings.local.json
+ *   1. Global:  <agent-dir>/<name>.json
+ *   2. Project: <repo-root>/.agents/<name>.json
+ *   3. Local:   <repo-root>/.agents/<name>.local.json
  *
  * <repo-root> is the git repository root (or cwd if not in a git repo).
  *
@@ -56,9 +56,9 @@ export function resolveProjectAgentsDir(cwd: string): string {
 export function getExtensionSettingsPaths(name: string, cwd: string): ExtensionSettingsPaths {
     const rootDir = resolveRootDir(cwd)
     return {
-        global: path.join(getAgentDir(), `${name}.settings.json`),
-        project: path.join(rootDir, CONFIG_DIR, `${name}.settings.json`),
-        local: path.join(rootDir, CONFIG_DIR, `${name}.settings.local.json`),
+        global: path.join(getAgentDir(), `${name}.json`),
+        project: path.join(rootDir, CONFIG_DIR, `${name}.json`),
+        local: path.join(rootDir, CONFIG_DIR, `${name}.local.json`),
     }
 }
 

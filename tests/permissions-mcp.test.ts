@@ -6,13 +6,8 @@ import { describe, it } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 
-import {
-    getMcpToolName,
-    MCP_TOOL_CATALOG_EVENT,
-    type McpToolCatalog,
-    type McpToolMetadata,
-} from "../extensions/__lib/mcp.ts"
-import { analyzeBash } from "../extensions/permission/bash.ts"
+import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
+import { analyzeBash } from "../extensions/permissions/bash.ts"
 import permissionExtension, {
     inspectMcpAllowRules,
     resolveMode,
@@ -20,16 +15,18 @@ import permissionExtension, {
     type Mode,
     type PermissionSettings,
     type PermissionSource,
-} from "../extensions/permission/index.ts"
+} from "../extensions/permissions/index.ts"
+
+import { fixtureToolName } from "./mcp-catalog-fixture.ts"
 
 const noOverrides = new Map<string, Mode>()
 
 function source(settings: PermissionSettings, tier: PermissionSource["tier"] = "global"): PermissionSource {
-    return { tier, path: `/${tier}/permission.settings.json`, settings }
+    return { tier, path: `/${tier}/permissions.json`, settings }
 }
 
 function catalog(...tools: McpToolMetadata[]): McpToolCatalog {
-    return new Map(tools.map((tool) => [getMcpToolName(tool.serverName, tool.serverToolName), tool]))
+    return new Map(tools.map((tool) => [fixtureToolName(tool.serverName, tool.serverToolName), tool]))
 }
 
 describe("persistent MCP allow inspection", () => {
@@ -146,7 +143,7 @@ function resolveMcp(
     tool: McpToolMetadata,
     sessionOverrides: ReadonlyMap<string, Mode> = noOverrides,
 ): Promise<Mode> {
-    const toolName = getMcpToolName(tool.serverName, tool.serverToolName)
+    const toolName = fixtureToolName(tool.serverName, tool.serverToolName)
     return resolveMode(settings, toolName, "", undefined, sessionOverrides, analyzeBash, tool)
 }
 
@@ -174,20 +171,25 @@ function createPermissionHarness(
     commands: ReturnType<ExtensionAPI["getCommands"]> = [],
 ) {
     const handlers = new Map<string, ExtensionHandler[]>()
+    const registeredCommands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>()
     const pi = {
         events: eventBus.bus,
         getCommands: () => commands,
         on(event: string, handler: ExtensionHandler) {
             handlers.set(event, [...(handlers.get(event) ?? []), handler])
         },
-        registerCommand() {},
+        registerCommand(name: string, command: Parameters<ExtensionAPI["registerCommand"]>[1]) {
+            registeredCommands.set(name, command)
+        },
         registerShortcut() {},
+        registerTool() {},
     } as unknown as ExtensionAPI
 
     permissionExtension(pi)
     return {
         eventBus,
         handlers,
+        registeredCommands,
         handler: (event: string) => {
             const handler = handlers.get(event)?.at(-1)
             assert.ok(handler, `missing ${event} handler`)
@@ -227,7 +229,7 @@ function createContext(cwd: string, approval = true) {
 function createProjectSettings(content: string) {
     const cwd = mkdtempSync(join(tmpdir(), "permission-mcp-"))
     mkdirSync(join(cwd, ".agents"))
-    writeFileSync(join(cwd, ".agents", "permission.settings.json"), content)
+    writeFileSync(join(cwd, ".agents", "permissions.json"), content)
     return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) }
 }
 
@@ -304,7 +306,7 @@ describe("MCP permission rules", () => {
     })
 
     it("keeps session overrides final", async () => {
-        const toolName = getMcpToolName("github", "get_issue")
+        const toolName = fixtureToolName("github", "get_issue")
 
         assert.equal(
             await resolveMcp(
@@ -371,6 +373,14 @@ describe("MCP permission rules", () => {
 })
 
 describe("MCP permission lifecycle", () => {
+    it("registers the permissions extension commands", () => {
+        const harness = createPermissionHarness()
+        assert.deepEqual(
+            [...harness.registeredCommands.keys()],
+            ["permissions-toggle-auto-accept", "permissions-mode", "permissions-settings"],
+        )
+    })
+
     it("aborts MCP calls on configured denial and user rejection", async () => {
         for (const testCase of [
             { settings: { defaultMode: "deny" }, approval: true, reason: /Denied by permission settings/ },
@@ -380,8 +390,9 @@ describe("MCP permission lifecycle", () => {
             try {
                 const harness = createPermissionHarness()
                 const context = createContext(project.cwd, testCase.approval)
+                harness.eventBus.bus.emit(MCP_TOOL_CATALOG_EVENT, catalog(metadata("github", "issue_write", false)))
                 const blocked = (await harness.handler("tool_call")(
-                    { toolName: getMcpToolName("github", "issue_write"), toolCallId: "call-1", input: {} },
+                    { toolName: fixtureToolName("github", "issue_write"), toolCallId: "call-1", input: {} },
                     context.ctx,
                 )) as { block: boolean; reason: string }
                 assert.equal(blocked.block, true)
@@ -390,6 +401,23 @@ describe("MCP permission lifecycle", () => {
             } finally {
                 project.cleanup()
             }
+        }
+    })
+
+    it("denies MCP calls without live metadata even when the ordinary default allows tools", async () => {
+        const project = createProjectSettings(JSON.stringify({ defaultMode: "allow" }))
+        try {
+            const harness = createPermissionHarness()
+            const context = createContext(project.cwd)
+            const blocked = (await harness.handler("tool_call")(
+                { toolName: fixtureToolName("github", "issue_write"), toolCallId: "missing", input: {} },
+                context.ctx,
+            )) as { block: boolean; reason: string }
+            assert.equal(blocked.block, true)
+            assert.match(blocked.reason, /Denied by permission settings/)
+            assert.equal(context.aborts(), 1)
+        } finally {
+            project.cleanup()
         }
     })
 
@@ -406,7 +434,7 @@ describe("MCP permission lifecycle", () => {
                 "add_issue_comment",
                 "merge_pull_request",
             ]) {
-                const toolName = getMcpToolName("github", name)
+                const toolName = fixtureToolName("github", name)
                 harness.eventBus.bus.emit(
                     MCP_TOOL_CATALOG_EVENT,
                     new Map([[toolName, metadata("github", name, false)]]),
@@ -433,7 +461,7 @@ describe("MCP permission lifecycle", () => {
             const first = createPermissionHarness(eventBus)
             assert.equal(eventBus.listenerCount(MCP_TOOL_CATALOG_EVENT), 1)
             const context = createContext(project.cwd)
-            const toolName = getMcpToolName("github", "get_issue")
+            const toolName = fixtureToolName("github", "get_issue")
             const call = { toolName, toolCallId: "call-1", input: {} }
 
             eventBus.bus.emit(MCP_TOOL_CATALOG_EVENT, new Map([[toolName, metadata("github", "get_issue", true)]]))
@@ -466,7 +494,7 @@ describe("MCP permission lifecycle", () => {
 
                 await harness.handler("session_start")({ reason: "reload" }, context.ctx)
                 assert.match(context.notifications[0].message, /Invalid permission rule in allow.*legacy mcp__/)
-                assert.deepEqual(context.widgets.get("permission:invalid-settings"), [
+                assert.deepEqual(context.widgets.get("permissions:invalid-settings"), [
                     "Permission settings are invalid. Agent prompts and tools are blocked.",
                     context.notifications[0].message,
                     "Fix the settings, then retry your prompt.",
@@ -484,13 +512,13 @@ describe("MCP permission lifecycle", () => {
                 assert.equal(context.aborts(), 1)
 
                 writeFileSync(
-                    join(project.cwd, ".agents", "permission.settings.json"),
+                    join(project.cwd, ".agents", "permissions.json"),
                     JSON.stringify({ defaultMode: "allow" }),
                 )
                 assert.deepEqual(await harness.handler("input")({ text: "continue working" }, context.ctx), {
                     action: "continue",
                 })
-                assert.equal(context.widgets.has("permission:invalid-settings"), false)
+                assert.equal(context.widgets.has("permissions:invalid-settings"), false)
             } finally {
                 project.cleanup()
             }

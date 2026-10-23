@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox"
-import { getMcpToolName } from "../../../../../extensions/__lib/mcp.js"
+import { getMcpToolName, isMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 import { incomingPullRequestContext, incomingRevision } from "./incoming-pr-context.js"
@@ -78,8 +78,9 @@ function callScope(
     server: string,
     tool: string,
     expected: Record<string, unknown>,
+    tools: McpToolCatalog,
 ) {
-    if (evidence.tool !== getMcpToolName(server, tool))
+    if (!isMcpTool(evidence.tool, server, tool, tools))
         throw new Error("Project evidence is not from the configured tool")
     for (const [key, value] of Object.entries(expected)) {
         const actual = evidence.arguments[key]
@@ -92,15 +93,27 @@ function callScope(
         if (!matches) throw new Error(`Project evidence ${key} does not match configured scope`)
     }
 }
-function call(evidence: ProviderEvidence, server: string, tool: string, expected: Record<string, unknown>) {
-    callScope(evidence, server, tool, expected)
+function call(
+    evidence: ProviderEvidence,
+    server: string,
+    tool: string,
+    expected: Record<string, unknown>,
+    tools: McpToolCatalog,
+) {
+    callScope(evidence, server, tool, expected, tools)
     return object(evidence.response, "Project response")
 }
 function address(board: Board) {
     return { owner: board.project.owner, owner_type: board.project.ownerType, project_number: board.project.number }
 }
-function field(board: Board, evidence: ProviderEvidence): number {
-    const response = call(evidence, board.mcpServer, "projects_get", { method: "get_project_field", ...address(board) })
+function field(board: Board, evidence: ProviderEvidence, tools: McpToolCatalog): number {
+    const response = call(
+        evidence,
+        board.mcpServer,
+        "projects_get",
+        { method: "get_project_field", ...address(board) },
+        tools,
+    )
     const id = integer(response.id)
     if (
         evidence.arguments.field_id !== id ||
@@ -117,8 +130,15 @@ function field(board: Board, evidence: ProviderEvidence): number {
         throw new Error("Configured Project Status options are missing")
     return id
 }
-function item(board: Board, evidence: ProviderEvidence, repository: string, number: number, fieldId: number) {
-    const mutation = evidence.tool === getMcpToolName(board.mcpServer, "projects_write")
+function item(
+    board: Board,
+    evidence: ProviderEvidence,
+    repository: string,
+    number: number,
+    fieldId: number,
+    tools: McpToolCatalog,
+) {
+    const mutation = isMcpTool(evidence.tool, board.mcpServer, "projects_write", tools)
     const adding = mutation && evidence.arguments.method === "add_project_item"
     const expected = adding
         ? {
@@ -130,7 +150,7 @@ function item(board: Board, evidence: ProviderEvidence, repository: string, numb
               pull_request_number: number,
           }
         : { method: mutation ? "update_project_item" : "get_project_item", ...address(board) }
-    const response = call(evidence, board.mcpServer, mutation ? "projects_write" : "projects_get", expected)
+    const response = call(evidence, board.mcpServer, mutation ? "projects_write" : "projects_get", expected, tools)
     const id = integer(response.id)
     const content = object(response.content, "Project content")
     if (
@@ -163,15 +183,21 @@ function item(board: Board, evidence: ProviderEvidence, repository: string, numb
     }
     return { id, status }
 }
-function absence(board: Board, pages: ProviderEvidence[], repository: string, number: number) {
+function absence(board: Board, pages: ProviderEvidence[], repository: string, number: number, tools: McpToolCatalog) {
     let after: string | undefined
     pages.forEach((page, index) => {
-        const response = call(page, board.mcpServer, "projects_list", {
-            method: "list_project_items",
-            ...address(board),
-            query: `repo:${repository} is:pr`,
-            after,
-        })
+        const response = call(
+            page,
+            board.mcpServer,
+            "projects_list",
+            {
+                method: "list_project_items",
+                ...address(board),
+                query: `repo:${repository} is:pr`,
+                after,
+            },
+            tools,
+        )
         if (page.arguments.before !== undefined || !Array.isArray(response.items))
             throw new Error("Invalid complete Project lookup")
         for (const value of response.items) {
@@ -190,8 +216,8 @@ function absence(board: Board, pages: ProviderEvidence[], repository: string, nu
     })
 }
 
-export function incomingProjectContext(cwd: string, input: IncomingProjectContextInput) {
-    const context = incomingPullRequestContext(cwd, input.reference)
+export function incomingProjectContext(cwd: string, input: IncomingProjectContextInput, tools: McpToolCatalog) {
+    const context = incomingPullRequestContext(cwd, input.reference, tools)
     const board = context.project
     if (board.state !== "enabled")
         return {
@@ -201,9 +227,14 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
         }
     let decision: Decision
     try {
-        const revision = incomingRevision(context.roles.forge.config, context.incomingPullRequest, input.evidence)
+        const revision = incomingRevision(
+            context.roles.forge.config,
+            context.incomingPullRequest,
+            input.evidence,
+            tools,
+        )
         const response = object(input.evidence.response, "PR response")
-        const fieldId = field(board, input.fieldEvidence)
+        const fieldId = field(board, input.fieldEvidence, tools)
         const repository = `${revision.repository.owner}/${revision.repository.repo}`
         const values = board.status.values
         const mutation = (
@@ -213,7 +244,10 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             args: Record<string, unknown>,
         ): Decision => ({ state: "mutation-needed", effect, desiredStatus, mutation: { tool, arguments: args } })
         const projectWrite = (effect: "addMembership" | "setStatus", desired: string, args: Record<string, unknown>) =>
-            mutation(effect, desired, getMcpToolName(board.mcpServer, "projects_write"), { ...address(board), ...args })
+            mutation(effect, desired, getMcpToolName(board.mcpServer, "projects_write", tools), {
+                ...address(board),
+                ...args,
+            })
         let desired: string
         if (input.action === "ship" || (input.action === "cancel" && response.merged === true)) {
             const proof = planGitHubMerge(
@@ -226,6 +260,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                     expectedHeadSha: revision.head.sha,
                 },
                 input.evidence,
+                tools,
             )
             if (proof.state !== "merged") throw new Error("Confirm exact PR merge before Project Done")
             desired = values.done
@@ -235,7 +270,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                 decision = mutation(
                     "closePullRequest",
                     values.canceled,
-                    getMcpToolName(revision.mcpServer, "update_pull_request"),
+                    getMcpToolName(revision.mcpServer, "update_pull_request", tools),
                     { ...revision.repository, pullNumber: revision.number, state: "closed" },
                 )
                 return { ...context, operation: "incomingPullRequestProject" as const, projectAction: decision }
@@ -248,7 +283,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             desired = input.action === "intake" ? values[input.choice] : values.inReview
         }
         if (input.membership.state === "absent") {
-            absence(board, input.membership.lookup, repository, revision.number)
+            absence(board, input.membership.lookup, repository, revision.number, tools)
             if (input.action === "review")
                 throw new Error("Choose Backlog or Todo and complete PR intake before review")
             decision = projectWrite("addMembership", desired, {
@@ -259,18 +294,24 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                 pull_request_number: revision.number,
             })
         } else {
-            const observed = item(board, input.membership.evidence, repository, revision.number, fieldId)
+            const observed = item(board, input.membership.evidence, repository, revision.number, fieldId, tools)
             if (input.membership.state === "added" || input.membership.state === "reconciled") {
                 const attempt =
                     input.membership.state === "added" ? input.membership.creation : input.membership.attempt
-                callScope(attempt, board.mcpServer, "projects_write", {
-                    method: "add_project_item",
-                    ...address(board),
-                    item_owner: revision.repository.owner,
-                    item_repo: revision.repository.repo,
-                    item_type: "pull_request",
-                    pull_request_number: revision.number,
-                })
+                callScope(
+                    attempt,
+                    board.mcpServer,
+                    "projects_write",
+                    {
+                        method: "add_project_item",
+                        ...address(board),
+                        item_owner: revision.repository.owner,
+                        item_repo: revision.repository.repo,
+                        item_type: "pull_request",
+                        pull_request_number: revision.number,
+                    },
+                    tools,
+                )
                 if (input.membership.state === "added") {
                     const added = object(input.membership.creation.response, "Project response")
                     if (integer(added.id) !== observed.id)

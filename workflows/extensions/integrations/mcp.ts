@@ -3,8 +3,7 @@ import * as fs from "node:fs"
 import { Type } from "typebox"
 import { Value } from "typebox/value"
 
-import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
-import { readMcpSettings } from "../__lib/mcp.js"
+import { getMcpSettingsPaths, readMcpConfiguration, readMcpSettings } from "../../../extensions/__lib/mcp.js"
 
 export type WorkflowMcpService = "github" | "linear" | "other"
 
@@ -17,25 +16,28 @@ export function identifyMcpService(config: unknown): WorkflowMcpService {
 
 const ProviderRegistrationSchema = Type.Record(Type.String(), Type.Unknown())
 
-export function inspectProjectMcp(cwd: string) {
-    const paths = getExtensionSettingsPaths("mcp", cwd)
-    const tiers = (["global", "project", "local"] as const).map((tier) => inspectSettingsFile(tier, paths[tier]))
-    const effective = new Map<
-        string,
-        {
-            name: string
-            source: "global" | "project" | "local"
-            provider?: "linear" | "github"
-            credentialEnv?: string
+export function inspectProjectMcp(cwd: string, projectTrusted: boolean) {
+    const paths = getMcpSettingsPaths(cwd)
+    const tiers = (["global", "project", "local"] as const).map((tier) =>
+        tier !== "global" && !projectTrusted
+            ? { tier, path: paths[tier], state: "untrusted" as const }
+            : inspectSettingsFile(tier, paths[tier]),
+    )
+    try {
+        const configured = readMcpConfiguration(cwd, projectTrusted)
+        return {
+            tiers,
+            effectiveServers: configured.servers.map(({ name, config, tier }) => ({
+                ...inspectServer(name, config),
+                source: tier,
+            })),
         }
-    >()
-    for (const tier of tiers) {
-        if (tier.state !== "valid") continue
-        for (const server of tier.servers) effective.set(server.name, { ...server, source: tier.tier })
-    }
-    return {
-        tiers,
-        effectiveServers: [...effective.values()],
+    } catch (error) {
+        return {
+            tiers,
+            effectiveServers: [],
+            error: error instanceof Error ? error.message : String(error),
+        }
     }
 }
 
@@ -43,8 +45,11 @@ export function registeredCredentialEnvironment(
     cwd: string,
     serverName: string,
     provider: "linear" | "github",
+    projectTrusted: boolean,
 ): string {
-    const server = inspectProjectMcp(cwd).effectiveServers.find((candidate) => candidate.name === serverName)
+    const inspection = inspectProjectMcp(cwd, projectTrusted)
+    if (inspection.error) throw new Error(inspection.error)
+    const server = inspection.effectiveServers.find((candidate) => candidate.name === serverName)
     if (!server) throw new Error(`MCP server ${JSON.stringify(serverName)} is not configured`)
     if (server.provider !== provider) {
         throw new Error(`MCP server ${JSON.stringify(serverName)} is not a recognized ${provider} registration`)
@@ -61,7 +66,7 @@ function inspectSettingsFile(tier: "global" | "project" | "local", filePath: str
     if (!fs.existsSync(filePath)) return { tier, path: filePath, state: "absent" as const }
     try {
         const settings = readMcpSettings(filePath)
-        const servers = Object.entries(settings.servers ?? {}).map(([name, config]) => inspectServer(name, config))
+        const servers = Object.entries(settings.mcpServers ?? {}).map(([name, config]) => inspectServer(name, config))
         return {
             tier,
             path: filePath,

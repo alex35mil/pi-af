@@ -5,6 +5,7 @@ import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
+import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { assertEntityBranchReady, readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
@@ -123,8 +124,9 @@ export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 
 export default function (pi: ExtensionAPI): void {
     registerWorkflowPublication(pi)
+    const tools = observeMcpTools(pi)
     const resourceIdsMemo = new OperationResourceIdsMemo()
-    registerResourceIds(pi, resourceIdsMemo)
+    registerResourceIds(pi, resourceIdsMemo, tools)
     registerWorkflowOperations(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
@@ -227,7 +229,7 @@ export default function (pi: ExtensionAPI): void {
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(IntegrationContextSchema, params)
             resourceIdsMemo.reset()
-            const result = buildIntegrationContext(ctx, input)
+            const result = buildIntegrationContext(ctx, input, tools)
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
                 details: result,
@@ -246,27 +248,41 @@ type IncomingContext = ReturnType<typeof incomingPullRequestContext>
 type IncomingMergeContext = ReturnType<typeof incomingMergeContext>
 type IncomingProjectContext = ReturnType<typeof incomingProjectContext>
 
-export function buildIntegrationContext(ctx: ExtensionContext, input: IncomingContextInput): IncomingContext
-export function buildIntegrationContext(ctx: ExtensionContext, input: IncomingMergeContextInput): IncomingMergeContext
+export function buildIntegrationContext(
+    ctx: ExtensionContext,
+    input: IncomingContextInput,
+    tools: McpToolCatalog,
+): IncomingContext
+export function buildIntegrationContext(
+    ctx: ExtensionContext,
+    input: IncomingMergeContextInput,
+    tools: McpToolCatalog,
+): IncomingMergeContext
 export function buildIntegrationContext(
     ctx: ExtensionContext,
     input: IncomingProjectContextInput,
+    tools: McpToolCatalog,
 ): IncomingProjectContext
-export function buildIntegrationContext(ctx: ExtensionContext, input: WorkflowContextInput): WorkflowContext
+export function buildIntegrationContext(
+    ctx: ExtensionContext,
+    input: WorkflowContextInput,
+    tools: McpToolCatalog,
+): WorkflowContext
 export function buildIntegrationContext(
     ctx: ExtensionContext,
     input: IntegrationContextInput,
+    tools: McpToolCatalog,
 ): IncomingContext | IncomingMergeContext | IncomingProjectContext | WorkflowContext
-export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput) {
+export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput, tools: McpToolCatalog) {
     if (!Value.Check(IntegrationContextSchema, input))
         throw new Error("invalid integration context request: select the exact operation and its required inputs")
-    if (input.operation === "incomingPullRequest") return incomingPullRequestContext(ctx.cwd, input.reference)
-    if (input.operation === "incomingPullRequestMerge") return incomingMergeContext(ctx.cwd, input)
-    if (input.operation === "incomingPullRequestProject") return incomingProjectContext(ctx.cwd, input)
-    return buildWorkflowIntegrationContext(ctx, input)
+    if (input.operation === "incomingPullRequest") return incomingPullRequestContext(ctx.cwd, input.reference, tools)
+    if (input.operation === "incomingPullRequestMerge") return incomingMergeContext(ctx.cwd, input, tools)
+    if (input.operation === "incomingPullRequestProject") return incomingProjectContext(ctx.cwd, input, tools)
+    return buildWorkflowIntegrationContext(ctx, input, tools)
 }
 
-function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowContextInput) {
+function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowContextInput, tools: McpToolCatalog) {
     const selection =
         "target" in input
             ? {
@@ -277,7 +293,7 @@ function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowC
             : undefined
     const cwd = selection?.projectRoot ?? ctx.cwd
     try {
-        const result = readProjectIntegrationContext(cwd, input)
+        const result = readProjectIntegrationContext(cwd, input, tools)
         return { ...result, ...selection }
     } catch (error) {
         if (selection?.target !== "workflow") throw error
@@ -286,7 +302,7 @@ function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowC
     }
 }
 
-function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput) {
+function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput, tools: McpToolCatalog) {
     const operation = input.operation
     const entityDir = "entityDir" in input ? input.entityDir : undefined
     const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
@@ -343,6 +359,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput)
                           input.evidence,
                           Git.run(cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
                           saved.value.number,
+                          tools,
                       )
                     : {
                           state: "blocked",

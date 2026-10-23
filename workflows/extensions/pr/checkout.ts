@@ -9,6 +9,7 @@ import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
 
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import {
     incomingPullRequestContext,
     incomingRevision,
@@ -148,7 +149,7 @@ async function save(file: string, content: string): Promise<void> {
     await withFileMutationQueue(file, () => fs.promises.writeFile(file, content, "utf-8"))
 }
 
-export function registerIncomingCheckout(pi: ExtensionAPI): void {
+export function registerIncomingCheckout(pi: ExtensionAPI, tools: McpToolCatalog): void {
     pi.registerTool({
         name: "incoming_pull_request_checkout",
         label: "incoming_pull_request_checkout",
@@ -159,8 +160,13 @@ export function registerIncomingCheckout(pi: ExtensionAPI): void {
             const input = Value.Parse(IncomingCheckoutSchema, params)
             assertGitEnvironment()
             const root = (await parentGit(ctx.cwd, ["rev-parse", "--show-toplevel"], signal)).trim()
-            const context = incomingPullRequestContext(root, input.reference)
-            const revision = incomingRevision(context.roles.forge.config, context.incomingPullRequest, input.evidence)
+            const context = incomingPullRequestContext(root, input.reference, tools)
+            const revision = incomingRevision(
+                context.roles.forge.config,
+                context.incomingPullRequest,
+                input.evidence,
+                tools,
+            )
             const local = (name: string) =>
                 resolveIncomingLocalPath(root, revision, path.join(context.incomingPullRequest.localDirectory, name))
             const directory = local("checkout")
@@ -180,6 +186,7 @@ export function registerIncomingCheckout(pi: ExtensionAPI): void {
                         revision,
                         context.roles.forge.config,
                         input,
+                        tools,
                         signal,
                     )
                 } catch (error) {
@@ -187,7 +194,7 @@ export function registerIncomingCheckout(pi: ExtensionAPI): void {
                 }
                 const after = await parentState(root)
                 const saved = fs.existsSync(stateFile)
-                    ? readCheckoutState(stateFile, revision, context.roles.forge.config)
+                    ? readCheckoutState(stateFile, revision, context.roles.forge.config, tools)
                     : null
                 const publication = saved ? currentPublication(saved) : null
                 const localOutcome =
@@ -232,12 +239,13 @@ async function operate(
     revision: IncomingRevision,
     forge: GitHubForge,
     input: IncomingCheckoutInput,
+    tools: McpToolCatalog,
     signal?: AbortSignal,
 ) {
     let state: CheckoutState
     const persist = (value: CheckoutState) => saveCheckoutState(stateFile, value)
     if (input.operation === "cleanup") {
-        const saved = fs.existsSync(stateFile) ? readCheckoutState(stateFile, revision, forge) : null
+        const saved = fs.existsSync(stateFile) ? readCheckoutState(stateFile, revision, forge, tools) : null
         return cleanupCheckout(
             root,
             directory,
@@ -247,6 +255,7 @@ async function operate(
             input.evidence,
             input.completion,
             persist,
+            tools,
             signal,
         )
     }
@@ -281,7 +290,7 @@ async function operate(
         validatePhase(state, await observeCheckout(directory, state, signal))
         await persist(state)
     } else {
-        state = readCheckoutState(stateFile, revision, forge)
+        state = readCheckoutState(stateFile, revision, forge, tools)
         if (state.phase === "removing" || state.phase === "deleting" || state.phase === "removed") {
             if (input.operation === "inspect") return inspectRemoval(root, local, state, revision)
             throw new Error("Checkout was retired for cleanup; no reconstruction or ordinary Git mutation is allowed")

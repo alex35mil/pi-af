@@ -1,373 +1,105 @@
-/**
- * MCP Extension
- *
- * Connects to MCP servers and registers their tools with pi.
- *
- * Settings file: mcp.settings.json (same 3-tier loading as permission extension)
- *   ~/<agent-dir>/mcp.settings.json             (global)
- *   <repo-root>/.agents/mcp.settings.json       (project, committed)
- *   <repo-root>/.agents/mcp.settings.local.json (project, gitignored)
- *
- * Schema:
- * {
- *   "servers": {
- *     "local": {
- *       "command": "npx",
- *       "args": ["-y", "@playwright/mcp@latest"],
- *       "env": { "KEY": "value" }
- *     },
- *     "remote": {
- *       "url": "https://example.com/mcp",
- *       "headers": { "Authorization": "Bearer ${MCP_TOKEN}" }
- *     }
- *   }
- * }
- */
-
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent"
-import { Type } from "typebox"
-import { ParseError, Value } from "typebox/value"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+/** Native MCP composition: Pi owns connections, authentication, discovery, results, and shutdown. */
+import {
+    createMcpExtension,
+    type ExtensionAPI,
+    type McpExtensionOptions,
+    type ToolDefinition,
+} from "@earendil-works/pi-coding-agent"
 
 import {
-    getMcpToolName,
+    isMcpRecord,
     MCP_TOOL_CATALOG_EVENT,
     MCP_TOOL_DECORATORS_EVENT,
+    readMcpConfiguration,
     type McpServerTransport,
-    type McpToolCatalog,
     type McpToolDecorator,
     type McpToolDecorators,
     type McpToolMetadata,
-    validateMcpName,
 } from "../__lib/mcp.js"
-import * as project from "../__lib/project.js"
-
-const EXTENSION = "mcp"
-
-const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
-
-const StringRecordSchema = Type.Record(Type.String(), Type.String())
-const StdioServerConfigSchema = Type.Object(
-    {
-        command: Type.String({ minLength: 1 }),
-        args: Type.Optional(Type.Array(Type.String())),
-        env: Type.Optional(StringRecordSchema),
-    },
-    { additionalProperties: false },
-)
-const RemoteServerConfigSchema = Type.Object(
-    {
-        url: Type.String({ minLength: 1 }),
-        headers: Type.Optional(StringRecordSchema),
-    },
-    { additionalProperties: false },
-)
-export const ServerConfigSchema = Type.Union([StdioServerConfigSchema, RemoteServerConfigSchema])
-export type ServerConfig = Type.Static<typeof ServerConfigSchema>
-
-type ResolvedServerConfig =
-    | { type: "stdio"; config: Type.Static<typeof StdioServerConfigSchema> }
-    | {
-          type: "streamable-http"
-          url: URL
-          headers?: Type.Static<typeof StringRecordSchema>
-      }
-
-interface UnvalidatedMcpSettings {
-    servers?: Record<string, unknown>
-}
 
 export default function (pi: ExtensionAPI) {
-    const settings = loadSettings(process.cwd())
-    const servers = settings.servers ?? {}
-
-    if (Object.keys(servers).length === 0) return
-    registerMcpServers(pi, servers)
+    return registerNativeMcp(pi)
 }
 
-type McpClient = Pick<Client, "connect" | "listTools" | "callTool" | "close">
-type McpTool = Awaited<ReturnType<McpClient["listTools"]>>["tools"][number]
-type CreateMcpClient = (name: string) => McpClient
+export function registerNativeMcp(pi: ExtensionAPI, options: Omit<McpExtensionOptions, "loadConfig"> = {}) {
+    const catalog = new Map<string, McpToolMetadata>()
+    const ownedServers = new Set<string>()
+    let autoEnableCodemode: boolean | undefined
+    const publish = () => pi.events.emit(MCP_TOOL_CATALOG_EVENT, new Map(catalog))
 
-interface DiscoveredServer {
-    name: string
-    transport: McpServerTransport
-    client: McpClient
-    tools: McpTool[]
-}
-
-export function registerMcpServers(
-    pi: Pick<ExtensionAPI, "events" | "on" | "registerTool">,
-    servers: Record<string, unknown>,
-    createClient: CreateMcpClient = (name) =>
-        new Client({
-            name: `pi-mcp-${name}`,
-            version: "0.1.0",
-        }),
-) {
-    const clients = new Map<string, McpClient>()
-
-    async function closeClient(name: string, client: McpClient) {
-        clients.delete(name)
-        try {
-            await client.close()
-        } catch {
-            console.error(`[mcp] Failed to close "${name}"`)
+    pi.on("session_start", (_event, ctx) => {
+        catalog.clear()
+        publish()
+        for (const name of ownedServers) pi.unregisterMcpServer(name)
+        ownedServers.clear()
+        const configured = readMcpConfiguration(ctx.cwd, ctx.isProjectTrusted())
+        autoEnableCodemode = configured.autoEnableCodemode
+        for (const { name, config } of configured.servers) {
+            if (!isMcpRecord(config)) throw new Error(`Invalid MCP registration ${JSON.stringify(name)}`)
+            // Native registration validates the remaining fields; references stay unresolved here.
+            if (typeof config.command === "string") pi.registerMcpServer(name, { ...config, command: config.command })
+            else if (typeof config.url === "string") pi.registerMcpServer(name, { ...config, url: config.url })
+            else throw new Error(`MCP registration ${JSON.stringify(name)} needs command or url`)
+            ownedServers.add(name)
         }
+    })
+
+    pi.on("session_shutdown", () => {
+        catalog.clear()
+        publish()
+    })
+
+    const transportFor = (server: string): McpServerTransport => {
+        const config = pi.getMcpServers().find((entry) => entry.name === server)?.config
+        if (!isMcpRecord(config))
+            throw new Error(`Missing configuration for native MCP server ${JSON.stringify(server)}`)
+        if (typeof config.url === "string") return { type: "streamable-http", url: config.url }
+        if (typeof config.command === "string") return { type: "stdio" }
+        throw new Error(`Missing transport for native MCP server ${JSON.stringify(server)}`)
     }
 
-    async function closeClients() {
-        await Promise.all([...clients].map(([name, client]) => closeClient(name, client)))
-    }
-
-    async function discoverServer(name: string, config: unknown): Promise<DiscoveredServer> {
-        validateMcpName("server", name)
-        const resolved = resolveServerConfig(config)
-        const transport = transportFromResolved(resolved)
-        const client = createClient(name)
-
-        try {
-            await client.connect(transport)
-            clients.set(name, client)
-
-            const { tools } = await client.listTools()
-            for (const tool of tools) validateMcpName("tool", tool.name)
-            return {
-                name,
-                transport:
-                    resolved.type === "stdio" ? { type: "stdio" } : { type: "streamable-http", url: resolved.url.href },
-                client,
-                tools,
-            }
-        } catch (error) {
-            await closeClient(name, client)
-            throw error
+    const registerTool = (native: ToolDefinition) => {
+        if (!native.name.startsWith("mcp__")) {
+            pi.registerTool(native)
+            return
         }
-    }
-
-    function buildCatalog(discoveredServers: DiscoveredServer[]): McpToolCatalog {
-        const catalog = new Map<string, McpToolMetadata>()
-
-        for (const server of discoveredServers) {
-            for (const tool of server.tools) {
-                const toolName = getMcpToolName(server.name, tool.name)
-                if (catalog.has(toolName)) throw new Error(`duplicate MCP tool name ${JSON.stringify(toolName)}`)
-
-                catalog.set(toolName, {
-                    serverName: server.name,
-                    serverToolName: tool.name,
-                    inputSchema: structuredClone(tool.inputSchema as Record<string, unknown>),
-                    annotations: tool.annotations ? { ...tool.annotations } : undefined,
-                })
-            }
+        if (native.exposure === "hidden") {
+            catalog.delete(native.name)
+            publish()
+            pi.registerTool(native)
+            return
         }
-
-        return catalog
+        // Pi 1.3.0 supplies the original server/tool in its label. Never split its
+        // model-facing name: that name may be normalized, truncated, or hashed.
+        const separator = native.label.indexOf("/")
+        if (separator < 1) throw new Error("Native MCP registration is missing its original server/tool label")
+        const metadata: McpToolMetadata = {
+            serverName: native.label.slice(0, separator),
+            serverToolName: native.label.slice(separator + 1),
+            inputSchema: structuredClone(native.parameters as Record<string, unknown>),
+            ...(native.annotations ? { annotations: { ...native.annotations } } : {}),
+        }
+        const transport = transportFor(metadata.serverName)
+        const decorators: McpToolDecorator[] = []
+        pi.events.emit(MCP_TOOL_DECORATORS_EVENT, {
+            use: (decorate) => decorators.push(decorate),
+        } satisfies McpToolDecorators)
+        const definition = decorators.reduce((tool, decorate) => decorate(tool, metadata, transport), native)
+        if (definition.name !== native.name) throw new Error("MCP decorators must preserve tool names")
+        catalog.set(native.name, metadata)
+        publish()
+        pi.registerTool(definition)
     }
 
-    function createTool(server: DiscoveredServer, tool: McpTool): ToolDefinition {
-        return {
-            name: getMcpToolName(server.name, tool.name),
-            label: tool.annotations?.title ?? tool.name,
-            description: tool.description ?? `MCP tool from ${server.name}: ${tool.name}`,
-            parameters: jsonSchemaToTypebox(tool.inputSchema as Record<string, unknown>),
-
-            async execute(_toolCallId, execParams, signal) {
-                const result = await server.client.callTool(
-                    {
-                        name: tool.name,
-                        arguments: execParams as Record<string, unknown>,
-                    },
-                    undefined,
-                    signal ? { signal } : undefined,
-                )
-
-                if ("content" in result) {
-                    const content = (result.content as Array<Record<string, unknown>>).map((item) => {
-                        if (item.type === "text") {
-                            return {
-                                type: "text" as const,
-                                text: item.text as string,
-                            }
-                        }
-                        if (item.type === "image") {
-                            return {
-                                type: "image" as const,
-                                mimeType: item.mimeType as string,
-                                data: item.data as string,
-                            }
-                        }
-                        // Fallback: stringify unknown content types
-                        return {
-                            type: "text" as const,
-                            text: JSON.stringify(item),
-                        }
-                    })
-
-                    return {
-                        content,
-                        details: undefined,
-                    }
-                }
-
-                return {
-                    content: [{ type: "text", text: JSON.stringify(result) }],
-                    details: undefined,
-                }
+    return createMcpExtension({
+        ...options,
+        // The adapter owns file discovery. Native Pi consumes extension registrations only.
+        loadConfig: () => ({ servers: [], errors: [], autoEnableCodemode }),
+    })(
+        new Proxy(pi, {
+            get(target, property, receiver) {
+                return property === "registerTool" ? registerTool : Reflect.get(target, property, receiver)
             },
-        }
-    }
-
-    const startServers = async (ctx: ExtensionContext) => {
-        const discoveredServers: DiscoveredServer[] = []
-        const entries = Object.entries(servers)
-        const results = await Promise.allSettled(entries.map(([name, config]) => discoverServer(name, config)))
-
-        for (let i = 0; i < results.length; i++) {
-            const result = results[i]
-            if (result.status === "rejected") {
-                console.error(`[mcp] Failed to connect to "${entries[i][0]}":`, result.reason)
-            } else {
-                discoveredServers.push(result.value)
-            }
-        }
-
-        let catalog: McpToolCatalog
-        let definitions: ToolDefinition[] = []
-        try {
-            catalog = buildCatalog(discoveredServers)
-            const decorators: McpToolDecorator[] = []
-            pi.events.emit(MCP_TOOL_DECORATORS_EVENT, {
-                use: (decorate) => {
-                    decorators.push(decorate)
-                },
-            } satisfies McpToolDecorators)
-            for (const server of discoveredServers) {
-                for (const tool of server.tools) {
-                    const native = createTool(server, tool)
-                    const metadata = catalog.get(native.name)!
-                    const decorated = decorators.reduce(
-                        (definition, decorate) => decorate(definition, metadata, server.transport),
-                        native,
-                    )
-                    if (decorated.name !== native.name) throw new Error("MCP decorators must preserve tool names")
-                    definitions.push(decorated)
-                }
-            }
-        } catch (error) {
-            console.error("[mcp] Failed to build tool catalog:", error)
-            await closeClients()
-            catalog = new Map()
-            definitions = []
-            discoveredServers.length = 0
-        }
-
-        pi.events.emit(MCP_TOOL_CATALOG_EVENT, catalog)
-        for (const definition of definitions) pi.registerTool(definition)
-
-        if (discoveredServers.length === 0) return
-        const lines = discoveredServers.map((server) => `- ${server.name}: ${server.tools.length} tools`)
-        ctx.ui.setWidget(`${EXTENSION}:startup`, lines)
-    }
-
-    pi.on("session_start", async (_event, ctx) => startServers(ctx))
-    pi.on("session_shutdown", closeClients)
-}
-
-function mergeMcpSettings(
-    base: Partial<UnvalidatedMcpSettings>,
-    override: Partial<UnvalidatedMcpSettings>,
-): Partial<UnvalidatedMcpSettings> {
-    return {
-        servers: { ...base.servers, ...override.servers },
-    }
-}
-
-function loadSettings(cwd: string) {
-    return project.loadExtensionSettings<UnvalidatedMcpSettings>(EXTENSION, cwd, mergeMcpSettings)
-}
-
-export function createServerTransport(
-    config: unknown,
-    environment: Readonly<Record<string, string | undefined>> = process.env,
-) {
-    return transportFromResolved(resolveServerConfig(config, environment))
-}
-
-function transportFromResolved(resolved: ResolvedServerConfig) {
-    switch (resolved.type) {
-        case "stdio":
-            return new StdioClientTransport({
-                command: resolved.config.command,
-                args: resolved.config.args,
-                env: resolved.config.env
-                    ? ({ ...process.env, ...resolved.config.env } as Record<string, string>)
-                    : undefined,
-                stderr: "pipe",
-            })
-        case "streamable-http":
-            return new StreamableHTTPClientTransport(
-                resolved.url,
-                resolved.headers ? { requestInit: { headers: resolved.headers } } : undefined,
-            )
-    }
-}
-
-export function resolveServerConfig(
-    config: unknown,
-    environment: Readonly<Record<string, string | undefined>> = process.env,
-): ResolvedServerConfig {
-    let parsed: ServerConfig
-    try {
-        parsed = Value.Parse(ServerConfigSchema, config)
-    } catch (error) {
-        if (error instanceof ParseError) throw new Error("invalid server config", { cause: error })
-        throw error
-    }
-
-    if (Value.Check(StdioServerConfigSchema, parsed)) {
-        return { type: "stdio", config: parsed }
-    }
-    if (Value.Check(RemoteServerConfigSchema, parsed)) {
-        return resolveRemoteServerConfig(parsed, environment)
-    }
-    throw new Error("invalid server config")
-}
-
-function resolveRemoteServerConfig(
-    config: Type.Static<typeof RemoteServerConfigSchema>,
-    environment: Readonly<Record<string, string | undefined>>,
-): ResolvedServerConfig {
-    let url: URL
-    try {
-        url = new URL(config.url)
-    } catch {
-        throw new Error('"url" must be a valid HTTP(S) URL')
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-        throw new Error('"url" must use the http: or https: scheme')
-    }
-
-    const headers = config.headers
-        ? Object.fromEntries(
-              Object.entries(config.headers).map(([name, value]) => [
-                  name,
-                  value.replace(ENV_REFERENCE, (_reference, variable: string) => {
-                      const replacement = environment[variable]
-                      if (replacement === undefined) {
-                          throw new Error(`environment variable ${variable} is not set`)
-                      }
-                      return replacement
-                  }),
-              ]),
-          )
-        : undefined
-
-    return { type: "streamable-http", url, ...(headers ? { headers } : {}) }
-}
-
-function jsonSchemaToTypebox(schema: Record<string, unknown>) {
-    return Type.Unsafe(schema)
+        }),
+    )
 }

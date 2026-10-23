@@ -7,19 +7,17 @@ import { describe, it } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 
-import {
-    getMcpToolName,
-    MCP_TOOL_CATALOG_EVENT,
-    type McpToolCatalog,
-    type McpToolMetadata,
-} from "../extensions/__lib/mcp.ts"
+import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
 import { getExtensionSettingsPaths } from "../extensions/__lib/project.ts"
-import { inspectPersistentPermissions } from "../extensions/permission/index.ts"
+import { inspectPersistentPermissions } from "../extensions/permissions/index.ts"
 import registerProjectSetup from "../workflows/extensions/project-setup/index.ts"
 import {
     configureProjectPermissions,
     inspectProjectPermissions,
 } from "../workflows/extensions/project-setup/permissions.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
+
+import { fixtureToolName } from "./mcp-catalog-fixture.ts"
 
 function git(root: string, ...args: string[]) {
     return cp.execFileSync("git", args, { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim()
@@ -31,7 +29,7 @@ function fixture() {
     process.env.PI_CODING_AGENT_DIR = path.join(root, "agent")
     git(root, "init", "-b", "main")
     git(root, "config", "core.excludesFile", "/dev/null")
-    const paths = getExtensionSettingsPaths("permission", root)
+    const paths = getExtensionSettingsPaths("permissions", root)
     return {
         root,
         paths,
@@ -60,7 +58,7 @@ const write: McpToolMetadata = {
     annotations: { readOnlyHint: false },
 }
 const live: McpToolCatalog = new Map(
-    [read, write].map((tool) => [getMcpToolName(tool.serverName, tool.serverToolName), tool]),
+    [read, write].map((tool) => [fixtureToolName(tool.serverName, tool.serverToolName), tool]),
 )
 const hint = "mcp(team-gh, hint: readOnly)"
 const writeRule = "mcp(team-gh, issue_write)"
@@ -138,8 +136,8 @@ describe("project setup permissions", () => {
             assert.equal(result.skipped.allow[0].status, "covered")
             assert.equal(result.localExclusionChanged, true)
             assert.equal(
-                git(f.root, "check-ignore", ".agents/permission.settings.local.json"),
-                ".agents/permission.settings.local.json",
+                git(f.root, "check-ignore", ".agents/permissions.local.json"),
+                ".agents/permissions.local.json",
             )
             const before = fs.readFileSync(f.paths.local, "utf-8")
             assert.equal(
@@ -158,7 +156,7 @@ describe("project setup permissions", () => {
             f.write("global", { ask: [writeRule] })
             f.write("local", { deny: ["mcp(team-gh, issue_read)"] })
             const secondRead = { ...read, serverToolName: "list_issues" }
-            const reads = new Map([...live, [getMcpToolName("team-gh", "list_issues"), secondRead] as const])
+            const reads = new Map([...live, [fixtureToolName("team-gh", "list_issues"), secondRead] as const])
             const result = configureProjectPermissions(
                 f.root,
                 { target: "project", allow: [hint, writeRule], ask: [] },
@@ -260,7 +258,7 @@ describe("project setup permissions", () => {
         const f = fixture()
         try {
             f.write("local", { allow: ["read"] })
-            git(f.root, "add", ".agents/permission.settings.local.json")
+            git(f.root, "add", ".agents/permissions.local.json")
             const before = fs.readFileSync(f.paths.local, "utf-8")
             const index = git(f.root, "ls-files", "--stage")
             assert.throws(
@@ -314,7 +312,7 @@ describe("project setup permissions", () => {
             },
             registerCommand() {},
         } as unknown as ExtensionAPI
-        const ctx = { cwd: f.root } as ExtensionContext
+        const ctx = withToolExecution({ cwd: f.root } as ExtensionContext)
         async function invoke<T>(name: string, input: unknown): Promise<T> {
             const result = await tools.get(name)!.execute("call", input, undefined, undefined, ctx)
             return result.details as T

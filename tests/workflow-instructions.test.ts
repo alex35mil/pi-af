@@ -72,7 +72,7 @@ describe("workflow instruction ownership", () => {
     })
 
     it("resolves every concrete Markdown dependency from its owning directory", () => {
-        for (const file of markdownFiles("workflows")) {
+        for (const file of ["README.md", "UPGRADING.md", ...markdownFiles("workflows")]) {
             for (const dependency of dependencies(file)) {
                 assert.equal(fs.existsSync(dependency), true, `${file} references missing ${dependency}`)
             }

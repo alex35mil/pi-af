@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox"
+import type { McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import { incomingPullRequestContext, incomingRevision, sameIncomingAddress } from "./incoming-pr-context.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./merge.js"
@@ -14,13 +15,13 @@ export const IncomingMergeContextSchema = Type.Object(
 )
 export type IncomingMergeContextInput = Static<typeof IncomingMergeContextSchema>
 
-export function incomingMergeContext(cwd: string, input: IncomingMergeContextInput) {
-    const context = incomingPullRequestContext(cwd, input.reference)
+export function incomingMergeContext(cwd: string, input: IncomingMergeContextInput, tools: McpToolCatalog) {
+    const context = incomingPullRequestContext(cwd, input.reference, tools)
     const forge = context.roles.forge.config
     let merge: GitHubMergeDecision
     try {
-        const reviewed = incomingRevision(forge, context.incomingPullRequest, input.reviewedEvidence)
-        const current = incomingRevision(forge, context.incomingPullRequest, input.evidence)
+        const reviewed = incomingRevision(forge, context.incomingPullRequest, input.reviewedEvidence, tools)
+        const current = incomingRevision(forge, context.incomingPullRequest, input.evidence, tools)
         if (!sameIncomingAddress(reviewed, current) || reviewed.head.sha !== current.head.sha)
             throw new Error("Incoming PR identity/head changed after review; reassess before shipping")
         const response = input.evidence.response as Record<string, unknown>
@@ -37,6 +38,7 @@ export function incomingMergeContext(cwd: string, input: IncomingMergeContextInp
                 expectedHeadSha: reviewed.head.sha,
             },
             input.evidence,
+            tools,
         )
     } catch (error) {
         merge = { state: "blocked", reason: error instanceof Error ? error.message : String(error) }

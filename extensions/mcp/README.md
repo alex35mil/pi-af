@@ -1,73 +1,51 @@
 # MCP Extension
 
-Connects to [Model Context Protocol](https://modelcontextprotocol.io/) servers and registers their tools with pi.
+Composes Pi 1.3.0's native MCP support with pi-af's tool metadata and decorators. Pi owns connections, authentication, discovery, resources, execution, result conversion, and shutdown. Registering `/mcp` through this composition replaces the built-in extension; it does not start a second transport.
 
 ## Configuration
 
-Settings file: `mcp.settings.json` (3-tier loading):
+| Source                | Path                                 | Root key     |
+| --------------------- | ------------------------------------ | ------------ |
+| Global                | `<agent-dir>/mcp.json`               | `mcpServers` |
+| Committed project     | `<repo-root>/.agents/mcp.json`       | `mcpServers` |
+| Private project-local | `<repo-root>/.agents/mcp.local.json` | `mcpServers` |
 
-| Tier    | Path                                          |
-| ------- | --------------------------------------------- |
-| Global  | `~/<agent-dir>/mcp.settings.json`             |
-| Project | `<repo-root>/.agents/mcp.settings.json`       |
-| Local   | `<repo-root>/.agents/mcp.settings.local.json` |
+The adapter merges global, project, then local settings by exact server name; a later entry replaces the whole earlier entry. Global settings load independently of project trust; both project tiers require trust. Names differing only by `-` and `_` conflict rather than overriding one another. Keep private project registrations outside Git; setup ensures exact `/.agents/mcp.local.json` in `.git/info/exclude`. They are never moved into global configuration.
 
-### Local stdio servers
+Every effective server is registered through `pi.registerMcpServer()`. The composed native extension consumes those registrations without discovering another set of project files. `/mcp` retains native connection management; enabled/exposure changes to registered servers last for the session. Native `pi mcp` shell commands do not load this adapter or manage its project tiers.
+
+Example for any tier:
 
 ```json
 {
-    "servers": {
-        "playwright": {
-            "command": "npx",
-            "args": ["-y", "@playwright/mcp@latest"],
-            "env": { "KEY": "value" }
+    "mcpServers": {
+        "tools": {
+            "url": "https://example.com/mcp",
+            "headers": { "Authorization": "Bearer ${TOOLS_TOKEN}" },
+            "exposure": "codemode"
         }
     }
 }
 ```
 
-### Remote Streamable HTTP servers
+Pi validates native per-server settings and resolves credentials. Stdio entries use `command`, `args`, `env`, and `cwd`. HTTP entries use `url`, `headers`, and native OAuth settings. Server names contain letters, digits, `_`, and `-`. The top-level `autoEnableCodemode` follows the same tier precedence and defaults to native behavior.
 
-```json
-{
-    "servers": {
-        "github": {
-            "url": "https://api.githubcopilot.com/mcp/",
-            "headers": {
-                "Authorization": "Bearer ${GITHUB_TOKEN}",
-                "X-MCP-Toolsets": "repos,issues,pull_requests"
-            }
-        }
-    }
-}
-```
+Use `/reload` after configuration changes in a compatible harness. See the [breaking settings migration](../../README.md#pi-130-migration) before activating this version.
 
-Remote URLs must use `http:` or `https:`. Header values can reference environment variables with `${NAME}`; connection fails if a referenced variable is unset. Export the token before starting pi, for example:
+## Native behavior
 
-```sh
-export GITHUB_TOKEN="..."
-```
-
-Each entry must contain exactly one transport: `command` for stdio or `url` for Streamable HTTP. Server names and discovered tool names must contain only ASCII letters, digits, `_`, `.`, or `-`.
-
-## Behavior
-
-- Servers are connected and their tools discovered on session start (in parallel)
-- Failed connections, tool listings, and invalid names are logged; affected clients are closed and excluded
-- Tool metadata, including the original native schema and complete MCP annotations, is published atomically before tools are registered
-- MCP annotations are untrusted, self-declared metadata; every permission hint selector trusts the selected server and can override `defaultMode`, including `ask` over `defaultMode: deny`; use hint selectors only for servers you trust
-- Generated-name collisions abort the whole catalog: all new clients are closed and no MCP tools are registered
-- Successful connections show a widget with tool counts
-- On session shutdown, all MCP clients are closed gracefully
+- Connections start in the background when the session starts. Pi retains readiness waits and reconnect behavior.
+- Server exposure is `codemode` by default; `deferred`, `direct`, and `hidden` are also supported, with native per-tool overrides.
+- `codemode` and deferred discovery reach the same native definitions and permission hooks as direct calls.
+- Native structured results, errors, progress, resource handling, namespaces, renderers, and output schemas are preserved.
+- Native tool names can be normalized or shortened with hashes. The catalog records actual registered names and original server/tool identity separately.
+- A fresh catalog snapshot is published before each available definition is registered. Hidden and withdrawn definitions leave the available catalog; shutdown clears it.
+- Annotation hints are untrusted declarations. Read-only permission selectors match only an explicitly true hint.
 
 ## Tool decorators
 
-Extensions can subscribe to `MCP_TOOL_DECORATORS_EVENT` from [the shared MCP contract](../__lib/mcp.ts). The event exposes `use(decorator)` for synchronous callback registration during discovery. A decorator receives a native Pi tool definition, its native catalog metadata, and transport identity (`stdio`, or `streamable-http` with its URL). Headers and environment values are not included.
+Subscribe to `MCP_TOOL_DECORATORS_EVENT` from [the shared MCP contract](../__lib/mcp.ts). Its `use(decorator)` method accepts a synchronous callback receiving the complete native definition, original identity/pre-decoration input schema/annotation hints, and transport identity (`stdio`, or `streamable-http` with its URL). Headers and environment values are not included.
 
-Decorators run directly outside the event emitter before catalog publication or tool registration. They may return an agent-facing schema, description, or execution wrapper while preserving the tool name. The catalog keeps the original native metadata. A decoration failure closes clients and registers no tools from that discovery; execution errors propagate normally. Without decorators, native schemas, descriptions, and arguments remain unchanged.
+Decorators execute outside the event emitter, before catalog publication and registration. They can wrap execution or extend the agent-facing schema and description while preserving the tool name and remaining native fields. Each native registration starts from its fresh definition, so dynamic registration does not stack wrappers. Decorator failures propagate through native registration.
 
-Install listeners during extension factory loading, register callbacks without asynchronous work, and dispose listeners on session shutdown. Callback collections belong to each discovery; no process-global registry or saved state is used.
-
-## Dependencies
-
-- `@modelcontextprotocol/sdk` — MCP client implementation
+Install listeners during factory loading and dispose them on shutdown. There is no process-global decorator registry. Workflow publication policy remains outside this provider-neutral integration.

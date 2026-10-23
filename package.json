@@ -1,48 +1,52 @@
 {
-  "name": "pi-af",
-  "type": "module",
-  "scripts": {
-    "test": "tsx --test tests/*.test.ts"
-  },
-  "keywords": [
-    "pi",
-    "pi-package"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions",
-      "./workflows/extensions"
+    "name": "pi-af",
+    "keywords": [
+        "pi",
+        "pi-package"
     ],
-    "skills": [
-      "./skills",
-      "./workflows/skills"
-    ],
-    "prompts": [
-      "./prompts"
-    ],
-    "themes": [
-      "./themes"
-    ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "@mozilla/readability": "^0.6.0",
-    "@types/jsdom": "^28.0.0",
-    "@types/turndown": "^5.0.6",
-    "jsdom": "^28.1.0",
-    "tree-sitter-bash": "^0.25.1",
-    "turndown": "^7.2.2",
-    "turndown-plugin-gfm": "^1.0.2",
-    "web-tree-sitter": "^0.27.0"
-  },
-  "devDependencies": {
-    "oxfmt": "^0.40.0",
-    "tsx": "^4.23.13",
-    "typescript": "^5.9.3"
-  }
+    "type": "module",
+    "scripts": {
+        "test": "tsx --test tests/*.test.ts",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@mozilla/readability": "^0.6.0",
+        "@types/jsdom": "^28.0.0",
+        "@types/turndown": "^5.0.6",
+        "jsdom": "^28.1.0",
+        "tree-sitter-bash": "^0.25.1",
+        "turndown": "^7.2.2",
+        "turndown-plugin-gfm": "^1.0.2",
+        "web-tree-sitter": "^0.27.0"
+    },
+    "devDependencies": {
+        "@earendil-works/pi-agent-core": "1.3.0",
+        "@earendil-works/pi-ai": "1.3.0",
+        "@earendil-works/pi-coding-agent": "1.3.0",
+        "@earendil-works/pi-mcp": "1.3.0",
+        "oxfmt": "^0.40.0",
+        "tsx": "^4.23.13",
+        "typescript": "^5.9.3"
+    },
+    "peerDependencies": {
+        "@earendil-works/pi-ai": "^1.3.0",
+        "@earendil-works/pi-coding-agent": "^1.3.0",
+        "typebox": "*"
+    },
+    "pi": {
+        "extensions": [
+            "./extensions",
+            "./workflows/extensions"
+        ],
+        "skills": [
+            "./skills",
+            "./workflows/skills"
+        ],
+        "prompts": [
+            "./prompts"
+        ],
+        "themes": [
+            "./themes"
+        ]
+    }
 }

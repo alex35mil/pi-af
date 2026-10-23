@@ -1,16 +1,16 @@
-# Permission Extension
+# Permissions Extension
 
 Controls tool execution with configurable allow/deny/ask rules. Prompts the user for confirmation before executing tools that aren't explicitly allowed.
 
 ## Configuration
 
-Settings file: `permission.settings.json` (3-tier loading):
+Settings file: `permissions.json` (3-tier loading):
 
-| Tier    | Path                                                 |
-| ------- | ---------------------------------------------------- |
-| Global  | `~/<agent-dir>/permission.settings.json`             |
-| Project | `<repo-root>/.agents/permission.settings.json`       |
-| Local   | `<repo-root>/.agents/permission.settings.local.json` |
+| Tier    | Path                                         |
+| ------- | -------------------------------------------- |
+| Global  | `~/<agent-dir>/permissions.json`             |
+| Project | `<repo-root>/.agents/permissions.json`       |
+| Local   | `<repo-root>/.agents/permissions.local.json` |
 
 ### Schema
 
@@ -93,11 +93,11 @@ Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into
 
 ## Commands
 
-| Command                          | Description                                                        |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `/permission-toggle-auto-accept` | Toggle auto-accept for edit/write tools in the current session     |
-| `/permission-mode`               | Set permission mode for a specific tool (session only)             |
-| `/permission-settings`           | Show resolved settings, skill-derived rules, and session overrides |
+| Command                           | Description                                                        |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `/permissions-toggle-auto-accept` | Toggle auto-accept for edit/write tools in the current session     |
+| `/permissions-mode`               | Set permission mode for a specific tool (session only)             |
+| `/permissions-settings`           | Show resolved settings, skill-derived rules, and session overrides |
 
 ## Neovim Integration
 
@@ -124,7 +124,11 @@ type ReviewNote = {
 }
 ```
 
+Native edit/write execution wrappers return success for editor-applied Accepted/AcceptModified outcomes without applying the change again. Ordinary acceptance delegates to native execution once. Permission and scoped-rule gates run before editor review or mutation.
+
+Review notes from nested calls stop only the codemode script, preserve the child's outcome, and reach the model in full even when the script discards its result. Already completed effects are not rolled back. The model must quote each note completely and respond before further tool calls.
+
 Rejection policy:
 
-- Rejected with notes: file unchanged, agent continues with the review notes and is instructed to address them in a follow-up edit.
+- Rejected with notes: file unchanged; the model continues to address the notes.
 - Rejected without notes/cancel: abort the turn.

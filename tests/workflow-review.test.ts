@@ -5,7 +5,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { Value } from "typebox/value"
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildReviewerArgs, renderReviewTranscript } from "../workflows/extensions/review/agent.ts"
@@ -81,6 +81,8 @@ describe("workflow reviewer isolation", () => {
     it("registers one review tool for every entity variant", () => {
         const tools: string[] = []
         const pi = {
+            events: createEventBus(),
+            on() {},
             registerTool: (definition: { name: string }) => tools.push(definition.name),
             registerCommand: () => {},
         }
@@ -134,7 +136,11 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(directory, "plan.md"), acceptedPlan)
             fs.writeFileSync(path.join(directory, "result.md"), "# Result\n\nDelivered work.\n")
             const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
-            registerReviewTools({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) } as never)
+            registerReviewTools({
+                events: createEventBus(),
+                on() {},
+                registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+            } as never)
             const review = tools.find((tool) => tool.name === "review")!
             const preparePresentation = tools.find((tool) => tool.name === "prepare_plan_presentation")!
             const ctx = { cwd: repository } as never
@@ -390,7 +396,7 @@ describe("workflow reviewer isolation", () => {
         assert.equal(args.includes("--no-extensions"), true)
         assert.deepEqual(
             extensions.map((value) => value.replaceAll(path.sep, "/").split("/").slice(-2).join("/")),
-            ["rules/index.ts", "permission/index.ts"],
+            ["rules/index.ts", "permissions/index.ts"],
         )
         for (const extension of extensions) assert.equal(fs.existsSync(extension), true)
     })

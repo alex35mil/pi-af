@@ -9,6 +9,10 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import type { IncomingProjectContextInput } from "../workflows/extensions/integrations/forge/github/incoming-pr-project.ts"
 
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+
+const mcpTools = workflowMcpCatalog("forge", "board")
+
 const repository = { owner: "upstream", repo: "app" }
 const project = { owner: "board-owner", ownerType: "user", number: 2 }
 const address = { owner: project.owner, owner_type: project.ownerType, project_number: project.number }
@@ -166,7 +170,8 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
     const plan = (extra: object = {}) => {
         const input = request(extra)
         assert.ok(Value.Check(IntegrationContextSchema, input))
-        return buildIntegrationContext({ cwd: root } as never, input as IncomingProjectContextInput).projectAction
+        return buildIntegrationContext({ cwd: root } as never, input as IncomingProjectContextInput, mcpTools)
+            .projectAction
     }
     return { root, git, config, request, plan, close: () => fs.rmSync(root, { recursive: true, force: true }) }
 }
@@ -461,10 +466,14 @@ describe("maintainer-controlled incoming PR Project", () => {
             assert.deepEqual(fs.readFileSync(path.join(f.root, ".git/index")), index)
             fs.writeFileSync(path.join(f.root, ".project/integrations.json"), JSON.stringify({ forge: f.config.forge }))
             assert.equal(f.plan().state, "blocked")
-            const context = buildIntegrationContext({ cwd: f.root } as never, {
-                operation: "incomingPullRequest",
-                reference: "#12",
-            })
+            const context = buildIntegrationContext(
+                { cwd: f.root } as never,
+                {
+                    operation: "incomingPullRequest",
+                    reference: "#12",
+                },
+                mcpTools,
+            )
             assert.equal(context.project.state, "disabled")
             assert.equal(context.roles.forge.config.mcpServer, "forge")
         } finally {

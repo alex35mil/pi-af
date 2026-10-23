@@ -5,10 +5,10 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
-import { getMcpToolName, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
-import { resolveMode, type Mode } from "../extensions/permission/index.ts"
+import { MCP_TOOL_CATALOG_EVENT, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
+import { resolveMode, type Mode } from "../extensions/permissions/index.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import {
@@ -29,6 +29,11 @@ import {
 import { executeReviewRound, recordRoundResponse } from "../workflows/extensions/review/round.ts"
 import { buildReviewerArgs } from "../workflows/extensions/review/agent.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
+
+import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+
+const mcpTools = workflowMcpCatalog("contributions")
 
 const forge = {
     provider: "github" as const,
@@ -39,7 +44,7 @@ const baseSha = "a".repeat(40)
 const headSha = "b".repeat(40)
 function evidence() {
     return {
-        tool: getMcpToolName(forge.mcpServer, "pull_request_read"),
+        tool: fixtureToolName(forge.mcpServer, "pull_request_read"),
         arguments: { method: "get", owner: "upstream", repo: "app", pullNumber: 12 },
         response: {
             number: 12,
@@ -106,12 +111,12 @@ describe("incoming PR identity and context", () => {
     it("normalizes full_name-only MCP repository evidence", () => {
         const selected = parseIncomingReference("#12", forge.repository)
         const minimal = mcpEvidence()
-        const revision = incomingRevision(forge, selected, minimal)
-        assert.deepEqual(revision, incomingRevision(forge, selected, evidence()))
+        const revision = incomingRevision(forge, selected, minimal, mcpTools)
+        assert.deepEqual(revision, incomingRevision(forge, selected, evidence(), mcpTools))
         assert.deepEqual(revision.base.repository, { owner: "upstream", repo: "app" })
         assert.deepEqual(revision.head.repository, { owner: "contributor", repo: "app" })
         minimal.response.head.repo.full_name = "upstream/app"
-        assert.deepEqual(incomingRevision(forge, selected, minimal).head.repository, selected.repository)
+        assert.deepEqual(incomingRevision(forge, selected, minimal, mcpTools).head.repository, selected.repository)
         for (const invalid of [
             "upstream",
             "upstream/app/extra",
@@ -121,12 +126,12 @@ describe("incoming PR identity and context", () => {
             "upstream/%2e%2e",
         ]) {
             minimal.response.head.repo.full_name = invalid
-            assert.throws(() => incomingRevision(forge, selected, minimal), invalid)
+            assert.throws(() => incomingRevision(forge, selected, minimal, mcpTools), invalid)
         }
     })
 
     it("distinguishes stable PR addressing from exact provider revision identity", () => {
-        const original = incomingRevision(forge, parseIncomingReference("#12", forge.repository), evidence())
+        const original = incomingRevision(forge, parseIncomingReference("#12", forge.repository), evidence(), mcpTools)
         const updated = {
             ...original,
             base: { ...original.base, sha: "c".repeat(40) },
@@ -148,10 +153,10 @@ describe("incoming PR identity and context", () => {
         for (const branch of ["base", "head"] as const) {
             const wrongName = evidence()
             wrongName.response[branch].repo.name = "other"
-            assert.throws(() => incomingRevision(forge, selected, wrongName), /does not match name/)
+            assert.throws(() => incomingRevision(forge, selected, wrongName, mcpTools), /does not match name/)
             const wrongOwner = evidence()
             wrongOwner.response[branch].repo.owner.login = "other"
-            assert.throws(() => incomingRevision(forge, selected, wrongOwner), /does not match owner/)
+            assert.throws(() => incomingRevision(forge, selected, wrongOwner, mcpTools), /does not match owner/)
         }
     })
 
@@ -200,12 +205,18 @@ describe("incoming PR identity and context", () => {
                     f.git("status", "--porcelain"),
                     f.git("ls-files", "--stage"),
                 ]
-                const result = buildIntegrationContext({ cwd: f.root } as ExtensionContext, {
-                    operation: "incomingPullRequest",
-                    reference: "#12",
-                })
+                const result = buildIntegrationContext(
+                    { cwd: f.root } as ExtensionContext,
+                    {
+                        operation: "incomingPullRequest",
+                        reference: "#12",
+                    },
+                    mcpTools,
+                )
                 assert.equal(result.artifactMode, mode)
                 assert.equal(result.roles.forge.config.mcpServer, "contributions")
+                if (result.incomingPullRequest.read.state !== "available")
+                    assert.fail("Expected the configured PR read tool")
                 assert.equal(result.incomingPullRequest.read.tool, "mcp__contributions__pull_request_read")
                 assert.equal(result.incomingPullRequest.localDirectory, ".project/.local/pull-requests/12")
                 assert.equal(result.incomingPullRequest.checkoutDirectory, ".project/.local/pull-requests/12/checkout")
@@ -254,7 +265,7 @@ describe("incoming PR identity and context", () => {
                     /separate command and appropriately isolated environment approval/,
                 )
                 assert.throws(
-                    () => incomingPullRequestContext(f.root, "https://github.com/other/app/pull/12"),
+                    () => incomingPullRequestContext(f.root, "https://github.com/other/app/pull/12", mcpTools),
                     /configured repository/,
                 )
                 assert.equal("entity" in result, false)
@@ -272,9 +283,9 @@ describe("incoming PR identity and context", () => {
                     false,
                 )
                 fs.writeFileSync(path.join(f.root, ".project/integrations.json"), "{}")
-                assert.throws(() => incomingPullRequestContext(f.root, "#12"))
+                assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools))
                 fs.rmSync(path.join(f.root, ".project/integrations.json"))
-                assert.throws(() => incomingPullRequestContext(f.root, "#12"), /requires a configured/)
+                assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools), /requires a configured/)
             } finally {
                 f.close()
             }
@@ -286,7 +297,7 @@ describe("incoming PR identity and context", () => {
             const f = fixture(mode)
             try {
                 const before = f.git("status", "--porcelain", "--untracked-files=all")
-                const local = incomingPullRequestContext(f.root, "#12").incomingPullRequest.localDirectory
+                const local = incomingPullRequestContext(f.root, "#12", mcpTools).incomingPullRequest.localDirectory
                 const files = [
                     ".project/.local/pull-requests/notes.md",
                     path.join(local, "notes.md"),
@@ -311,12 +322,12 @@ describe("incoming PR identity and context", () => {
     it("distinguishes identical fork ref names and validates exact provider evidence", () => {
         const selected = parseIncomingReference("#12", forge.repository)
         const original = evidence()
-        const revision = incomingRevision(forge, selected, original)
+        const revision = incomingRevision(forge, selected, original, mcpTools)
         assert.equal(revision.base.ref, revision.head.ref)
         assert.deepEqual(revision.head.repository, { owner: "contributor", repo: "app" })
         const sameRepo = evidence()
         sameRepo.response.head.repo = sameRepo.response.base.repo
-        assert.equal(sameIncomingRevision(revision, incomingRevision(forge, selected, sameRepo)), false)
+        assert.equal(sameIncomingRevision(revision, incomingRevision(forge, selected, sameRepo, mcpTools)), false)
         for (const mutate of [
             (e: ReturnType<typeof evidence>) => {
                 e.tool = "mcp__wrong__pull_request_read"
@@ -348,16 +359,16 @@ describe("incoming PR identity and context", () => {
         ]) {
             const changed = evidence()
             mutate(changed)
-            assert.throws(() => incomingRevision(forge, selected, changed))
+            assert.throws(() => incomingRevision(forge, selected, changed, mcpTools))
         }
         for (const member of ["head", "base"] as const) {
             const changed = evidence()
             changed.response[member].sha = "c".repeat(40)
-            assert.equal(sameIncomingRevision(revision, incomingRevision(forge, selected, changed)), false)
+            assert.equal(sameIncomingRevision(revision, incomingRevision(forge, selected, changed, mcpTools)), false)
         }
         const deleted = evidence() as any
         deleted.response.head.repo = null
-        assert.equal(incomingRevision(forge, selected, deleted).head.repository, null)
+        assert.equal(incomingRevision(forge, selected, deleted, mcpTools).head.repository, null)
     })
 
     it("rejects unrelated and symlinked local evidence paths", () => {
@@ -384,7 +395,7 @@ describe("incoming PR private review", () => {
         const f = fixture()
         try {
             const input = inspection(f.root)
-            const first = await preparePullRequestReview(f.root, input)
+            const first = await preparePullRequestReview(f.root, input, mcpTools)
             assert.equal(first.round, 1)
             assert.equal(first.root, f.root)
             const reviewPath = path.join(
@@ -403,7 +414,7 @@ describe("incoming PR private review", () => {
             assert.match(first.prompt, /not an Epic, Task or Gig/)
             assert.match(first.prompt, /read-only subprocess is not an execution sandbox/)
             assert.equal(fs.readFileSync(first.dossierPath, "utf-8"), dossier())
-            const second = await preparePullRequestReview(f.root, input)
+            const second = await preparePullRequestReview(f.root, input, mcpTools)
             assert.equal(second.round, 2)
             fs.writeFileSync(path.join(f.root, input.dossierPath), "changed")
             assert.equal(fs.readFileSync(first.dossierPath, "utf-8"), dossier())
@@ -443,7 +454,13 @@ describe("incoming PR private review", () => {
             const response = await recordRoundResponse(first.directory, [], "Private review complete; tests not run.")
             assert.equal(response, fs.readFileSync(path.join(first.directory, "response.md"), "utf-8"))
             const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
-            registerPullRequestReview({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) } as never)
+            const events = createEventBus()
+            registerPullRequestReview({
+                events,
+                on() {},
+                registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+            } as never)
+            events.emit(MCP_TOOL_CATALOG_EVENT, mcpTools)
             assert.deepEqual(
                 tools.map(({ name }) => name),
                 ["review_pull_request", "record_pull_request_review_response"],
@@ -459,7 +476,7 @@ describe("incoming PR private review", () => {
                 },
                 undefined,
                 undefined,
-                { cwd: f.root } as ExtensionContext,
+                withToolExecution({ cwd: f.root } as ExtensionContext),
             )
             assert.match(result.content[0].type === "text" ? result.content[0].text : "", /Approved private findings/)
             const changed = evidence()
@@ -470,7 +487,7 @@ describe("incoming PR private review", () => {
                     { reference: input.reference, evidence: changed, round: 1, findings: [], status: "Wrong revision" },
                     undefined,
                     undefined,
-                    { cwd: f.root } as ExtensionContext,
+                    withToolExecution({ cwd: f.root } as ExtensionContext),
                 ),
                 /does not match the reviewed/,
             )
@@ -502,8 +519,8 @@ describe("incoming PR private review", () => {
                     fs.mkdirSync(path.dirname(path.join(f.root, local, name)), { recursive: true })
                     fs.writeFileSync(path.join(f.root, local, name), content)
                 }
-                const first = await preparePullRequestReview(f.root, input)
-                const repeated = await preparePullRequestReview(f.root, input)
+                const first = await preparePullRequestReview(f.root, input, mcpTools)
+                const repeated = await preparePullRequestReview(f.root, input, mcpTools)
                 assert.notDeepEqual(repeated.sources, first.sources)
                 assert.deepEqual(
                     repeated.sources.map(({ inputPath }) => inputPath),
@@ -511,13 +528,13 @@ describe("incoming PR private review", () => {
                 )
                 for (const source of input.sourcePaths)
                     fs.writeFileSync(path.join(f.root, source), "Uncommitted fix draft.\n")
-                const localFix = await preparePullRequestReview(f.root, input)
+                const localFix = await preparePullRequestReview(f.root, input, mcpTools)
                 assert.deepEqual(localFix.revision, first.revision)
                 assert.notEqual(localFix.directory, first.directory)
                 for (const source of input.sourcePaths)
                     fs.writeFileSync(path.join(f.root, source), "Second revision data.\n")
                 input.evidence.response.head.sha = "c".repeat(40)
-                const second = await preparePullRequestReview(f.root, input)
+                const second = await preparePullRequestReview(f.root, input, mcpTools)
                 assert.notEqual(first.directory, second.directory)
                 for (let index = 0; index < first.sources.length; index++) {
                     const saved = first.sources[index]
@@ -582,7 +599,7 @@ describe("incoming PR private review", () => {
                     fs.writeFileSync(file, `Existing review ${name}.\n`)
                 }
                 input.sourcePaths = [path.join(local, "source.md")]
-                const first = await preparePullRequestReview(f.root, input)
+                const first = await preparePullRequestReview(f.root, input, mcpTools)
                 assert.equal(first.round, 1, "Only the current reviews namespace supplies round numbers")
                 const expected = path.join(local, "reviews", `${baseSha}-${headSha}`, "review-001")
                 assert.equal(path.relative(f.root, first.directory), expected)
@@ -591,11 +608,17 @@ describe("incoming PR private review", () => {
                     fs.readFileSync(path.join(f.root, first.sources[0].snapshotPath), "utf-8"),
                     preserved["source.md"],
                 )
-                const second = await preparePullRequestReview(f.root, input)
+                const second = await preparePullRequestReview(f.root, input, mcpTools)
                 assert.equal(second.round, 2)
                 assert.equal(path.dirname(second.directory), path.dirname(first.directory))
                 const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
-                registerPullRequestReview({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) } as never)
+                const events = createEventBus()
+                registerPullRequestReview({
+                    events,
+                    on() {},
+                    registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+                } as never)
+                events.emit(MCP_TOOL_CATALOG_EVENT, mcpTools)
                 await assert.rejects(
                     tools[1].execute(
                         "old-record",
@@ -608,7 +631,7 @@ describe("incoming PR private review", () => {
                         },
                         undefined,
                         undefined,
-                        { cwd: f.root } as ExtensionContext,
+                        withToolExecution({ cwd: f.root } as ExtensionContext),
                     ),
                     /ENOENT/,
                 )
@@ -635,7 +658,7 @@ describe("incoming PR private review", () => {
                     const input = inspection(f.root)
                     const local = path.join(f.root, path.dirname(input.dossierPath))
                     fs.symlinkSync(dangling ? path.join(f.root, "missing") : f.root, path.join(local, "reviews"))
-                    await assert.rejects(preparePullRequestReview(f.root, input), /symlinks/)
+                    await assert.rejects(preparePullRequestReview(f.root, input, mcpTools), /symlinks/)
                     assert.equal(fs.readFileSync(path.join(f.root, input.dossierPath), "utf-8"), dossier())
                     assert.equal(fs.existsSync(path.join(f.root, `${baseSha}-${headSha}`)), false)
                 } finally {
@@ -652,23 +675,30 @@ describe("incoming PR private review", () => {
             const { sourcePaths, ...missingSources } = input
             assert.equal(Value.Check(ReviewPullRequestSchema, missingSources), false)
             await assert.rejects(
-                preparePullRequestReview(f.root, { ...input, sourcePaths: ["README.md"] }),
+                preparePullRequestReview(f.root, { ...input, sourcePaths: ["README.md"] }, mcpTools),
                 /selected PR/,
             )
             await assert.rejects(
-                preparePullRequestReview(f.root, {
-                    ...input,
-                    sourcePaths: [path.join(path.dirname(input.dossierPath), "missing.md")],
-                }),
+                preparePullRequestReview(
+                    f.root,
+                    {
+                        ...input,
+                        sourcePaths: [path.join(path.dirname(input.dossierPath), "missing.md")],
+                    },
+                    mcpTools,
+                ),
                 /ENOENT/,
             )
             await assert.rejects(
-                preparePullRequestReview(f.root, { ...input, sourcePaths: [input.dossierPath] }),
+                preparePullRequestReview(f.root, { ...input, sourcePaths: [input.dossierPath] }, mcpTools),
                 /snapshotted separately/,
             )
             const alias = path.join(path.dirname(input.dossierPath), "source.md")
             fs.symlinkSync(path.join(f.root, "README.md"), path.join(f.root, alias))
-            await assert.rejects(preparePullRequestReview(f.root, { ...input, sourcePaths: [alias] }), /symlinks/)
+            await assert.rejects(
+                preparePullRequestReview(f.root, { ...input, sourcePaths: [alias] }, mcpTools),
+                /symlinks/,
+            )
         } finally {
             f.close()
         }
@@ -678,9 +708,9 @@ describe("incoming PR private review", () => {
         const f = fixture("unversioned")
         try {
             const input = inspection(f.root)
-            const first = await preparePullRequestReview(f.root, input)
+            const first = await preparePullRequestReview(f.root, input, mcpTools)
             input.evidence.response.head.sha = "c".repeat(40)
-            const changed = await preparePullRequestReview(f.root, input)
+            const changed = await preparePullRequestReview(f.root, input, mcpTools)
             assert.notEqual(first.directory, changed.directory)
             assert.equal(changed.round, 1)
             assert.ok(f.git("check-ignore", path.relative(f.root, changed.directory)))
@@ -719,7 +749,7 @@ describe("incoming PR private review", () => {
                 { exitCode: 0, finalOutput: "not JSON", stderr: "", events: [] },
                 { exitCode: 1, finalOutput: "", stderr: "process failed", events: [] },
             ]) {
-                const prepared = await preparePullRequestReview(f.root, input)
+                const prepared = await preparePullRequestReview(f.root, input, mcpTools)
                 await assert.rejects(
                     executeReviewRound(
                         {
@@ -767,6 +797,8 @@ describe("incoming PR entry and existing permissions", () => {
         const notifications: unknown[] = []
         const tools: string[] = []
         registerPr({
+            events: createEventBus(),
+            on() {},
             registerTool: (tool: { name: string }) => tools.push(tool.name),
             registerCommand: (name: string, def: unknown) => {
                 commands[name] = def
@@ -793,7 +825,7 @@ describe("incoming PR entry and existing permissions", () => {
             "merge_pull_request",
         ]) {
             const metadata: McpToolMetadata = { serverName: "contributions", serverToolName: name } as McpToolMetadata
-            const toolName = getMcpToolName(metadata.serverName, name)
+            const toolName = fixtureToolName(metadata.serverName, name)
             const settings = { allow: ["mcp(contributions, *)"], ask: [`mcp(contributions, ${name})`] }
             assert.equal(
                 await resolveMode(settings, toolName, "", undefined, new Map<string, Mode>(), undefined, metadata),

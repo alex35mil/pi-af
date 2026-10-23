@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { resolveMode, type Mode, type PermissionSettings } from "../extensions/permission/index.ts"
+import { resolveMode, type Mode, type PermissionSettings } from "../extensions/permissions/index.ts"
 
 const noOverrides = new Map<string, Mode>()
 

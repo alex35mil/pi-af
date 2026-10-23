@@ -28,6 +28,7 @@ import {
 } from "../workflows/extensions/integrations/phase.ts"
 import type { WorkflowEnvironment } from "../workflows/extensions/integrations/policy.ts"
 import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
 
 const statuses = {
     backlog: "Backlog",
@@ -498,7 +499,7 @@ describe("workflow operations", () => {
         registerWorkflowOperations({
             registerTool: (tool: Tool) => tools.set(tool.name, tool),
         } as unknown as ExtensionAPI)
-        const ctx = { cwd: root } as ExtensionContext
+        const ctx = withToolExecution({ cwd: root } as ExtensionContext)
         try {
             git("init", "-q")
             fs.mkdirSync(path.join(root, ".project"))

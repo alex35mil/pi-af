@@ -16,17 +16,17 @@ export BRAVE_SEARCH_API_KEY="..."
 
 ### Settings File
 
-`web-search.settings.json` (3-tier loading):
+`web-search.json` (3-tier loading):
 
-| Tier | Path |
-|------|------|
-| Global | `~/<agent-dir>/web-search.settings.json` |
-| Project | `<repo-root>/.agents/web-search.settings.json` |
-| Local | `<repo-root>/.agents/web-search.settings.local.json` |
+| Tier    | Path                                        |
+| ------- | ------------------------------------------- |
+| Global  | `~/<agent-dir>/web-search.json`             |
+| Project | `<repo-root>/.agents/web-search.json`       |
+| Local   | `<repo-root>/.agents/web-search.local.json` |
 
 ```json
 {
-  "apiKey": "..."
+    "apiKey": "..."
 }
 ```
 
