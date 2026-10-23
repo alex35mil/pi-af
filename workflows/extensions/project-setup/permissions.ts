@@ -7,13 +7,15 @@ import { Value } from "typebox/value"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { resolveRootDir } from "../../../extensions/__lib/project.js"
 import {
+    EXTENSION as PERMISSIONS_EXTENSION,
     inspectMcpAllowRules,
     inspectPersistentPermissions,
     validatePermissionSettings,
-} from "../../../extensions/permission/index.js"
+} from "../../../extensions/permissions/index.js"
 import { ensureLocalSettingsExclusion } from "./local-settings.js"
 
-export const LOCAL_PERMISSION_SETTINGS_EXCLUDE = "/.agents/permission.settings.local.json"
+const LOCAL_PERMISSIONS_SETTINGS_FILE = `.agents/${PERMISSIONS_EXTENSION}.local.json`
+export const LOCAL_PERMISSIONS_SETTINGS_EXCLUDE = `/${LOCAL_PERMISSIONS_SETTINGS_FILE}`
 
 const SettingsTargetSchema = Type.Union([Type.Literal("project"), Type.Literal("local")])
 const PermissionRuleSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
@@ -68,11 +70,7 @@ export function configureProjectPermissions(cwd: string, input: unknown, catalog
     })
     const exclusion =
         changed && parsed.target === "local"
-            ? ensureLocalSettingsExclusion(
-                  root,
-                  ".agents/permission.settings.local.json",
-                  LOCAL_PERMISSION_SETTINGS_EXCLUDE,
-              )
+            ? ensureLocalSettingsExclusion(root, LOCAL_PERMISSIONS_SETTINGS_FILE, LOCAL_PERMISSIONS_SETTINGS_EXCLUDE)
             : undefined
     if (changed) {
         fs.mkdirSync(path.dirname(settingsPath), { recursive: true })

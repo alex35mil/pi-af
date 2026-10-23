@@ -1,10 +1,10 @@
 /**
- * Permission Extension
+ * Permissions Extension
  *
  * Controls tool execution via settings files:
- *   ~/<agent-dir>/permission.settings.json             (global)
- *   <repo-root>/.agents/permission.settings.json       (project, committed)
- *   <repo-root>/.agents/permission.settings.local.json (project, gitignored)
+ *   ~/<agent-dir>/permissions.json             (global)
+ *   <repo-root>/.agents/permissions.json       (project, committed)
+ *   <repo-root>/.agents/permissions.local.json (project, gitignored)
  *
  * Schema:
  * {
@@ -40,8 +40,10 @@ import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@ear
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog, type McpToolMetadata, validateMcpName } from "../__lib/mcp.js"
 import * as project from "../__lib/project.js"
 import { analyzeBash, type BashAnalyzer } from "./bash.js"
+import { registerPermissionFiles } from "./files.js"
+import { registerReviewCodemode } from "./review.js"
 
-const EXTENSION = "permission"
+export const EXTENSION = "permissions"
 const BUILT_IN_ALLOW_RULES = ["bash(true)", "bash(false)"]
 
 export type Mode = "allow" | "ask" | "deny"
@@ -93,44 +95,9 @@ interface DerivedSkillAllowState {
     sources: SkillAllowSource[]
 }
 
-type ReviewNote = {
-    path: string
-    side: "current" | "proposed"
-    lineStart: number
-    lineEnd: number
-    lines: string[]
-    note: string
-}
-
 // Runtime mode overrides (toggled by user during session, not persisted)
 const SessionModeOverrides = new Map<string, Mode>()
-
-// Status prefixes parsed by pi.nvim to resolve tool-call display status
-const STATUS_ACCEPTED = "[accepted]"
 const STATUS_REJECTED = "[rejected]"
-
-// [pi.nvim] Track tool calls approved by the user (nvim) so we can flip isError back to false
-const approvedToolCalls = new Set<string>()
-
-function formatReviewNotes(notes?: ReviewNote[]): string {
-    if (!notes?.length) return ""
-
-    return (
-        '\n\nUser review notes require explicit response. Before doing anything else, you MUST reply in chat to the user with every note below and your response to each one. For each note in your chat reply, quote the full note text exactly with every quoted line prefixed by `>`, then write your response below the quote. Do not respond with only a label or summary. Do not ignore, silently drop, or skip a note because you disagree. A response may be as short as "Accepted and agreed.", but every note must have an explicit response: accepted, rejected with reason, or needs clarification. If every note is fully accepted and has an obvious local resolution, do not stop after the chat response and do not wait for user approval; immediately continue with the follow-up edit/tool call. Stop and ask the user only for unclear, rejected, conflicting, scope-changing, or product/domain notes.\n\nReview notes:\n' +
-        notes
-            .map((n, index) => {
-                const range = n.lineStart === n.lineEnd ? `${n.lineStart}` : `${n.lineStart}-${n.lineEnd}`
-                const label = `N${index + 1}`
-
-                return [
-                    `- ${label}: ${n.side}:${range}`,
-                    `  lines: ${JSON.stringify(n.lines)}`,
-                    `  note: ${n.note}`,
-                ].join("\n")
-            })
-            .join("\n")
-    )
-}
 
 const LOCAL_SKILL_SCOPES = new Set(["user", "project", "temporary"])
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined
@@ -185,12 +152,12 @@ export default function (pi: ExtensionAPI) {
         })
     }
 
-    pi.registerCommand("permission-toggle-auto-accept", {
+    pi.registerCommand(`${EXTENSION}-toggle-auto-accept`, {
         description: "Toggle auto-accept edits",
         handler: async (_args, ctx) => toggleAutoAcceptEdits(ctx),
     })
 
-    pi.registerCommand("permission-mode", {
+    pi.registerCommand(`${EXTENSION}-mode`, {
         description: "Set permission mode for a tool in the current session",
         handler: async (_args, ctx) => {
             const tool = await ctx.ui.input("Tool name", "e.g. bash, edit")
@@ -202,7 +169,7 @@ export default function (pi: ExtensionAPI) {
         },
     })
 
-    pi.registerCommand("permission-settings", {
+    pi.registerCommand(`${EXTENSION}-settings`, {
         description: "Show resolved permission settings",
         handler: async (_args, ctx) => {
             const result = loadResolvedPermissionSettings(pi, ctx.cwd)
@@ -235,17 +202,30 @@ export default function (pi: ExtensionAPI) {
         return "settings" in result ? { action: "continue" } : { action: "handled" }
     })
 
-    pi.on("message_end", async (event) => {
-        const msg = event.message as unknown as Record<string, unknown>
-        // Only process tool results
-        if (msg.role !== "toolResult") return
-        if (typeof msg.toolCallId !== "string") return
+    const callMode = (
+        settings: PermissionSettings,
+        toolName: string,
+        input: Record<string, unknown>,
+        ctx: ExtensionContext,
+    ) =>
+        resolveMode(
+            settings,
+            toolName,
+            getMatchValue(toolName, input) ?? "",
+            ctx.cwd,
+            SessionModeOverrides,
+            analyzeBash,
+            mcpCatalog.get(toolName),
+        )
 
-        // Blocked tool results come back as isError=true. Flip back for approved calls
-        // so the LLM doesn't treat accepted edits as failures.
-        if (approvedToolCalls.delete(msg.toolCallId)) {
-            msg.isError = false
+    registerPermissionFiles(pi, async (kind, input, ctx) => {
+        const result = loadResolvedPermissionSettings(pi, ctx.cwd)
+        updatePermissionSettingsErrorDisplay(result, ctx)
+        if ("error" in result) {
+            ctx.abort()
+            throw new Error(`${STATUS_REJECTED} ${formatPermissionSettingsError(result.error)}`)
         }
+        return callMode(result.settings, kind, input, ctx)
     })
 
     pi.on("tool_call", async (event, ctx) => {
@@ -260,14 +240,11 @@ export default function (pi: ExtensionAPI) {
         }
 
         const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>)
-        const mode = await resolveMode(
+        const mode = await callMode(
             settingsResult.settings,
             event.toolName,
-            argValue ?? "",
-            ctx.cwd,
-            SessionModeOverrides,
-            analyzeBash,
-            mcpCatalog.get(event.toolName),
+            event.input as Record<string, unknown>,
+            ctx,
         )
 
         switch (mode) {
@@ -294,49 +271,8 @@ export default function (pi: ExtensionAPI) {
                 switch (event.toolName) {
                     case "edit":
                     case "write": {
-                        if (!argValue) break
-
-                        const title = JSON.stringify({
-                            prompt: `${event.toolName}: ${argValue}`,
-                            toolName: event.toolName,
-                            toolInput: event.input,
-                        })
-                        const choice = await ctx.ui.select(title, ["Accept", "Reject"])
-
-                        if (choice === "Accept") {
-                            // TUI — don't block, let the tool apply the change
-                            return undefined
-                        } else if (choice?.startsWith("{")) {
-                            const parsed = JSON.parse(choice)
-                            if (parsed.result === "Accepted") {
-                                // Nvim plugin already applied the change
-                                approvedToolCalls.add(event.toolCallId)
-                                return {
-                                    block: true,
-                                    reason: `${STATUS_ACCEPTED} User approved the edit. Changes applied to ${argValue} as proposed.${formatReviewNotes(parsed.notes)}`,
-                                }
-                            } else if (parsed.result === "AcceptModified") {
-                                // Nvim plugin applied user's modified version
-                                approvedToolCalls.add(event.toolCallId)
-                                return {
-                                    block: true,
-                                    reason: `${STATUS_ACCEPTED} User approved with modifications. ${argValue} was updated with user's version, which differs from what you proposed. Current content of ${argValue}:\n\`\`\`\n${parsed.content}\n\`\`\`${formatReviewNotes(parsed.notes)}`,
-                                }
-                            } else if (parsed.result === "Rejected") {
-                                const reviewNotes = formatReviewNotes(parsed.notes)
-                                if (reviewNotes) {
-                                    return {
-                                        block: true,
-                                        reason: `${STATUS_REJECTED} User rejected the edit to ${argValue}. File unchanged.${reviewNotes}`,
-                                    }
-                                }
-                            }
-                        }
-                        ctx.abort()
-                        return {
-                            block: true,
-                            reason: `${STATUS_REJECTED} User rejected the edit to ${argValue}. File unchanged.`,
-                        }
+                        // File review runs only after every tool_call gate has completed.
+                        return undefined
                     }
                     case "bash": {
                         if (!argValue) return { block: true, reason: "No command provided" }
@@ -360,6 +296,7 @@ export default function (pi: ExtensionAPI) {
             }
         }
     })
+    return registerReviewCodemode(pi)
 }
 
 function mergePermissions(
@@ -530,11 +467,11 @@ function toggleAutoAcceptEdits(ctx: ExtensionContext) {
     if (editCurrent === "allow" && writeCurrent === "allow") {
         SessionModeOverrides.delete("edit")
         SessionModeOverrides.delete("write")
-        ctx.ui.setStatus("permission", undefined)
+        ctx.ui.setStatus(EXTENSION, undefined)
     } else {
         SessionModeOverrides.set("edit", "allow")
         SessionModeOverrides.set("write", "allow")
-        ctx.ui.setStatus("permission", "▶︎ Auto-accept edits")
+        ctx.ui.setStatus(EXTENSION, "▶︎ Auto-accept edits")
     }
 }
 
@@ -796,6 +733,7 @@ export async function resolveMode(
 ): Promise<Mode> {
     const override = sessionOverrides.get(toolName)
     if (override) return override
+    if (toolName.startsWith("mcp__") && !mcpTool) return "deny"
 
     if (toolName !== "bash" || !argValue) {
         return resolveSingleMode(settings, toolName, argValue, mcpTool)

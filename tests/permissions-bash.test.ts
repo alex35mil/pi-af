@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { analyzeBash, type BashAnalyzer } from "../extensions/permission/bash.ts"
-import { resolveMode, type Mode, type PermissionSettings } from "../extensions/permission/index.ts"
+import { analyzeBash, type BashAnalyzer } from "../extensions/permissions/bash.ts"
+import { resolveMode, type Mode, type PermissionSettings } from "../extensions/permissions/index.ts"
 
 const noOverrides = new Map<string, Mode>()
 

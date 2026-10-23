@@ -1,5 +1,6 @@
 import * as fs from "node:fs"
 import { randomUUID } from "node:crypto"
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import type { IncomingRevision } from "../integrations/forge/github/incoming-pr-context.js"
 import { incomingPullRequestContext } from "../integrations/forge/github/incoming-pr-context.js"
 import { incomingProjectContext } from "../integrations/forge/github/incoming-pr-project.js"
@@ -46,6 +47,7 @@ function completion(
     state: CheckoutState | null,
     evidence: ProviderEvidence,
     done: IncomingCleanupCompletion,
+    tools: McpToolCatalog,
 ) {
     if (state) requireAddress(state, current)
     const expected = state?.revision ?? current
@@ -59,20 +61,25 @@ function completion(
             expectedHeadSha: state?.baselineSha ?? current.head.sha,
         },
         evidence,
+        tools,
     )
     if (proof.state !== "merged")
         throw new Error("Cleanup requires exact matching confirmed merge/head/timestamp evidence")
-    const context = incomingPullRequestContext(root, current.url)
+    const context = incomingPullRequestContext(root, current.url, tools)
     if (context.project.state === "enabled") {
         if (done.kind !== "project") throw new Error("Configured Project Done must be confirmed before cleanup")
-        const planned = incomingProjectContext(root, {
-            operation: "incomingPullRequestProject",
-            reference: current.url,
-            evidence,
-            fieldEvidence: done.fieldEvidence,
-            membership: { state: "present", evidence: done.itemEvidence },
-            action: "ship",
-        })
+        const planned = incomingProjectContext(
+            root,
+            {
+                operation: "incomingPullRequestProject",
+                reference: current.url,
+                evidence,
+                fieldEvidence: done.fieldEvidence,
+                membership: { state: "present", evidence: done.itemEvidence },
+                action: "ship",
+            },
+            tools,
+        )
         if (
             planned.projectAction.state !== "unchanged" ||
             planned.projectAction.status !== context.project.status.values.done
@@ -122,9 +129,10 @@ export async function cleanupCheckout(
     evidence: ProviderEvidence,
     done: IncomingCleanupCompletion,
     save: Save,
+    tools: McpToolCatalog,
     signal?: AbortSignal,
 ) {
-    completion(root, current, state, evidence, done)
+    completion(root, current, state, evidence, done, tools)
     signal?.throwIfAborted()
     if (!state) {
         if (fs.existsSync(directory)) throw new Error("Unmanaged checkout preserved; cleanup cannot adopt or remove it")

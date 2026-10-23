@@ -6,6 +6,7 @@ import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
+import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
 import {
     incomingPullRequestContext,
@@ -92,10 +93,14 @@ export function validatePullRequestDossier(dossier: string): void {
     }
 }
 
-function selectedRevision(cwd: string, input: Static<typeof RecordPullRequestResponseSchema> | ReviewPullRequestInput) {
+function selectedRevision(
+    cwd: string,
+    input: Static<typeof RecordPullRequestResponseSchema> | ReviewPullRequestInput,
+    tools: McpToolCatalog,
+) {
     const root = project.resolveRootDir(cwd)
-    const context = incomingPullRequestContext(root, input.reference)
-    const revision = incomingRevision(context.roles.forge.config, context.incomingPullRequest, input.evidence)
+    const context = incomingPullRequestContext(root, input.reference, tools)
+    const revision = incomingRevision(context.roles.forge.config, context.incomingPullRequest, input.evidence, tools)
     const directory = resolveIncomingLocalPath(root, revision, incomingRevisionDirectory(revision))
     return { root, context, revision, directory }
 }
@@ -134,8 +139,8 @@ async function preserveSourceEvidence(
     return sources
 }
 
-export async function preparePullRequestReview(cwd: string, input: ReviewPullRequestInput) {
-    const selected = selectedRevision(cwd, input)
+export async function preparePullRequestReview(cwd: string, input: ReviewPullRequestInput, tools: McpToolCatalog) {
+    const selected = selectedRevision(cwd, input, tools)
     const dossierPath = resolveIncomingLocalPath(selected.root, selected.revision, input.dossierPath)
     const dossier = await fs.promises.readFile(dossierPath, "utf-8")
     validatePullRequestDossier(dossier)
@@ -210,6 +215,7 @@ export function buildPullRequestReviewPrompt(
 }
 
 export function registerPullRequestReview(pi: ExtensionAPI): void {
+    const tools = observeMcpTools(pi)
     pi.registerTool({
         name: "review_pull_request",
         label: "review_pull_request",
@@ -218,7 +224,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
         parameters: ReviewPullRequestSchema,
         async execute(_id, params, signal, onUpdate, ctx) {
             const input = Value.Parse(ReviewPullRequestSchema, params)
-            const prepared = await preparePullRequestReview(ctx.cwd, input)
+            const prepared = await preparePullRequestReview(ctx.cwd, input, tools)
             const { report, artifactText } = await executeReviewRound({
                 cwd: prepared.root,
                 directory: prepared.directory,
@@ -250,7 +256,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
         parameters: RecordPullRequestResponseSchema,
         async execute(_id, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(RecordPullRequestResponseSchema, params)
-            const selected = selectedRevision(ctx.cwd, input)
+            const selected = selectedRevision(ctx.cwd, input, tools)
             const directory = resolveIncomingLocalPath(
                 selected.root,
                 selected.revision,

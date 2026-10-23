@@ -7,6 +7,7 @@ import { Value } from "typebox/value"
 
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
+import { EXTENSION as PERMISSIONS_EXTENSION } from "../../../extensions/permissions/index.js"
 import * as Git from "../__lib/git.js"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
@@ -36,7 +37,9 @@ export default function (pi: ExtensionAPI): void {
     pi.registerCommand("project-setup", {
         description: "Interactively configure project workflows for this repository",
         handler: async (args, ctx) => {
-            pi.sendUserMessage(projectSetupKickoffPrompt(args.trim(), inspectProjectSetup(ctx.cwd)))
+            pi.sendUserMessage(
+                projectSetupKickoffPrompt(args.trim(), inspectProjectSetup(ctx.cwd, ctx.isProjectTrusted())),
+            )
         },
     })
 
@@ -48,7 +51,7 @@ export default function (pi: ExtensionAPI): void {
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             Value.Parse(EmptySchema, params)
-            const snapshot = inspectProjectSetup(ctx.cwd)
+            const snapshot = inspectProjectSetup(ctx.cwd, ctx.isProjectTrusted())
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(snapshot, null, 2) }],
                 details: snapshot,
@@ -87,6 +90,8 @@ export default function (pi: ExtensionAPI): void {
             "Add approved official Linear/GitHub MCP registrations to committed or local project settings without storing credentials or changing the Git index.",
         parameters: ProjectMcpConfigurationSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            if (!ctx.isProjectTrusted())
+                throw new Error("Trust this project before configuring project MCP registrations")
             const configured = configureProjectMcp(ctx.cwd, params)
             return {
                 content: [
@@ -126,7 +131,7 @@ export default function (pi: ExtensionAPI): void {
         parameters: ProjectPermissionConfigurationSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const parsed = Value.Parse(ProjectPermissionConfigurationSchema, params)
-            const file = getExtensionSettingsPaths("permission", ctx.cwd)[parsed.target]
+            const file = getExtensionSettingsPaths(PERMISSIONS_EXTENSION, ctx.cwd)[parsed.target]
             const configured = await withFileMutationQueue(file, async () =>
                 configureProjectPermissions(ctx.cwd, parsed, mcpCatalog),
             )
@@ -189,12 +194,12 @@ const PROJECT_SETUP_FILES = [
     ".project/integrations.json",
     ".project/policies.md",
     ".gitignore",
-    ".agents/permission.settings.json",
-    ".agents/permission.settings.local.json",
+    `.agents/${PERMISSIONS_EXTENSION}.json`,
+    `.agents/${PERMISSIONS_EXTENSION}.local.json`,
     INCOMING_PR_WORKFLOW_PATH,
 ] as const
 
-export function inspectProjectSetup(cwd: string) {
+export function inspectProjectSetup(cwd: string, projectTrusted: boolean) {
     const root = path.resolve(Git.run(cwd, ["rev-parse", "--show-toplevel"]))
     const excludePath = path.resolve(root, Git.run(root, ["rev-parse", "--git-path", "info/exclude"]))
     const workflowSettings = getWorkflowSettingsPaths(root)
@@ -204,7 +209,7 @@ export function inspectProjectSetup(cwd: string) {
         files: PROJECT_SETUP_FILES.map((file) => snapshotFile(root, file)),
         globalWorkflowSettings: snapshotAbsoluteFile(root, workflowSettings.global),
         localExclude: snapshotAbsoluteFile(root, excludePath),
-        mcp: inspectProjectMcp(root),
+        mcp: inspectProjectMcp(cwd, projectTrusted),
         boundEntityTrackers: inspectBoundEntityTrackers(root),
         projectPathsInGit: splitLines(Git.run(root, ["ls-files", "--cached", "--", ".project"])),
         stagedProjectPaths: splitLines(Git.run(root, ["diff", "--cached", "--name-only", "--", ".project"])),

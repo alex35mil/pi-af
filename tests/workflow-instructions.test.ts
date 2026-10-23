@@ -72,7 +72,7 @@ describe("workflow instruction ownership", () => {
     })
 
     it("resolves every concrete Markdown dependency from its owning directory", () => {
-        for (const file of markdownFiles("workflows")) {
+        for (const file of ["README.md", "UPGRADING.md", ...markdownFiles("workflows")]) {
             for (const dependency of dependencies(file)) {
                 assert.equal(fs.existsSync(dependency), true, `${file} references missing ${dependency}`)
             }
@@ -408,6 +408,20 @@ describe("workflow instruction ownership", () => {
         const merge = fs.readFileSync("workflows/references/integrations/forge/merge.md", "utf-8")
         for (const field of ["commit_title", "merge_method: squash", "expectedHeadSha"])
             assert.ok(merge.includes(`\`${field}\``), `shared merge contract must own ${field}`)
+    })
+
+    it("carries explicit ship intent through every remaining delivery step", () => {
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        for (const text of [
+            "`ship it`",
+            "commit approved work",
+            "push the stored branch",
+            "create or update the PR",
+            "reconcile Done",
+            "target/branch cleanup",
+            "Carry that finish intent through Submission",
+        ])
+            assert.ok(deliverable.includes(text), `Deliverable finish contract must include ${text}`)
     })
 
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {

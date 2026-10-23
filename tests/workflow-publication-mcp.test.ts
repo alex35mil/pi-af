@@ -1,25 +1,13 @@
 import assert from "node:assert/strict"
 import * as fs from "node:fs"
-import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import {
-    createEventBus,
-    type ExtensionAPI,
-    type ExtensionContext,
-    type ToolDefinition,
-} from "@earendil-works/pi-coding-agent"
-import {
-    getMcpToolName,
-    MCP_TOOL_CATALOG_EVENT,
-    MCP_TOOL_DECORATORS_EVENT,
-    type McpToolCatalog,
-    type McpToolDecorator,
-    type McpToolDecorators,
-} from "../extensions/__lib/mcp.ts"
-import { registerMcpServers } from "../extensions/mcp/index.ts"
-import registerPermission from "../extensions/permission/index.ts"
+import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent"
+import type { JsonObject } from "@earendil-works/pi-ai"
+import { MCP_TOOL_DECORATORS_EVENT, type McpToolDecorator, type McpToolDecorators } from "../extensions/__lib/mcp.ts"
+import { nativeMcpFixture } from "./native-mcp-fixture.ts"
+import registerPermission from "../extensions/permissions/index.ts"
 import registerIntegrations from "../workflows/extensions/integrations/index.ts"
 import { identifyMcpService } from "../workflows/extensions/integrations/mcp.ts"
 import {
@@ -39,118 +27,53 @@ function runtimeHarness(
     permissions: "absent" | "allow" | "ask" | "deny" = "absent",
     order: "workflow-first" | "mcp-first" = "workflow-first",
 ) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "publication-"))
-    const previousAgentDir = process.env.PI_CODING_AGENT_DIR
-    process.env.PI_CODING_AGENT_DIR = path.join(root, "agent")
-    fs.mkdirSync(path.join(root, ".agents"))
-    fs.writeFileSync(
-        path.join(root, ".agents/permission.settings.json"),
-        JSON.stringify({ defaultMode: permissions === "absent" ? "ask" : permissions }),
-    )
-    const handlers = new Map<string, Array<(event: any, context: ExtensionContext) => any>>()
-    const events = createEventBus()
-    const tools = new Map<string, any>()
-    const calls: Array<Record<string, any>> = []
-    const prompts: string[] = []
-    let live: McpToolCatalog = new Map()
-    let approval = true
-    events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
-        live = data as McpToolCatalog
-    })
-    const context = {
-        cwd: root,
-        model,
-        hasUI: true,
-        abort() {},
-        ui: {
-            setWidget() {},
-            notify() {},
-            async confirm(_title: string, text: string) {
-                prompts.push(text)
-                return approval
-            },
-        },
-    } as unknown as ExtensionContext
-    const pi = {
-        events,
-        on(event: string, handler: (event: any, context: ExtensionContext) => any) {
-            handlers.set(event, [...(handlers.get(event) ?? []), handler])
-        },
-        registerTool(definition: any) {
-            tools.set(definition.name, definition)
-        },
-        getCommands: () => [],
-        registerCommand() {},
-        registerShortcut() {},
-    } as unknown as ExtensionAPI
-    if (permissions !== "absent") registerPermission(pi)
     const nativeSchema = {
-        type: "object",
+        type: "object" as const,
         properties: { [field]: { type: "string" }, method: { type: "string" } },
-        additionalProperties: false,
-    }
-    const fake = {
-        async connect() {},
-        async listTools() {
-            return { tools: [{ name: tool, inputSchema: nativeSchema }] }
-        },
-        async callTool(args: Record<string, any>) {
-            calls.push(structuredClone(args))
-            return { content: [{ type: "text", text: "ok" }] }
-        },
-        async close() {},
+        additionalProperties: true,
     }
     const endpoint = provider === "github" ? "https://api.githubcopilot.com/mcp/" : "https://mcp.linear.app/mcp"
-    const registerNative = () => registerMcpServers(pi, { "custom-alias": { url: endpoint } }, () => fake as never)
-    if (order === "workflow-first") {
-        registerIntegrations(pi)
-        registerNative()
-    } else {
-        registerNative()
-        registerIntegrations(pi)
-    }
-    const toolName = getMcpToolName("custom-alias", tool)
-    const shutdown = async () => {
-        for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, context)
+    const h = nativeMcpFixture({
+        servers: [{ name: "custom-alias", config: { url: endpoint, exposure: "direct" } }],
+        tools: [{ name: tool, inputSchema: nativeSchema }],
+    })
+    h.context.model = model
+    fs.mkdirSync(path.join(h.root, ".agents"))
+    fs.writeFileSync(
+        path.join(h.root, ".agents/permissions.json"),
+        JSON.stringify({ defaultMode: permissions === "absent" ? "ask" : permissions }),
+    )
+    if (permissions !== "absent") registerPermission(h.pi)
+    if (order === "workflow-first") registerIntegrations(h.pi)
+    const installed = h.install()
+    if (order === "mcp-first") registerIntegrations(h.pi)
+    const toolName = () => {
+        const entry = [...h.catalog()].find(
+            ([, metadata]) => metadata.serverName === "custom-alias" && metadata.serverToolName === tool,
+        )
+        assert.ok(entry)
+        return entry[0]
     }
     return {
-        pi,
-        context,
-        calls,
-        prompts,
-        tools,
+        ...h,
+        calls: h.wire,
         nativeSchema,
-        catalog: () => live,
+        toolName,
         collectDecorators() {
             const decorators: McpToolDecorator[] = []
-            events.emit(MCP_TOOL_DECORATORS_EVENT, {
+            h.events.emit(MCP_TOOL_DECORATORS_EVENT, {
                 use: (decorate) => {
                     decorators.push(decorate)
                 },
             } satisfies McpToolDecorators)
             return decorators
         },
-        setApproval(value: boolean) {
-            approval = value
-        },
         async start() {
-            for (const handler of handlers.get("session_start") ?? []) await handler({}, context)
+            await installed
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
         },
-        async send(input: Record<string, unknown>) {
-            const event = { toolName, input, toolCallId: "publication" }
-            for (const handler of handlers.get("tool_call") ?? []) {
-                const result = await handler(event, context)
-                if (result?.block) return result
-            }
-            return tools.get(toolName).execute("publication", input, undefined, undefined, context)
-        },
-        shutdown,
-        async cleanup() {
-            await shutdown()
-            if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
-            else process.env.PI_CODING_AGENT_DIR = previousAgentDir
-            fs.rmSync(root, { recursive: true, force: true })
-        },
+        send: (input: JsonObject) => h.run(toolName(), input),
     }
 }
 
@@ -182,9 +105,13 @@ describe("workflow MCP publication binding", () => {
             const h = runtimeHarness("github", "issue_write", "body", "absent", order)
             try {
                 await h.start()
-                const toolName = getMcpToolName("custom-alias", "issue_write")
+                const toolName = h.toolName()
                 assert.deepEqual(h.catalog().get(toolName)!.inputSchema, h.nativeSchema)
-                assert.ok(h.tools.get(toolName).parameters.properties[AUTHORSHIP_PARAMETER])
+                assert.ok(
+                    (h.tools.get(toolName)!.parameters as { properties: Record<string, unknown> }).properties[
+                        AUTHORSHIP_PARAMETER
+                    ],
+                )
                 await h.send({ method: "create", body: "Queue request.", labels: ["Kind: Feature"] })
                 assert.deepEqual(h.calls[0].arguments, {
                     method: "create",
@@ -211,7 +138,7 @@ describe("workflow MCP publication binding", () => {
             assert.equal(h.collectDecorators().length, 1)
             await h.start()
             await h.send({ body: "Fresh." })
-            assert.equal((h.calls[1].arguments.body.match(/Sent via/g) ?? []).length, 1)
+            assert.equal((String(h.calls[1].arguments.body).match(/Sent via/g) ?? []).length, 1)
         } finally {
             await h.cleanup()
         }
@@ -247,7 +174,7 @@ describe("workflow MCP publication binding", () => {
             assert.deepEqual(verbatim, { body: "Exact user message.", [AUTHORSHIP_PARAMETER]: "user-verbatim" })
             assert.deepEqual(h.calls[1].arguments, { body: "Exact user message." })
             h.setApproval(false)
-            assert.equal((await h.send({ body: "Rejected" })).block, true)
+            assert.equal((await h.send({ body: "Rejected" })).isError, true)
             assert.equal(h.calls.length, 2)
             assert.equal(h.prompts.length, 3)
         } finally {
@@ -273,7 +200,7 @@ describe("workflow MCP publication binding", () => {
         const h = runtimeHarness("github", "add_issue_comment", "body", "deny")
         try {
             await h.start()
-            assert.equal((await h.send({ body: "Denied" })).block, true)
+            assert.equal((await h.send({ body: "Denied" })).isError, true)
             assert.equal(h.calls.length, 0)
             assert.equal(h.prompts.length, 0)
         } finally {
@@ -286,7 +213,12 @@ describe("workflow MCP publication binding", () => {
             const h = runtimeHarness("linear", "save_document", "content", permission)
             try {
                 await h.start()
-                await assert.rejects(h.send({ patch: [{ op: "append", text: "Text" }] }), /complete edited text/)
+                const outcome = await h.send({ patch: [{ op: "append", text: "Text" }] })
+                assert.equal(outcome.isError, true)
+                assert.match(
+                    outcome.result.content.map((block) => (block.type === "text" ? block.text : "")).join("\n"),
+                    /complete edited text/,
+                )
                 assert.equal(h.calls.length, 0)
                 assert.equal(h.prompts.length, permission === "ask" ? 1 : 0)
             } finally {

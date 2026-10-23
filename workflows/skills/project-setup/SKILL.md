@@ -16,8 +16,8 @@ allowed-tools:
     - "edit(.project/*)"
     - "read(.gitignore)"
     - "read(.git/info/exclude)"
-    - "read(.agents/permission.settings.json)"
-    - "read(.agents/permission.settings.local.json)"
+    - "read(.agents/permissions.json)"
+    - "read(.agents/permissions.local.json)"
 ---
 
 # Project setup
@@ -75,12 +75,14 @@ For each provider, reuse a suitable active MCP server when one exists; ask the u
 
 When one or more required providers have no configured server, offer to add their official servers. Before asking for any MCP server name, credential variable, or provider-specific configuration, ask one shared persistence question for all new MCP registrations:
 
-1. Local checkout configuration (`local`) — `.agents/mcp.settings.local.json`
-2. Committed project configuration (`project`) — `.agents/mcp.settings.json`
+1. Private local checkout configuration (`local`) — `.agents/mcp.local.json`, using `mcpServers`
+2. Committed project configuration (`project`) — `.agents/mcp.json`, using `mcpServers`
+
+The adapter merges global, project, then local entries by exact name and registers every effective server through `pi.registerMcpServer()`. Later entries replace earlier entries; normalized-name conflicts are errors. Keep private registrations project-scoped; never move them into global configuration. Project trust is required before reading or configuring either project tier.
 
 Accept the number or exact value, confirm the interpreted selection as muted context, and apply it to every new MCP registration in this setup. Never infer the persistence choice or ask it again per provider. Only then ask for each missing server's name and credential environment-variable name. Both forms contain only an environment-variable reference, never a credential. Default credential variable names are `LINEAR_API_KEY` and `GITHUB_PERSONAL_ACCESS_TOKEN`, but the user may provide another valid environment-variable name.
 
-Before adding registrations, preview the exact server entries, shared target file, and—when local is selected—the exact `/.agents/mcp.settings.local.json` append to `.git/info/exclude`. Obtain explicit approval, then call `configure_mcp`. This tool preserves unrelated settings, rejects conflicting names, never changes the Git index, and enables only `issues,projects` for a GitHub tracker plus `pull_requests` for a GitHub forge.
+Before adding registrations, preview the exact server entries, shared target file, and—when local is selected—the exact `/.agents/mcp.local.json` append to `.git/info/exclude`. Obtain explicit approval, then call `configure_mcp`. This tool preserves unrelated settings, rejects conflicting names, never changes the Git index, and enables only `issues,projects` for a GitHub tracker plus `pull_requests` for a GitHub forge.
 
 New MCP registrations are unavailable to the running Pi session. When `configure_mcp` reports `restartRequired`, make no `.project` writes: tell the user which environment variables must be exported, then instruct them to reload or restart Pi and restore this current session. Do not tell them to open an empty session or run `/project-setup` again; the restored conversation contains the approved answers needed to continue. After restoration, refresh the configured inventory with `inspect_project_setup`, continue from the next unanswered setup decision, and proceed only when the selected registered provider tools are available under normal permissions.
 
@@ -106,7 +108,7 @@ When `static` is selected, offer `identifier-title` as the neutral default and a
 
 Present all seven static formats from `../../references/setup.md` as numbered choices.
 
-When the selected static format begins with `username`, use the repository-local `.project/config.local.json` username when present, otherwise the global `workflows.settings.json` username. If neither exists, ask for it and propose strict `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`. Never store username in committed `.project/config.json`, infer it from Git/provider identity, or ask for it for `tracker` or a static format without `username`.
+When the selected static format begins with `username`, use the repository-local `.project/config.local.json` username when present, otherwise the global `workflows.json` username. If neither exists, ask for it and propose strict `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`. Never store username in committed `.project/config.json`, infer it from Git/provider identity, or ask for it for `tracker` or a static format without `username`.
 
 ## Guided inquiry
 
@@ -186,8 +188,8 @@ Present numbered, independently selectable options, including decline-all. Expla
 
 Offer the accepted-artifact diff gates defined in `../../references/setup.md` independently of integration allows. Declining every new permission changes no permission file or exclusion. Once new rules are selected, ask once where the combined permission configuration should be stored before preparing the final file proposal:
 
-1. Local checkout configuration (`local`) — `.agents/permission.settings.local.json`
-2. Committed project configuration (`project`) — `.agents/permission.settings.json`
+1. Local checkout configuration (`local`) — `.agents/permissions.local.json`
+2. Committed project configuration (`project`) — `.agents/permissions.json`
 
 Accept the number or exact value and confirm it as muted context. Never infer this choice from artifact or MCP persistence. Include the selected target, exact `allow` and `ask` additions, skipped rules, and conflicts in the final proposal. `configure_permissions` owns validated merging, rechecking current coverage/conflicts, unrelated-setting preservation, and local exclusion; do not edit permission settings manually.
 
@@ -210,7 +212,7 @@ GitHub provider provisioning has its own exact preview/hash approval above and m
 
 - for versioned mode, mention `.git/info/exclude` for `.project/config.local.json` only when that local file already exists or is proposed: either report the existing exact exclusion as a no-op or propose the exact `/.project/config.local.json` append; when no local file exists or is proposed, omit this exclusion entirely;
 - the selected permission-settings target, exact `allow` and `ask` additions, skipped rules, and conflicts when new permissions are selected;
-- for local permission additions, that `configure_permissions` will keep `.agents/permission.settings.local.json` outside Git and ensure exact `/.agents/permission.settings.local.json` in `.git/info/exclude`; an unchanged permission configuration adds no exclusion.
+- for local permission additions, that `configure_permissions` will keep `.agents/permissions.local.json` outside Git and ensure exact `/.agents/permissions.local.json` in `.git/info/exclude`; an unchanged permission configuration adds no exclusion.
 
 Require explicit approval of that proposal. Workflow-owned JSON must satisfy the current documented shapes, contain no credentials, and end with a newline. Do not infer missing product rules, lifecycle mappings, field scopes, provider identities, or policy text.
 

@@ -4,12 +4,15 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
 import { IncomingCheckoutSchema, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
+import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 function fixture(mode: "versioned" | "unversioned", diverged = false) {
     const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "incoming-checkout-tool-")))
@@ -119,13 +122,26 @@ function fixture(mode: "versioned" | "unversioned", diverged = false) {
         },
     }
     const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
-    registerPr({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool), registerCommand: () => {} } as never)
+    const events = createEventBus()
+    registerPr({
+        events,
+        on() {},
+        registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+        registerCommand: () => {},
+    } as never)
+    events.emit(MCP_TOOL_CATALOG_EVENT, workflowMcpCatalog("fixture"))
     const tool = tools.find((item) => item.name === "incoming_pull_request_checkout")!
     assert.ok(tool, "The actual PR extension must register the checkout tool")
     const call = async (operation: IncomingCheckoutInput["operation"], selectedEvidence = evidence) => {
         const input = { operation, reference: "#12", evidence: selectedEvidence }
         assert.ok(Value.Check(tool.parameters, input), "Exercise the real registered schema")
-        const result = await tool.execute("fixture", input, undefined, undefined, { cwd: root } as ExtensionContext)
+        const result = await tool.execute(
+            "fixture",
+            input,
+            undefined,
+            undefined,
+            withToolExecution({ cwd: root } as ExtensionContext),
+        )
         return JSON.parse((result.content[0] as { text: string }).text)
     }
     const checkout = path.join(root, ".project/.local/pull-requests/12/checkout")

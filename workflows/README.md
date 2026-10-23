@@ -42,7 +42,7 @@ See the [configuration reference](references/setup.md) for exact schemas, exampl
 
 Say **“Report this workflow issue.”** The Todo skill prepares a minimal sanitized report and, after you approve the exact content, destination, and intake choices, creates ordinary Todo work in the workflow project's tracker. Maintainers pick it up through the existing workflows.
 
-Set the source reference once in private global `workflows.settings.json` in Pi's agent directory (`getAgentDir()`):
+Set the source reference once in private global `workflows.json` in Pi's agent directory (`getAgentDir()`):
 
 ```json
 { "workflowProject": "/absolute/path/to/pi-af" }
@@ -83,7 +83,7 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Contract                                                      | Canonical guidance                                                                                                                                                                |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Artifacts, intake, persistence, authority, policy precedence  | [Artifacts](references/artifacts.md)                                                                                                                                              |
-| Workflow activity and native Phase projection | [Phase](references/phase.md) |
+| Workflow activity and native Phase projection                 | [Phase](references/phase.md)                                                                                                                                                      |
 | Configuration files and permission gates                      | [Setup](references/setup.md)                                                                                                                                                      |
 | Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
@@ -92,5 +92,3 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Provider-body and integration rules                           | [Integration roles](references/integrations/shared.md)                                                                                                                            |
 | Provider operations                                           | [GitHub tracker](references/integrations/tracker/github.md), [Linear tracker](references/integrations/tracker/linear.md), [GitHub forge](references/integrations/forge/github.md) |
 | Human-facing prose                                            | [Communication](references/communication.md)                                                                                                                                      |
-
-For one explicitly requested older item, use [selective migration](migration/selective-legacy-item.md). An already-active legacy session may instead use the bounded [finish-in-place transition](transition/finish-legacy-work.md); neither is a runtime fallback.

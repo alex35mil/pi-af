@@ -1,403 +1,282 @@
 import assert from "node:assert/strict"
+import * as fs from "node:fs"
+import * as path from "node:path"
 import { describe, it } from "node:test"
 
+import type { McpServerConfig } from "@earendil-works/pi-coding-agent"
 import {
-    createEventBus,
-    type ExtensionAPI,
-    type ExtensionContext,
-    type ToolDefinition,
-} from "@earendil-works/pi-coding-agent"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-
-import {
-    MCP_TOOL_CATALOG_EVENT,
+    getMcpSettingsPaths,
+    mcpResponsePayload,
     MCP_TOOL_DECORATORS_EVENT,
-    type McpToolCatalog,
     type McpToolDecorators,
 } from "../extensions/__lib/mcp.ts"
-import { createServerTransport, registerMcpServers, resolveServerConfig } from "../extensions/mcp/index.ts"
+import { nativeMcpFixture } from "./native-mcp-fixture.ts"
 
-type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown
+const schema = { type: "object" as const, properties: { value: { type: "string" } }, additionalProperties: false }
+const server = { name: "team-tools", config: { url: "https://example.com/mcp", exposure: "direct" as const } }
 
-function createMcpHarness() {
-    const handlers = new Map<string, EventHandler>()
-    const publications: McpToolCatalog[] = []
-    const registeredTools: string[] = []
-    const definitions = new Map<string, ToolDefinition>()
-    const order: string[] = []
-    const events = createEventBus()
-    events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
-        publications.push(data as McpToolCatalog)
-        order.push("catalog")
-    })
-    const pi = {
-        events,
-        on(event: string, handler: EventHandler) {
-            handlers.set(event, handler)
-        },
-        registerTool(tool: ToolDefinition) {
-            definitions.set(tool.name, tool)
-            registeredTools.push(tool.name)
-            order.push(`tool:${tool.name}`)
-        },
-    } as unknown as Pick<ExtensionAPI, "events" | "on" | "registerTool">
-
-    const ctx = { ui: { setWidget() {} } } as unknown as ExtensionContext
-    return {
-        handlers,
-        definitions,
-        ctx,
-        order,
-        pi,
-        publications,
-        registeredTools,
-        start: async () => handlers.get("session_start")?.({}, ctx),
-        shutdown: async () => handlers.get("session_shutdown")?.({}, ctx),
-    }
+function write(file: string, value: unknown) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify(value))
 }
 
-function createFakeClient(
-    tools: Array<Record<string, unknown>> = [],
-    listError?: Error,
-): { client: never; closeCount: () => number; requests: unknown[][] } {
-    let closes = 0
-    const requests: unknown[][] = []
-    return {
-        client: {
-            async connect() {},
-            async listTools() {
-                if (listError) throw listError
-                return { tools }
-            },
-            async callTool(...args: unknown[]) {
-                requests.push(args)
-                return { content: [] }
-            },
-            async close() {
-                closes++
-            },
-        } as never,
-        closeCount: () => closes,
-        requests,
-    }
-}
-
-function mcpTool(name: string, annotations?: Record<string, unknown>) {
-    return { name, inputSchema: { type: "object" }, ...(annotations ? { annotations } : {}) }
-}
-
-async function suppressErrors(run: () => Promise<void>) {
-    const original = console.error
-    console.error = () => undefined
-    try {
-        await run()
-    } finally {
-        console.error = original
-    }
-}
-
-describe("MCP extension lifecycle", () => {
-    it("defers discovery until session start", () => {
-        const harness = createMcpHarness()
-        let clientCount = 0
-
-        assert.doesNotThrow(() =>
-            registerMcpServers(harness.pi, { invalid: {} }, () => {
-                clientCount++
-                return createFakeClient().client
-            }),
+describe("MCP provider evidence", () => {
+    it("extracts object payloads from decoded, text, and structured responses", () => {
+        const payload = { id: "4980024734", url: "https://github.com/example/repo/pull/73" }
+        assert.equal(mcpResponsePayload(payload), payload)
+        assert.deepEqual(mcpResponsePayload({ content: [{ type: "text", text: JSON.stringify(payload) }] }), payload)
+        assert.equal(
+            mcpResponsePayload({ content: [{ type: "text", text: "Created PR" }], structuredContent: payload }),
+            payload,
         )
-        assert.deepEqual([...harness.handlers.keys()], ["session_start", "session_shutdown"])
-        assert.equal(clientCount, 0)
     })
 
-    it("publishes complete annotations before registering tools", async () => {
-        const harness = createMcpHarness()
-        const fake = createFakeClient([
-            mcpTool("get_issue", {
-                title: "Get issue",
+    it("rejects error, ambiguous, non-JSON, and non-object results", () => {
+        const block = { type: "text", text: '{"id":73}' }
+        for (const response of [
+            { isError: true, content: [block], structuredContent: { id: 73 } },
+            { content: [block, block] },
+            { content: [] },
+            { content: [{ type: "text", text: "Access denied" }] },
+            { content: [{ type: "text", text: "null" }] },
+            { content: [], structuredContent: [] },
+            "Access denied",
+        ])
+            assert.throws(() => mcpResponsePayload(response), /MCP|Provider evidence/)
+    })
+})
+
+describe("native MCP integration", () => {
+    it("starts only with the session, publishes identity before execution, and closes once", async () => {
+        const h = nativeMcpFixture({
+            servers: [server],
+            tools: [
+                {
+                    name: "echo",
+                    inputSchema: schema,
+                    annotations: {
+                        readOnlyHint: true,
+                        destructiveHint: false,
+                        idempotentHint: true,
+                        openWorldHint: false,
+                    },
+                },
+            ],
+        })
+        try {
+            await h.install()
+            assert.equal(h.connects(), 0)
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
+            const [name, metadata] = [...h.catalog()][0]
+            assert.equal(name, "mcp__team_tools__echo")
+            assert.equal(metadata.serverName, "team-tools")
+            assert.equal(metadata.serverToolName, "echo")
+            assert.deepEqual(metadata.inputSchema, schema)
+            assert.deepEqual(metadata.annotations, {
                 readOnlyHint: true,
                 destructiveHint: false,
                 idempotentHint: true,
-                openWorldHint: true,
-            }),
-        ])
-        registerMcpServers(harness.pi, { github: { command: "noop" } }, () => fake.client)
-
-        await harness.start()
-
-        assert.deepEqual(harness.order, ["catalog", "tool:mcp__github__get_issue"])
-        assert.deepEqual(
-            [...harness.publications[0]],
-            [
-                [
-                    "mcp__github__get_issue",
-                    {
-                        serverName: "github",
-                        serverToolName: "get_issue",
-                        inputSchema: { type: "object" },
-                        annotations: {
-                            title: "Get issue",
-                            readOnlyHint: true,
-                            destructiveHint: false,
-                            idempotentHint: true,
-                            openWorldHint: true,
-                        },
-                    },
-                ],
-            ],
-        )
-
-        await harness.shutdown()
-        assert.equal(fake.closeCount(), 1)
-    })
-
-    it("closes and excludes servers that fail after connecting", async () => {
-        await suppressErrors(async () => {
-            const harness = createMcpHarness()
-            const listingFailure = createFakeClient([], new Error("listing failed"))
-            const invalidTool = createFakeClient([mcpTool("invalid tool")])
-            const clients = new Map([
-                ["listing", listingFailure.client],
-                ["invalid-tool", invalidTool.client],
-            ])
-            registerMcpServers(
-                harness.pi,
-                { listing: { command: "noop" }, "invalid-tool": { command: "noop" } },
-                (name) => clients.get(name)!,
-            )
-
-            await harness.start()
-
-            assert.deepEqual([...harness.publications[0]], [])
-            assert.deepEqual(harness.registeredTools, [])
-            assert.equal(listingFailure.closeCount(), 1)
-            assert.equal(invalidTool.closeCount(), 1)
-        })
-    })
-
-    it("rejects invalid server names before connecting", async () => {
-        await suppressErrors(async () => {
-            const harness = createMcpHarness()
-            let clients = 0
-            registerMcpServers(harness.pi, { "invalid server": { command: "noop" } }, () => {
-                clients++
-                return createFakeClient().client
+                openWorldHint: false,
             })
-
-            await harness.start()
-
-            assert.equal(clients, 0)
-            assert.deepEqual([...harness.publications[0]], [])
-            assert.deepEqual(harness.registeredTools, [])
-        })
+            assert.equal(h.order[h.order.indexOf(`tool:${name}`) - 1], "catalog")
+            const result = await h.run(name, { value: "exact" })
+            assert.equal(result.isError, false)
+            assert.deepEqual(h.wire, [{ server: "team-tools", name: "echo", arguments: { value: "exact" } }])
+            await h.shutdown()
+            assert.equal(h.closes(), 1)
+            assert.equal(h.catalog().size, 0)
+        } finally {
+            await h.cleanup()
+        }
     })
 
-    it("rejects generated-name collisions atomically and closes every client", async () => {
-        await suppressErrors(async () => {
-            const harness = createMcpHarness()
-            const first = createFakeClient([mcpTool("b__c")])
-            const second = createFakeClient([mcpTool("c")])
-            const clients = new Map([
-                ["a", first.client],
-                ["a__b", second.client],
-            ])
-            registerMcpServers(
-                harness.pi,
-                { a: { command: "noop" }, a__b: { command: "noop" } },
-                (name) => clients.get(name)!,
-            )
-
-            await harness.start()
-
-            assert.deepEqual([...harness.publications[0]], [])
-            assert.deepEqual(harness.registeredTools, [])
-            assert.equal(first.closeCount(), 1)
-            assert.equal(second.closeCount(), 1)
-        })
-    })
-})
-
-describe("MCP tool decoration", () => {
-    for (const [url, name, field] of [
-        ["https://api.githubcopilot.com/mcp/", "issue_write", "body"],
-        ["https://mcp.linear.app/mcp", "save_issue", "description"],
-    ]) {
-        it(`preserves native ${name} schemas, descriptions, and arguments without decorators`, async () => {
-            const h = createMcpHarness()
-            const schema = { type: "object", properties: { [field]: { type: "string" } }, additionalProperties: false }
-            const fake = createFakeClient([{ name, description: "Native description", inputSchema: schema }])
-            registerMcpServers(h.pi, { alias: { url } }, () => fake.client)
-            try {
-                await h.start()
-                const tool = h.definitions.get(`mcp__alias__${name}`)!
-                assert.deepEqual(JSON.parse(JSON.stringify(tool.parameters)), schema)
-                assert.equal(tool.description, "Native description")
-                const input = { [field]: "Unchanged text." }
-                await tool.execute("native", input, undefined, undefined, h.ctx)
-                assert.deepEqual(fake.requests, [[{ name, arguments: input }, undefined, undefined]])
-                assert.deepEqual(input, { [field]: "Unchanged text." })
-                assert.deepEqual(h.publications[0].get(tool.name)!.inputSchema, schema)
-            } finally {
-                await h.shutdown()
+    it("keeps original tool identity when native names collide or need shortening", async () => {
+        const names = ["same-name", "same_name", "a".repeat(90)]
+        const h = nativeMcpFixture({ servers: [server], tools: names.map((name) => ({ name, inputSchema: schema })) })
+        try {
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === names.length)
+            assert.equal(new Set(h.catalog().keys()).size, names.length)
+            for (const [name, metadata] of h.catalog()) {
+                assert.ok(name.length <= 64)
+                assert.match(name, /^[A-Za-z0-9_]+$/)
+                assert.ok(names.includes(metadata.serverToolName))
+                assert.equal(metadata.serverName, "team-tools")
+                assert.equal((await h.run(name, {})).isError, false)
+                assert.equal(h.wire.at(-1)!.name, metadata.serverToolName)
             }
-        })
-    }
+        } finally {
+            await h.cleanup()
+        }
+    })
+
+    it("withdraws dropped and hidden tools from the live catalog and re-registers fresh definitions", async () => {
+        const h = nativeMcpFixture({ servers: [server], tools: [{ name: "echo", inputSchema: schema }] })
+        try {
+            let decorations = 0
+            h.events.on(MCP_TOOL_DECORATORS_EVENT, (request) => {
+                ;(request as McpToolDecorators).use((tool) => {
+                    decorations++
+                    return tool
+                })
+            })
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
+            const name = [...h.catalog().keys()][0]
+            await h.changeTools([])
+            await h.waitFor(() => h.tools.get(name)?.exposure === "hidden")
+            assert.equal(h.catalog().has(name), false)
+            assert.equal((await h.run(name, {})).isError, true)
+            assert.equal(h.wire.length, 0)
+            await h.changeTools([{ name: "echo", inputSchema: schema, annotations: { readOnlyHint: true } }])
+            await h.waitFor(() => h.catalog().get(name)?.annotations?.readOnlyHint === true)
+            assert.equal(decorations, 2)
+            assert.equal((await h.run(name, {})).isError, false)
+            assert.equal(h.wire.length, 1)
+        } finally {
+            await h.cleanup()
+        }
+    })
 
     for (const config of [
-        { command: "noop", env: { SECRET: "private-value" } },
+        { command: "fixture", env: { SECRET: "private-value" } },
         { url: "https://example.com/mcp", headers: { Authorization: "Bearer private-value" } },
-    ]) {
-        it(`supports a provider-neutral decorator with ${"command" in config ? "stdio" : "HTTP"} transport identity`, async () => {
-            const h = createMcpHarness()
-            const fake = createFakeClient([mcpTool("echo")])
-            const seen: unknown[] = []
-            h.pi.events.on(MCP_TOOL_DECORATORS_EVENT, (registration) => {
-                ;(registration as McpToolDecorators).use((native, metadata, transport) => {
-                    seen.push(transport)
-                    assert.equal(metadata.serverToolName, "echo")
-                    assert.deepEqual(metadata.inputSchema, { type: "object" })
-                    return {
-                        ...native,
-                        description: "Decorated description",
-                        execute(id, _params, signal, onUpdate, ctx) {
-                            return native.execute(id, { value: "decorated" }, signal, onUpdate, ctx)
-                        },
-                    }
-                })
+    ] satisfies McpServerConfig[]) {
+        it(`decorates ${"command" in config ? "stdio" : "HTTP"} tools without exposing credentials or replacing native fields`, async () => {
+            const h = nativeMcpFixture({
+                servers: [{ name: "alias", config }],
+                tools: [{ name: "echo", inputSchema: schema }],
             })
-            registerMcpServers(h.pi, { alias: config }, () => fake.client)
             try {
-                await h.start()
-                assert.deepEqual(seen, [
-                    "command" in config ? { type: "stdio" } : { type: "streamable-http", url: config.url },
-                ])
-                const tool = h.definitions.get("mcp__alias__echo")!
-                assert.equal(tool.description, "Decorated description")
-                const signal = new AbortController().signal
-                assert.deepEqual(await tool.execute("echo", {}, signal, undefined, h.ctx), {
-                    content: [],
-                    details: undefined,
+                let observed: unknown
+                h.events.on(MCP_TOOL_DECORATORS_EVENT, (request) => {
+                    ;(request as McpToolDecorators).use((native, metadata, transport) => {
+                        observed = { metadata, transport }
+                        return { ...native, execute: (...args) => native.execute(...args) }
+                    })
                 })
-                assert.deepEqual(fake.requests, [
-                    [{ name: "echo", arguments: { value: "decorated" } }, undefined, { signal }],
-                ])
-                assert.deepEqual(h.order, ["catalog", "tool:mcp__alias__echo"])
+                await h.install()
+                await h.start()
+                await h.waitFor(() => h.catalog().size === 1)
+                const name = [...h.catalog().keys()][0]
+                assert.doesNotMatch(JSON.stringify(observed), /private-value|Authorization|SECRET/)
+                assert.deepEqual(
+                    (observed as any).transport,
+                    "command" in config ? { type: "stdio" } : { type: "streamable-http", url: config.url },
+                )
+                assert.equal((await h.run(name, { value: "unmodified" })).isError, false)
+                assert.deepEqual(h.wire[0].arguments, { value: "unmodified" })
+                assert.ok(h.tools.get(name)!.outputSchema)
+                assert.ok(h.tools.get(name)!.renderCall)
+                assert.ok(h.tools.get(name)!.renderResult)
+                assert.equal(h.tools.get(name)!.namespace?.aliases?.[0], "alias")
             } finally {
-                await h.shutdown()
+                await h.cleanup()
             }
         })
     }
 
-    for (const failure of ["throw", "rename"] as const) {
-        it(`closes clients and registers no tools after decorator ${failure}`, async () => {
-            await suppressErrors(async () => {
-                const h = createMcpHarness()
-                const fake = createFakeClient([mcpTool("first"), mcpTool("second")])
-                h.pi.events.on(MCP_TOOL_DECORATORS_EVENT, (registration) => {
-                    ;(registration as McpToolDecorators).use((native, metadata) => {
-                        if (metadata.serverToolName === "first") return native
-                        if (failure === "throw") throw new Error("decoration failed")
-                        return { ...native, name: "changed" }
-                    })
-                })
-                registerMcpServers(h.pi, { alias: { command: "noop" } }, () => fake.client)
-                await h.start()
-                assert.deepEqual(h.registeredTools, [])
-                assert.deepEqual([...h.publications[0]], [])
-                assert.equal(fake.closeCount(), 1)
-                assert.deepEqual(fake.requests, [])
-            })
-        })
-    }
-})
-
-describe("MCP server config", () => {
-    it("resolves existing stdio config as a tagged variant", () => {
-        const config = {
-            command: "npx",
-            args: ["-y", "@playwright/mcp@latest"],
-            env: { PLAYWRIGHT_HEADLESS: "true" },
+    it("preserves native structured error results", async () => {
+        const result = {
+            content: [{ type: "text" as const, text: "Provider rejected this request" }],
+            structuredContent: { reason: "fixture" },
+            isError: true,
         }
-
-        const resolved = resolveServerConfig(config)
-
-        assert.deepEqual(resolved, { type: "stdio", config })
-        assert.ok(createServerTransport(config) instanceof StdioClientTransport)
-    })
-
-    it("resolves remote config and expands token references", () => {
-        const config = {
-            url: "https://mcp.linear.app/mcp",
-            headers: {
-                Authorization: "Bearer ${LINEAR_API_KEY}",
-                "X-Account": "${ACCOUNT_ID}:${ACCOUNT_REGION}",
-            },
-        }
-
-        const resolved = resolveServerConfig(config, {
-            LINEAR_API_KEY: "linear-token",
-            ACCOUNT_ID: "account-1",
-            ACCOUNT_REGION: "eu",
-        })
-
-        assert.equal(resolved.type, "streamable-http")
-        if (resolved.type !== "streamable-http") return
-        assert.equal(resolved.url.href, "https://mcp.linear.app/mcp")
-        assert.deepEqual(resolved.headers, {
-            Authorization: "Bearer linear-token",
-            "X-Account": "account-1:eu",
-        })
-        assert.ok(
-            createServerTransport(config, {
-                LINEAR_API_KEY: "linear-token",
-                ACCOUNT_ID: "account-1",
-                ACCOUNT_REGION: "eu",
-            }) instanceof StreamableHTTPClientTransport,
-        )
-    })
-
-    it("allows HTTP and HTTPS remote URLs", () => {
-        for (const url of ["http://localhost:3000/mcp", "https://example.com/mcp"]) {
-            const resolved = resolveServerConfig({ url })
-            assert.equal(resolved.type, "streamable-http")
+        const h = nativeMcpFixture({ servers: [server], result })
+        try {
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
+            const outcome = await h.run([...h.catalog().keys()][0], {})
+            assert.equal(outcome.isError, true)
+            assert.deepEqual(outcome.result.structuredContent, result)
+            assert.deepEqual(outcome.result.details, { server: "team-tools", tool: "echo" })
+            assert.equal(h.wire.length, 1)
+        } finally {
+            await h.cleanup()
         }
     })
 
-    it("rejects malformed or ambiguous transport configs", () => {
-        const invalidConfigs = [
-            {},
-            { command: "npx", url: "https://example.com/mcp" },
-            { command: "npx", headers: {} },
-            { url: "https://example.com/mcp", args: [] },
-            { url: "https://example.com/mcp", env: {} },
-            { command: "" },
-            { command: "npx", args: [1] },
-            { url: "https://example.com/mcp", headers: { Authorization: 1 } },
-        ]
-
-        for (const config of invalidConfigs) {
-            assert.throws(() => resolveServerConfig(config), /invalid server config/)
+    it("loads global registrations without reading either untrusted project tier", async () => {
+        const h = nativeMcpFixture({ projectTrusted: false, servers: [server] })
+        try {
+            const files = getMcpSettingsPaths(h.root)
+            for (const file of [files.project, files.local]) {
+                fs.mkdirSync(path.dirname(file), { recursive: true })
+                fs.writeFileSync(file, "untrusted malformed JSON")
+            }
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
+            assert.equal(h.registrations.size, 1)
+            assert.equal(h.connects(), 1)
+            assert.equal(h.notifications.length, 0)
+        } finally {
+            await h.cleanup()
         }
     })
 
-    it("rejects invalid and unsupported remote URLs", () => {
-        assert.throws(() => resolveServerConfig({ url: "not a URL" }), /valid HTTP\(S\) URL/)
-        assert.throws(() => resolveServerConfig({ url: "ftp://example.com/mcp" }), /http: or https:/)
+    it("registers every effective tier once with exact-name local precedence and no second file discovery", async () => {
+        const h = nativeMcpFixture()
+        try {
+            const files = getMcpSettingsPaths(h.root)
+            const privateConfig = { url: "https://private.example/mcp", exposure: "direct" }
+            write(files.global, { mcpServers: { shared: server.config, global: server.config } })
+            write(files.project, { mcpServers: { shared: { command: "replaced" }, project: server.config } })
+            write(files.local, { mcpServers: { shared: privateConfig, local: server.config } })
+            fs.mkdirSync(path.join(h.root, ".pi"))
+            fs.writeFileSync(path.join(h.root, ".pi/mcp.json"), "not an adapter configuration source")
+            const globalBefore = fs.readFileSync(files.global, "utf-8")
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 4)
+            assert.deepEqual([...h.registrations.keys()].sort(), ["global", "local", "project", "shared"])
+            assert.deepEqual(h.registrations.get("shared")?.config, privateConfig)
+            assert.equal(h.connects(), 4)
+            assert.equal((await h.run("mcp__shared__echo", {})).isError, false)
+            assert.equal(h.wire[0].server, "shared")
+            assert.equal(fs.readFileSync(files.global, "utf-8"), globalBefore)
+            assert.match(fs.readFileSync(files.local, "utf-8"), /private\.example/)
+            await h.shutdown()
+            assert.equal(h.closes(), 4)
+        } finally {
+            await h.cleanup()
+        }
     })
 
-    it("rejects an unset header environment variable", () => {
-        assert.throws(
-            () =>
-                resolveServerConfig(
-                    {
-                        url: "https://api.githubcopilot.com/mcp/",
-                        headers: { Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" },
-                    },
-                    {},
-                ),
-            /environment variable GITHUB_PERSONAL_ACCESS_TOKEN is not set/,
-        )
+    it("reports normalized namespace collisions instead of overriding a different exact server name", async () => {
+        const h = nativeMcpFixture({ servers: [server] })
+        try {
+            write(getMcpSettingsPaths(h.root).project, { mcpServers: { team_tools: server.config } })
+            await h.install()
+            await assert.rejects(h.start(), /team_tools.*conflicts.*team-tools/)
+            assert.equal(h.registrations.size, 0)
+            assert.equal(h.connects(), 0)
+        } finally {
+            await h.cleanup()
+        }
+    })
+
+    it("removes old owned registrations before loading the next session's trusted configuration", async () => {
+        const options = { projectTrusted: true, servers: [server] }
+        const h = nativeMcpFixture(options)
+        try {
+            write(getMcpSettingsPaths(h.root).local, { mcpServers: { private: server.config } })
+            await h.install()
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 2)
+            await h.shutdown()
+            options.projectTrusted = false
+            await h.start()
+            await h.waitFor(() => h.catalog().size === 1)
+            assert.deepEqual([...h.registrations.keys()], ["team-tools"])
+            assert.equal(h.connects(), 3)
+            assert.equal(h.closes(), 2)
+        } finally {
+            await h.cleanup()
+        }
     })
 })

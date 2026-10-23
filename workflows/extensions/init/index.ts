@@ -25,6 +25,7 @@ export default function (pi: ExtensionAPI): void {
             const input = Value.Parse(EntityInitializationSchema, params)
             const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
                 ctx.cwd,
+                ctx.isProjectTrusted(),
                 input,
                 signal,
             )

@@ -7,8 +7,15 @@ import { describe, it } from "node:test"
 import { Value } from "typebox/value"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
-import { finishReadDecision } from "../workflows/extensions/integrations/resource-id-operations.ts"
+import {
+    finishReadDecision,
+    type ProviderEvidence,
+} from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { planGitHubMerge, type GitHubMergeSubject } from "../workflows/extensions/integrations/forge/github/merge.ts"
+
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+
+const mcpTools = workflowMcpCatalog("forge")
 
 const repository = { owner: "upstream", repo: "app" }
 const sha = "a".repeat(40)
@@ -64,13 +71,17 @@ function fixture(artifacts: "versioned" | "unversioned") {
         JSON.stringify({ forge: { provider: "github", mcpServer: "forge", repository } }),
     )
     prepareArtifactPersistence(root)
-    const plan = (reviewed = evidence(), current = reviewed) =>
-        buildIntegrationContext({ cwd: root } as never, {
-            operation: "incomingPullRequestMerge",
-            reference: "#12",
-            reviewedEvidence: reviewed,
-            evidence: current,
-        }).merge
+    const plan = (reviewed: ProviderEvidence = evidence(), current = reviewed) =>
+        buildIntegrationContext(
+            { cwd: root } as never,
+            {
+                operation: "incomingPullRequestMerge",
+                reference: "#12",
+                reviewedEvidence: reviewed,
+                evidence: current,
+            },
+            mcpTools,
+        ).merge
     const snapshot = () => ({
         head: git("rev-parse", "HEAD"),
         branch: git("branch", "--show-current"),
@@ -91,8 +102,8 @@ describe("one repository merge operation", () => {
                     state: "merge-needed",
                     arguments: { ...repository, pullNumber: 12, merge_method: "squash", expectedHeadSha: sha },
                 }
-                assert.deepEqual(planGitHubMerge(subject, read), expected)
-                assert.deepEqual(finishReadDecision(scope, read, sha, 12), expected)
+                assert.deepEqual(planGitHubMerge(subject, read, mcpTools), expected)
+                assert.deepEqual(finishReadDecision(scope, read, sha, 12, mcpTools), expected)
                 assert.deepEqual(f.plan(read), expected)
                 assert.equal(fs.existsSync(path.join(f.root, ".project/gigs")), false)
                 assert.deepEqual(f.snapshot(), before)
@@ -100,6 +111,34 @@ describe("one repository merge operation", () => {
                 f.close()
             }
         })
+
+    it("uses native MCP results for both pinned merge and confirmed-merge paths", () => {
+        const f = fixture("versioned")
+        try {
+            const read = evidence()
+            const wrap = (response: typeof read.response) => ({
+                ...read,
+                response: { content: [{ type: "text", text: JSON.stringify(response) }] },
+            })
+            const native = wrap(read.response)
+            assert.deepEqual(planGitHubMerge(subject, native, mcpTools), planGitHubMerge(subject, read, mcpTools))
+            assert.deepEqual(finishReadDecision(scope, native, sha, 12, mcpTools), f.plan(native))
+            const merged = wrap({
+                ...read.response,
+                state: "closed",
+                merged: true,
+                merged_at: "2026-10-22T12:00:00Z",
+                base: { ...read.response.base, sha: "c".repeat(40) },
+            })
+            assert.equal(f.plan(native, merged).state, "merged")
+            assert.equal(finishReadDecision(scope, merged, sha, 12, mcpTools).state, "merged")
+            const failed = { ...native, response: { ...native.response, isError: true } }
+            assert.equal(f.plan(failed).state, "blocked")
+            assert.equal(finishReadDecision(scope, failed, sha, 12, mcpTools).state, "blocked")
+        } finally {
+            f.close()
+        }
+    })
 
     it("keeps incoming fork addressing separate from the Deliverable branch association", () => {
         const f = fixture("versioned")
@@ -114,7 +153,7 @@ describe("one repository merge operation", () => {
                 merge_method: "squash",
                 expectedHeadSha: sha,
             })
-            assert.equal(finishReadDecision(scope, read, sha, 12).state, "blocked")
+            assert.equal(finishReadDecision(scope, read, sha, 12, mcpTools).state, "blocked")
         } finally {
             f.close()
         }
@@ -129,9 +168,9 @@ describe("one repository merge operation", () => {
             merged.response.merged = true
             merged.response.merged_at = "2026-10-21T12:00:00Z"
             merged.response.base.sha = "c".repeat(40)
-            const decision = planGitHubMerge(subject, merged)
+            const decision = planGitHubMerge(subject, merged, mcpTools)
             assert.equal(decision.state, "merged")
-            assert.deepEqual(finishReadDecision(scope, merged, sha, 12), decision)
+            assert.deepEqual(finishReadDecision(scope, merged, sha, 12, mcpTools), decision)
             assert.deepEqual(f.plan(reviewed, merged), decision)
             merged.response.merged_at = null
             assert.equal(f.plan(reviewed, merged).state, "blocked")
@@ -167,7 +206,7 @@ describe("one repository merge operation", () => {
             if (change === "draft") read.response.draft = true
             if (change === "closed") read.response.state = "closed"
             if (change === "unknown") delete (read.response as Partial<typeof read.response>).merged
-            assert.equal(planGitHubMerge(subject, read).state, "blocked", change)
+            assert.equal(planGitHubMerge(subject, read, mcpTools).state, "blocked", change)
         }
     })
 

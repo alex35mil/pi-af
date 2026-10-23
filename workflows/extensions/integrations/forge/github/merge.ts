@@ -1,4 +1,4 @@
-import { getMcpToolName } from "../../../../../extensions/__lib/mcp.js"
+import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 
 interface Repository {
@@ -55,11 +55,15 @@ function repositoryName(repository: Repository): string {
 
 // Both workflow adapters establish readiness/approval and their own durable association.
 // This shared boundary alone owns the repository's merge strategy and native arguments.
-export function planGitHubMerge(subject: GitHubMergeSubject, evidence: ProviderEvidence): GitHubMergeDecision {
+export function planGitHubMerge(
+    subject: GitHubMergeSubject,
+    evidence: ProviderEvidence,
+    tools: McpToolCatalog,
+): GitHubMergeDecision {
     try {
         const args = evidence.arguments
         if (
-            evidence.tool !== getMcpToolName(subject.mcpServer, "pull_request_read") ||
+            !isMcpTool(evidence.tool, subject.mcpServer, "pull_request_read", tools) ||
             args.method !== "get" ||
             typeof args.owner !== "string" ||
             args.owner.toLowerCase() !== subject.repository.owner.toLowerCase() ||
@@ -70,7 +74,7 @@ export function planGitHubMerge(subject: GitHubMergeSubject, evidence: ProviderE
             subject.number < 1
         )
             throw new Error("Merge requires the exact configured PR-get evidence")
-        const response = object(evidence.response, "PR response")
+        const response = mcpResponsePayload(evidence.response)
         const base = object(response.base, "PR base")
         const head = object(response.head, "PR head")
         const headRepository = head.repo == null ? null : object(head.repo, "PR head repository")

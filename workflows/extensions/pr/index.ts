@@ -1,9 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 import { registerIncomingCheckout } from "./checkout.js"
+import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
 
 export default function (pi: ExtensionAPI): void {
-    registerIncomingCheckout(pi)
+    registerIncomingCheckout(pi, observeMcpTools(pi))
     pi.registerCommand("pr", {
         description: "Select an incoming GitHub PR for Project intake and private review",
         handler: async (args, ctx) => {

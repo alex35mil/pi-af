@@ -205,6 +205,7 @@ export async function inspectLinearTrackerBranch(
 
 export async function resolveLinearTrackerBranchRendererForInitialization(
     cwd: string,
+    projectTrusted: boolean,
     input: EntityInitialization,
     signal?: AbortSignal,
     options: Omit<LinearWorkspaceInspectionOptions, "signal"> = {},
@@ -216,7 +217,7 @@ export async function resolveLinearTrackerBranchRendererForInitialization(
     const loaded = loadIntegrationConfig(cwd)
     if (loaded.state !== "enabled" || loaded.config.tracker?.provider !== "linear") return undefined
     const tracker = loaded.config.tracker
-    const credentialEnv = registeredCredentialEnvironment(cwd, tracker.mcpServer, "linear")
+    const credentialEnv = registeredCredentialEnvironment(cwd, tracker.mcpServer, "linear", projectTrusted)
     const context = await inspectLinearTrackerBranch({ credentialEnv }, { ...options, signal })
     return (identity: EntityIdentity) => formatLinearTrackerBranch(identity, context)
 }

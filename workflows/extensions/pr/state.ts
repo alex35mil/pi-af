@@ -3,6 +3,7 @@ import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
 
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import {
     incomingRevision,
     sameIncomingAddress,
@@ -142,12 +143,17 @@ export function stateFacts(state: CheckoutState) {
     return { revision, evidence, reviewBaseSha, baselineSha, providerRevision, messages, observation }
 }
 
-export function readCheckoutState(file: string, current: IncomingRevision, forge: GitHubForge): CheckoutState {
+export function readCheckoutState(
+    file: string,
+    current: IncomingRevision,
+    forge: GitHubForge,
+    tools: McpToolCatalog,
+): CheckoutState {
     const value: unknown = JSON.parse(fs.readFileSync(file, "utf-8"))
     if (!Value.Check(CheckoutStateSchema, value))
         throw new Error("Invalid managed checkout record; preserve it and investigate")
     const state = value
-    const original = incomingRevision(forge, state.revision, state.evidence)
+    const original = incomingRevision(forge, state.revision, state.evidence, tools)
     if (!sameIncomingRevision(original, state.revision))
         throw new Error("Original checkout evidence does not match its recorded revision")
     if (

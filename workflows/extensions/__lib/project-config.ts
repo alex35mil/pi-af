@@ -82,7 +82,7 @@ export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: s
     const username = localSettings?.branches.username ?? globalSettings?.branches?.username
     if (!username) {
         throw new Error(
-            `invalid branch configuration: username is required in ${LOCAL_PROJECT_CONFIG_PATH} or global workflows.settings.json`,
+            `invalid branch configuration: username is required in ${LOCAL_PROJECT_CONFIG_PATH} or global workflows.json`,
         )
     }
 

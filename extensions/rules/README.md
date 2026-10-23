@@ -4,9 +4,9 @@ Discovers rule files and delivers them to the agent. Rules are Markdown files th
 
 ## Rule Locations
 
-| Scope | Directory |
-|-------|-----------|
-| Global | `~/<agent-dir>/rules/` |
+| Scope   | Directory                    |
+| ------- | ---------------------------- |
+| Global  | `~/<agent-dir>/rules/`       |
 | Project | `<repo-root>/.agents/rules/` |
 
 All `.md` files in these directories (including subdirectories) are discovered.
@@ -30,8 +30,8 @@ Have a `paths` glob list in YAML frontmatter. Delivered via read tool results wh
 ```markdown
 ---
 paths:
-  - "src/components/**"
-  - "*.test.ts"
+    - "src/components/**"
+    - "*.test.ts"
 ---
 
 # component-rules.md
@@ -47,38 +47,33 @@ Supports `*`, `**`, `?`, and brace expansion (`{a,b}`). Paths are matched relati
 
 ### System Prompt
 
-- Always-on rules are injected with their full body.
-- If path-scoped rules exist, a note is added telling the agent to always read files before editing (rules load automatically on read).
-- Path-scoped rule bodies are **not** included in the system prompt — they are delivered only via tool results to avoid context pollution.
+- Always-on rules enter the system prompt with their full body.
+- Path-scoped rules stay lazy. Guidance tells the model to read relevant files before composing an editing script; unrelated rule bodies are not injected at startup.
 
-### Rule Delivery (tool_result on read)
+### Queued and Model-Visible Rules
 
-When the agent reads a file matching a path-scoped rule:
+A successful matching read appends the complete rule body and patterns and queues delivery. Reading a rule file itself also supplies its complete reminder, including when the requested file range is only its header.
 
-- **First matching read**: full reminder appended to the tool result — includes the rule body and glob patterns so the agent understands what files the rule covers.
-- **Subsequent matching reads**: compact reminder — just the patterns, telling the agent to follow the rule it saw earlier. Saves tokens while keeping the association visible.
+A nested read reaches only its script. When the script returns, missing reminders are added to the branch's model context after the tool batch, even when the script discarded its read result. These messages persist so the rules remain available in later requests.
 
-### Edit Blocking (tool_call on edit/write)
+The extension checks the actual projected model context, then confirms visibility only after a successful assistant response. A failed or aborted model response does not establish visibility. Already-visible scopes receive compact reminders; another file in the same scope needs no additional rule-loading round trip.
 
-If the agent tries to edit or write a file matching a path-scoped rule it hasn't seen yet, the tool call is blocked. The agent must read a matching file first to load the rule.
+### Edit Blocking
+
+Edit/write calls are blocked before editor review or mutation while an applicable rule is unseen. A read earlier in the same pre-authored tool batch or script does not unlock the edit. The script must return to the model, which receives the rules before composing further work.
+
+Rule versions include the source path, patterns, and body. Changed rules require fresh delivery rather than inheriting an older version's visibility.
 
 ### Compaction
 
-On compaction, both `loadedRuleIds` and `visibleRuleIds` are cleared and an empty `rules-state` entry is persisted. This means:
+Compaction clears queued, prepared, and visible rule state and persists the reset. The edit blocker re-engages and the next matching read supplies a full reminder. Pre-compaction read metadata cannot restore visibility, even when its text remains in the retained transcript tail.
 
-- The edit blocker re-engages — the agent must read matching files again before editing.
-- The next matching read delivers a full reminder (not compact), since the rule is treated as new.
-- The empty entry ensures that `restoreLoadedRuleIds` (which scans the full branch including pre-compaction entries) picks up the reset state.
+### Branches and Session Replay
 
-### Session Replay (--continue/--resume)
-
-Rule loading state is persisted in the session branch via custom `rules-state` entries. On replay, the last entry is restored so:
-
-- The edit blocker knows which rules the agent has already seen.
-- Already-loaded rules get compact reminders on subsequent reads instead of full ones.
+Confirmed visibility is stored in branch-local `rules-state` entries. Direct-read and reminder-message metadata retain pending delivery without treating it as authorization. Tree navigation and a fresh session runtime restore only the selected branch's current rule versions; abandoned branches do not grant access. `/rules` reports pending delivery separately from active rules.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
+| Command  | Description                                        |
+| -------- | -------------------------------------------------- |
 | `/rules` | Show discovered rules and current activation state |

@@ -26,6 +26,7 @@ import {
     readPublicationIdentity,
 } from "../workflows/extensions/integrations/publication-tool.ts"
 import { renderProviderBody } from "../workflows/extensions/integrations/projection.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
 
 const identity = { harness: "Pi", provider: "openrouter", modelId: "anthropic/claude-sonnet-4-5" }
 const readIdentity = () => identity
@@ -252,7 +253,7 @@ function nativeFixture(exposure: "direct" | "deferred" | "hidden" = "deferred") 
         structuredContent: { content: [] },
         isError: true,
     }
-    // Fields used by native SDK 1.3.0; the old workspace SDK does not define all of them.
+    // Preserve the native SDK metadata as well as its execution result.
     const native = {
         name: "mcp__normalized_or_hashed_12345678",
         label: "Native tool",
@@ -290,7 +291,9 @@ describe("workflow Pi publication wrapper", () => {
             "renderResult",
         ] as const)
             assert.equal(wrapped[key], native[key])
-        const context = { model: { provider: identity.provider, id: identity.modelId } } as ExtensionContext
+        const context = withToolExecution({
+            model: { provider: identity.provider, id: identity.modelId },
+        } as ExtensionContext)
         const signal = new AbortController().signal
         const onUpdate = () => undefined
         const proposed = { body: "Message.", [AUTHORSHIP_PARAMETER]: "ai-assisted" }
@@ -306,7 +309,7 @@ describe("workflow Pi publication wrapper", () => {
     it("needs identity only for AI text, and never delegates failed preparation", async () => {
         const { native, calls } = nativeFixture()
         const wrapped = decoratePublicationTool(native, operation("github", "add_issue_comment"))
-        const context = {} as ExtensionContext
+        const context = withToolExecution({} as ExtensionContext)
         await assert.rejects(
             wrapped.execute("missing", { body: "Text" }, undefined, undefined, context),
             /current model/,
@@ -334,9 +337,15 @@ describe("workflow Pi publication wrapper", () => {
             const wrapped = decoratePublicationTool(native, operation("github", "add_issue_comment"))
             assert.equal(wrapped.exposure, exposure)
             if (exposure === "hidden") continue // Pi makes hidden tools unreachable.
-            await wrapped.execute("fresh", { body: "Fresh." }, undefined, undefined, {
-                model: { provider: identity.provider, id: identity.modelId },
-            } as ExtensionContext)
+            await wrapped.execute(
+                "fresh",
+                { body: "Fresh." },
+                undefined,
+                undefined,
+                withToolExecution({
+                    model: { provider: identity.provider, id: identity.modelId },
+                } as ExtensionContext),
+            )
             assert.equal(calls.length, 1)
             assert.equal(((calls[0][1] as any).body.match(/Sent via/g) ?? []).length, 1)
         }

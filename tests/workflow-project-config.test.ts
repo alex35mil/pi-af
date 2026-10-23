@@ -14,7 +14,7 @@ import { inspectProjectMcp, registeredCredentialEnvironment } from "../workflows
 import { configureProjectMcp, LOCAL_MCP_SETTINGS_EXCLUDE } from "../workflows/extensions/project-setup/mcp.ts"
 import {
     configureProjectPermissions,
-    LOCAL_PERMISSION_SETTINGS_EXCLUDE,
+    LOCAL_PERMISSIONS_SETTINGS_EXCLUDE,
 } from "../workflows/extensions/project-setup/permissions.ts"
 import {
     assertArtifactPersistencePrepared,
@@ -60,7 +60,7 @@ function git(root: string, args: string[]): string {
 describe("workflow project configuration", () => {
     it("resolves a private global workflow source while preserving branch settings", () => {
         const root = repository()
-        const globalSettingsPath = path.join(root, "workflows.settings.json")
+        const globalSettingsPath = path.join(root, "workflows.json")
         const localSettingsPath = path.join(root, ".project/config.local.json")
         const options = { globalSettingsPath }
         try {
@@ -105,7 +105,7 @@ describe("workflow project configuration", () => {
 
     it("rejects invalid source settings and roots without writing configuration", () => {
         const root = repository()
-        const globalSettingsPath = path.join(root, "workflows.settings.json")
+        const globalSettingsPath = path.join(root, "workflows.json")
         const options = { globalSettingsPath }
         try {
             for (const content of [
@@ -164,7 +164,9 @@ describe("workflow project configuration", () => {
     it("starts guided setup without creating artifacts", async () => {
         const root = repository()
         let sent = ""
-        let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined
+        let setup:
+            | { handler: (args: string, ctx: { cwd: string; isProjectTrusted(): boolean }) => Promise<void> }
+            | undefined
         const tools: string[] = []
         const pi = {
             events: { on: () => () => {} },
@@ -180,9 +182,9 @@ describe("workflow project configuration", () => {
         try {
             fs.mkdirSync(path.join(root, ".agents"))
             fs.writeFileSync(
-                path.join(root, ".agents", "mcp.settings.json"),
+                path.join(root, ".agents", "mcp.json"),
                 JSON.stringify({
-                    servers: {
+                    mcpServers: {
                         existing: {
                             url: "https://example.com/mcp",
                             headers: { Authorization: "Bearer top-secret" },
@@ -198,14 +200,14 @@ describe("workflow project configuration", () => {
             assert.ok(tools.includes("inspect_permissions"))
             assert.ok(tools.includes("inspect_linear_workspace"))
             assert.ok(tools.includes("provision_github_project"))
-            await setup.handler("Use unversioned artifact mode", { cwd: root })
+            await setup.handler("Use unversioned artifact mode", { cwd: root, isProjectTrusted: () => true })
             assert.match(sent, /Use unversioned artifact mode/)
             assert.match(sent, /Use the project-setup skill/)
             assert.match(sent, /"repositoryRoot":/)
             assert.match(sent, /"path": "\.project\/config\.json"/)
             assert.match(sent, /"path": "\.project\/config\.local\.json"/)
             assert.match(sent, /"globalWorkflowSettings":/)
-            assert.match(sent, /"path": "\.agents\/permission\.settings\.local\.json"/)
+            assert.match(sent, /"path": "\.agents\/permissions\.local\.json"/)
             assert.match(sent, /"name": "existing"/)
             assert.match(sent, /"boundEntityTrackers": \[\]/)
             assert.match(sent, /"projectPathsInGit": \[\]/)
@@ -219,7 +221,7 @@ describe("workflow project configuration", () => {
     it("extracts only safe GitHub identities from fetch remotes without changing Git state", () => {
         const root = repository()
         try {
-            assert.deepEqual(inspectProjectSetup(root).repositoryIdentity.githubCandidates, [])
+            assert.deepEqual(inspectProjectSetup(root, true).repositoryIdentity.githubCandidates, [])
             const remotes = [
                 [
                     "origin",
@@ -236,7 +238,7 @@ describe("workflow project configuration", () => {
             git(root, ["remote", "set-url", "--push", "origin", "https://github.com/PushOnly/Example.git"])
             const before = fs.readFileSync(path.join(root, ".git/config"))
             const index = git(root, ["ls-files", "--stage"])
-            const snapshot = inspectProjectSetup(root)
+            const snapshot = inspectProjectSetup(root, true)
             assert.deepEqual(snapshot.repositoryIdentity.githubCandidates, [
                 { owner: "Owner", repo: "Example", remotes: ["origin", "ssh", "url"] },
                 { owner: "Upstream", repo: "Example", remotes: ["upstream"] },
@@ -263,7 +265,9 @@ describe("workflow project configuration", () => {
             git(root, ["remote", "add", "origin", "https://snapshot-secret@github.com/owner/example.git"])
             type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
             const tools = new Map<string, Tool>()
-            let setup: { handler: (args: string, ctx: { cwd: string }) => Promise<void> } | undefined
+            let setup:
+                | { handler: (args: string, ctx: { cwd: string; isProjectTrusted(): boolean }) => Promise<void> }
+                | undefined
             let sent = ""
             const pi = {
                 events: { on: () => () => {} },
@@ -279,9 +283,9 @@ describe("workflow project configuration", () => {
             try {
                 fs.mkdirSync(path.join(root, ".agents"))
                 fs.writeFileSync(
-                    path.join(root, ".agents/mcp.settings.json"),
+                    path.join(root, ".agents/mcp.json"),
                     JSON.stringify({
-                        servers: {
+                        mcpServers: {
                             "setup-github": {
                                 url: "https://api.githubcopilot.com/mcp/",
                                 headers: { Authorization: "Bearer ${PROJECT_SETUP_GITHUB_TOKEN}" },
@@ -298,9 +302,9 @@ describe("workflow project configuration", () => {
                     }),
                 )
                 fs.writeFileSync(
-                    path.join(root, ".agents/mcp.settings.local.json"),
+                    path.join(root, ".agents/mcp.local.json"),
                     JSON.stringify({
-                        servers: {
+                        mcpServers: {
                             "setup-github": {
                                 url: "https://api.githubcopilot.com/mcp/",
                                 headers: { Authorization: "Bearer ${LOCAL_SETUP_GITHUB_TOKEN}" },
@@ -330,8 +334,8 @@ describe("workflow project configuration", () => {
                 const observedPaths = [
                     ".git/index",
                     ".git/info/exclude",
-                    ".agents/mcp.settings.json",
-                    ".agents/mcp.settings.local.json",
+                    ".agents/mcp.json",
+                    ".agents/mcp.local.json",
                     ".project/config.json",
                     ".project/integrations.json",
                 ]
@@ -348,7 +352,10 @@ describe("workflow project configuration", () => {
                 assert.ok(setup)
                 assert.equal(Value.Check(tool.parameters, {}), true)
                 assert.equal(Value.Check(tool.parameters, { unexpected: true }), false)
-                const inspected = await tool.execute("inspect", {}, undefined, undefined, { cwd: root } as never)
+                const inspected = await tool.execute("inspect", {}, undefined, undefined, {
+                    cwd: root,
+                    isProjectTrusted: () => true,
+                } as never)
                 assert.equal(sent, "", "inspection must not inject a user message")
                 const snapshot = inspected.details as ReturnType<typeof inspectProjectSetup>
                 const text = inspected.content.map((block) => (block.type === "text" ? block.text : "")).join("\n")
@@ -373,7 +380,7 @@ describe("workflow project configuration", () => {
                     assert.ok(snapshot.projectPathsInGit.includes(".project/config.json"))
                     assert.ok(snapshot.stagedProjectPaths.includes(".project/config.json"))
                 }
-                await setup.handler("Inspect existing setup", { cwd: root })
+                await setup.handler("Inspect existing setup", { cwd: root, isProjectTrusted: () => true })
                 const prefix = "Read-only setup context:\n"
                 const start = sent.indexOf(prefix) + prefix.length
                 const end = sent.indexOf("\n\nUse the project-setup skill.", start)
@@ -395,9 +402,9 @@ describe("workflow project configuration", () => {
         try {
             fs.mkdirSync(path.join(root, ".agents"))
             fs.writeFileSync(
-                path.join(root, ".agents", "mcp.settings.json"),
+                path.join(root, ".agents", "mcp.json"),
                 JSON.stringify({
-                    servers: {
+                    mcpServers: {
                         linear: {
                             url: "https://mcp.linear.app/mcp",
                             headers: { Authorization: "Bearer ${LINEAR_SETUP_KEY}" },
@@ -410,7 +417,7 @@ describe("workflow project configuration", () => {
                 }),
             )
 
-            const inspected = inspectProjectMcp(root)
+            const inspected = inspectProjectMcp(root, true)
             assert.deepEqual(
                 inspected.effectiveServers.find((server) => server.name === "linear"),
                 {
@@ -428,9 +435,9 @@ describe("workflow project configuration", () => {
                 },
             )
             assert.doesNotMatch(JSON.stringify(inspected), /literal-secret/)
-            assert.equal(registeredCredentialEnvironment(root, "linear", "linear"), "LINEAR_SETUP_KEY")
+            assert.equal(registeredCredentialEnvironment(root, "linear", "linear", true), "LINEAR_SETUP_KEY")
             assert.throws(
-                () => registeredCredentialEnvironment(root, "custom", "linear"),
+                () => registeredCredentialEnvironment(root, "custom", "linear", true),
                 /not a recognized linear registration/,
             )
         } finally {
@@ -474,9 +481,9 @@ describe("workflow project configuration", () => {
             )
             fs.mkdirSync(path.join(root, ".agents"))
             fs.writeFileSync(
-                path.join(root, ".agents", "mcp.settings.json"),
+                path.join(root, ".agents", "mcp.json"),
                 JSON.stringify({
-                    servers: {
+                    mcpServers: {
                         linear: {
                             url: "https://mcp.linear.app/mcp",
                             headers: { Authorization: "Bearer ${LINEAR_BRANCH_KEY}" },
@@ -502,6 +509,7 @@ describe("workflow project configuration", () => {
                 )
             const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
                 root,
+                true,
                 {
                     entity: "epic",
                     title: "Linear Epic",
@@ -526,12 +534,12 @@ describe("workflow project configuration", () => {
 
     it("adds approved MCP registrations without credentials or index changes", () => {
         const root = repository()
-        const globalSettingsPath = path.join(root, "global-mcp.settings.json")
+        const globalSettingsPath = path.join(root, "global-mcp.json")
         try {
             fs.mkdirSync(path.join(root, ".agents"))
             fs.writeFileSync(
-                path.join(root, ".agents", "mcp.settings.local.json"),
-                `${JSON.stringify({ servers: { existing: { command: "noop" } }, preserved: true }, null, 4)}\n`,
+                path.join(root, ".agents", "mcp.local.json"),
+                `${JSON.stringify({ mcpServers: { existing: { command: "noop" } }, preserved: true }, null, 4)}\n`,
             )
             const indexBefore = git(root, ["ls-files", "--stage"])
 
@@ -559,7 +567,7 @@ describe("workflow project configuration", () => {
             assert.deepEqual(configured.changed, ["local"])
             assert.equal(configured.restartRequired, true)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
-            assert.doesNotThrow(() => git(root, ["check-ignore", "-q", ".agents/mcp.settings.local.json"]))
+            assert.doesNotThrow(() => git(root, ["check-ignore", "-q", ".agents/mcp.local.json"]))
             assert.ok(
                 fs
                     .readFileSync(path.join(root, ".git", "info", "exclude"), "utf-8")
@@ -567,15 +575,15 @@ describe("workflow project configuration", () => {
                     .includes(LOCAL_MCP_SETTINGS_EXCLUDE),
             )
 
-            const local = JSON.parse(fs.readFileSync(path.join(root, ".agents", "mcp.settings.local.json"), "utf-8"))
+            const local = JSON.parse(fs.readFileSync(path.join(root, ".agents", "mcp.local.json"), "utf-8"))
             assert.equal(local.preserved, true)
-            assert.deepEqual(local.servers.existing, { command: "noop" })
-            assert.deepEqual(local.servers["linear-workflow"], {
+            assert.deepEqual(local.mcpServers.existing, { command: "noop" })
+            assert.deepEqual(local.mcpServers["linear-workflow"], {
                 url: "https://mcp.linear.app/mcp",
                 headers: { Authorization: "Bearer ${LINEAR_WORKFLOW_TOKEN}" },
             })
 
-            assert.deepEqual(local.servers["github-workflow"], {
+            assert.deepEqual(local.mcpServers["github-workflow"], {
                 url: "https://api.githubcopilot.com/mcp/",
                 headers: {
                     Authorization: "Bearer ${GITHUB_WORKFLOW_TOKEN}",
@@ -599,8 +607,8 @@ describe("workflow project configuration", () => {
                 { globalSettingsPath },
             )
             assert.deepEqual(committed.changed, ["project"])
-            const project = JSON.parse(fs.readFileSync(path.join(root, ".agents", "mcp.settings.json"), "utf-8"))
-            assert.deepEqual(project.servers["github-committed"], {
+            const project = JSON.parse(fs.readFileSync(path.join(root, ".agents", "mcp.json"), "utf-8"))
+            assert.deepEqual(project.mcpServers["github-committed"], {
                 url: "https://api.githubcopilot.com/mcp/",
                 headers: {
                     Authorization: "Bearer ${GITHUB_WORKFLOW_TOKEN}",
@@ -615,7 +623,7 @@ describe("workflow project configuration", () => {
     it("adds approved permission gates without replacing settings or changing the Git index", () => {
         const root = repository()
         try {
-            const settingsPath = path.join(root, ".agents", "permission.settings.local.json")
+            const settingsPath = path.join(root, ".agents", "permissions.local.json")
             fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
             fs.writeFileSync(
                 settingsPath,
@@ -639,12 +647,12 @@ describe("workflow project configuration", () => {
             assert.equal(configured.changed, true)
             assert.equal(configured.localExclusionChanged, true)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
-            assert.doesNotThrow(() => git(root, ["check-ignore", "-q", ".agents/permission.settings.local.json"]))
+            assert.doesNotThrow(() => git(root, ["check-ignore", "-q", ".agents/permissions.local.json"]))
             assert.ok(
                 fs
                     .readFileSync(path.join(root, ".git", "info", "exclude"), "utf-8")
                     .split(/\r?\n/)
-                    .includes(LOCAL_PERMISSION_SETTINGS_EXCLUDE),
+                    .includes(LOCAL_PERMISSIONS_SETTINGS_EXCLUDE),
             )
 
             const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"))
@@ -655,7 +663,7 @@ describe("workflow project configuration", () => {
 
             assert.deepEqual(configureProjectPermissions(root, { target: "local", allow: [], ask: rules }, new Map()), {
                 target: "local",
-                file: ".agents/permission.settings.local.json",
+                file: ".agents/permissions.local.json",
                 added: { allow: [], ask: [] },
                 skipped: { allow: [], ask: rules },
                 inspection: [],
@@ -678,7 +686,7 @@ describe("workflow project configuration", () => {
 
     it("requires strict explicit configuration", () => {
         const root = repository()
-        const globalSettingsPath = path.join(root, "global-workflows.settings.json")
+        const globalSettingsPath = path.join(root, "global-workflows.json")
         try {
             assert.throws(
                 () => loadProjectConfig(root, { globalSettingsPath }),
@@ -714,7 +722,7 @@ describe("workflow project configuration", () => {
 
     it("resolves branch username from strict local and global settings", () => {
         const root = repository()
-        const globalSettingsPath = path.join(root, "global-workflows.settings.json")
+        const globalSettingsPath = path.join(root, "global-workflows.json")
         const localSettingsPath = path.join(root, ".project", "config.local.json")
         try {
             writeConfig(root, config("versioned", { format: "tracker" }))

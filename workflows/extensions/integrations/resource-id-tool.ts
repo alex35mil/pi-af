@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { Value } from "typebox/value"
 
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { OperationResourceIdsMemo } from "./resource-ids.js"
 import { beginProviderCreation, recordProviderCreation } from "./creation.js"
 import {
@@ -24,7 +25,7 @@ export const EvidenceSchema = Type.Object(
     {
         tool: Type.String({ minLength: 1 }),
         arguments: Type.Record(Type.String(), Type.Unknown()),
-        response: Type.Unknown(),
+        response: Type.Unknown({ description: "Actual provider JSON or complete native MCP result." }),
     },
     { additionalProperties: false },
 )
@@ -58,7 +59,7 @@ export const ResourceIdsToolSchema = Type.Union([
     ),
 ])
 
-export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIdsMemo): void {
+export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIdsMemo, tools: McpToolCatalog): void {
     pi.registerTool({
         name: "resource_ids",
         label: "resource_ids",
@@ -71,20 +72,21 @@ export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIds
             const result = await (async () => {
                 if (input.action === "beginCreation") return beginProviderCreation(ctx.cwd, entityDir, input.role)
                 if (input.action === "recordCreation") {
-                    const recorded = await recordProviderCreation(ctx.cwd, entityDir, input.role, input.evidence)
+                    const recorded = await recordProviderCreation(ctx.cwd, entityDir, input.role, input.evidence, tools)
                     for (const ids of recorded.resourceIds) memo.record(ids)
                     return recorded
                 }
                 const context = resolveResourceIdsContext(ctx.cwd, entityDir, input.resource)
                 if (input.action === "resolve") return resolveResourceIds(context, memo)
-                if (input.action === "invalidate") return invalidateStaleResourceIds(context, input.evidence, memo)
+                if (input.action === "invalidate")
+                    return invalidateStaleResourceIds(context, input.evidence, memo, tools)
                 return {
                     state: "resolved" as const,
                     source: input.action === "select" ? ("user-selection" as const) : ("evidence" as const),
                     resourceIds:
                         input.action === "select"
-                            ? await selectPullRequestResourceIds(context, input.evidence, memo)
-                            : await recordResourceIdsEvidence(context, input.evidence, memo),
+                            ? await selectPullRequestResourceIds(context, input.evidence, memo, tools)
+                            : await recordResourceIdsEvidence(context, input.evidence, memo, tools),
                 }
             })()
             return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }

@@ -10,11 +10,13 @@ Provides a `/context` command that shows session introspection: model info, cont
 
 Opens an editor view with:
 
-- **Context Usage** — current model, tokens used/available, percentage
-- **Token Breakdown** — estimated tokens consumed by system prompt, built-in tools, extension tools, MCP tools, messages, and free space
-- **Tools** — all active tools with per-tool token estimates
+- **Context Usage** — current occupancy, percentage, and free space; unknown values stay unknown, including after compaction
+- **Saved Context Components** — estimates for the current system prompt, saved tool declarations in disjoint built-in/extension/MCP categories, and projected message content
+- **Tools** — registered tools, active selections, script-callable tools, exposure, and per-tool saved-schema estimates
 - **Skills** — discovered skills and their file paths
-- **Session** — message counts (user/assistant/tool results), cumulative input/output tokens, and cost
+- **Session Billing** — message counts and complete input/output/cache tokens and cost across all session branches, including tool, standalone, compaction, and branch-summary usage
+
+Saved transcript declarations are not the final provider loadout: codemode and other loadout transformations can change the declarations a request sends. Component estimates are not an exact sum of occupancy. Deferred or hidden registration alone does not contribute a saved tool declaration. Billed tokens are cumulative request usage, not the size of messages currently in context.
 
 ## Configuration
 

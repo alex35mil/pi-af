@@ -8,6 +8,7 @@ import { describe, it, type TestContext } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
 import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { withToolExecution } from "./extension-context-fixture.ts"
 
 import {
     assertConfiguredPriority,
@@ -29,6 +30,10 @@ import registerIntegrations, {
 
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
 import { linearPriorityNumber } from "../workflows/extensions/integrations/records.ts"
+
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+
+const mcpTools = workflowMcpCatalog("github", "linear", "workflow-github", "workflow-linear")
 
 const statuses = {
     backlog: "Backlog",
@@ -282,8 +287,12 @@ describe("workflow-source queue context", () => {
                             fs.writeFileSync(path.join(f.consumer, ".project/config.json"), "broken JSON")
                     }
                     const before = fileSnapshot(f.root)
-                    const inspected = buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" })
-                    const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" })
+                    const inspected = buildIntegrationContext(
+                        f.ctx,
+                        { operation: "inspect", target: "workflow" },
+                        mcpTools,
+                    )
+                    const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
                     for (const context of [inspected, intake]) {
                         if (context.state !== "enabled") assert.fail("expected source context")
                         assert.equal(context.target, "workflow")
@@ -294,7 +303,11 @@ describe("workflow-source queue context", () => {
                     assert.equal(fileSnapshot(f.root).length, before.length)
                     assert.deepEqual(fileSnapshot(f.root), before, "context must not modify either project or settings")
                     if (consumingSetup === "different") {
-                        const current = buildIntegrationContext(f.ctx, { ...queueSelection, target: "current" })
+                        const current = buildIntegrationContext(
+                            f.ctx,
+                            { ...queueSelection, target: "current" },
+                            mcpTools,
+                        )
                         if (current.state !== "enabled") assert.fail("expected consuming context")
                         assert.deepEqual(current.roles.tracker, {
                             state: "enabled",
@@ -307,7 +320,7 @@ describe("workflow-source queue context", () => {
                             ? { ...tracker, repository: { owner: "maintainer", repo: "new-inbox" } }
                             : { ...tracker, team: "New Workflow Team" }
                     fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated }))
-                    const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" })
+                    const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
                     if (reread.state !== "enabled") assert.fail("expected refreshed context")
                     assert.deepEqual(reread.roles.tracker?.config, updated)
                 })
@@ -322,10 +335,10 @@ describe("workflow-source queue context", () => {
         fs.rmSync(f.settingsPath)
         const before = fileSnapshot(f.root)
         assert.throws(
-            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools),
             (error: Error) => error.message.includes("Set workflowProject") && error.message.includes(f.settingsPath),
         )
-        assert.equal(buildIntegrationContext(f.ctx, queueSelection).state, "enabled")
+        assert.equal(buildIntegrationContext(f.ctx, queueSelection, mcpTools).state, "enabled")
         assert.deepEqual(fileSnapshot(f.root), before)
     })
 
@@ -337,25 +350,28 @@ describe("workflow-source queue context", () => {
             if (content !== undefined) fs.writeFileSync(integrations, content)
             const before = fileSnapshot(f.root)
             assert.throws(
-                () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+                () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools),
                 (error: Error) => error.message.includes(f.source) && error.message.includes("integrations.json"),
             )
             assert.deepEqual(fileSnapshot(f.root), before)
         }
         fs.writeFileSync(integrations, JSON.stringify({ tracker: config() }))
         const unprepared = fileSnapshot(f.root)
-        assert.throws(() => buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }), /not prepared/)
+        assert.throws(
+            () => buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools),
+            /not prepared/,
+        )
         assert.deepEqual(fileSnapshot(f.root), unprepared)
         prepareArtifactPersistence(f.source)
         const projectConfig = path.join(f.source, ".project/config.json")
         fs.writeFileSync(projectConfig, "broken JSON")
         assert.throws(
-            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools),
             (error: Error) => error.message.includes(f.source) && error.message.includes("config.json"),
         )
         fs.rmSync(projectConfig)
         assert.throws(
-            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }),
+            () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools),
             /missing required/,
         )
     })
@@ -375,7 +391,13 @@ describe("workflow-source queue context", () => {
         const before = fileSnapshot(f.root)
         const result = await tools
             .get("integration_context")!
-            .execute("inspect", { operation: "inspect", target: "workflow" }, undefined, undefined, f.ctx)
+            .execute(
+                "inspect",
+                { operation: "inspect", target: "workflow" },
+                undefined,
+                undefined,
+                withToolExecution(f.ctx),
+            )
         assert.equal((result.details as { projectRoot: string }).projectRoot, f.source)
         assert.deepEqual(fileSnapshot(f.root), before)
     })
@@ -507,12 +529,12 @@ describe("workflow integration configuration", () => {
         try {
             assert.deepEqual(loadIntegrationConfig(cwd).state, "disabled")
             const ctx = { cwd } as ExtensionContext
-            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect", target: "current" }), {
+            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect", target: "current" }, mcpTools), {
                 state: "disabled",
                 target: "current",
                 projectRoot: cwd,
             })
-            assert.throws(() => buildIntegrationContext(ctx, queueSelection), /requires a configured tracker/)
+            assert.throws(() => buildIntegrationContext(ctx, queueSelection, mcpTools), /requires a configured tracker/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -526,19 +548,27 @@ describe("workflow integration configuration", () => {
             const trackerEntity = writeLinearGigEntity(cwd)
             assert.throws(
                 () =>
-                    buildIntegrationContext({ cwd } as ExtensionContext, {
-                        operation: "resume",
-                        entityDir: trackerEntity,
-                    }),
+                    buildIntegrationContext(
+                        { cwd } as ExtensionContext,
+                        {
+                            operation: "resume",
+                            entityDir: trackerEntity,
+                        },
+                        mcpTools,
+                    ),
                 /requires tracker migration/,
             )
 
             const workflowEntity = writeTrackerlessGigEntity(cwd)
             assert.deepEqual(
-                buildIntegrationContext({ cwd } as ExtensionContext, {
-                    operation: "resume",
-                    entityDir: workflowEntity,
-                }),
+                buildIntegrationContext(
+                    { cwd } as ExtensionContext,
+                    {
+                        operation: "resume",
+                        entityDir: workflowEntity,
+                    },
+                    mcpTools,
+                ),
                 { state: "disabled" },
             )
         } finally {
@@ -659,12 +689,19 @@ describe("workflow integration configuration", () => {
             prepareWorkflowProject(cwd)
             const file = path.join(cwd, ".project/integrations.json")
             fs.writeFileSync(file, JSON.stringify({ forge: forgeConfig() }))
-            assert.throws(() => buildIntegrationContext({ cwd } as ExtensionContext, queueSelection), /tracker/)
+            assert.throws(
+                () => buildIntegrationContext({ cwd } as ExtensionContext, queueSelection, mcpTools),
+                /tracker/,
+            )
             fs.writeFileSync(file, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
-            const result = buildIntegrationContext({ cwd } as ExtensionContext, {
-                operation: "inspect",
-                target: "current",
-            })
+            const result = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "inspect",
+                    target: "current",
+                },
+                mcpTools,
+            )
             if (result.state !== "enabled") assert.fail("enabled configuration expected")
             assert.deepEqual(result.roles.tracker, { state: "enabled", provider: "github", config: config() })
             assert.deepEqual(result.roles.forge, { state: "enabled", provider: "github", config: forgeConfig() })
@@ -717,22 +754,30 @@ describe("workflow integration configuration", () => {
             )
             const entityDir = writeLinearGigEntity(cwd)
 
-            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, queueSelection)
+            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, queueSelection, mcpTools)
             if (trackerSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(trackerSide.roles.tracker?.state, "enabled")
             assert.equal(trackerSide.roles.forge, undefined)
-            const initializeSide = buildIntegrationContext({ cwd } as ExtensionContext, {
-                operation: "initialize",
-                entityDir,
-            })
+            const initializeSide = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "initialize",
+                    entityDir,
+                },
+                mcpTools,
+            )
             if (initializeSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(initializeSide.roles.tracker?.state, "enabled")
             assert.equal(initializeSide.roles.forge?.state, "enabled")
 
-            const forgeSide = buildIntegrationContext({ cwd } as ExtensionContext, {
-                operation: "pullRequest",
-                entityDir,
-            })
+            const forgeSide = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "pullRequest",
+                    entityDir,
+                },
+                mcpTools,
+            )
             if (forgeSide.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(forgeSide.roles.tracker, undefined)
             assert.equal(forgeSide.roles.forge?.state, "enabled")
@@ -844,10 +889,14 @@ describe("workflow integration configuration", () => {
                 JSON.stringify({ tracker: config("issue") }),
             )
 
-            const context = buildIntegrationContext({ cwd } as ExtensionContext, {
-                operation: "inspect",
-                target: "current",
-            })
+            const context = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "inspect",
+                    target: "current",
+                },
+                mcpTools,
+            )
             if (context.state !== "enabled") assert.fail("expected enabled integrations")
             assert.equal(context.artifactMode, "unversioned")
             assert.equal(context.projection?.mode, "restricted")
@@ -872,10 +921,14 @@ describe("workflow integration configuration", () => {
             )
             const entityDir = writeLinearGigEntity(cwd)
 
-            const projection = buildIntegrationContext({ cwd } as ExtensionContext, {
-                operation: "artifactProjection",
-                entityDir,
-            })
+            const projection = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "artifactProjection",
+                    entityDir,
+                },
+                mcpTools,
+            )
             if (projection.state !== "enabled") assert.fail("expected enabled tracker projection")
             assert.equal(projection.artifactMode, "unversioned")
             assert.ok(projection.projection)
@@ -904,10 +957,14 @@ describe("workflow integration configuration", () => {
             fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
             assert.throws(
                 () =>
-                    buildIntegrationContext({ cwd } as ExtensionContext, {
-                        operation: "artifactProjection",
-                        entityDir,
-                    }),
+                    buildIntegrationContext(
+                        { cwd } as ExtensionContext,
+                        {
+                            operation: "artifactProjection",
+                            entityDir,
+                        },
+                        mcpTools,
+                    ),
                 /requires tracker migration/,
             )
         } finally {
@@ -939,17 +996,21 @@ describe("workflow integration configuration", () => {
                 fs.writeFileSync(path.join(cwd, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
                 prepareArtifactPersistence(cwd)
                 const entityDir = writeGitHubGigEntity(cwd)
-                const context = buildIntegrationContext({ cwd } as ExtensionContext, {
-                    operation: "trackerMutation",
-                    entityDir,
-                    change: "phase",
-                    lifecycle: "inProgress",
-                    native: {
-                        provider: "github",
-                        current: "Planning",
-                        field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+                const context = buildIntegrationContext(
+                    { cwd } as ExtensionContext,
+                    {
+                        operation: "trackerMutation",
+                        entityDir,
+                        change: "phase",
+                        lifecycle: "inProgress",
+                        native: {
+                            provider: "github",
+                            current: "Planning",
+                            field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+                        },
                     },
-                })
+                    mcpTools,
+                )
                 if (context.state !== "enabled") assert.fail("expected context")
                 assert.deepEqual(context.phaseMutation, {
                     provider: "github",
@@ -964,10 +1025,14 @@ describe("workflow integration configuration", () => {
                     assert.ok(context.projection.allowed.includes("native Phase metadata"))
                     assert.ok(context.projection.forbidden.includes("entity or kind labels/types"))
                 }
-                const bodyOnly = buildIntegrationContext({ cwd } as ExtensionContext, {
-                    operation: "artifactProjection",
-                    entityDir,
-                })
+                const bodyOnly = buildIntegrationContext(
+                    { cwd } as ExtensionContext,
+                    {
+                        operation: "artifactProjection",
+                        entityDir,
+                    },
+                    mcpTools,
+                )
                 if (bodyOnly.state !== "enabled") assert.fail("expected context")
                 assert.equal(bodyOnly.phaseProjection, undefined)
             } finally {
@@ -988,25 +1053,29 @@ describe("workflow integration configuration", () => {
                 prepareArtifactPersistence(cwd)
                 const entityDir = writeLinearGigEntity(cwd)
                 const base = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
-                const context = buildIntegrationContext({ cwd } as ExtensionContext, {
-                    operation: "trackerMutation",
-                    entityDir,
-                    change: "phase",
-                    lifecycle: "inProgress",
-                    native: {
-                        provider: "linear",
-                        applied: ["customer", "execution"],
-                        catalog: [
-                            { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
-                            ...Object.entries(phaseValues).map(([id, name]) => ({
-                                ...base,
-                                id,
-                                name,
-                                parentId: "group",
-                            })),
-                        ],
+                const context = buildIntegrationContext(
+                    { cwd } as ExtensionContext,
+                    {
+                        operation: "trackerMutation",
+                        entityDir,
+                        change: "phase",
+                        lifecycle: "inProgress",
+                        native: {
+                            provider: "linear",
+                            applied: ["customer", "execution"],
+                            catalog: [
+                                { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
+                                ...Object.entries(phaseValues).map(([id, name]) => ({
+                                    ...base,
+                                    id,
+                                    name,
+                                    parentId: "group",
+                                })),
+                            ],
+                        },
                     },
-                })
+                    mcpTools,
+                )
                 if (context.state !== "enabled") assert.fail("expected context")
                 assert.deepEqual(context.phaseMutation, {
                     provider: "linear",

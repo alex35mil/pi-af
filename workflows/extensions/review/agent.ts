@@ -8,7 +8,7 @@ import { parseReviewReport, renderReviewDocument } from "./findings.js"
 
 const SHARED_EXTENSIONS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../extensions")
 const RULES_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "rules/index.ts")
-const PERMISSION_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "permission/index.ts")
+const PERMISSIONS_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "permissions/index.ts")
 
 type ReviewStatus = "running" | "completed" | "failed"
 
@@ -142,7 +142,7 @@ export function buildReviewerArgs(agentName: string, promptPath: string, model?:
         "--extension",
         RULES_EXTENSION_PATH,
         "--extension",
-        PERMISSION_EXTENSION_PATH,
+        PERMISSIONS_EXTENSION_PATH,
         "--no-skills",
         "--no-prompt-templates",
         "--tools",
