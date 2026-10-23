@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util"
 
-import { isMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { readEntityStatus, resolveEntityDirectory, type EntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
@@ -134,7 +134,7 @@ function sameRepository(left: { owner: string; repo: string }, right: { owner: s
     )
 }
 function responseObject(evidence: ProviderEvidence): Record<string, unknown> {
-    return object(evidence.response, "provider response")
+    return mcpResponsePayload(evidence.response)
 }
 function assertArguments(evidence: ProviderEvidence, expected: Record<string, unknown>): void {
     for (const [key, value] of Object.entries(expected)) {

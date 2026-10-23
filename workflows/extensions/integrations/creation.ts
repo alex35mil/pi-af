@@ -2,7 +2,7 @@ import * as path from "node:path"
 
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent"
 
-import { isMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { ENTITY_METADATA_FILE, readEntityStatus, resolveEntityDirectory, writeEntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
@@ -81,7 +81,7 @@ export async function recordProviderCreation(
         if (environment.forge.kind !== "github") throw new Error("forge creation requires configured GitHub")
         const { status, scope } = resolveResourceIdsContext(cwd, entityDir, "github-pull-request")
         if (scope.kind !== "github-pull-request") throw new Error("PR recording requires prepared forge intent")
-        const response = record(evidence.response)
+        const response = mcpResponsePayload(evidence.response)
         requireTool(evidence, scope.mcpServer, "create_pull_request", tools)
         requireArguments(evidence, {
             ...scope.repository,
@@ -103,7 +103,7 @@ export async function recordProviderCreation(
     return withFileMutationQueue(path.join(directory, ENTITY_METADATA_FILE), async () => {
         const status = readEntityStatus(directory)
         const existing = status.integrations.find((entry) => entry.role === role)
-        const response = record(evidence.response)
+        const response = mcpResponsePayload(evidence.response)
         const resourceIds: ResourceIds[] = []
         let identified: IntegrationRecord
         let branch = status.branch
@@ -255,11 +255,6 @@ function requireArguments(evidence: ProviderEvidence, expected: Record<string, u
     for (const [key, value] of Object.entries(expected))
         if (JSON.stringify(evidence.arguments[key]) !== JSON.stringify(value))
             throw new Error(`creation evidence ${key} does not match the intended request`)
-}
-function record(value: unknown): Record<string, unknown> {
-    if (!value || typeof value !== "object" || Array.isArray(value))
-        throw new Error("creation outcome is not established; preserve the checkpoint and reconcile before retry")
-    return value as Record<string, unknown>
 }
 function text(value: unknown): string {
     if (typeof value !== "string" || !value)

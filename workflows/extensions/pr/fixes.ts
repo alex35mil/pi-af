@@ -1,5 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { mcpResponsePayload } from "../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "../integrations/resource-id-operations.js"
 import { checkoutGit, checkoutGitResult, githubSshUrl, headBranchRef } from "./git.js"
 import { remoteHead } from "./rebase.js"
@@ -11,7 +12,7 @@ type Editing = Extract<CheckoutState, { phase: "fixes" }>
 type Committing = Extract<CheckoutState, { phase: "committingFixes" }>
 type Committed = Extract<CheckoutState, { phase: "committedFixes" }>
 function open(evidence: ProviderEvidence) {
-    const response = evidence.response as Record<string, unknown>
+    const response = mcpResponsePayload(evidence.response)
     if (response.state !== "open" || response.merged !== false)
         throw new Error("Confirm an open unmerged PR before writing its branch")
 }

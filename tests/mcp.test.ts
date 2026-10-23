@@ -4,7 +4,12 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { McpServerConfig } from "@earendil-works/pi-coding-agent"
-import { getMcpSettingsPaths, MCP_TOOL_DECORATORS_EVENT, type McpToolDecorators } from "../extensions/__lib/mcp.ts"
+import {
+    getMcpSettingsPaths,
+    mcpResponsePayload,
+    MCP_TOOL_DECORATORS_EVENT,
+    type McpToolDecorators,
+} from "../extensions/__lib/mcp.ts"
 import { nativeMcpFixture } from "./native-mcp-fixture.ts"
 
 const schema = { type: "object" as const, properties: { value: { type: "string" } }, additionalProperties: false }
@@ -14,6 +19,32 @@ function write(file: string, value: unknown) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, JSON.stringify(value))
 }
+
+describe("MCP provider evidence", () => {
+    it("extracts object payloads from decoded, text, and structured responses", () => {
+        const payload = { id: "4980024734", url: "https://github.com/example/repo/pull/73" }
+        assert.equal(mcpResponsePayload(payload), payload)
+        assert.deepEqual(mcpResponsePayload({ content: [{ type: "text", text: JSON.stringify(payload) }] }), payload)
+        assert.equal(
+            mcpResponsePayload({ content: [{ type: "text", text: "Created PR" }], structuredContent: payload }),
+            payload,
+        )
+    })
+
+    it("rejects error, ambiguous, non-JSON, and non-object results", () => {
+        const block = { type: "text", text: '{"id":73}' }
+        for (const response of [
+            { isError: true, content: [block], structuredContent: { id: 73 } },
+            { content: [block, block] },
+            { content: [] },
+            { content: [{ type: "text", text: "Access denied" }] },
+            { content: [{ type: "text", text: "null" }] },
+            { content: [], structuredContent: [] },
+            "Access denied",
+        ])
+            assert.throws(() => mcpResponsePayload(response), /MCP|Provider evidence/)
+    })
+})
 
 describe("native MCP integration", () => {
     it("starts only with the session, publishes identity before execution, and closes once", async () => {

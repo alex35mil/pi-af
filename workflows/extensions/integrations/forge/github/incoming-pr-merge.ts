@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox"
-import type { McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
+import { mcpResponsePayload, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import { incomingPullRequestContext, incomingRevision, sameIncomingAddress } from "./incoming-pr-context.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./merge.js"
@@ -24,7 +24,7 @@ export function incomingMergeContext(cwd: string, input: IncomingMergeContextInp
         const current = incomingRevision(forge, context.incomingPullRequest, input.evidence, tools)
         if (!sameIncomingAddress(reviewed, current) || reviewed.head.sha !== current.head.sha)
             throw new Error("Incoming PR identity/head changed after review; reassess before shipping")
-        const response = input.evidence.response as Record<string, unknown>
+        const response = mcpResponsePayload(input.evidence.response)
         // Merge itself advances the target; an already-merged proof binds refs/head instead.
         if (response.merged !== true && reviewed.base.sha !== current.base.sha)
             throw new Error("Incoming PR base changed after review; reassess before shipping")

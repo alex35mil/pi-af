@@ -1,4 +1,4 @@
-import { isMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
+import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 
 interface Repository {
@@ -74,7 +74,7 @@ export function planGitHubMerge(
             subject.number < 1
         )
             throw new Error("Merge requires the exact configured PR-get evidence")
-        const response = object(evidence.response, "PR response")
+        const response = mcpResponsePayload(evidence.response)
         const base = object(response.base, "PR base")
         const head = object(response.head, "PR head")
         const headRepository = head.repo == null ? null : object(head.repo, "PR head repository")

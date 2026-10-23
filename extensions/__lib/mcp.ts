@@ -104,6 +104,32 @@ export function isMcpRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
+// Provider evidence may arrive as decoded JSON or a complete native MCP result.
+export function mcpResponsePayload(response: unknown): Record<string, unknown> {
+    if (!isMcpRecord(response)) throw new Error("Provider evidence requires an object response")
+    if (!Array.isArray(response.content)) return response
+    if (response.isError === true) throw new Error("MCP error results cannot establish provider evidence")
+    let payload: unknown
+    if (response.structuredContent !== undefined) payload = response.structuredContent
+    else {
+        const [block] = response.content
+        if (
+            response.content.length !== 1 ||
+            !isMcpRecord(block) ||
+            block.type !== "text" ||
+            typeof block.text !== "string"
+        )
+            throw new Error("MCP evidence requires structured content or one JSON text block")
+        try {
+            payload = JSON.parse(block.text)
+        } catch {
+            throw new Error("MCP evidence text is not JSON")
+        }
+    }
+    if (!isMcpRecord(payload)) throw new Error("MCP evidence payload must be an object")
+    return payload
+}
+
 // Read references only. Native Pi validates registrations and resolves credentials.
 export function readMcpSettings(file: string): McpSettings {
     if (!fs.existsSync(file)) return {}

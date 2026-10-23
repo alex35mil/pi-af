@@ -25,7 +25,7 @@ export const EvidenceSchema = Type.Object(
     {
         tool: Type.String({ minLength: 1 }),
         arguments: Type.Record(Type.String(), Type.Unknown()),
-        response: Type.Unknown(),
+        response: Type.Unknown({ description: "Actual provider JSON or complete native MCP result." }),
     },
     { additionalProperties: false },
 )

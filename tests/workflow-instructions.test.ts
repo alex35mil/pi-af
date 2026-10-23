@@ -410,6 +410,20 @@ describe("workflow instruction ownership", () => {
             assert.ok(merge.includes(`\`${field}\``), `shared merge contract must own ${field}`)
     })
 
+    it("carries explicit ship intent through every remaining delivery step", () => {
+        const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
+        for (const text of [
+            "`ship it`",
+            "commit approved work",
+            "push the stored branch",
+            "create or update the PR",
+            "reconcile Done",
+            "target/branch cleanup",
+            "Carry that finish intent through Submission",
+        ])
+            assert.ok(deliverable.includes(text), `Deliverable finish contract must include ${text}`)
+    })
+
     it("keeps Deliverable cleanup guidance aligned with the one-shot tool schema", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(

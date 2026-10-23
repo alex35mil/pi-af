@@ -1,5 +1,10 @@
 import { Type, type Static } from "typebox"
-import { getMcpToolName, isMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
+import {
+    getMcpToolName,
+    isMcpTool,
+    mcpResponsePayload,
+    type McpToolCatalog,
+} from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 import { incomingPullRequestContext, incomingRevision } from "./incoming-pr-context.js"
@@ -101,7 +106,7 @@ function call(
     tools: McpToolCatalog,
 ) {
     callScope(evidence, server, tool, expected, tools)
-    return object(evidence.response, "Project response")
+    return mcpResponsePayload(evidence.response)
 }
 function address(board: Board) {
     return { owner: board.project.owner, owner_type: board.project.ownerType, project_number: board.project.number }
@@ -233,7 +238,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             input.evidence,
             tools,
         )
-        const response = object(input.evidence.response, "PR response")
+        const response = mcpResponsePayload(input.evidence.response)
         const fieldId = field(board, input.fieldEvidence, tools)
         const repository = `${revision.repository.owner}/${revision.repository.repo}`
         const values = board.status.values
@@ -313,7 +318,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                     tools,
                 )
                 if (input.membership.state === "added") {
-                    const added = object(input.membership.creation.response, "Project response")
+                    const added = mcpResponsePayload(input.membership.creation.response)
                     if (integer(added.id) !== observed.id)
                         throw new Error("Added Project item does not match current membership")
                 }

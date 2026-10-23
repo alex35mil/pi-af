@@ -150,6 +150,18 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
 }
 
 describe("resource ID operations", () => {
+    it("uses native MCP results for exact cached-ID reads", () => {
+        const response = { content: [{ type: "text", text: JSON.stringify(pr) }] }
+        assert.deepEqual(resourceIdsFromRead(prScope, { ...evidence, response }, mcpTools).value, {
+            number: 7,
+            url: pr.html_url,
+        })
+        assert.throws(
+            () => resourceIdsFromRead(prScope, { ...evidence, response: { ...response, isError: true } }, mcpTools),
+            /MCP error/,
+        )
+    })
+
     it("reports missing IDs without lookup instructions or recovery actions", async () => {
         const f = fixture()
         try {
@@ -247,7 +259,7 @@ describe("resource ID operations", () => {
             await recordResourceIds(f.directory, [{ scope: itemScope, value: { itemId: 42 } }])
             await assert.rejects(
                 invalidateStaleResourceIds(f.context(), { ...evidence, response: "403 denied" }, memo, mcpTools),
-                /invalid provider response/,
+                /Provider evidence requires an object response/,
             )
             await assert.rejects(
                 invalidateStaleResourceIds(f.context(), evidence, memo, mcpTools),
@@ -385,43 +397,67 @@ describe("resource ID operations", () => {
     })
 
     for (const artifacts of ["versioned", "unversioned"] as const) {
-        it(`records creation and selection locally after one submission commit (${artifacts})`, async () => {
-            const f = fixture(artifacts)
-            try {
-                f.metadata.integrations = f.metadata.integrations.filter((x) => x.role !== "forge")
-                fs.writeFileSync(f.file, JSON.stringify(f.metadata))
-                await beginProviderCreation(f.root, f.directory, "forge")
-                f.git(["add", "."])
-                f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
-                const committed = fs.readFileSync(f.file, "utf8")
-                const result = await recordProviderCreation(
-                    f.root,
-                    f.directory,
-                    "forge",
-                    {
-                        tool: "mcp__github__create_pull_request",
-                        arguments: {
-                            ...repo,
-                            head: prScope.head,
-                            base: prScope.target,
-                            title: "Example",
-                            body: "Approved",
+        for (const format of ["payload", "mcpText", "mcpStructured"] as const) {
+            it(`records creation and selection locally after one submission commit (${artifacts}, ${format})`, async () => {
+                const f = fixture(artifacts)
+                try {
+                    f.metadata.integrations = f.metadata.integrations.filter((x) => x.role !== "forge")
+                    fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+                    await beginProviderCreation(f.root, f.directory, "forge")
+                    f.git(["add", "."])
+                    f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
+                    const committed = fs.readFileSync(f.file, "utf8")
+                    const payload = { id: "4700971917", url: pr.html_url }
+                    const responses = {
+                        payload,
+                        mcpText: { content: [{ type: "text", text: JSON.stringify(payload) }] },
+                        mcpStructured: { content: [], structuredContent: payload },
+                    }
+                    const result = await recordProviderCreation(
+                        f.root,
+                        f.directory,
+                        "forge",
+                        {
+                            tool: "mcp__github__create_pull_request",
+                            arguments: {
+                                ...repo,
+                                head: prScope.head,
+                                base: prScope.target,
+                                title: "Example",
+                                body: "Approved",
+                            },
+                            response: responses[format],
                         },
-                        response: { id: "4700971917", url: pr.html_url },
-                    },
-                    mcpTools,
-                )
-                assert.deepEqual(Object.keys(result).sort(), ["entityId", "resourceIds", "role"])
-                assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
-                await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
-                assert.equal(fs.readFileSync(f.file, "utf8"), committed)
-                assert.deepEqual(fs.readdirSync(path.join(f.directory, ".local")), ["metadata.json"])
-                assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
-                assert.equal(f.git(["status", "--porcelain"]), "")
-                assert.equal(f.git(["ls-files", "--", path.relative(f.root, path.join(f.directory, ".local"))]), "")
-            } finally {
-                f.cleanup()
-            }
-        })
+                        mcpTools,
+                    )
+                    assert.deepEqual(Object.keys(result).sort(), ["entityId", "resourceIds", "role"])
+                    assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
+                    const recorded = readResourceIdsCache(f.directory)
+                    await assert.rejects(
+                        recordProviderCreation(
+                            f.root,
+                            f.directory,
+                            "forge",
+                            {
+                                tool: "mcp__github__create_pull_request",
+                                arguments: { ...repo, head: prScope.head, base: prScope.target, title: "Example" },
+                                response: { content: [], structuredContent: payload, isError: true },
+                            },
+                            mcpTools,
+                        ),
+                        /MCP error/,
+                    )
+                    assert.deepEqual(readResourceIdsCache(f.directory), recorded)
+                    await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
+                    assert.equal(fs.readFileSync(f.file, "utf8"), committed)
+                    assert.deepEqual(fs.readdirSync(path.join(f.directory, ".local")), ["metadata.json"])
+                    assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
+                    assert.equal(f.git(["status", "--porcelain"]), "")
+                    assert.equal(f.git(["ls-files", "--", path.relative(f.root, path.join(f.directory, ".local"))]), "")
+                } finally {
+                    f.cleanup()
+                }
+            })
+        }
     }
 })

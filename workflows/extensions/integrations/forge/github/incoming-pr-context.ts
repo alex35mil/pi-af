@@ -2,7 +2,12 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
-import { isMcpTool, resolveMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
+import {
+    isMcpTool,
+    mcpResponsePayload,
+    resolveMcpTool,
+    type McpToolCatalog,
+} from "../../../../../extensions/__lib/mcp.js"
 import * as project from "../../../../../extensions/__lib/project.js"
 import { assertArtifactPersistencePrepared } from "../../../__lib/project-config.js"
 import { loadIntegrationConfig, type GitHubForge } from "../../config.js"
@@ -179,7 +184,7 @@ export function incomingRevision(
         !isDeepStrictEqual(normalizeRepository({ owner: args.owner, repo: args.repo }), selected.repository)
     )
         throw new Error("Incoming PR evidence must be the exact configured pull_request_read:get call")
-    const response = object(evidence.response, "PR response")
+    const response = mcpResponsePayload(evidence.response)
     const observed = parseIncomingReference(text(response.html_url, "PR URL"), forge.repository)
     if (!isDeepStrictEqual(observed, identity) || response.number !== identity.number)
         throw new Error("PR evidence does not match the selected repository/number")

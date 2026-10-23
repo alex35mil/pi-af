@@ -249,6 +249,47 @@ describe("maintainer-controlled incoming PR Project", () => {
                 f.close()
             }
         })
+    it("uses native MCP replies across PR, field, membership, creation, and absence evidence", () => {
+        const f = fixture()
+        const native = (evidence: { tool: string; arguments: object; response: unknown }) => ({
+            ...evidence,
+            response: { content: [{ type: "text", text: JSON.stringify(evidence.response) }] },
+        })
+        try {
+            const membership = added()
+            const common = { evidence: native(read()), fieldEvidence: native(field()) }
+            const initialized = f.plan({
+                ...common,
+                action: "intake",
+                choice: "todo",
+                membership: {
+                    ...membership,
+                    evidence: native(membership.evidence),
+                    creation: native(membership.creation),
+                },
+            })
+            assert.deepEqual(mutation(initialized).arguments, {
+                ...address,
+                method: "update_project_item",
+                item_id: 99,
+                updated_field: { name: "Status", value: "Todo" },
+            })
+            assert.equal(
+                mutation(
+                    f.plan({
+                        ...common,
+                        action: "intake",
+                        choice: "todo",
+                        membership: { state: "absent", lookup: absent().lookup.map(native) },
+                    }),
+                ).arguments.method,
+                "add_project_item",
+            )
+        } finally {
+            f.close()
+        }
+    })
+
     it("preserves advanced progress and skips matching status during reconciled intake", () => {
         const f = fixture()
         try {

@@ -7,7 +7,10 @@ import { describe, it } from "node:test"
 import { Value } from "typebox/value"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
-import { finishReadDecision } from "../workflows/extensions/integrations/resource-id-operations.ts"
+import {
+    finishReadDecision,
+    type ProviderEvidence,
+} from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { planGitHubMerge, type GitHubMergeSubject } from "../workflows/extensions/integrations/forge/github/merge.ts"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
@@ -68,7 +71,7 @@ function fixture(artifacts: "versioned" | "unversioned") {
         JSON.stringify({ forge: { provider: "github", mcpServer: "forge", repository } }),
     )
     prepareArtifactPersistence(root)
-    const plan = (reviewed = evidence(), current = reviewed) =>
+    const plan = (reviewed: ProviderEvidence = evidence(), current = reviewed) =>
         buildIntegrationContext(
             { cwd: root } as never,
             {
@@ -108,6 +111,34 @@ describe("one repository merge operation", () => {
                 f.close()
             }
         })
+
+    it("uses native MCP results for both pinned merge and confirmed-merge paths", () => {
+        const f = fixture("versioned")
+        try {
+            const read = evidence()
+            const wrap = (response: typeof read.response) => ({
+                ...read,
+                response: { content: [{ type: "text", text: JSON.stringify(response) }] },
+            })
+            const native = wrap(read.response)
+            assert.deepEqual(planGitHubMerge(subject, native, mcpTools), planGitHubMerge(subject, read, mcpTools))
+            assert.deepEqual(finishReadDecision(scope, native, sha, 12, mcpTools), f.plan(native))
+            const merged = wrap({
+                ...read.response,
+                state: "closed",
+                merged: true,
+                merged_at: "2026-10-22T12:00:00Z",
+                base: { ...read.response.base, sha: "c".repeat(40) },
+            })
+            assert.equal(f.plan(native, merged).state, "merged")
+            assert.equal(finishReadDecision(scope, merged, sha, 12, mcpTools).state, "merged")
+            const failed = { ...native, response: { ...native.response, isError: true } }
+            assert.equal(f.plan(failed).state, "blocked")
+            assert.equal(finishReadDecision(scope, failed, sha, 12, mcpTools).state, "blocked")
+        } finally {
+            f.close()
+        }
+    })
 
     it("keeps incoming fork addressing separate from the Deliverable branch association", () => {
         const f = fixture("versioned")
