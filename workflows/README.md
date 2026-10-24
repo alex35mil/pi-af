@@ -74,7 +74,7 @@ Submitting and finishing are separate. Submission commits the work and opens or 
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
-Default targeting requires the Epic planning work to be delivered first. Verified GitHub squash delivery is supported alongside local ancestry, with repository, branch, revision, and versioned-plan checks. Changing the strategy affects future Tasks only. See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
+Record the approved routing intent before committing Epic planning, and deliver the plan and metadata together. Selecting default does not prove delivery: every new/adopted default-target Task initialization requires the planning work to be delivered first. Verified GitHub squash delivery is supported alongside local ancestry, with repository, branch, revision, and versioned-plan checks. Changing the strategy affects future Tasks only. See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
 
 ## Readable tracker and PR bodies
 

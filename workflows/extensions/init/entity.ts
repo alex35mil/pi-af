@@ -6,7 +6,7 @@ import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
-import { assertEpicDelivered, EpicDeliverySchema, type EpicDelivery } from "./delivery.js"
+import { assertEpicDelivered, EpicDeliverySchema } from "./delivery.js"
 import {
     DeliverableKindSchema,
     entityDirectoryName,
@@ -507,8 +507,6 @@ function recordedDefaultBranches(root: string): string[] {
 
 export interface SetEpicTaskTargetOptions {
     cwd: string
-    epicDelivery?: EpicDelivery
-    tools?: McpToolCatalog
 }
 
 export function setEpicTaskTarget(
@@ -524,19 +522,9 @@ export function setEpicTaskTarget(
     if (status.entity !== "epic") throw new Error("Task target can only be changed for an Epic")
     assertEntityBranchReady(status)
 
-    if (target === "default") {
-        const loaded = loadIntegrationConfig(root)
-        assertEpicDelivered(
-            root,
-            status.branch,
-            options.epicDelivery ?? { kind: "git-ancestry" },
-            loaded.state === "enabled" ? loaded.config.forge : undefined,
-            options.tools ?? new Map(),
-        )
-    } else {
-        if (options.epicDelivery) throw new Error("Epic delivery evidence is only valid when switching to default")
-        assertCloneBranch(root, status.branch.name)
-    }
+    // Routing intent is recorded with planning; every default-target Task checks delivery separately.
+    assertCloneBranch(root, status.branch.name)
+    if (target === "default") assertCloneBranch(root, status.branch.target)
 
     if (status.taskTarget === target) return status
     writeEntityStatus(entityDirectory, { ...status, taskTarget: target })

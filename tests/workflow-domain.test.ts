@@ -751,7 +751,7 @@ describe("workflow domain", () => {
         }
     })
 
-    it("targets future Tasks at default after an early Epic merge without changing existing Tasks", () => {
+    it("records routing before delivery and never retargets existing Tasks", () => {
         const repository = temporaryRepository()
         try {
             const epic = initializeEntity(
@@ -790,36 +790,39 @@ describe("workflow domain", () => {
             )
             assert.equal(readyBranch(first.status).target, epicBranch.name)
 
+            const initializeSecond = () =>
+                initializeEntity(
+                    {
+                        entity: "task",
+                        title: "Second Task",
+                        slug: "second-task",
+                        request: "Implement the second part",
+                        priority: "not set",
+                        source: { mode: "new" },
+                        kind: "feature",
+                        parentEpicDir: epic.directory,
+                        epicItemTitle: "Second Task",
+                    },
+                    { cwd: repository, now: new Date("2026-01-02T07:03:00.000Z") },
+                )
             git(repository, ["checkout", epicBranch.name])
+            const selected = setEpicTaskTarget(epic.directory, "default", { cwd: repository })
+            assert.equal(selected.entity, "epic")
+            if (selected.entity !== "epic") assert.fail("expected Epic")
+            assert.equal(selected.taskTarget, "default")
+            assert.equal(readyBranch(readEntityStatus(path.join(repository, first.directory))).target, epicBranch.name)
             git(repository, ["add", ".project"])
-            git(repository, ["commit", "-m", "accept epic"])
-            assert.throws(
-                () => setEpicTaskTarget(epic.directory, "default", { cwd: repository }),
-                /has not been merged/,
-            )
+            git(repository, ["commit", "-m", "accept epic and routing intent"])
+            assert.throws(initializeSecond, /has not been merged/)
 
             git(repository, ["checkout", "main"])
             git(repository, ["merge", "--ff-only", epicBranch.name])
-            const merged = setEpicTaskTarget(epic.directory, "default", { cwd: repository })
-            assert.equal(merged.entity, "epic")
-            if (merged.entity !== "epic") assert.fail("expected Epic")
-            assert.equal(merged.taskTarget, "default")
-            assert.equal(readyBranch(readEntityStatus(path.join(repository, first.directory))).target, epicBranch.name)
-
-            const second = initializeEntity(
-                {
-                    entity: "task",
-                    title: "Second Task",
-                    slug: "second-task",
-                    request: "Implement the second part",
-                    priority: "not set",
-                    source: { mode: "new" },
-                    kind: "feature",
-                    parentEpicDir: epic.directory,
-                    epicItemTitle: "Second Task",
-                },
-                { cwd: repository, now: new Date("2026-01-02T07:03:00.000Z") },
-            )
+            assert.equal(git(repository, ["status", "--porcelain"]), "")
+            const delivered = readEntityStatus(path.join(repository, epic.directory))
+            assert.equal(delivered.entity, "epic")
+            if (delivered.entity !== "epic") assert.fail("expected Epic")
+            assert.equal(delivered.taskTarget, "default")
+            const second = initializeSecond()
             assert.equal(second.status.entity, "task")
             if (second.status.entity !== "task") assert.fail("expected Task")
             assert.equal(readyBranch(second.status).start, "main")

@@ -6,6 +6,15 @@ Discovery returns full typed schemas without putting the entire catalog into ord
 
 The existing permissions-decorated Codemode is required. An explicit tool allowlist or Codemode exclusion remains authoritative; use `--tools +codemode` or an appropriate explicit allowlist when workflow access is intended. The package does not rewrite user settings or silently expose all workflows as a fallback. Reviewer subprocesses retain their separate read-only tool selection.
 
+## Preflight checks and failure handling
+
+Choose workflow checks by their concrete benefit and cost, rather than requiring preflight for every operation. This applies to local commands, Git operations, artifact changes, and integrations.
+
+- Cheap, useful local checks are fine; batch independent checks through Codemode where practical.
+- Once scope and approval are established, execute remote operations directly and rely on their authoritative validation. Avoid extra network calls or user interruptions merely to predict rejection, such as checking permissions or supported settings that the operation itself validates safely.
+- Retain required tests, reviews, approvals, and safety checks that prevent concrete harm. Before adding a costly preflight or blocking on extra evidence, explain what it prevents that handling the operation's error cannot: for example, a wrong-target change, unauthorized side effects, irreversible loss, or costly partial execution.
+- On failure, preserve work, stop dependent steps, and report the actual error, confirmed outcomes, and blocker to the user. Continue only independent work. Do not bypass a denial, change the approved operation, or retry an uncertain mutation blindly; reconcile its actual state before any retry under the existing recovery procedure.
+
 ## Initialization
 
 | Work | New work | Adopt explicit GitHub work | Adopt explicit Linear work |
@@ -14,7 +23,7 @@ The existing permissions-decorated Codemode is required. An explicit tool allowl
 | Task | `init_task` | `adopt_github_task` | `adopt_linear_task` |
 | Gig | `init_gig` | `adopt_github_gig` | `adopt_linear_gig` |
 
-The operation fixes entity and source identity; do not supply those discriminators. Adopt tools take the verified provider IDs and addressing in `source`, without `mode`, `provider`, or Linear `resource`. Preserve all intake, hierarchy, branch, artifact-persistence, and approval gates. `set_epic_task_target` and all three Task initialization tools accept `epicDelivery` for default targeting: `{ kind: "git-ancestry" }` (the omitted-input behavior) or `{ kind: "github-pr", evidence }`. See [Epic delivery](./epic.md) for the shared current-revision checks, exact registered PR-get envelope, and separate Git approvals. `finalize_linear_branch` retains its focused contract.
+The operation fixes entity and source identity; do not supply those discriminators. Adopt tools take the verified provider IDs and addressing in `source`, without `mode`, `provider`, or Linear `resource`. Preserve all intake, hierarchy, branch, artifact-persistence, and approval gates. `set_epic_task_target` records approved routing intent before committing Epic planning; it accepts no delivery evidence and proves no delivery. Only the three Task initialization tools accept `epicDelivery` for default-target Tasks: `{ kind: "git-ancestry" }` (the omitted-input behavior) or `{ kind: "github-pr", evidence }`. Every such initialization independently verifies delivery. See [Epic delivery](./epic.md) for the shared current-revision checks, exact registered PR-get envelope, and separate Git approvals. `finalize_linear_branch` retains its focused contract.
 
 ## Integration contexts and state
 

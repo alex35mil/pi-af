@@ -118,7 +118,9 @@ const baseMetadataProperties = {
 }
 const epicProperties = {
     entity: Type.Literal("epic"),
-    taskTarget: Type.Union([Type.Literal("epic"), Type.Literal("default")]),
+    taskTarget: Type.Union([Type.Literal("epic"), Type.Literal("default")], {
+        description: "Routing intent for future Tasks, not proof of delivery; the initial epic value is not approval",
+    }),
 }
 const gigProperties = { entity: Type.Literal("gig"), kind: DeliverableKindSchema }
 const taskProperties = { entity: Type.Literal("task"), kind: DeliverableKindSchema }

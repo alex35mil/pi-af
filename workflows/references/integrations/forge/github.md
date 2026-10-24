@@ -6,7 +6,7 @@ First follow `../shared.md` for local configuration, Resource IDs, full-body own
 
 ## Epic planning delivery
 
-[Epic delivery](../../epic.md) defines how target switching and Task initialization verify a delivered Epic revision, including a squash-merged planning PR. It trusts exact registered GitHub merged-PR confirmation, with local source revision and versioned accepted-plan checks, without creating a forge intent, changing lifecycle, or authorizing a merge. The Epic skill owns strategy approval and separate delivery-operation approval.
+[Epic delivery](../../epic.md) separates approved routing intent from Task initialization's current-revision delivery proof. Record the choice before committing, and deliver the accepted plan and routing metadata together through the approved normal PR flow; no post-merge target mutation is needed. Every default-target Task initialization verifies delivery, including a squash-merged planning PR. It trusts exact registered GitHub merged-PR confirmation, with local source revision and versioned accepted-plan checks, without creating a forge intent, changing lifecycle, or authorizing a merge. The Epic skill owns strategy approval and separate delivery-operation approval.
 
 ## Submission and revisions
 
