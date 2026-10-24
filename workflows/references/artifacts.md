@@ -122,7 +122,7 @@ Within this workflow, current explicit user instructions take precedence over `.
     <timestamp>.TASK-<raw-id>.<slug>/  # Initialized Tasks belonging to this Epic.
 ```
 
-`epic.md`, draft/snapshots, and review artifacts do not exist until their corresponding lifecycle gates create them. Prospective Tasks exist only as untagged ordered lines in accepted `epic.md`; initialization adds their stable `[TASK-…]` relation and child directory. Epic status keeps immutable branch identity and `taskTarget: epic | default`; changing that pointer affects only Tasks initialized afterward.
+`epic.md`, draft/snapshots, and review artifacts do not exist until their corresponding lifecycle gates create them. Prospective Tasks exist only as untagged ordered lines in accepted `epic.md`; initialization adds their stable `[TASK-…]` relation and child directory. Epic status keeps immutable branch identity and `taskTarget: epic | default`; changing that pointer affects only Tasks initialized afterward. The approved Task delivery strategy and rationale belong in reviewed `epic.md`; the initial Epic pointer is not approval. Default targeting follows [Epic delivery](./epic.md), using local ancestry or verified merged GitHub PR evidence, with exact accepted-plan reachability for versioned Task initialization.
 
 ## Task
 

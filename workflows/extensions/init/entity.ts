@@ -5,6 +5,8 @@ import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { assertEpicDelivered, EpicDeliverySchema, type EpicDelivery } from "./delivery.js"
 import {
     DeliverableKindSchema,
     entityDirectoryName,
@@ -46,7 +48,12 @@ import { resourceIdsFromAdoption } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared, type ProjectConfig } from "../__lib/project-config.js"
 import { resolveWorkflowEnvironment, resolveWorkflowPolicy, type WorkflowEnvironment } from "../integrations/policy.js"
-import { assertConfiguredPriority, INTEGRATION_CONFIG_PATH, loadIntegrationConfig } from "../integrations/config.js"
+import {
+    assertConfiguredPriority,
+    type GitHubForge,
+    INTEGRATION_CONFIG_PATH,
+    loadIntegrationConfig,
+} from "../integrations/config.js"
 import {
     assertTaskSourceProject,
     boundTrackerProjectId,
@@ -104,6 +111,7 @@ export const TaskInitializationSchema = Type.Object(
         kind: DeliverableKindSchema,
         parentEpicDir: OneLineSchema,
         epicItemTitle: OneLineSchema,
+        epicDelivery: Type.Optional(EpicDeliverySchema),
     },
     { additionalProperties: false },
 )
@@ -135,6 +143,7 @@ export interface InitializeEntityOptions {
     cwd: string
     now?: Date
     renderTrackerBranch?: (identity: EntityIdentity) => string
+    tools?: McpToolCatalog
 }
 
 export interface InitializedEntity {
@@ -169,7 +178,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
 
     const parent =
         input.entity === "task"
-            ? readParentEpic(root, input.parentEpicDir, input.epicItemTitle, projectConfig)
+            ? readParentEpic(root, input, projectConfig, integrationConfig?.forge, options.tools ?? new Map())
             : undefined
     assertTaskSourceProject(input, parent?.trackerProjectId)
     const startBranch = input.entity === "task" ? parent!.branch : resolveDefaultBranch(root)
@@ -336,10 +345,12 @@ interface ParentEpic {
 
 function readParentEpic(
     root: string,
-    rawDirectory: string,
-    epicItemTitle: string,
+    input: TaskInitialization,
     projectConfig: ProjectConfig,
+    forge: GitHubForge | undefined,
+    tools: McpToolCatalog,
 ): ParentEpic {
+    const { parentEpicDir: rawDirectory, epicItemTitle, epicDelivery } = input
     const epicsRoot = path.join(root, EPIC_ROOT)
     const directory = path.resolve(root, rawDirectory)
     if (!directory.startsWith(`${epicsRoot}${path.sep}`)) {
@@ -355,8 +366,10 @@ function readParentEpic(
     const epicContent = fs.readFileSync(epicPath, "utf-8")
     const taskBranch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
     if (status.taskTarget === "default") {
-        assertEpicBranchMerged(root, status.branch.name, status.branch.target)
+        assertEpicDelivered(root, status.branch, epicDelivery ?? { kind: "git-ancestry" }, forge, tools)
         if (projectConfig.artifacts === "versioned") assertFileReachableFromBranch(root, epicPath, taskBranch)
+    } else if (epicDelivery) {
+        throw new Error("Epic delivery evidence is only valid for default-target Tasks")
     }
     const title = epicItemTitle.trim()
     const matches = readOrderedTaskEntries(epicPath).filter((entry) => orderedTaskTitle(entry) === title)
@@ -380,16 +393,6 @@ function readParentEpic(
         epicPath,
         epicContent,
         epicItemLine: selected.line,
-    }
-}
-
-function assertEpicBranchMerged(root: string, epicBranch: string, targetBranch: string): void {
-    assertCloneBranch(root, epicBranch)
-    assertCloneBranch(root, targetBranch)
-    if (
-        !Git.succeeds(root, ["merge-base", "--is-ancestor", `refs/heads/${epicBranch}`, `refs/heads/${targetBranch}`])
-    ) {
-        throw new Error(`Epic branch ${epicBranch} has not been merged into ${targetBranch}`)
     }
 }
 
@@ -504,6 +507,8 @@ function recordedDefaultBranches(root: string): string[] {
 
 export interface SetEpicTaskTargetOptions {
     cwd: string
+    epicDelivery?: EpicDelivery
+    tools?: McpToolCatalog
 }
 
 export function setEpicTaskTarget(
@@ -520,8 +525,16 @@ export function setEpicTaskTarget(
     assertEntityBranchReady(status)
 
     if (target === "default") {
-        assertEpicBranchMerged(root, status.branch.name, status.branch.target)
+        const loaded = loadIntegrationConfig(root)
+        assertEpicDelivered(
+            root,
+            status.branch,
+            options.epicDelivery ?? { kind: "git-ancestry" },
+            loaded.state === "enabled" ? loaded.config.forge : undefined,
+            options.tools ?? new Map(),
+        )
     } else {
+        if (options.epicDelivery) throw new Error("Epic delivery evidence is only valid when switching to default")
         assertCloneBranch(root, status.branch.name)
     }
 

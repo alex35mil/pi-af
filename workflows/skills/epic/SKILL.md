@@ -81,6 +81,12 @@ After shared research and inquiry, write `.local/draft.md` directly using the sh
 
 A prospective Task is only an ordered Epic plan line. It has no Task ID, directory, branch, or external issue. Never initialize Tasks automatically from the Epic workflow.
 
+### Task delivery strategy
+
+Before the first Task is initialized, explain the tradeoff: independently shippable Tasks can target the repository default branch; intermediate work requiring integration can target the Epic branch. Recommend a strategy based on the ordered decomposition and obtain explicit user approval. Record the approved strategy and rationale in the reviewed `epic.md`, including its Plan highlights and a supporting Task delivery strategy section. The initial `taskTarget: epic` is a provisioning value, not user approval.
+
+For default targeting, explain that the accepted planning work must first be delivered through separately approved Git operations. Apply the approved choice through the guarded procedure in `../../references/epic.md`. Strategy approval does not authorize a commit, push, PR, merge, fetch, or cleanup. Keep the current pointer until the delivery guard permits the switch. An existing Epic with no recorded decision must obtain and record one through normal plan review and acceptance before the next Task is initialized. Material strategy changes use material replanning; never retarget existing Tasks.
+
 The candidate minimum shape is:
 
 ```markdown
@@ -98,6 +104,10 @@ The candidate minimum shape is:
 
 <Complete settled initiative details, with additional level-two sections as needed.>
 
+## Task delivery strategy
+
+<Approved Epic/default strategy, rationale from the decomposition, and delivery prerequisites.>
+
 ## Ordered Tasks
 
 1. **<Task-sized unit>** — owned outcome, relevant settled behavior/constraints, and scope boundary.
@@ -112,6 +122,7 @@ Before review, rewrite the candidate until it satisfies all of these conditions:
 - It explains user, operator, or system outcomes before architecture. For infrastructure, migration, or internal work, use operational outcomes, invariants, boundaries, and observable changes rather than forcing product framing.
 - Its concise Overview and Plan highlights accurately represent the detailed contract and keep important boundaries visible. Both portions are reviewed together under the document shape in `../../references/artifacts.md`.
 - It carries every material settled behavior, scope boundary, configuration/state rule, workflow, failure contract, compatibility requirement, invariant, integration boundary, and migration state.
+- It records the user-approved Task delivery strategy and rationale; the overview highlights agree with that section and the decomposition.
 - It includes concrete examples when they are needed to understand an agreed behavior or configuration.
 - It does not hide required contract details in `brief.md` or local notes; the accepted Epic must stand alone.
 - It keeps architecture high-level and excludes implementation recipes, detailed test plans, status tracking, risk-register boilerplate, and empty template sections.
@@ -127,7 +138,7 @@ Keep Planning during plan review, corrections, presentation, and waiting for use
 
 ## Ongoing synchronization and completion
 
-The Epic's branch identity never changes. It may be merged into its stored default target before the Epic lifecycle completes when the user explicitly approves that merge—for example, to deliver Tasks behind feature flags. After Git in the current clone confirms the merge, call `set_epic_task_target` with `target: default`; only later Tasks use default. Before new unmerged Epic work, call it with `target: epic`. Existing Tasks retain their stored target. Never delete the Epic branch while an active Task still targets it.
+The Epic's branch identity never changes. It may be merged into its stored default target before the Epic lifecycle completes when the user explicitly approves that merge—for example, to deliver planning first or Tasks behind feature flags. Follow `../../references/epic.md`: after local ancestry or exact merged GitHub PR evidence verifies current-revision delivery, call `set_epic_task_target` with `target: default` and the selected `epicDelivery` evidence. This supports squash delivery without requiring original-head ancestry. Before new undelivered Epic work, call it with `target: epic`, without delivery evidence. Only future Tasks use the changed pointer; existing Tasks retain their stored start/target. Never delete the Epic branch while an active Task still targets it.
 
 Task initialization changes its selected item once from `1. **Title** — …` to `1. [TASK-<raw-id>] **Title** — …`. That qualified ID is the permanent relation; title text and ordering are display-only and may change. Every later Epic candidate must preserve existing `[TASK-…]` markers exactly.
 
