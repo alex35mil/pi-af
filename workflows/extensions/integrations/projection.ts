@@ -1,7 +1,11 @@
 export type ProviderBodyPresentation =
-    | { kind: "github-tracker" }
-    | { kind: "linear-tracker" }
+    | { kind: "github-plan-comment" }
+    | { kind: "linear-plan-document" }
     | { kind: "github-pull-request"; githubIssueNumber?: number }
+
+export const LINEAR_PLAN_DOCUMENT_TITLE = "Plan"
+
+const expectedSource = "Provider body requires a nonempty ## Overview followed by nonempty level-two detail sections."
 
 export function renderProviderBody(source: string, presentation: ProviderBodyPresentation): string {
     const { overview, sections, newline } = splitProviderSource(removeRootHeading(source))
@@ -19,10 +23,11 @@ export function renderProviderBody(source: string, presentation: ProviderBodyPre
     } else {
         const details = trimSectionEnd(sections.map((section) => section.heading + section.content).join(""))
         const folded =
-            presentation.kind === "linear-tracker"
+            presentation.kind === "linear-plan-document"
                 ? `+++ Full plan${separation}${details}${separation}+++`
                 : renderGitHubDetails("Full plan", details, newline)
-        body = `${overview}${separation}${folded}`
+        const visible = renderPlanOverview(overview, newline, presentation.kind)
+        body = `${visible}${separation}${folded}`
     }
     return presentation.kind === "github-pull-request" && presentation.githubIssueNumber !== undefined
         ? `${body}${separation}---${separation}Closes #${presentation.githubIssueNumber}`
@@ -45,12 +50,34 @@ function renderGitHubDetails(title: string, content: string, newline: string): s
     return `<details>${newline}<summary>${label}</summary>${separation}${content}${separation}</details>`
 }
 
-function splitProviderSource(body: string): { overview: string; sections: ProviderSourceSection[]; newline: string } {
-    const expected = "Provider body requires a nonempty ## Overview followed by nonempty level-two detail sections."
-    const overviewHeading = /^##[ \t]+Overview[ \t]*(?:\r\n|\n|$)/.exec(body)
-    if (!overviewHeading) throw new Error(expected)
+function renderPlanOverview(
+    overview: string,
+    newline: string,
+    kind: "github-plan-comment" | "linear-plan-document",
+): string {
+    let rendered = overview
+    for (const heading of [...providerHeadings(overview)].reverse()) {
+        if (heading.start === 0 && kind === "linear-plan-document") {
+            rendered = rendered.slice(heading.content).replace(/^[ \t]*(?:\r\n|\n)/, "")
+            continue
+        }
+        const title =
+            heading.start === 0
+                ? "# Plan"
+                : heading.level === 3 && heading.title === "Plan highlights"
+                  ? "## Highlights"
+                  : undefined
+        if (title)
+            rendered =
+                rendered.slice(0, heading.start) +
+                title +
+                (heading.heading.endsWith("\n") ? newline : "") +
+                rendered.slice(heading.content)
+    }
+    return rendered
+}
 
-    const sections: { start: number; content: number; title: string; heading: string }[] = []
+function* providerHeadings(body: string) {
     let fence: { marker: string; length: number } | undefined
     for (const match of body.matchAll(/[^\n]*(?:\n|$)/g)) {
         const line = match[0].replace(/\r?\n$/, "")
@@ -64,19 +91,28 @@ function splitProviderSource(body: string): { overview: string; sections: Provid
             fence = { marker: marker[1][0], length: marker[1].length }
             continue
         }
-        if (/^##[ \t]+\S/.test(line))
-            sections.push({
+        const heading = /^(#{2,3})[ \t]+(\S.*)$/.exec(line)
+        if (heading)
+            yield {
                 start: match.index,
                 content: match.index + match[0].length,
-                title: line.replace(/^##[ \t]+/, "").trimEnd(),
+                title: heading[2].trimEnd(),
                 heading: match[0],
-            })
+                level: heading[1].length,
+            }
     }
-    if (fence) throw new Error(`${expected} Close the fenced code block before rendering.`)
-    if (sections.length < 2) throw new Error(expected)
+    if (fence) throw new Error(`${expectedSource} Close the fenced code block before rendering.`)
+}
+
+function splitProviderSource(body: string): { overview: string; sections: ProviderSourceSection[]; newline: string } {
+    const overviewHeading = /^##[ \t]+Overview[ \t]*(?:\r\n|\n|$)/.exec(body)
+    if (!overviewHeading) throw new Error(expectedSource)
+
+    const sections = [...providerHeadings(body)].filter((heading) => heading.level === 2)
+    if (sections.length < 2) throw new Error(expectedSource)
     for (let index = 0; index < sections.length; index++) {
         if (!body.slice(sections[index].content, sections[index + 1]?.start ?? body.length).trim())
-            throw new Error(expected)
+            throw new Error(expectedSource)
     }
 
     const boundary = sections[1].start

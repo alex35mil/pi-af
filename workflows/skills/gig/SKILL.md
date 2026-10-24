@@ -9,6 +9,7 @@ allowed-tools:
     - "set_workflow_phase"
     - "confirm_tracker_initialization"
     - "render_provider_body"
+    - "tracker_publication"
     - "verify_artifact_projection"
     - "integration_context"
     - "resource_ids"

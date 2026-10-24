@@ -123,6 +123,7 @@ export async function recordProviderCreation(
                 role: "tracker",
                 provider: "github",
                 repository: existing.repository,
+                planComment: existing.planComment,
                 state: "issue-bound-pending",
                 external: { issueNumber },
                 operations: ["finish configured Project membership, fields and initialization"],
@@ -155,6 +156,7 @@ export async function recordProviderCreation(
                 identified = {
                     role: "tracker",
                     provider: "linear",
+                    planDocument: existing.planDocument,
                     resource: "project",
                     state: "bound-pending",
                     external: { projectId },
@@ -186,6 +188,7 @@ export async function recordProviderCreation(
                         ? {
                               role: "tracker",
                               provider: "linear",
+                              planDocument: existing.planDocument,
                               resource: "task-issue",
                               state: "bound-pending",
                               external: { issueId, projectId: projectId! },
@@ -194,6 +197,7 @@ export async function recordProviderCreation(
                         : {
                               role: "tracker",
                               provider: "linear",
+                              planDocument: existing.planDocument,
                               resource: "gig-issue",
                               state: "bound-pending",
                               external: { issueId },

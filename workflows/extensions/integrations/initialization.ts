@@ -62,7 +62,7 @@ export const TrackerInitializationFactsSchema = Type.Union([
             phase: NativePhaseFactsSchema,
             systemMetadata: Type.Union([
                 Unversioned,
-                Type.Object({ mode: Type.Literal("versioned"), internalId: Name }, { additionalProperties: false }),
+                Type.Object({ mode: Type.Literal("versioned") }, { additionalProperties: false }),
             ]),
         },
         { additionalProperties: false },
@@ -164,8 +164,6 @@ export function confirmTrackerInitialization(
                 parentTracker.external.projectId !== projectId)
         )
             throw new Error("initialization facts do not match the Task parent Project")
-        if (facts.systemMetadata.mode === "versioned" && facts.systemMetadata.internalId !== status.id)
-            throw new Error("initialization Internal ID does not match")
     } else throw new Error("initialization facts do not match the configured tracker provider")
 
     if (planPhaseMutation(tracker.config, status.entity, "planning", facts.lifecycle, facts.phase).changed)

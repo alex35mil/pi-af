@@ -370,6 +370,7 @@ describe("workflow domain", () => {
             Value.Check(IntegrationRecordSchema, {
                 role: "tracker",
                 provider: "github",
+                planComment: { state: "unpublished" },
                 repository: { owner: "example", repo: "project" },
                 state: "issue-bound-pending",
                 external: issue,
@@ -381,6 +382,7 @@ describe("workflow domain", () => {
             Value.Check(IntegrationRecordSchema, {
                 role: "tracker",
                 provider: "github",
+                planComment: { state: "unpublished" },
                 repository: { owner: "example", repo: "project" },
                 state: "bound-pending",
                 external: issue,
@@ -403,6 +405,7 @@ describe("workflow domain", () => {
             Value.Check(IntegrationRecordSchema, {
                 role: "tracker",
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "project",
                 state: "bound",
                 external: { projectId: "project-uuid" },
@@ -412,6 +415,7 @@ describe("workflow domain", () => {
         const linearTask = {
             role: "tracker",
             provider: "linear",
+            planDocument: { state: "unpublished" },
             resource: "task-issue",
             state: "bound",
             external: {
@@ -720,6 +724,7 @@ describe("workflow domain", () => {
                 {
                     role: "tracker",
                     provider: "github",
+                    planComment: { state: "unpublished" },
                     repository: { owner: "example", repo: "project" },
                     state: "awaiting",
                     operation: "create issue",
@@ -1069,6 +1074,7 @@ describe("workflow domain", () => {
             assert.deepEqual(epic.status.integrations[0], {
                 role: "tracker",
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "project",
                 state: "awaiting",
                 operation: "create Linear Project",
@@ -1094,6 +1100,7 @@ describe("workflow domain", () => {
             assert.deepEqual(waitingTask.status.integrations[0], {
                 role: "tracker",
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "task-issue",
                 state: "awaiting",
                 operation: "wait for parent Epic Project binding, then create Linear issue",
@@ -1106,6 +1113,7 @@ describe("workflow domain", () => {
                     {
                         role: "tracker" as const,
                         provider: "linear" as const,
+                        planDocument: { state: "unpublished" },
                         resource: "project" as const,
                         state: "bound" as const,
                         external: {
@@ -1138,6 +1146,7 @@ describe("workflow domain", () => {
             assert.deepEqual(task.status.integrations[0], {
                 role: "tracker",
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "task-issue",
                 state: "awaiting",
                 operation: "create Linear issue in parent Epic Project",
@@ -1149,6 +1158,7 @@ describe("workflow domain", () => {
                     {
                         role: "tracker" as const,
                         provider: "linear" as const,
+                        planDocument: { state: "unpublished" as const },
                         resource: "task-issue" as const,
                         state: "issue-bound-pending" as const,
                         external: {
@@ -1175,6 +1185,7 @@ describe("workflow domain", () => {
                     {
                         role: "tracker" as const,
                         provider: "linear" as const,
+                        planDocument: { state: "unpublished" as const },
                         resource: "task-issue" as const,
                         state: "bound" as const,
                         external: {
@@ -1275,6 +1286,7 @@ describe("workflow domain", () => {
             const partialGigTracker = {
                 role: "tracker" as const,
                 provider: "linear" as const,
+                planDocument: { state: "unpublished" as const },
                 resource: "gig-issue" as const,
                 state: "issue-bound-pending" as const,
                 external: { issueId: "gig-partial-uuid" },
@@ -1310,6 +1322,7 @@ describe("workflow domain", () => {
                     {
                         role: "tracker",
                         provider: "linear",
+                        planDocument: { state: "unpublished" },
                         resource: "gig-issue",
                         state: "bound",
                         external: partialGigTracker.external,
@@ -1358,6 +1371,7 @@ describe("workflow domain", () => {
             const collisionBinding = {
                 role: "tracker" as const,
                 provider: "linear" as const,
+                planDocument: { state: "unpublished" as const },
                 resource: "gig-issue" as const,
                 state: "bound" as const,
                 external: { issueId: "collision-uuid" },
@@ -1470,6 +1484,7 @@ describe("workflow domain", () => {
                             {
                                 role: "tracker",
                                 provider: "github",
+                                planComment: { state: "unpublished" },
                                 repository: { owner: "example", repo: "project" },
                                 state: "awaiting",
                                 operation: "create issue",
@@ -1477,6 +1492,7 @@ describe("workflow domain", () => {
                             {
                                 role: "tracker",
                                 provider: "github",
+                                planComment: { state: "unpublished" },
                                 repository: { owner: "example", repo: "project" },
                                 state: "pending",
                                 operations: ["create issue"],

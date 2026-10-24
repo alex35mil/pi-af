@@ -120,8 +120,13 @@ function entity(
                           state: pending ? "bound-pending" : "bound",
                           ...(pending ? { operations: ["confirm outcomes"] } : {}),
                           ...(provider === "github"
-                              ? { repository: github.repository, external: { issueNumber: kind === "epic" ? 10 : 11 } }
+                              ? {
+                                    repository: github.repository,
+                                    planComment: { state: "unpublished" },
+                                    external: { issueNumber: kind === "epic" ? 10 : 11 },
+                                }
                               : {
+                                    planDocument: { state: "unpublished" },
                                     resource:
                                         kind === "epic" ? "project" : kind === "task" ? "task-issue" : "gig-issue",
                                     external:
@@ -190,7 +195,7 @@ function facts(
                   lifecycle: "inProgress",
                   priority: 2,
                   phase: native(provider),
-                  systemMetadata: mode === "unversioned" ? { mode } : { mode, internalId: id },
+                  systemMetadata: { mode },
               },
     )
 }
@@ -392,13 +397,7 @@ describe("workflow operations", () => {
                         },
                     },
                 )
-            } else
-                bad.push(
-                    { ...good, id: "wrong" },
-                    { ...good, team: "other" },
-                    { ...good, projectId: null },
-                    { ...good, systemMetadata: { mode: "versioned", internalId: "wrong" } },
-                )
+            } else bad.push({ ...good, id: "wrong" }, { ...good, team: "other" }, { ...good, projectId: null })
             for (const input of bad)
                 assert.throws(() =>
                     confirmTrackerInitialization(original, environment(provider), input, entity(provider, "epic")),
@@ -420,7 +419,9 @@ describe("workflow operations", () => {
                     {
                         role: "tracker",
                         provider,
-                        ...(provider === "github" ? { repository: github.repository } : { resource: "task-issue" }),
+                        ...(provider === "github"
+                            ? { repository: github.repository, planComment: { state: "unpublished" } }
+                            : { resource: "task-issue", planDocument: { state: "unpublished" } }),
                         state: "pending",
                         operations: ["create"],
                     },

@@ -50,6 +50,6 @@ Always report the durable object URL and any incomplete update. Never bypass a d
 
 ## Start the work
 
-When the user starts a selected Backlog or Todo object through `/epic`, `/task`, or `/gig`, reuse that exact provider object and Priority, create the workflow entity and branch contract, and move directly to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress.
+When the user starts a selected Backlog or Todo object through `/epic`, `/task`, or `/gig`, reuse that exact provider object and Priority, create the workflow entity and branch contract, and move directly to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress. Both providers preserve the request title/name and description. The first accepted plan publishes in one managed GitHub issue comment or Linear document attached to the bound issue/Project, updating that same publication thereafter. This is the same for workflow-created and externally submitted items; no ownership question is required. Queue intake itself creates no plan publication.
 
 Follow `./phase.md`: initialized GitHub work uses the Project Phase field, and Linear uses the selected mutually exclusive Project/issue-label group, in both artifact modes. Trackerless Phase stays in metadata. Versioned mode also reconciles the authoritative GitHub Kind label and may apply configured Internal ID during initialization; other system metadata stays private in unversioned mode.

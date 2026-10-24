@@ -22,7 +22,7 @@ After initialization, call `integration_context` with `initialize` and the Deliv
 - `enabled`: first follow `./integrations/shared.md`; then dispatch enabled roles by exact provider to `./integrations/tracker/github.md`, `./integrations/tracker/linear.md`, or `./integrations/forge/github.md`; report an unavailable role without blocking the other.
 - unavailable roles, permission denial, invalid configuration, or provider failure: follow the failure boundary in `./integrations/shared.md`. Preserve work; never bypass MCP permissions or substitute workflow authority for an unavailable tracker.
 
-After every accepted `plan.md` change, call tracker-only `artifactProjection` and follow `./integrations/shared.md` for projection, approval, and verification. Call `render_provider_body` with the complete approved plan and tracker destination; publish its exact output. Unversioned mode applies its existing restricted-content approval before rendering.
+After every accepted `plan.md` change, call tracker-only `artifactProjection` and follow `./integrations/shared.md` for projection, approval, and verification. Use `tracker_publication` with the complete approved plan: GitHub maintains one issue comment; Linear maintains one document attached to the bound issue or Project. Preserve tracker request titles/names and descriptions. For published Linear documents, follow its explicit document/parent verification and `prepareUpdate` flow before the ID-only content update. Unversioned mode applies its existing restricted-content approval before rendering.
 
 ## Material replanning
 

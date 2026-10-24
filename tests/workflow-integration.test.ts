@@ -169,6 +169,7 @@ function writeGitHubGigEntity(cwd: string): string {
             {
                 role: "tracker",
                 provider: "github",
+                planComment: { state: "unpublished" },
                 repository: { owner: "alex", repo: "example" },
                 state: "bound",
                 external: { issueNumber: 42 },
@@ -205,6 +206,7 @@ function writeLinearGigEntity(cwd: string): string {
             {
                 role: "tracker",
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "gig-issue",
                 state: "bound",
                 external: { issueId: "linear-uuid" },
@@ -447,7 +449,7 @@ describe("workflow integration configuration", () => {
             [
                 ["versioned/no-tracker", "workflow", "workflow", "required", "none", false],
                 ["versioned/github", "tracker", "tracker", "forbidden", "full", true],
-                ["versioned/linear", "tracker", "tracker", "forbidden", "full", true],
+                ["versioned/linear", "tracker", "tracker", "forbidden", "full", false],
                 ["unversioned/no-tracker", "workflow", "workflow", "required", "none", false],
                 ["unversioned/github", "tracker", "tracker", "forbidden", "restricted", false],
                 ["unversioned/linear", "tracker", "tracker", "forbidden", "restricted", false],
@@ -499,6 +501,7 @@ describe("workflow integration configuration", () => {
             assert.ok(commands.has("todo"))
             assert.ok(tools.includes("verify_artifact_projection"))
             assert.ok(tools.includes("render_provider_body"))
+            assert.ok(tools.includes("tracker_publication"))
             assert.equal(tools.includes("render_artifact_links"), false)
             assert.ok(tools.includes("finalize_linear_branch"))
             assert.equal(tools.includes("reconcile_linear_backlog"), false)
@@ -721,7 +724,7 @@ describe("workflow integration configuration", () => {
             const ctx = { cwd } as ExtensionContext
             const source = "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n"
             const trackerBody =
-                "## Overview\n\nDelivered.\n\n<details>\n<summary>Full plan</summary>\n\n## Verification\n\nTests passed.\n\n</details>"
+                "# Plan\n\nDelivered.\n\n<details>\n<summary>Full plan</summary>\n\n## Verification\n\nTests passed.\n\n</details>"
             const prBody =
                 "## Overview\n\nDelivered.\n\n<hr />\n\n<details>\n<summary>Verification</summary>\n\nTests passed.\n\n</details>"
 
@@ -837,7 +840,7 @@ describe("workflow integration configuration", () => {
                                 destination: "tracker",
                                 source: `# Work\n\n${overview}\n\n${details}\n`,
                             }),
-                            `${overview}\n\n${fold}`,
+                            `${provider === "github" ? "# Plan\n\nExplain the work.\n\n## Highlights\n\n- Preserve the contract." : "Explain the work.\n\n## Highlights\n\n- Preserve the contract."}\n\n${fold}`,
                         )
                         assert.deepEqual(fileSnapshot(cwd), before)
                         assert.throws(
@@ -937,13 +940,13 @@ describe("workflow integration configuration", () => {
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
                 projection.projection.rendering,
-                /render_provider_body.*complete approved source.*exact returned markdown/,
+                /tracker_publication.*complete approved source.*exact registered document mutation/,
             )
             assert.match(
                 projection.projection.changedCandidateGate,
                 /deterministic renderer output.*no second approval.*substantive omission.*exact diff.*explicit user approval.*complete source/,
             )
-            assert.equal(projection.projection.ownership, "workflow")
+            assert.equal(projection.projection.authority, "local accepted artifact")
             assert.match(projection.projection.outcomeProof, /complete rendered approved body.*clear provider success/)
             assert.match(projection.projection.recovery, /uncertain or partial.*reconcile before retrying/)
             assert.match(projection.projection.discussion, /comments.*accepted source artifact/)

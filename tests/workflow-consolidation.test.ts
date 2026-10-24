@@ -82,15 +82,18 @@ describe("workflow consolidation contracts", () => {
             {
                 provider: "github",
                 repository: { owner: "example", repo: "project" },
+                planComment: { state: "unpublished" },
                 identity: { issueNumber: 2 },
             },
             {
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "task-issue",
                 identity: { issueId: "issue", projectId: "project" },
             },
             {
                 provider: "linear",
+                planDocument: { state: "unpublished" },
                 resource: "gig-issue",
                 identity: { issueId: "issue" },
             },
@@ -119,6 +122,7 @@ describe("workflow consolidation contracts", () => {
         const project = {
             role: "tracker",
             provider: "linear",
+            planDocument: { state: "unpublished" },
             resource: "project",
             external: { projectId: "p" },
         }

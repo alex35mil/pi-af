@@ -327,7 +327,7 @@ describe("workflow instruction ownership", () => {
         assert.doesNotMatch(fs.readFileSync("workflows/README.md", "utf-8"), /Integration roles and Links/)
 
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
-        assert.match(shared, /workflow owns the provider's task-definition or result content/)
+        assert.match(shared, /accepted local artifact owns the task definition or result content/)
         assert.match(shared, /workflow publication layer owns its attribution footer/)
         const publication = fs.readFileSync("workflows/extensions/integrations/publication.ts", "utf-8")
         assert.doesNotMatch(publication, /^import\b/m)
@@ -340,18 +340,20 @@ describe("workflow instruction ownership", () => {
             fs.readFileSync("workflows/extensions/integrations/index.ts", "utf-8"),
             /from "\.\/publication-mcp\.js"/,
         )
-        assert.match(shared, /Discussion.*belong in comments/)
+        assert.match(shared, /Discussion.*belong in separate comments/)
         assert.match(shared, /Preserve the exact rendered content in the request/)
         assert.match(shared, /Trust an established clear provider success/)
         assert.match(shared, /uncertain or partial update, read the exact body/)
         assert.doesNotMatch(shared, /render_artifact_links|artifactLinks|## Shared Links section/)
 
         for (const skill of ["epic", "task", "gig"]) {
-            assert.match(fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8"), /render_provider_body/)
+            const instructions = fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8")
+            assert.match(instructions, /render_provider_body/)
+            assert.match(instructions, /- "tracker_publication"/)
         }
         assert.match(
             fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8"),
-            /follow the shared complete-body publishing contract.*trust established clear success and reconcile uncertain outcomes/,
+            /follow the shared complete-body publishing contract.*GitHub uses `tracker_publication`.*Trust established clear success and reconcile uncertain outcomes/,
         )
     })
 
@@ -376,10 +378,21 @@ describe("workflow instruction ownership", () => {
         assert.match(shared, /both visible and collapsed content/)
         assert.match(shared, /require approval before rendering/)
         assert.match(shared, /Folding is not a privacy boundary/)
-        assert.match(shared, /Call `render_provider_body`.*complete approved candidate/)
+        assert.match(shared, /call `tracker_publication`.*complete approved candidate/)
+        assert.match(shared, /For tracker plans in either provider, call `tracker_publication`/)
+        assert.match(shared, /For PR bodies, call `render_provider_body`/)
+        assert.match(shared, /action: prepareUpdate/)
+        assert.match(shared, /Listings truncate content/)
+        assert.match(shared, /Before adopting queued work.*read the selected object's discussion.*complete pagination/)
+        assert.match(shared, /Resolve material questions with the maintainer before initialization/)
+        assert.match(shared, /Every GitHub tracker issue keeps its original request.*one managed comment/)
+        assert.match(shared, /pending GitHub comment creation requires `tracker_publication recover`/)
+        assert.match(shared, /No match, duplicate matches.*without another automatic create/)
+        const task = fs.readFileSync("workflows/skills/task/SKILL.md", "utf-8")
+        assert.match(task, /tracker_publication.*parent `entityDir`.*saved publication state/)
         assert.match(
             shared,
-            /Deterministic renderer output and the code-owned attribution treatment need no second approval/,
+            /Deterministic renderer output, the opaque plan-publication marker, and the code-owned attribution treatment need no second approval/,
         )
         assert.match(shared, /substantive omission, rewrite, addition, or new summary requires/)
         assert.match(shared, /incompatible source produces a local layout error/)
@@ -387,8 +400,13 @@ describe("workflow instruction ownership", () => {
         assert.match(review, /Overview accurately represents the complete detailed contract or evidence/)
         assert.match(review, /keeps material limitations visible/)
         const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
-        assert.match(linear, /Call `render_provider_body` with the complete approved source/)
-        assert.match(linear, /live issue\/Project UI rendering must be verified separately/)
+        assert.match(linear, /`tracker_publication prepare` with the complete approved source/)
+        assert.match(linear, /`tracker_publication prepareUpdate`/)
+        assert.match(linear, /List\/create content is truncated/)
+        assert.match(linear, /Live document UI rendering must be verified separately/)
+        assert.match(linear, /shared discussion-reading requirement.*`list_comments`/)
+        assert.match(linear, /Read all discussion pages.*hasNextPage: false/)
+        assert.match(linear, /Reconcile material maintainer clarifications before adopting/)
     })
 
     it("routes commits through the available skill and supplies an explicit squash title", () => {
@@ -453,10 +471,19 @@ describe("workflow instruction ownership", () => {
     it("offers useful integration permissions with explicit selection and preserved constraints", () => {
         const setup = fs.readFileSync("workflows/references/setup.md", "utf-8")
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
-        for (const tool of ["projects_write", "issue_write", "save_issue", "save_project"]) {
+        for (const tool of [
+            "projects_write",
+            "issue_write",
+            "add_issue_comment",
+            "update_issue_comment",
+            "save_issue",
+            "save_project",
+            "save_document",
+        ]) {
             assert.ok(setup.includes(`mcp(<server>, ${tool})`))
-            assert.ok(skill.includes(`\`${tool}\``))
         }
+        assert.match(skill, /using the recommendation matrix in `\.\.\/\.\.\/references\/setup\.md`/)
+        assert.match(skill, /frequent tracker writes defined by that matrix/)
         assert.match(skill, /- "inspect_permissions"/)
         assert.match(skill, /only for selected active integration providers/)
         assert.match(skill, /forge-only GitHub server gets the read-only option/)
