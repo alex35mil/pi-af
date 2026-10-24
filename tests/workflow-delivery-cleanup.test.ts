@@ -122,9 +122,10 @@ describe("Deliverable branch cleanup", () => {
     it("registers cleanup under the Deliverable extension", () => {
         const tools: string[] = []
         registerDeliverable({
+            on() {},
             registerTool: (tool: { name: string }) => tools.push(tool.name),
         } as unknown as ExtensionAPI)
-        assert.deepEqual(tools, ["cleanup_delivery_branch"])
+        assert.deepEqual(tools, ["cleanup_ancestry_delivery_branch", "cleanup_github_delivery_branch"])
     })
 
     it("cleans a squash-merged branch in the current clone from verified GitHub PR evidence", () => {

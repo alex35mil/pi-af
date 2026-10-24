@@ -57,9 +57,13 @@ const fixIntent = {
     indexFingerprint: Type.String({ pattern: "^[a-f0-9]{64}$" }),
 }
 export const IncomingCleanupCompletionSchema = Type.Union([
-    Type.Object({ kind: Type.Literal("forgeOnly") }, { additionalProperties: false }),
+    Type.Object({ kind: Type.Enum(["forgeOnly"], { type: "string" }) }, { additionalProperties: false }),
     Type.Object(
-        { kind: Type.Literal("project"), fieldEvidence: EvidenceSchema, itemEvidence: EvidenceSchema },
+        {
+            kind: Type.Enum(["project"], { type: "string" }),
+            fieldEvidence: EvidenceSchema,
+            itemEvidence: EvidenceSchema,
+        },
         { additionalProperties: false },
     ),
 ])

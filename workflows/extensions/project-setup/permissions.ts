@@ -17,7 +17,7 @@ import { ensureLocalSettingsExclusion } from "./local-settings.js"
 const LOCAL_PERMISSIONS_SETTINGS_FILE = `.agents/${PERMISSIONS_EXTENSION}.local.json`
 export const LOCAL_PERMISSIONS_SETTINGS_EXCLUDE = `/${LOCAL_PERMISSIONS_SETTINGS_FILE}`
 
-const SettingsTargetSchema = Type.Union([Type.Literal("project"), Type.Literal("local")])
+const SettingsTargetSchema = Type.Enum(["project", "local"], { type: "string" })
 const PermissionRuleSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 const RulesSchema = Type.Array(PermissionRuleSchema, { uniqueItems: true })
 

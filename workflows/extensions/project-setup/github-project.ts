@@ -8,16 +8,9 @@ import { GitHubTrackerSchema } from "../integrations/config.js"
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 const ServerNameSchema = Type.String({ minLength: 1, pattern: "^[A-Za-z0-9_.-]+$" })
 const EnvironmentNameSchema = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })
-const ColorSchema = Type.Union([
-    Type.Literal("gray"),
-    Type.Literal("blue"),
-    Type.Literal("green"),
-    Type.Literal("yellow"),
-    Type.Literal("orange"),
-    Type.Literal("red"),
-    Type.Literal("pink"),
-    Type.Literal("purple"),
-])
+const ColorSchema = Type.Enum(["gray", "blue", "green", "yellow", "orange", "red", "pink", "purple"], {
+    type: "string",
+})
 
 const OptionSchema = Type.Object(
     {
@@ -67,34 +60,34 @@ const DeliverableKindLabelsSchema = Type.Object(
 )
 
 const ProjectOwnerSchema = Type.Object(
-    { login: OneLineSchema, type: Type.Union([Type.Literal("user"), Type.Literal("org")]) },
+    { login: OneLineSchema, type: Type.Enum(["user", "org"], { type: "string" }) },
     { additionalProperties: false },
 )
 const RepositorySchema = Type.Object({ owner: OneLineSchema, repo: OneLineSchema }, { additionalProperties: false })
 const ProjectSourceSchema = Type.Union([
     Type.Object(
         {
-            mode: Type.Literal("new"),
+            mode: Type.Enum(["new"], { type: "string" }),
             title: OneLineSchema,
-            visibility: Type.Union([Type.Literal("private"), Type.Literal("public")]),
+            visibility: Type.Enum(["private", "public"], { type: "string" }),
             associateRepository: Type.Boolean(),
         },
         { additionalProperties: false },
     ),
     Type.Object(
         {
-            mode: Type.Literal("existing"),
+            mode: Type.Enum(["existing"], { type: "string" }),
             number: Type.Integer({ minimum: 1 }),
-            visibility: Type.Union([Type.Literal("private"), Type.Literal("public")]),
+            visibility: Type.Enum(["private", "public"], { type: "string" }),
             associateRepository: Type.Boolean(),
         },
         { additionalProperties: false },
     ),
     Type.Object(
         {
-            mode: Type.Literal("resume-created"),
+            mode: Type.Enum(["resume-created"], { type: "string" }),
             number: Type.Integer({ minimum: 1 }),
-            visibility: Type.Union([Type.Literal("private"), Type.Literal("public")]),
+            visibility: Type.Enum(["private", "public"], { type: "string" }),
             associateRepository: Type.Boolean(),
         },
         { additionalProperties: false },
@@ -103,7 +96,7 @@ const ProjectSourceSchema = Type.Union([
 
 const ProjectPrioritySchema = Type.Object(
     {
-        scope: Type.Literal("project"),
+        scope: Type.Enum(["project"], { type: "string" }),
         field: OneLineSchema,
         options: Type.Array(OptionSchema, { minItems: 1 }),
     },
@@ -111,38 +104,44 @@ const ProjectPrioritySchema = Type.Object(
 )
 const IssuePrioritySchema = Type.Object(
     {
-        scope: Type.Literal("issue"),
+        scope: Type.Enum(["issue"], { type: "string" }),
         field: OneLineSchema,
         options: Type.Array(OptionSchema, { minItems: 1 }),
         provisionMissing: Type.Boolean(),
-        visibility: Type.Union([Type.Literal("organization_members_only"), Type.Literal("all")]),
+        visibility: Type.Enum(["organization_members_only", "all"], { type: "string" }),
     },
     { additionalProperties: false },
 )
 const ProjectInternalIdSchema = Type.Object(
-    { scope: Type.Literal("project"), field: OneLineSchema },
+    { scope: Type.Enum(["project"], { type: "string" }), field: OneLineSchema },
     { additionalProperties: false },
 )
 const IssueInternalIdSchema = Type.Object(
     {
-        scope: Type.Literal("issue"),
+        scope: Type.Enum(["issue"], { type: "string" }),
         field: OneLineSchema,
         provisionMissing: Type.Boolean(),
-        visibility: Type.Union([Type.Literal("organization_members_only"), Type.Literal("all")]),
+        visibility: Type.Enum(["organization_members_only", "all"], { type: "string" }),
     },
     { additionalProperties: false },
 )
-const LayoutSchema = Type.Union([Type.Literal("table"), Type.Literal("board"), Type.Literal("roadmap")])
+const LayoutSchema = Type.Enum(["table", "board", "roadmap"], { type: "string" })
 const ViewTargetSchema = Type.Union([
-    Type.Object({ mode: Type.Literal("initial") }, { additionalProperties: false }),
-    Type.Object({ mode: Type.Literal("selected"), viewId: OneLineSchema }, { additionalProperties: false }),
+    Type.Object({ mode: Type.Enum(["initial"], { type: "string" }) }, { additionalProperties: false }),
+    Type.Object(
+        { mode: Type.Enum(["selected"], { type: "string" }), viewId: OneLineSchema },
+        { additionalProperties: false },
+    ),
 ])
 const VisibleFieldSchema = Type.Union([
-    Type.Object({ kind: Type.Literal("field"), name: OneLineSchema }, { additionalProperties: false }),
+    Type.Object(
+        { kind: Type.Enum(["field"], { type: "string" }), name: OneLineSchema },
+        { additionalProperties: false },
+    ),
     Type.Object(
         {
-            kind: Type.Literal("workflow"),
-            field: Type.Union([Type.Literal("status"), Type.Literal("priority"), Type.Literal("phase")]),
+            kind: Type.Enum(["workflow"], { type: "string" }),
+            field: Type.Enum(["status", "priority", "phase"], { type: "string" }),
         },
         { additionalProperties: false },
     ),
@@ -156,7 +155,7 @@ const PresentationSchema = Type.Object(
     },
     { additionalProperties: false },
 )
-const DefaultRepositorySchema = Type.Union([Type.Literal("setup-repository"), Type.Literal("unmanaged")])
+const DefaultRepositorySchema = Type.Enum(["setup-repository", "unmanaged"], { type: "string" })
 
 export const GitHubProjectSpecificationSchema = Type.Object(
     {

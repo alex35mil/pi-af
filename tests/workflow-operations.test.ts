@@ -498,6 +498,7 @@ describe("workflow operations", () => {
         type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
         const tools = new Map<string, Tool>()
         registerWorkflowOperations({
+            on() {},
             registerTool: (tool: Tool) => tools.set(tool.name, tool),
         } as unknown as ExtensionAPI)
         const ctx = withToolExecution({ cwd: root } as ExtensionContext)
@@ -516,16 +517,35 @@ describe("workflow operations", () => {
             writeEntityStatus(directory, entity("github", "gig", true))
             const file = path.join(directory, "metadata.json")
             const before = fs.readFileSync(file, "utf8")
-            const phaseTool = tools.get("set_workflow_phase")!
+            const nativeInput = {
+                field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+                current: "Planning",
+            }
+            const bindingInput = {
+                entityDir: directory,
+                facts: {
+                    repository: github.repository,
+                    issueNumber: 11,
+                    project: github.project,
+                    itemId: 42,
+                    lifecycle: "inProgress",
+                    priority: "High",
+                    phase: nativeInput,
+                    systemMetadata: {
+                        labels: ["Refactor", "unrelated"],
+                        internalId: { ...github.fields.internalId, value: "GIG-01KDVDNA00" },
+                    },
+                },
+            }
+            const phaseTool = tools.get("set_github_workflow_phase")!
             await assert.rejects(
                 phaseTool.execute(
                     "bad",
                     {
                         entityDir: directory,
-                        authority: "tracker",
                         phase: "execution",
                         lifecycle: "done",
-                        native: native("github"),
+                        native: nativeInput,
                     },
                     undefined,
                     undefined,
@@ -534,32 +554,19 @@ describe("workflow operations", () => {
                 /In Progress/,
             )
             assert.equal(fs.readFileSync(file, "utf8"), before)
-            const binding = tools.get("confirm_tracker_initialization")!
-            await binding.execute(
-                "confirm",
-                { entityDir: directory, facts: facts("github", "gig", "versioned") },
-                undefined,
-                undefined,
-                ctx,
-            )
+            const binding = tools.get("confirm_versioned_github_tracker")!
+            await binding.execute("confirm", bindingInput, undefined, undefined, ctx)
             assert.deepEqual(readEntityStatus(directory), entity("github"))
             const after = fs.statSync(file, { bigint: true }).mtimeNs
-            await binding.execute(
-                "retry",
-                { entityDir: directory, facts: facts("github", "gig", "versioned") },
-                undefined,
-                undefined,
-                ctx,
-            )
+            await binding.execute("retry", bindingInput, undefined, undefined, ctx)
             assert.equal(fs.statSync(file, { bigint: true }).mtimeNs, after)
             const result = await phaseTool.execute(
                 "phase",
                 {
                     entityDir: directory,
-                    authority: "tracker",
                     phase: "execution",
                     lifecycle: "inProgress",
-                    native: native("github"),
+                    native: nativeInput,
                 },
                 undefined,
                 undefined,
@@ -578,9 +585,10 @@ describe("workflow operations", () => {
             const lifecycleFile = path.join(directory, ".local/status.md")
             const lifecycleBefore = fs.readFileSync(lifecycleFile, "utf8")
             const lifecycleModified = fs.statSync(lifecycleFile, { bigint: true }).mtimeNs
-            await phaseTool.execute(
+            const localPhaseTool = tools.get("set_local_workflow_phase")!
+            await localPhaseTool.execute(
                 "local",
-                { entityDir: directory, authority: "workflow", phase: "execution" },
+                { entityDir: directory, phase: "execution" },
                 undefined,
                 undefined,
                 ctx,
@@ -588,9 +596,9 @@ describe("workflow operations", () => {
             assert.equal(fs.readFileSync(lifecycleFile, "utf8"), lifecycleBefore)
             assert.equal(fs.statSync(lifecycleFile, { bigint: true }).mtimeNs, lifecycleModified)
             const localMetadataModified = fs.statSync(file, { bigint: true }).mtimeNs
-            await phaseTool.execute(
+            await localPhaseTool.execute(
                 "local-retry",
-                { entityDir: directory, authority: "workflow", phase: "execution" },
+                { entityDir: directory, phase: "execution" },
                 undefined,
                 undefined,
                 ctx,

@@ -1,5 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { INCOMING_CHECKOUT_TOOLS } from "../../../pr/operations.js"
 import { isDeepStrictEqual } from "node:util"
 
 import {
@@ -116,22 +117,9 @@ export function incomingPullRequestContext(cwd: string, reference: string, tools
             approval:
                 "Conversational approval of exact content, verdict, operation and revision; existing tool permissions still apply.",
             checkout: {
-                tool: "incoming_pull_request_checkout",
-                operations: [
-                    "prepare",
-                    "checkout",
-                    "inspect",
-                    "beginFixes",
-                    "observeTarget",
-                    "rebase",
-                    "continueRebase",
-                    "publishRebase",
-                    "commitFixes",
-                    "publishFixes",
-                    "cleanup",
-                ],
+                tools: INCOMING_CHECKOUT_TOOLS,
                 orchestration:
-                    "Use the registered checkout tool for init/fetch, exact checkout, contributor-review setup, validated transitions and approved standard rebase with immediate SHA-pinned --force-with-lease PR update. GitHub fetch/remote-tip observation/push use SSH with existing authentication; configure no HTTPS credentials and change no parent/global Git configuration. Saved unpublished rebase results recover through approved publishRebase with their original lease, without checkout recreation or another rebase. Approved commitFixes and separate publishFixes preserve additive history and advance the managed baseline; publishFixes is non-forced. Exact ship/merge scope includes shared repository merge, confirmed Project Done and safe owned cleanup without another cleanup question. Keep private evidence, contributor branches and the parent repository unchanged. Never reconstruct this Git orchestration in Bash or fall back after refusal/unavailability. It returns paths, revision, phase and diff state and verifies the parent remains untouched.",
+                    "Discover and use the named registered checkout operations for init/fetch, exact checkout, contributor-review setup, validated transitions and approved standard rebase with immediate SHA-pinned --force-with-lease PR update. GitHub fetch/remote-tip observation/push use SSH with existing authentication; configure no HTTPS credentials and change no parent/global Git configuration. Saved unpublished rebase results recover through approved publish_incoming_pr_rebase with their original lease, without checkout recreation or another rebase. Approved commit_incoming_pr_fixes and separate publish_incoming_pr_fixes preserve additive history and advance the managed baseline; fixes publication is non-forced. Exact ship/merge scope includes shared repository merge, confirmed Project Done and safe owned cleanup without another cleanup question. Keep private evidence, contributor branches and the parent repository unchanged. Never reconstruct this Git orchestration in Bash or fall back after refusal/unavailability. It returns paths, revision, phase and diff state and verifies the parent remains untouched.",
                 scale: [
                     { score: 1, label: "malicious", meaning: "Clear malicious behavior found." },
                     { score: 2, label: "suspicious", meaning: "Strong suspicious indicators." },

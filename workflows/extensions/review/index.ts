@@ -6,6 +6,7 @@ import { StringEnum } from "@earendil-works/pi-ai"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { EPIC_ROOT, PROJECT_ROOT, type DeliverableKind } from "../__lib/domain.js"
@@ -20,9 +21,15 @@ import {
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { executeReviewRound, recordRoundResponse } from "./round.js"
+import { reviewerEnvironment } from "./model.js"
 import { registerPullRequestReview } from "./pull-request.js"
 import { buildEpicReviewPrompt } from "./epic.js"
-import { renderReviewDocument, reviewAgentOutputInstructions, ReviewResponseFindingSchema } from "./findings.js"
+import {
+    renderReviewDocument,
+    reviewAgentOutputInstructions,
+    ReviewResponseFindingInputSchema,
+    reviewResponseFindings,
+} from "./findings.js"
 import {
     fence,
     MAX_EMBEDDED_FILE_BYTES,
@@ -56,7 +63,7 @@ export const ReviewRequestSchema = Type.Union([
         {
             entity: Type.Literal("epic"),
             entityDir: Type.String({ description: "Epic directory under .project/epics/" }),
-            phase: Type.Literal("plan"),
+            phase: Type.Enum(["plan"], { type: "string" }),
             ...optionalReviewerProperties,
         },
         { additionalProperties: false },
@@ -89,7 +96,7 @@ export const RecordReviewResponseSchema = Type.Object(
         entityDir: Type.String({ description: "Epic, Task, or Gig directory" }),
         phase: StringEnum(["plan", "interim", "final"] as const),
         round: Type.Integer({ minimum: 1 }),
-        findings: Type.Array(ReviewResponseFindingSchema),
+        findings: Type.Array(ReviewResponseFindingInputSchema),
         status: Type.String({ minLength: 1, description: "Plain-language correction and review status" }),
     },
     { additionalProperties: false },
@@ -136,76 +143,89 @@ interface ParentEpicContext {
 }
 
 export default function (pi: ExtensionAPI) {
+    const tools = workflowTools(pi, "reviews")
     registerPullRequestReview(pi)
-    pi.registerTool({
-        name: "review",
-        label: "review",
-        description:
-            "Run one strict Epic, Task, or Gig planning review, or a Task/Gig interim or final implementation review. Persists one numbered local review round and pauses immediately when the configured blocked-review confirmation threshold is reached.",
-        parameters: ReviewRequestSchema,
+    const reviews = [
+        ["epic", ReviewRequestSchema.anyOf[0]],
+        ["task", ReviewRequestSchema.anyOf[1]],
+        ["gig", ReviewRequestSchema.anyOf[2]],
+    ] as const
+    for (const [entity, schema] of reviews) {
+        const parameters = Type.Omit(schema, ["entity"])
+        tools.registerTool({
+            name: `review_${entity}`,
+            label: `review_${entity}`,
+            description:
+                "Run one strict Epic, Task, or Gig planning review, or a Task/Gig interim or final implementation review. Persists one numbered local review round and pauses immediately when the configured blocked-review confirmation threshold is reached.",
+            parameters,
 
-        async execute(_toolCallId, params, signal, onUpdate, ctx) {
-            const input: ReviewAgentParams = Value.Parse(ReviewRequestSchema, params)
-            const projectConfig = assertArtifactPersistencePrepared(ctx.cwd)
-            const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
-            const phase = input.phase
+            async execute(_toolCallId, params, signal, onUpdate, ctx) {
+                const input: ReviewAgentParams = Value.Parse(ReviewRequestSchema, {
+                    ...Value.Parse(parameters, params),
+                    entity,
+                })
+                const projectConfig = assertArtifactPersistencePrepared(ctx.cwd)
+                const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
+                const phase = input.phase
 
-            if (!fs.existsSync(entityDir)) {
-                return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
-            }
-            assertReviewEntity(entityDir, input.entity)
-            assertReviewPhase(entityDir, phase)
+                if (!fs.existsSync(entityDir)) {
+                    return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
+                }
+                assertReviewEntity(entityDir, input.entity)
+                assertReviewPhase(entityDir, phase)
 
-            const round = await nextReviewRound(entityDir, phase)
-            const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
-            const reviewedPlanPath = phase === "plan" ? await snapshotPlan(entityDir, round) : undefined
-            const requestPath = path.join(reviewRoundDir, "request.md")
+                const round = await nextReviewRound(entityDir, phase)
+                const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
+                const reviewedPlanPath = phase === "plan" ? await snapshotPlan(entityDir, round) : undefined
+                const requestPath = path.join(reviewRoundDir, "request.md")
 
-            const prompt =
-                input.entity === "epic"
-                    ? await buildEpicReviewPrompt(
-                          ctx,
-                          entityDir,
-                          reviewedPlanPath!,
-                          await readPreviousReviewArtifacts(entityDir, phase),
-                          input.instructions,
-                      )
-                    : await buildDeliverableReviewPrompt(
-                          ctx,
-                          entityDir,
-                          phase,
-                          input.instructions,
-                          input.subject,
-                          reviewedPlanPath,
-                      )
-            onUpdate?.(textResult(`Review agent started: ${path.relative(ctx.cwd, requestPath)}`))
+                const prompt =
+                    input.entity === "epic"
+                        ? await buildEpicReviewPrompt(
+                              ctx,
+                              entityDir,
+                              reviewedPlanPath!,
+                              await readPreviousReviewArtifacts(entityDir, phase),
+                              input.instructions,
+                          )
+                        : await buildDeliverableReviewPrompt(
+                              ctx,
+                              entityDir,
+                              phase,
+                              input.instructions,
+                              input.subject,
+                              reviewedPlanPath,
+                          )
+                onUpdate?.(textResult(`Review agent started: ${path.relative(ctx.cwd, requestPath)}`))
 
-            const { report, artifactText } = await executeReviewRound({
-                cwd: ctx.cwd,
-                directory: reviewRoundDir,
-                additionalFiles: reviewedPlanPath ? [reviewedPlanPath] : [],
-                prompt,
-                signal,
-                model: input.model,
-                agentName: `${input.entity}-review`,
-                progressLabel: `${input.entity === "epic" ? "Epic" : "Deliverable"} review agent`,
-                onUpdate: (update) => onUpdate?.(textResult(update)),
-            })
-            const signoff = report.signoff
+                const { report, artifactText } = await executeReviewRound({
+                    environment: reviewerEnvironment(pi, ctx.modelRegistry),
+                    cwd: ctx.cwd,
+                    directory: reviewRoundDir,
+                    additionalFiles: reviewedPlanPath ? [reviewedPlanPath] : [],
+                    prompt,
+                    signal,
+                    model: input.model,
+                    agentName: `${input.entity}-review`,
+                    progressLabel: `${input.entity === "epic" ? "Epic" : "Deliverable"} review agent`,
+                    onUpdate: (update) => onUpdate?.(textResult(update)),
+                })
+                const signoff = report.signoff
 
-            const baseText = `${renderReviewDocument(report)}\n${artifactText}`
-            const blockedGate = await blockedReviewGate(
-                entityDir,
-                phase,
-                round,
-                projectConfig.reviews?.userConfirmationAfter,
-            )
-            const text = blockedGate ? `${baseText}\n\n${formatBlockedReviewPause(blockedGate)}` : baseText
-            return textResult(text, false, { signoff, blockedGate })
-        },
-    })
+                const baseText = `${renderReviewDocument(report)}\n${artifactText}`
+                const blockedGate = await blockedReviewGate(
+                    entityDir,
+                    phase,
+                    round,
+                    projectConfig.reviews?.userConfirmationAfter,
+                )
+                const text = blockedGate ? `${baseText}\n\n${formatBlockedReviewPause(blockedGate)}` : baseText
+                return textResult(text, false, { signoff, blockedGate })
+            },
+        })
+    }
 
-    pi.registerTool({
+    tools.registerTool({
         name: "record_review_response",
         label: "record_review_response",
         description:
@@ -222,47 +242,58 @@ export default function (pi: ExtensionAPI) {
             const roundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, roundName)
             const reportPath = path.join(roundDir, REVIEW_REPORT_FILE)
             if (!fs.existsSync(reportPath)) throw new Error(`review report does not exist: ${roundName}`)
-            const content = await recordRoundResponse(roundDir, input.findings, input.status)
+            const content = await recordRoundResponse(roundDir, reviewResponseFindings(input.findings), input.status)
             return textResult(content, false, { round: roundName, findingCount: input.findings.length })
         },
     })
 
-    pi.registerTool({
-        name: "prepare_plan_presentation",
-        label: "prepare_plan_presentation",
-        description:
-            "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff.",
-        parameters: PreparePlanPresentationSchema,
+    const presentations = [
+        ["epic", PreparePlanPresentationSchema.anyOf[0]],
+        ["task", PreparePlanPresentationSchema.anyOf[1]],
+        ["gig", PreparePlanPresentationSchema.anyOf[2]],
+    ] as const
+    for (const [entity, schema] of presentations) {
+        const parameters = Type.Omit(schema, ["entity"])
+        tools.registerTool({
+            name: `prepare_${entity}_plan_presentation`,
+            label: `prepare_${entity}_plan_presentation`,
+            description:
+                "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff.",
+            parameters,
 
-        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input: PreparePlanPresentationParams = Value.Parse(PreparePlanPresentationSchema, params)
-            assertArtifactPersistencePrepared(ctx.cwd)
-            const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
+            async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+                const input: PreparePlanPresentationParams = Value.Parse(PreparePlanPresentationSchema, {
+                    ...Value.Parse(parameters, params),
+                    entity,
+                })
+                assertArtifactPersistencePrepared(ctx.cwd)
+                const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
 
-            if (!fs.existsSync(entityDir)) {
-                return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
-            }
-            assertReviewEntity(entityDir, input.entity)
-            assertReviewPhase(entityDir, "plan")
+                if (!fs.existsSync(entityDir)) {
+                    return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
+                }
+                assertReviewEntity(entityDir, input.entity)
+                assertReviewPhase(entityDir, "plan")
 
-            const snapshotPath = input.snapshot
-                ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
-                : await latestApprovedPlanSnapshot(entityDir)
+                const snapshotPath = input.snapshot
+                    ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
+                    : await latestApprovedPlanSnapshot(entityDir)
 
-            if (snapshotPath && input.snapshot) await requireApprovedPlanSnapshot(entityDir, snapshotPath)
-            if (!snapshotPath) {
-                return textResult("No approved plan review snapshot found.", true)
-            }
+                if (snapshotPath && input.snapshot) await requireApprovedPlanSnapshot(entityDir, snapshotPath)
+                if (!snapshotPath) {
+                    return textResult("No approved plan review snapshot found.", true)
+                }
 
-            const relSnapshot = path.relative(ctx.cwd, snapshotPath)
-            const relPlan = path.relative(
-                ctx.cwd,
-                path.join(entityDir, input.entity === "epic" ? "epic.md" : "plan.md"),
-            )
+                const relSnapshot = path.relative(ctx.cwd, snapshotPath)
+                const relPlan = path.relative(
+                    ctx.cwd,
+                    path.join(entityDir, input.entity === "epic" ? "epic.md" : "plan.md"),
+                )
 
-            return textResult(planPresentationInstructions(relSnapshot, relPlan))
-        },
-    })
+                return textResult(planPresentationInstructions(relSnapshot, relPlan))
+            },
+        })
+    }
 }
 
 function resolveEntityDir(cwd: string, raw: string): string {

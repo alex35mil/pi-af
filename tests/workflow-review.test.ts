@@ -78,7 +78,7 @@ function writeReviewRound(
 }
 
 describe("workflow reviewer isolation", () => {
-    it("registers one review tool for every entity variant", () => {
+    it("registers separate entity review and plan-presentation tools", () => {
         const tools: string[] = []
         const pi = {
             events: createEventBus(),
@@ -91,9 +91,13 @@ describe("workflow reviewer isolation", () => {
         assert.deepEqual(tools, [
             "review_pull_request",
             "record_pull_request_review_response",
-            "review",
+            "review_epic",
+            "review_task",
+            "review_gig",
             "record_review_response",
-            "prepare_plan_presentation",
+            "prepare_epic_plan_presentation",
+            "prepare_task_plan_presentation",
+            "prepare_gig_plan_presentation",
         ])
     })
 
@@ -141,8 +145,8 @@ describe("workflow reviewer isolation", () => {
                 on() {},
                 registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
             } as never)
-            const review = tools.find((tool) => tool.name === "review")!
-            const preparePresentation = tools.find((tool) => tool.name === "prepare_plan_presentation")!
+            const review = tools.find((tool) => tool.name === "review_gig")!
+            const preparePresentation = tools.find((tool) => tool.name === "prepare_gig_plan_presentation")!
             const ctx = { cwd: repository } as never
             const stopBeforeRunner = new Error("Reached the reviewer subprocess boundary")
             for (const category of ["plan", "interim", "final"] as const) {
@@ -152,7 +156,7 @@ describe("workflow reviewer isolation", () => {
                     await assert.rejects(
                         review.execute(
                             "test",
-                            { entity: "gig", entityDir, phase: category },
+                            { entityDir, phase: category },
                             undefined,
                             () => {
                                 throw stopBeforeRunner
@@ -173,8 +177,7 @@ describe("workflow reviewer isolation", () => {
             writeReviewRound(directory, "plan", 1, "approved")
             for (const phase of ["planning", "execution", "selfReview"]) {
                 fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase }))
-                const invoke = () =>
-                    preparePresentation.execute("test", { entity: "gig", entityDir }, undefined, undefined, ctx)
+                const invoke = () => preparePresentation.execute("test", { entityDir }, undefined, undefined, ctx)
                 if (phase === "planning") {
                     const result = await invoke()
                     assert.match(JSON.stringify(result.content), /Reviewed plan snapshot is ready/)
@@ -193,7 +196,6 @@ describe("workflow reviewer isolation", () => {
                 preparePresentation.execute(
                     "test",
                     {
-                        entity: "gig",
                         entityDir,
                         snapshot: ".local/reviews/plan-002/candidate.md",
                     },
@@ -390,7 +392,7 @@ describe("workflow reviewer isolation", () => {
     })
 
     it("loads active rules and the same permission extension used by every agent", () => {
-        const args = buildReviewerArgs("Deliverable Reviewer", "/tmp/prompt.md")
+        const args = buildReviewerArgs("Deliverable Reviewer", "/tmp/prompt.md", { kind: "standard", model: undefined })
         const extensions = args.flatMap((value, index) => (value === "--extension" ? [args[index + 1]] : []))
 
         assert.equal(args.includes("--no-extensions"), true)

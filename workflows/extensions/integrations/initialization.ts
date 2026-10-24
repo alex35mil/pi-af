@@ -5,7 +5,7 @@ import { Value } from "typebox/value"
 
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import type { EntityStatus } from "../__lib/entity.js"
-import { NativePhaseFactsSchema, planPhaseMutation } from "./phase.js"
+import { GitHubPhaseInputSchema, LinearPhaseInputSchema, NativePhaseFactsSchema, planPhaseMutation } from "./phase.js"
 import { assertEntityEnvironment, type WorkflowEnvironment } from "./policy.js"
 import { linearPriorityNumber } from "./records.js"
 
@@ -21,7 +21,7 @@ export const TrackerInitializationFactsSchema = Type.Union([
             repository: Type.Object({ owner: Name, repo: Name }, { additionalProperties: false }),
             issueNumber: NumberId,
             project: Type.Object(
-                { owner: Name, ownerType: Type.Union([Type.Literal("user"), Type.Literal("org")]), number: NumberId },
+                { owner: Name, ownerType: Type.Enum(["user", "org"], { type: "string" }), number: NumberId },
                 { additionalProperties: false },
             ),
             itemId: NumberId,
@@ -37,7 +37,7 @@ export const TrackerInitializationFactsSchema = Type.Union([
                         labels: Type.Array(Name, { uniqueItems: true }),
                         internalId: Type.Object(
                             {
-                                scope: Type.Union([Type.Literal("project"), Type.Literal("issue")]),
+                                scope: Type.Enum(["project", "issue"], { type: "string" }),
                                 field: Name,
                                 value: Name,
                             },
@@ -53,7 +53,7 @@ export const TrackerInitializationFactsSchema = Type.Union([
     Type.Object(
         {
             provider: Type.Literal("linear"),
-            resource: Type.Union([Type.Literal("project"), Type.Literal("task-issue"), Type.Literal("gig-issue")]),
+            resource: Type.Enum(["project", "task-issue", "gig-issue"], { type: "string" }),
             id: Name,
             team: Name,
             projectId: Type.Union([Name, Type.Null()]),
@@ -71,6 +71,51 @@ export const TrackerInitializationFactsSchema = Type.Union([
 export type TrackerInitializationFacts = Static<typeof TrackerInitializationFactsSchema>
 export const ConfirmTrackerInitializationSchema = Type.Object(
     { entityDir: Name, facts: TrackerInitializationFactsSchema },
+    { additionalProperties: false },
+)
+
+const [githubFacts, linearFacts] = TrackerInitializationFactsSchema.anyOf
+const githubInputProperties = {
+    ...Type.Omit(githubFacts, ["provider", "phase", "systemMetadata", "parentIssueNumber"]).properties,
+    parentIssueNumber: Type.Optional(NumberId),
+    phase: GitHubPhaseInputSchema,
+}
+export const VersionedGitHubInitializationInputSchema = Type.Object(
+    {
+        entityDir: Name,
+        facts: Type.Object(
+            {
+                ...githubInputProperties,
+                systemMetadata: Type.Omit(githubFacts.properties.systemMetadata.anyOf[1], ["mode"]),
+            },
+            { additionalProperties: false },
+        ),
+    },
+    { additionalProperties: false },
+)
+export const UnversionedGitHubInitializationInputSchema = Type.Object(
+    {
+        entityDir: Name,
+        facts: Type.Object(githubInputProperties, { additionalProperties: false }),
+    },
+    { additionalProperties: false },
+)
+export const LinearInitializationInputSchema = Type.Object(
+    {
+        entityDir: Name,
+        facts: Type.Object(
+            {
+                ...Type.Omit(linearFacts, ["provider", "phase", "projectId", "systemMetadata"]).properties,
+                projectId: Type.Optional(Name),
+                phase: LinearPhaseInputSchema,
+                systemMetadata: Type.Object(
+                    { mode: Type.Enum(["versioned", "unversioned"], { type: "string" }) },
+                    { additionalProperties: false },
+                ),
+            },
+            { additionalProperties: false },
+        ),
+    },
     { additionalProperties: false },
 )
 

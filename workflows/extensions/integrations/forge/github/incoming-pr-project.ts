@@ -12,12 +12,15 @@ import { planGitHubMerge } from "./merge.js"
 
 const membership = Type.Union([
     Type.Object(
-        { state: Type.Literal("absent"), lookup: Type.Array(EvidenceSchema, { minItems: 1 }) },
+        { state: Type.Enum(["absent"], { type: "string" }), lookup: Type.Array(EvidenceSchema, { minItems: 1 }) },
         { additionalProperties: false },
     ),
-    Type.Object({ state: Type.Literal("present"), evidence: EvidenceSchema }, { additionalProperties: false }),
     Type.Object(
-        { state: Type.Literal("added"), evidence: EvidenceSchema, creation: EvidenceSchema },
+        { state: Type.Enum(["present"], { type: "string" }), evidence: EvidenceSchema },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        { state: Type.Enum(["added"], { type: "string" }), evidence: EvidenceSchema, creation: EvidenceSchema },
         { additionalProperties: false },
     ),
 ])
@@ -33,12 +36,12 @@ export const IncomingProjectContextSchema = Type.Union([
         {
             ...common,
             action: Type.Literal("intake"),
-            choice: Type.Union([Type.Literal("backlog"), Type.Literal("todo")]),
+            choice: Type.Enum(["backlog", "todo"], { type: "string" }),
             membership: Type.Union([
                 membership,
                 Type.Object(
                     {
-                        state: Type.Literal("reconciled"),
+                        state: Type.Enum(["reconciled"], { type: "string" }),
                         attempt: Type.Pick(EvidenceSchema, ["tool", "arguments"], { additionalProperties: false }),
                         evidence: EvidenceSchema,
                     },
@@ -49,7 +52,7 @@ export const IncomingProjectContextSchema = Type.Union([
         { additionalProperties: false },
     ),
     Type.Object(
-        { ...common, action: Type.Union([Type.Literal("review"), Type.Literal("ship"), Type.Literal("cancel")]) },
+        { ...common, action: Type.Enum(["review", "ship", "cancel"], { type: "string" }) },
         { additionalProperties: false },
     ),
 ])

@@ -179,6 +179,7 @@ export async function nativeSessionFixture(options: {
         settingsManager,
         requests,
         events,
+        errors,
         get session() {
             return session
         },

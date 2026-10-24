@@ -24,6 +24,23 @@ export const ReviewResponseFindingSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const ReviewResponseFindingInputSchema = Type.Object(
+    {
+        ...Type.Omit(ReviewResponseFindingSchema, ["userDecision"]).properties,
+        userDecision: Type.Optional(
+            Type.String({
+                minLength: 1,
+                description: "Exact unsettled decision; omit when no user decision is needed.",
+            }),
+        ),
+    },
+    { additionalProperties: false },
+)
+
+export function reviewResponseFindings(findings: Static<typeof ReviewResponseFindingInputSchema>[]) {
+    return findings.map((finding) => ({ ...finding, userDecision: finding.userDecision ?? null }))
+}
+
 export type ReviewFinding = Static<typeof ReviewResponseFindingSchema> & { severity: ReviewSeverity }
 
 export interface ReviewReport {

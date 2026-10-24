@@ -15,7 +15,7 @@ const CompletionEvidenceSchema = Type.Union([
     Type.Object(
         {
             kind: Type.Literal("tracker"),
-            provider: Type.Union([Type.Literal("github"), Type.Literal("linear")]),
+            provider: Type.Enum(["github", "linear"], { type: "string" }),
             lifecycle: Type.Literal("done"),
         },
         { additionalProperties: false },
@@ -51,6 +51,23 @@ const CleanupRequestProperties = {
 
 export const DeliveryCleanupSchema = Type.Object(CleanupRequestProperties, { additionalProperties: false })
 export type DeliveryCleanupInput = Static<typeof DeliveryCleanupSchema>
+
+const cleanupInputProperties = {
+    entityDir: CleanupRequestProperties.entityDir,
+    completionAuthority: Type.Enum(["workflow", "github", "linear"], {
+        type: "string",
+        description:
+            "Authority whose current Done outcome has been confirmed; never infer tracker Done from local metadata.",
+    }),
+}
+export const AncestryDeliveryCleanupInputSchema = Type.Object(cleanupInputProperties, { additionalProperties: false })
+export const GitHubDeliveryCleanupInputSchema = Type.Object(
+    {
+        ...cleanupInputProperties,
+        merge: Type.Omit(MergeEvidenceSchema.anyOf[1], ["kind", "source"]),
+    },
+    { additionalProperties: false },
+)
 
 type CleanupContext = {
     entityId: string

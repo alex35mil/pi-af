@@ -3,6 +3,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
+import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
+
 const procedurePath = "workflows/references/pr/incoming.md"
 const checkoutPath = "workflows/references/pr/checkout.md"
 const procedure = fs.readFileSync(procedurePath, "utf-8")
@@ -31,7 +33,7 @@ describe("incoming PR operational contract", () => {
             assert.match(source, /existing.*authentication/)
             assert.match(source, /HTTPS credentials/)
             assert.match(source, /parent\/global Git configuration/)
-            assert.match(source, /`publishRebase`/)
+            assert.match(source, /`publish_incoming_pr_rebase`/)
             assert.match(source, /original lease/)
         }
         assert.ok(checkout.includes("git@github.com:<owner>/<repo>.git"))
@@ -45,7 +47,7 @@ describe("incoming PR operational contract", () => {
 
     it("routes explicit selection through its own identity and local review subject", () => {
         for (const pattern of [
-            /operation `incomingPullRequest`/,
+            /`inspect_incoming_pr_context`/,
             /private inspection only/,
             /never infer a PR/,
             /Keep remote mutation tools and Git writes outside skill-derived allow rules/,
@@ -120,13 +122,10 @@ describe("incoming PR operational contract", () => {
         }
         assert.match(procedure, /session overrides take precedence over ask\/deny/)
         assert.match(procedure, /Headless ask is blocked/)
+        assert.match(procedure, /Each named checkout operation uses its own native permission/)
         assert.match(
             procedure,
-            /Registered rebase\/continuation\/publication use the checkout tool's native permission/,
-        )
-        assert.match(
-            procedure,
-            /approved commitFixes, publishFixes and cleanup use that same native boundary, not a shell route/,
+            /including rebase\/continuation\/publication, additive fix commits, fix publication, and cleanup; none uses a shell route/,
         )
         assert.match(procedure, /Do not change settings without explicit approval/)
     })
@@ -190,11 +189,11 @@ describe("incoming PR operational contract", () => {
         ])
             assert.match(procedure, pattern)
         for (const pattern of [
-            /`incoming_pull_request_checkout`/,
-            /`prepare`/,
-            /`checkout`/,
-            /`inspect`/,
-            /`beginFixes`/,
+            /named incoming-PR checkout tools/,
+            /`prepare_incoming_pr_checkout`/,
+            /`checkout_incoming_pr`/,
+            /`inspect_incoming_pr_checkout`/,
+            /`begin_incoming_pr_fixes`/,
             /agent must not reconstruct Git orchestration in Bash/,
             /No manual fallback is permitted/,
             /core.hooksPath=\/dev\/null/,
@@ -212,18 +211,22 @@ describe("incoming PR operational contract", () => {
         ])
             assert.match(checkout, pattern)
         assert.doesNotMatch(checkout, /```(?:bash|sh)/)
-        assert.equal(skill.split("---")[1].includes('"incoming_pull_request_checkout"'), false)
+        for (const name of Object.values(INCOMING_CHECKOUT_TOOLS)) {
+            assert.equal(skill.split("---")[1].includes(`"${name}"`), false)
+            assert.ok(procedure.includes(`"${name}"`), `ask example must cover ${name}`)
+            assert.ok(checkout.includes(`\`${name}\``), `checkout guidance must name ${name}`)
+        }
         assert.match(skill, /Never reconstruct that Git orchestration in Bash/)
     })
 
     it("uses standard rebase and immediate publication only under exact pinned-lease approval", () => {
         for (const pattern of [
             /standard rebase plus immediate PR update/,
-            /`observeTarget`/,
+            /`observe_incoming_pr_target`/,
             /`expectedHeadSha`/,
-            /`continueRebase`/,
+            /`continue_incoming_pr_rebase`/,
             /`resolutionPaths`/,
-            /`publishRebase`/,
+            /`publish_incoming_pr_rebase`/,
             /immediately push the recorded result/,
             /Never use plain `--force`/,
             /changed\/deleted branches stop without a refreshed lease/,
@@ -239,7 +242,10 @@ describe("incoming PR operational contract", () => {
 
     it("keeps board state maintainer-controlled until confirmed terminal outcome", () => {
         const project = fs.readFileSync("workflows/references/pr/project.md", "utf-8")
-        assert.match(project, /incomingPullRequestProject/)
+        assert.match(
+            project,
+            /`plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_ship`, or `plan_incoming_pr_cancel`/,
+        )
         assert.match(project, /Ask Backlog or Todo/)
         assert.match(project, /Stay In Review/)
         assert.match(project, /confirmed closed\/unmerged|confirm closed\/unmerged/i)
@@ -249,7 +255,12 @@ describe("incoming PR operational contract", () => {
 
     it("includes safe owned cleanup in the exact ship request without another approval", () => {
         const shipping = fs.readFileSync("workflows/references/pr/shipping.md", "utf-8")
-        for (const operation of ["commitFixes", "publishFixes", "incomingPullRequestMerge", "cleanup"])
+        for (const operation of [
+            "commit_incoming_pr_fixes",
+            "publish_incoming_pr_fixes",
+            "plan_incoming_pr_merge",
+            "cleanup_incoming_pr_checkout",
+        ])
             assert.ok(shipping.includes(`\`${operation}\``))
         assert.match(shipping, /Do not ask a second merge or cleanup question/)
         assert.match(shipping, /No parent switch\/fetch\/fast-forward/)
@@ -262,10 +273,10 @@ describe("incoming PR operational contract", () => {
         const common = fs.readFileSync("workflows/references/integrations/forge/merge.md", "utf-8")
         const deliverable = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
         assert.match(procedure, /shared repository merge contract/)
-        assert.match(procedure, /`incomingPullRequestMerge`/)
+        assert.match(procedure, /`plan_incoming_pr_merge`/)
         assert.match(procedure, /returned merge arguments unchanged/)
         assert.match(deliverable, /shared repository merge contract/)
-        assert.match(deliverable, /shared merge operation's returned arguments unchanged/)
+        assert.match(deliverable, /`roles\.forge\.finish\.arguments` unchanged/)
         assert.match(common, /one repository merge policy/)
         assert.ok(common.includes("merge_method: squash"))
         assert.match(common, /expectedHeadSha/)

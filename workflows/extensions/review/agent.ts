@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { parseReviewReport, renderReviewDocument } from "./findings.js"
+import { resolveReviewerLaunch, type ReviewerEnvironment, type ReviewerLaunch } from "./model.js"
 
 const SHARED_EXTENSIONS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../extensions")
 const RULES_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "rules/index.ts")
@@ -13,6 +14,7 @@ const PERMISSIONS_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "permission
 type ReviewStatus = "running" | "completed" | "failed"
 
 export interface ReviewAgentRunOptions {
+    environment: ReviewerEnvironment
     cwd: string
     prompt: string
     signal?: AbortSignal
@@ -31,11 +33,12 @@ export interface ReviewAgentRunResult {
 }
 
 export async function runReviewAgent(options: ReviewAgentRunOptions): Promise<ReviewAgentRunResult> {
+    const launch = await resolveReviewerLaunch(options.environment, options.model, options.signal)
     const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-review-agent-"))
     const promptPath = path.join(tmpDir, "prompt.md")
     await fs.promises.writeFile(promptPath, options.prompt, { encoding: "utf-8", mode: 0o600 })
 
-    const args = buildReviewerArgs(options.agentName, promptPath, options.model)
+    const args = buildReviewerArgs(options.agentName, promptPath, launch)
 
     const invocation = getPiInvocation(args)
     const child = spawn(invocation.command, invocation.args, {
@@ -133,7 +136,7 @@ export function renderReviewTranscript(events: unknown[]): string {
     return lines.join("\n")
 }
 
-export function buildReviewerArgs(agentName: string, promptPath: string, model?: string): string[] {
+export function buildReviewerArgs(agentName: string, promptPath: string, launch: ReviewerLaunch): string[] {
     const args = [
         "--mode",
         "json",
@@ -150,7 +153,8 @@ export function buildReviewerArgs(agentName: string, promptPath: string, model?:
         "--name",
         agentName,
     ]
-    if (model) args.push("--model", model)
+    if (launch.kind === "claude-code") args.push("--extension", launch.extensionPath)
+    if (launch.model) args.push("--model", launch.model)
     args.push(`@${promptPath}`)
     return args
 }

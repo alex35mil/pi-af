@@ -3,6 +3,7 @@ import * as path from "node:path"
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
@@ -131,15 +132,29 @@ export async function trackerPublication(cwd: string, raw: TrackerPublicationInp
 }
 
 export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatalog): void {
-    pi.registerTool({
-        name: "tracker_publication",
-        label: "tracker_publication",
-        description:
-            "Prepare approved GitHub plan-comment or Linear plan-document publication, record creation evidence, or recover from complete native reads. Linear published updates require prepareUpdate with exact document and parent read evidence. Recovery uses GitHub comment pages or Linear parent read, complete document listing pages, and full document reads. Saves local authoritative state only; never calls providers or authorizes publication. Pending creation never automatically retries.",
-        parameters: TrackerPublicationSchema,
-        async execute(_id, input, _signal, _onUpdate, ctx) {
-            const result = await trackerPublication(ctx.cwd, input, tools)
-            return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result }
-        },
-    })
+    const toolsApi = workflowTools(pi, "integrations")
+    const [prepare, update, record, recover] = TrackerPublicationSchema.anyOf
+    const operations = [
+        ["prepare_tracker_publication", "prepare", prepare],
+        ["prepare_tracker_publication_update", "prepareUpdate", update],
+        ["record_tracker_publication", "record", record],
+        ["recover_tracker_publication", "recover", recover],
+    ] as const
+    for (const [name, action, schema] of operations) {
+        const parameters = Type.Omit(schema, ["action"])
+        toolsApi.registerTool({
+            name,
+            label: name,
+            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. Linear published updates require prepare_tracker_publication_update with exact document and parent read evidence. Recovery uses GitHub comment pages or Linear parent read, complete document listing pages, and full document reads. Saves local authoritative state only; never calls providers or authorizes publication. Pending creation never automatically retries.`,
+            parameters,
+            async execute(_id, input, _signal, _onUpdate, ctx) {
+                const result = await trackerPublication(
+                    ctx.cwd,
+                    Value.Parse(TrackerPublicationSchema, { ...Value.Parse(parameters, input), action }),
+                    tools,
+                )
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result }
+            },
+        })
+    }
 }

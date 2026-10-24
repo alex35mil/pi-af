@@ -4,6 +4,7 @@ import * as path from "node:path"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -17,8 +18,14 @@ import {
     type IncomingRevision,
 } from "../integrations/forge/github/incoming-pr-context.js"
 import { fence, readOptional, REVIEW_AUTHORITY_INSTRUCTIONS } from "./context.js"
-import { ReviewResponseFindingSchema, renderReviewDocument, reviewAgentOutputInstructions } from "./findings.js"
+import {
+    ReviewResponseFindingInputSchema,
+    reviewResponseFindings,
+    renderReviewDocument,
+    reviewAgentOutputInstructions,
+} from "./findings.js"
 import { executeReviewRound, recordRoundResponse } from "./round.js"
+import { reviewerEnvironment } from "./model.js"
 
 const revisionProperties = {
     reference: Type.String({ minLength: 1, description: "Selected GitHub PR URL or #NN" }),
@@ -48,7 +55,7 @@ export const RecordPullRequestResponseSchema = Type.Object(
     {
         ...revisionProperties,
         round: Type.Integer({ minimum: 1 }),
-        findings: Type.Array(ReviewResponseFindingSchema),
+        findings: Type.Array(ReviewResponseFindingInputSchema),
         status: Type.String({ minLength: 1 }),
     },
     { additionalProperties: false },
@@ -216,7 +223,8 @@ export function buildPullRequestReviewPrompt(
 
 export function registerPullRequestReview(pi: ExtensionAPI): void {
     const tools = observeMcpTools(pi)
-    pi.registerTool({
+    const toolsApi = workflowTools(pi, "reviews")
+    toolsApi.registerTool({
         name: "review_pull_request",
         label: "review_pull_request",
         description:
@@ -226,6 +234,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
             const input = Value.Parse(ReviewPullRequestSchema, params)
             const prepared = await preparePullRequestReview(ctx.cwd, input, tools)
             const { report, artifactText } = await executeReviewRound({
+                environment: reviewerEnvironment(pi, ctx.modelRegistry),
                 cwd: prepared.root,
                 directory: prepared.directory,
                 additionalFiles: [
@@ -248,7 +257,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
             })
         },
     })
-    pi.registerTool({
+    toolsApi.registerTool({
         name: "record_pull_request_review_response",
         label: "record_pull_request_review_response",
         description:
@@ -265,7 +274,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
             const recorded = JSON.parse(await fs.promises.readFile(path.join(directory, "revision.json"), "utf-8"))
             if (!sameIncomingRevision(recorded, selected.revision))
                 throw new Error("Response evidence does not match the reviewed PR revision")
-            const content = await recordRoundResponse(directory, input.findings, input.status)
+            const content = await recordRoundResponse(directory, reviewResponseFindings(input.findings), input.status)
             return textResult(content, { round: input.round, revision: selected.revision })
         },
     })

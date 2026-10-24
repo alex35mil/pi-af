@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent"
+import { createCodemodeExtension, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent"
 import type { JsonObject } from "@earendil-works/pi-ai"
 import { MCP_TOOL_DECORATORS_EVENT, type McpToolDecorator, type McpToolDecorators } from "../extensions/__lib/mcp.ts"
 import { nativeMcpFixture } from "./native-mcp-fixture.ts"
@@ -44,6 +44,7 @@ function runtimeHarness(
         JSON.stringify({ defaultMode: permissions === "absent" ? "ask" : permissions }),
     )
     if (permissions !== "absent") registerPermission(h.pi)
+    else createCodemodeExtension()(h.pi)
     if (order === "workflow-first") registerIntegrations(h.pi)
     const installed = h.install()
     if (order === "mcp-first") registerIntegrations(h.pi)

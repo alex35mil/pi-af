@@ -2,18 +2,42 @@
 name: epic
 description: "Use to initialize, shape, review, resume, and complete an Epic under <repo>/.project/epics/. Never implements Task work."
 allowed-tools:
-    - "init"
-    - "review"
-    - "prepare_plan_presentation"
+    - "init_epic"
+    - "adopt_github_epic"
+    - "adopt_linear_epic"
+    - "review_epic"
+    - "prepare_epic_plan_presentation"
     - "prepare_artifacts"
-    - "set_workflow_phase"
-    - "confirm_tracker_initialization"
+    - "set_local_workflow_phase"
+    - "set_github_workflow_phase"
+    - "set_linear_workflow_phase"
+    - "confirm_versioned_github_tracker"
+    - "confirm_unversioned_github_tracker"
+    - "confirm_linear_tracker"
     - "set_epic_task_target"
-    - "integration_context"
-    - "resource_ids"
     - "render_provider_body"
-    - "tracker_publication"
+    - "prepare_tracker_publication"
+    - "prepare_tracker_publication_update"
+    - "record_tracker_publication"
+    - "recover_tracker_publication"
     - "verify_artifact_projection"
+    - "inspect_integrations"
+    - "inspect_adoption"
+    - "initialize_integration"
+    - "resume_integration"
+    - "prepare_integration_projection"
+    - "prepare_integration_pull_request"
+    - "prepare_integration_finish"
+    - "prepare_integration_merge"
+    - "prepare_tracker_mutation"
+    - "prepare_github_phase_mutation"
+    - "prepare_linear_phase_mutation"
+    - "begin_resource_creation"
+    - "record_resource_creation"
+    - "resolve_resource_ids"
+    - "record_resource_ids"
+    - "invalidate_resource_ids"
+    - "select_pull_request_resource"
     - "read(.project/*)"
     - "write(.project/*)"
     - "edit(.project/*)"
@@ -35,15 +59,15 @@ For resume:
 
 1. Read `brief.md`, `metadata.json`, `.local/notes.md` when present, accepted `epic.md`, the relevant `.local/reviews/` round when present, and applicable `.project/policies.md`. Create missing local notes when continuing local work. Read `.local/status.md` only for workflow authority; for tracker authority require it to be absent and refresh native lifecycle/Priority through the tracker. Read `.local/scratch/` only when temporary context is relevant.
 2. Because the Epic is the primary active workflow here, switch to its exact stored branch before editing Epic artifacts. This does not apply when a Task updates its parent Epic from the Task branch.
-3. Reuse the initial `integration_context` resume result from the artifact gate; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
-4. After accepted `epic.md` changes, call tracker-only `artifactProjection` and follow the shared complete-body publishing contract in `../../references/integrations/shared.md`: GitHub uses `tracker_publication` for its one managed plan comment; Linear uses the same operation for its Project-attached plan document, with explicit document/parent verification before updates. Trust established clear success and reconcile uncertain outcomes before retry.
+3. Reuse the initial `resume_integration` result from the artifact gate; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
+4. After accepted `epic.md` changes, call tracker-only `prepare_integration_projection` and follow the shared complete-body publishing contract in `../../references/integrations/shared.md`: GitHub uses `prepare_tracker_publication` for its one managed plan comment; Linear uses the same preparation tool for its Project-attached plan document, with explicit document/parent verification before updates. Trust established clear success and reconcile uncertain outcomes before retry.
 5. Summarize current state and continue without creating another Epic.
 
 ## Initialize
 
-Follow approved intake in `../../references/artifacts.md`; an adopted Epic uses an explicit GitHub Backlog/Todo issue or Linear Backlog/Todo Project and its provider's Epic preflight. Then call `init` with `entity: "epic"`, approved values, the approved Request as `request`, slug, and matching source variant. The tool creates identity, artifacts, a repository-default start/target, and `taskTarget: epic`. Branch formats follow `../../references/setup.md`, including the read-only current Linear template/Username query for `tracker`.
+Follow approved intake in `../../references/artifacts.md`; an adopted Epic uses an explicit GitHub Backlog/Todo issue or Linear Backlog/Todo Project and its provider's Epic preflight. Then call `init_epic` for new work, `adopt_github_epic` for the selected GitHub issue, or `adopt_linear_epic` for the selected Linear Project, with approved values, the approved Request as `request`, slug, and verified adoption `source` facts when applicable. The tool creates identity, artifacts, a repository-default start/target, and `taskTarget: epic`. Branch formats follow `../../references/setup.md`, including the read-only current Linear template/Username query for `tracker`.
 
-Switch to the stored branch, then call `integration_context` with `operation: "initialize"`. Except for the read-only Linear branch-settings query owned by `init`, persist workflow initialization before any provider mutation. Disabled roles remain absent; a role failure changes only its own pending record and never rolls working-tree work back.
+Switch to the stored branch, then call `initialize_integration` with this Epic’s `entityDir`. Except for the read-only Linear branch-settings query owned by the initialization tools, persist workflow initialization before any provider mutation. Disabled roles remain absent; a role failure changes only its own pending record and never rolls working-tree work back.
 
 ## Durable working state
 
@@ -97,9 +121,9 @@ A fresh reader must be able to identify what changes, why it matters, the materi
 
 ## Review and acceptance
 
-Follow the shared planning review with `entity: "epic"`, this Epic's `entityDir`, and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `prepare_plan_presentation` selects the reviewed snapshot and `epic.md` target for the write tool's approval diff. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
+Follow the shared planning review using `review_epic` with this Epic's `entityDir` and `phase: "plan"`. The tool snapshots `.local/draft.md` into its local review round; `prepare_epic_plan_presentation` selects the reviewed snapshot and `epic.md` target for the write tool's approval diff. Do not accept or execute the Epic until the user accepts that exact reviewed diff.
 
-Keep Planning during plan review, corrections, presentation, and waiting for user approval. On acceptance, call `set_workflow_phase` for Execution and reconcile through `../../references/phase.md`; lifecycle remains `inProgress`. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
+Keep Planning during plan review, corrections, presentation, and waiting for user approval. On acceptance, set Execution through the authority/provider-specific Phase tool and reconcile through `../../references/phase.md`; lifecycle remains `inProgress`. Render and project the accepted `epic.md` through the same integration steps used on resume. Stop without initializing or implementing a Task.
 
 ## Ongoing synchronization and completion
 

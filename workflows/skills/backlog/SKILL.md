@@ -2,7 +2,8 @@
 name: backlog
 description: "Use for /backlog or natural-language requests to ‘backlog it’: create potential work in a configured external Backlog without initializing an Epic, Task, or Gig."
 allowed-tools:
-    - "integration_context"
+    - "inspect_integrations"
+    - "inspect_queue_intake"
 ---
 
 # Backlog

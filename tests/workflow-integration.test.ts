@@ -392,14 +392,8 @@ describe("workflow-source queue context", () => {
         } as unknown as ExtensionAPI)
         const before = fileSnapshot(f.root)
         const result = await tools
-            .get("integration_context")!
-            .execute(
-                "inspect",
-                { operation: "inspect", target: "workflow" },
-                undefined,
-                undefined,
-                withToolExecution(f.ctx),
-            )
+            .get("inspect_integrations")!
+            .execute("inspect", { target: "workflow" }, undefined, undefined, withToolExecution(f.ctx))
         assert.equal((result.details as { projectRoot: string }).projectRoot, f.source)
         assert.deepEqual(fileSnapshot(f.root), before)
     })
@@ -501,7 +495,9 @@ describe("workflow integration configuration", () => {
             assert.ok(commands.has("todo"))
             assert.ok(tools.includes("verify_artifact_projection"))
             assert.ok(tools.includes("render_provider_body"))
-            assert.ok(tools.includes("tracker_publication"))
+            assert.ok(tools.includes("prepare_tracker_publication"))
+            assert.ok(tools.includes("record_tracker_publication"))
+            assert.ok(tools.includes("recover_tracker_publication"))
             assert.equal(tools.includes("render_artifact_links"), false)
             assert.ok(tools.includes("finalize_linear_branch"))
             assert.equal(tools.includes("reconcile_linear_backlog"), false)

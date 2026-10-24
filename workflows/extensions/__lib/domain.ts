@@ -5,41 +5,36 @@ export const PROJECT_ROOT = ".project"
 export const EPIC_ROOT = `${PROJECT_ROOT}/epics`
 export const GIG_ROOT = `${PROJECT_ROOT}/gigs`
 
-export const EntityTypeSchema = Type.Union([Type.Literal("epic"), Type.Literal("task"), Type.Literal("gig")])
+export const EntityTypeSchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
 export type EntityType = Static<typeof EntityTypeSchema>
 
-export const BranchFormatSchema = Type.Union([
-    Type.Literal("tracker"),
-    Type.Literal("username/identifier-title"),
-    Type.Literal("username/identifier"),
-    Type.Literal("username-identifier-title"),
-    Type.Literal("username-identifier"),
-    Type.Literal("identifier-title"),
-    Type.Literal("title-identifier"),
-    Type.Literal("identifier"),
-])
+export const BranchFormatSchema = Type.Enum(
+    [
+        "tracker",
+        "username/identifier-title",
+        "username/identifier",
+        "username-identifier-title",
+        "username-identifier",
+        "identifier-title",
+        "title-identifier",
+        "identifier",
+    ],
+    { type: "string" },
+)
 export type BranchFormat = Static<typeof BranchFormatSchema>
 export type GeneratedBranchFormat = Exclude<BranchFormat, "tracker">
 
-export const DeliverableKindSchema = Type.Union([
-    Type.Literal("feature"),
-    Type.Literal("bugfix"),
-    Type.Literal("research"),
-    Type.Literal("refactor"),
-    Type.Literal("audit"),
-    Type.Literal("chore"),
-])
+export const DeliverableKindSchema = Type.Enum(["feature", "bugfix", "research", "refactor", "audit", "chore"], {
+    type: "string",
+})
 export type DeliverableKind = Static<typeof DeliverableKindSchema>
 
-export const QueueStateSchema = Type.Union([Type.Literal("backlog"), Type.Literal("todo")])
+export const QueueStateSchema = Type.Enum(["backlog", "todo"], { type: "string" })
 export type QueueState = Static<typeof QueueStateSchema>
 
-export const InitializedLifecycleStateSchema = Type.Union([
-    Type.Literal("inProgress"),
-    Type.Literal("inReview"),
-    Type.Literal("done"),
-    Type.Literal("canceled"),
-])
+export const InitializedLifecycleStateSchema = Type.Enum(["inProgress", "inReview", "done", "canceled"], {
+    type: "string",
+})
 export type InitializedLifecycleState = Static<typeof InitializedLifecycleStateSchema>
 
 export type FinishedLifecycleState = Extract<InitializedLifecycleState, "done" | "canceled">
@@ -48,10 +43,12 @@ export function isFinishedLifecycleState(state: InitializedLifecycleState): stat
     return state === "done" || state === "canceled"
 }
 
-export const LifecycleStateSchema = Type.Union([QueueStateSchema, InitializedLifecycleStateSchema])
+export const LifecycleStateSchema = Type.Enum(["backlog", "todo", "inProgress", "inReview", "done", "canceled"], {
+    type: "string",
+})
 export type LifecycleState = Static<typeof LifecycleStateSchema>
 
-export const PhaseSchema = Type.Union([Type.Literal("planning"), Type.Literal("execution"), Type.Literal("selfReview")])
+export const PhaseSchema = Type.Enum(["planning", "execution", "selfReview"], { type: "string" })
 export type Phase = Static<typeof PhaseSchema>
 
 export function projectedPhase(lifecycle: LifecycleState, phase: Phase): Phase | null {

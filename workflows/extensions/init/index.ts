@@ -2,43 +2,111 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { Value } from "typebox/value"
 
-import { EntityInitializationSchema, initializeEntity, type InitializedEntity, setEpicTaskTarget } from "./entity.js"
+import {
+    EntityInitializationSchema,
+    EpicInitializationSchema,
+    TaskInitializationSchema,
+    GigInitializationSchema,
+    initializeEntity,
+    type InitializedEntity,
+    setEpicTaskTarget,
+} from "./entity.js"
+import { workflowTools } from "../__lib/tools.js"
+import {
+    GitHubInitializationSourceSchema,
+    LinearProjectInitializationSourceSchema,
+    LinearTaskInitializationSourceSchema,
+    LinearGigInitializationSourceSchema,
+} from "../integrations/records.js"
 import { resolveLinearTrackerBranchRendererForInitialization } from "../integrations/tracker/linear.js"
 import { seedInitializedEntityResourceIds } from "./resource-ids.js"
 
 const SetEpicTaskTargetSchema = Type.Object(
     {
         entityDir: Type.String({ minLength: 1 }),
-        target: Type.Union([Type.Literal("epic"), Type.Literal("default")]),
+        target: Type.Enum(["epic", "default"], { type: "string" }),
     },
     { additionalProperties: false },
 )
 
 export default function (pi: ExtensionAPI): void {
-    pi.registerTool({
-        name: "init",
-        label: "init",
-        description:
-            "Initialize an approved Epic, Task, or Gig with its ID, authoritative artifacts, and exact branch contract.",
-        parameters: EntityInitializationSchema,
-        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-            const input = Value.Parse(EntityInitializationSchema, params)
-            const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
-                ctx.cwd,
-                ctx.isProjectTrusted(),
-                input,
-                signal,
-            )
-            const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch })
-            await seedInitializedEntityResourceIds(initialized, ctx.cwd)
-            return {
-                content: [{ type: "text" as const, text: formatInitializedEntity(initialized) }],
-                details: initialized,
-            }
+    const tools = workflowTools(pi, "initialization")
+    const entities = [
+        {
+            entity: "epic",
+            schema: EpicInitializationSchema,
+            linear: LinearProjectInitializationSourceSchema,
+            resource: "project",
         },
-    })
+        {
+            entity: "task",
+            schema: TaskInitializationSchema,
+            linear: LinearTaskInitializationSourceSchema,
+            resource: "task-issue",
+        },
+        {
+            entity: "gig",
+            schema: GigInitializationSchema,
+            linear: LinearGigInitializationSourceSchema,
+            resource: "gig-issue",
+        },
+    ] as const
+    for (const variant of entities) {
+        const common = Type.Omit(variant.schema, ["entity", "source"])
+        const sources = [
+            { name: `init_${variant.entity}`, source: undefined, fixed: { mode: "new" } },
+            {
+                name: `adopt_github_${variant.entity}`,
+                source: GitHubInitializationSourceSchema,
+                fixed: { mode: "external", provider: "github" },
+            },
+            {
+                name: `adopt_linear_${variant.entity}`,
+                source: variant.linear,
+                fixed: { mode: "external", provider: "linear", resource: variant.resource },
+            },
+        ] as const
+        for (const source of sources) {
+            const parameters = Type.Object(
+                {
+                    ...common.properties,
+                    ...(source.source ? { source: Type.Omit(source.source, ["mode", "provider", "resource"]) } : {}),
+                },
+                { additionalProperties: false },
+            )
+            tools.registerTool({
+                name: source.name,
+                label: source.name,
+                description: `${source.source ? "Adopt explicitly selected tracker work as" : "Initialize"} an approved ${variant.entity} with its identity, artifacts, and exact branch contract. Preserve approved title, Request, Priority, and required adoption evidence.`,
+                parameters,
+                async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+                    const supplied = Value.Parse(parameters, params)
+                    const sourceFields = source.source
+                        ? Value.Parse(Type.Omit(source.source, ["mode", "provider", "resource"]), supplied.source)
+                        : {}
+                    const input = Value.Parse(EntityInitializationSchema, {
+                        ...supplied,
+                        entity: variant.entity,
+                        source: { ...sourceFields, ...source.fixed },
+                    })
+                    const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
+                        ctx.cwd,
+                        ctx.isProjectTrusted(),
+                        input,
+                        signal,
+                    )
+                    const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch })
+                    await seedInitializedEntityResourceIds(initialized, ctx.cwd)
+                    return {
+                        content: [{ type: "text" as const, text: formatInitializedEntity(initialized) }],
+                        details: initialized,
+                    }
+                },
+            })
+        }
+    }
 
-    pi.registerTool({
+    tools.registerTool({
         name: "set_epic_task_target",
         label: "set_epic_task_target",
         description:

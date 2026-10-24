@@ -2,7 +2,8 @@
 name: todo
 description: "Use for /todo, ‘todo it’, or requests to report a workflow defect or friction: create ordinary Todo work in the current or workflow-source project's tracker without initializing an Epic, Task, or Gig."
 allowed-tools:
-    - "integration_context"
+    - "inspect_integrations"
+    - "inspect_queue_intake"
 ---
 
 # Todo

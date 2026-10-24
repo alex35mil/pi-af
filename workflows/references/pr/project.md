@@ -1,17 +1,17 @@
 # Incoming PR Project handling
 
-Track the selected PR itself on the configured GitHub Project. Use the Project/server/Status mapping returned by `integration_context` operation `incomingPullRequest`; do not create an issue or initialized workflow entity. Forge and Project MCP servers may differ. Without a configured GitHub Project, report that limitation and retain forge-only private work rather than inventing a destination.
+Track the selected PR itself on the configured GitHub Project. Use the Project/server/Status mapping returned by `inspect_incoming_pr_context`; do not create an issue or initialized workflow entity. Forge and Project MCP servers may differ. Without a configured GitHub Project, report that limitation and retain forge-only private work rather than inventing a destination.
 
 ## Read and plan
 
 Use actual configured PR-get evidence and fresh scoped Project reads. The context returns the complete repository/PR lookup arguments. Finish membership pagination before claiming absence; use the actual verified item ID when present. Read the configured single-select Status field and its option catalog through that Project's server, then read the item with that Status in `field_names`.
 
-Call `integration_context` operation `incomingPullRequestProject` with:
+Call `plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_ship`, or `plan_incoming_pr_cancel` matching the explicit approved intent, with:
 
 - `reference` and actual exact PR-get `evidence`;
 - `fieldEvidence`: actual `projects_get:get_project_field` evidence in the configured Project;
 - `membership`: `absent` with complete `lookup` page evidence, `present` with exact item `evidence`, or `added` with that item evidence and the successful native add `creation` evidence. During intake only, use `reconciled` after an uncertain add with fresh exact item `evidence` and `attempt` containing that actual add's `tool` and `arguments`, without a success response. A complete scoped native add/Status-write success can supply item evidence; otherwise read only the missing identity/Status facts;
-- `action`: `intake`, `review`, `ship` or `cancel`; intake also supplies the user's `choice`, `backlog` or `todo`.
+- Intake additionally supplies the user's `choice`, `backlog` or `todo`. Each tool fixes its action; do not pass an `action` selector.
 
 The local planner validates consistency and returns required native MCP arguments, unchanged state or a blocker. It neither calls providers nor grants approval or independently authenticates evidence freshness. Obtain actual reads under normal permissions; never fabricate evidence or bypass a failed/denied tool.
 
