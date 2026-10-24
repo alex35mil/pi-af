@@ -74,7 +74,7 @@ Leave lifecycle, Phase, identity, branch, Task parent, `brief.md`, and existing 
 
 ## Review handling
 
-Follow `./review.md` for every plan, interim, and final review. The review agent is critique-only and read-only; the main agent owns changes; the user owns product decisions and approval. Ask before review unless review is the already-approved next gate; never start review while user concerns still require discussion.
+Follow `./review.md` for every plan, interim, and final review. The review agent is critique-only and read-only; the main agent owns changes; the user owns product decisions and approval. Reviews and correction loops proceed automatically once their lifecycle prerequisites are met. Pause for unresolved user decisions or concerns and the configured blocked-review confirmation threshold under `./review.md`. Reviewed-plan diff acceptance and final user acceptance remain separate approval gates.
 
 ## Completion artifacts
 
