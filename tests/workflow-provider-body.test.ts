@@ -7,18 +7,19 @@ const overview = "## Overview\n\nMake entries easy to scan.\n\n### Plan highligh
 const details =
     "## Behavior\n\nKeep `src/example.ts`, **formatting**, and tables.\n\n| Case | Outcome |\n| --- | --- |\n| Read | Complete |"
 const source = `# Plan\n\n${overview}\n\n${details}\n`
-const github = `${overview}\n\n<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
+const githubOverview = "# Plan\n\nMake entries easy to scan.\n\n## Highlights\n\n- Preserve all details."
+const github = `${githubOverview}\n\n<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
 
 describe("workflow provider body renderer", () => {
-    it("keeps the reviewed overview visible and folds the complete GitHub tracker details", () => {
-        assert.equal(renderProviderBody(source, { kind: "github-tracker" }), github)
+    it("titles GitHub plans and highlights while folding the complete supporting details", () => {
+        assert.equal(renderProviderBody(source, { kind: "github-plan-comment" }), github)
         assert.ok(!github.includes("<details open>"))
     })
 
     it("uses native Linear collapsed Markdown without changing the content", () => {
         assert.equal(
-            renderProviderBody(source, { kind: "linear-tracker" }),
-            `${overview}\n\n+++ Full plan\n\n${details}\n\n+++`,
+            renderProviderBody(source, { kind: "linear-plan-document" }),
+            `${githubOverview.slice("# Plan\n\n".length)}\n\n+++ Full plan\n\n${details}\n\n+++`,
         )
     })
 
@@ -71,24 +72,27 @@ describe("workflow provider body renderer", () => {
     })
 
     it("accepts approved sanitized sources without a root title and removes only a leading H1", () => {
-        assert.equal(renderProviderBody(source.slice("# Plan\n\n".length), { kind: "github-tracker" }), github)
-        assert.equal(renderProviderBody(source.replace("# Plan\n\n", "# Plan\n"), { kind: "github-tracker" }), github)
+        assert.equal(renderProviderBody(source.slice("# Plan\n\n".length), { kind: "github-plan-comment" }), github)
+        assert.equal(
+            renderProviderBody(source.replace("# Plan\n\n", "# Plan\n"), { kind: "github-plan-comment" }),
+            github,
+        )
     })
 
     it("preserves CRLF content and uses matching wrapper separation", () => {
         assert.equal(
-            renderProviderBody(source.replaceAll("\n", "\r\n"), { kind: "github-tracker" }),
+            renderProviderBody(source.replaceAll("\n", "\r\n"), { kind: "github-plan-comment" }),
             github.replaceAll("\n", "\r\n"),
         )
     })
 
     it("does not split headings inside backtick or tilde fenced examples", () => {
         for (const marker of ["```", "~~~~"]) {
-            const visible = `## Overview\n\nA configuration example:\n\n${marker}markdown\n## Not a boundary\n\n<details>\n<summary>Example</summary>\n+++ Full plan\n${marker}\n\n### Highlights\n\n- Keep examples intact.`
+            const visible = `## Overview\n\nA configuration example:\n\n${marker}markdown\n## Not a boundary\n### Plan highlights\n\n<details>\n<summary>Example</summary>\n+++ Full plan\n${marker}\n\n### Highlights\n\n- Keep examples intact.`
             const support = `## Evidence\n\n${marker}markdown\n## Nested sample\n\nKeep this too.\n${marker}\n\n- A real list.`
             assert.equal(
-                renderProviderBody(`# Report\n\n${visible}\n\n${support}\n`, { kind: "github-tracker" }),
-                `${visible}\n\n<details>\n<summary>Full plan</summary>\n\n${support}\n\n</details>`,
+                renderProviderBody(`# Report\n\n${visible}\n\n${support}\n`, { kind: "github-plan-comment" }),
+                `${visible.replace("## Overview", "# Plan")}\n\n<details>\n<summary>Full plan</summary>\n\n${support}\n\n</details>`,
             )
         }
     })
@@ -97,8 +101,8 @@ describe("workflow provider body renderer", () => {
         const visible =
             "## Overview\n\nA nested fence example:\n\n   ````markdown\n```\n~~~~\n```` not a closer\n## Still inside\n   `````\n\nDone."
         assert.equal(
-            renderProviderBody(`${visible}\n\n${details}`, { kind: "github-tracker" }),
-            `${visible}\n\n<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`,
+            renderProviderBody(`${visible}\n\n${details}`, { kind: "github-plan-comment" }),
+            `${visible.replace("## Overview", "# Plan")}\n\n<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`,
         )
     })
 
@@ -106,8 +110,8 @@ describe("workflow provider body renderer", () => {
         const visible = "## Overview\n\nKeep this hard break.  "
         const support = "## Evidence\n\nKeep this indentation and trailing spaces.  "
         assert.equal(
-            renderProviderBody(`${visible}\n\n\n${support}\n\n`, { kind: "linear-tracker" }),
-            `${visible}\n\n+++ Full plan\n\n${support}\n\n+++`,
+            renderProviderBody(`${visible}\n\n\n${support}\n\n`, { kind: "linear-plan-document" }),
+            `${visible.slice("## Overview\n\n".length)}\n\n+++ Full plan\n\n${support}\n\n+++`,
         )
     })
 
@@ -122,7 +126,7 @@ describe("workflow provider body renderer", () => {
             "## Overview\n\nSummary.\n\n## Details\n\n```\nUnclosed.",
         ])
             assert.throws(
-                () => renderProviderBody(invalid, { kind: "github-tracker" }),
+                () => renderProviderBody(invalid, { kind: "github-plan-comment" }),
                 /requires a nonempty ## Overview/,
             )
     })

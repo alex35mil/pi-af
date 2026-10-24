@@ -12,6 +12,7 @@ allowed-tools:
     - "integration_context"
     - "resource_ids"
     - "render_provider_body"
+    - "tracker_publication"
     - "verify_artifact_projection"
     - "read(.project/*)"
     - "write(.project/*)"
@@ -35,7 +36,7 @@ For resume:
 1. Read `brief.md`, `metadata.json`, `.local/notes.md` when present, accepted `epic.md`, the relevant `.local/reviews/` round when present, and applicable `.project/policies.md`. Create missing local notes when continuing local work. Read `.local/status.md` only for workflow authority; for tracker authority require it to be absent and refresh native lifecycle/Priority through the tracker. Read `.local/scratch/` only when temporary context is relevant.
 2. Because the Epic is the primary active workflow here, switch to its exact stored branch before editing Epic artifacts. This does not apply when a Task updates its parent Epic from the Task branch.
 3. Reuse the initial `integration_context` resume result from the artifact gate; disabled integration is silent. For enabled roles, read `../../references/integrations/shared.md`, then the selected provider reference: `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`. Update only that role's record.
-4. After accepted `epic.md` changes, call tracker-only `artifactProjection`, then `render_provider_body` for the tracker destination and follow the shared complete-body publishing contract in `../../references/integrations/shared.md`: trust established clear success and reconcile uncertain outcomes before retry.
+4. After accepted `epic.md` changes, call tracker-only `artifactProjection` and follow the shared complete-body publishing contract in `../../references/integrations/shared.md`: GitHub uses `tracker_publication` for its one managed plan comment; Linear uses the same operation for its Project-attached plan document, with explicit document/parent verification before updates. Trust established clear success and reconcile uncertain outcomes before retry.
 5. Summarize current state and continue without creating another Epic.
 
 ## Initialize

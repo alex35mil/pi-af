@@ -12,6 +12,8 @@ export function fixtureCatalog(...tools: McpToolMetadata[]): McpToolCatalog {
 const workflowOperations = [
     "issue_read",
     "issue_write",
+    "add_issue_comment",
+    "update_issue_comment",
     "projects_get",
     "projects_list",
     "projects_write",
@@ -23,6 +25,9 @@ const workflowOperations = [
     "get_issue",
     "save_project",
     "save_issue",
+    "save_document",
+    "get_document",
+    "list_documents",
 ]
 
 export function workflowMcpCatalog(...servers: string[]): McpToolCatalog {

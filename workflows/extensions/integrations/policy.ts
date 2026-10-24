@@ -28,6 +28,7 @@ const TRACKER_AUTHORITY = {
     localStatus: "forbidden",
 } as const
 const FULL_PROJECTION = { ...TRACKER_AUTHORITY, projection: "full", systemMetadataProjection: true } as const
+const LINEAR_FULL_PROJECTION = { ...TRACKER_AUTHORITY, projection: "full", systemMetadataProjection: false } as const
 const RESTRICTED_PROJECTION = {
     ...TRACKER_AUTHORITY,
     projection: "restricted",
@@ -36,7 +37,8 @@ const RESTRICTED_PROJECTION = {
 
 export type WorkflowPolicy =
     | ({ case: "versioned/no-tracker" | "unversioned/no-tracker" } & typeof WORKFLOW_AUTHORITY)
-    | ({ case: "versioned/github" | "versioned/linear" } & typeof FULL_PROJECTION)
+    | ({ case: "versioned/github" } & typeof FULL_PROJECTION)
+    | ({ case: "versioned/linear" } & typeof LINEAR_FULL_PROJECTION)
     | ({ case: "unversioned/github" | "unversioned/linear" } & typeof RESTRICTED_PROJECTION)
 
 export type ForgePolicy =
@@ -136,8 +138,9 @@ export function resolveWorkflowPolicy(environment: WorkflowEnvironment): Workflo
                 case "none":
                     return { case: "versioned/no-tracker", ...WORKFLOW_AUTHORITY }
                 case "github":
+                    return { case: "versioned/github", ...FULL_PROJECTION }
                 case "linear":
-                    return { case: `versioned/${environment.tracker.kind}`, ...FULL_PROJECTION }
+                    return { case: "versioned/linear", ...LINEAR_FULL_PROJECTION }
                 default:
                     return environment.tracker satisfies never
             }

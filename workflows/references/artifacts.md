@@ -34,6 +34,8 @@ A tracker item is the provider-native record representing an entity. Current ada
 
 For new work, present the cleaned title and Request together for approval. The user may accept, edit, or reject them. Call `init` or create a tracker item only after that exact wording and the remaining intake values are approved. Never rename an adopted tracker item without separate approval. `init` stores the title in `metadata.json` and writes the Request under `brief.md`; tracker initialization uses the same exact approved title and Request.
 
+Every tracker item preserves its original request title/name and description: new items use the approved title/Request; adopted items retain existing content. Accepted `epic.md`/`plan.md` publishes under the [shared publication contract](./integrations/shared.md#provider-bodies): GitHub uses one issue comment; Linear uses one document attached to the existing issue or Project. GitHub records require `planComment`; Linear records require `planDocument`. Both store unpublished, pending with an opaque token, or published with that token and confirmed native ID/URL. This authoritative identity/intent follows artifact persistence; it is not a disposable Resource ID.
+
 Choose concise lowercase kebab-case slugs with a soft cap around 48 characters; shorten at word boundaries. The tool normalizes the supplied slug before creating the directory and rendering the configured branch name. One branch format applies to every entity. Linear `tracker` uses exact issue branches for Task/Gig and reconstructs the current workspace format for Epic from read-only provider data.
 
 ## Reviewed document shape

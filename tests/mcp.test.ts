@@ -7,6 +7,7 @@ import type { McpServerConfig } from "@earendil-works/pi-coding-agent"
 import {
     getMcpSettingsPaths,
     mcpResponsePayload,
+    mcpResponseValue,
     MCP_TOOL_DECORATORS_EVENT,
     type McpToolDecorators,
 } from "../extensions/__lib/mcp.ts"
@@ -29,6 +30,19 @@ describe("MCP provider evidence", () => {
             mcpResponsePayload({ content: [{ type: "text", text: "Created PR" }], structuredContent: payload }),
             payload,
         )
+    })
+
+    it("extracts native array payloads without weakening object-only consumers", () => {
+        const comments = [{ id: 1, body: "Request" }]
+        for (const response of [
+            comments,
+            { content: [{ type: "text", text: JSON.stringify(comments) }] },
+            { content: [], structuredContent: comments },
+        ]) {
+            assert.deepEqual(mcpResponseValue(response), comments)
+            assert.throws(() => mcpResponsePayload(response), /object/)
+        }
+        assert.throws(() => mcpResponseValue({ isError: true, content: [], structuredContent: comments }), /error/)
     })
 
     it("rejects error, ambiguous, non-JSON, and non-object results", () => {

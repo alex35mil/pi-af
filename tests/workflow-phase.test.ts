@@ -281,12 +281,14 @@ describe("shared workflow Phase", () => {
                               role: "tracker",
                               provider,
                               repository: { owner: "example", repo: "example" },
+                              planComment: { state: "unpublished" },
                               state: "bound",
                               external: { issueNumber: 1 },
                           }
                         : {
                               role: "tracker",
                               provider,
+                              planDocument: { state: "unpublished" },
                               resource: "gig-issue",
                               state: "bound",
                               external: { issueId: "issue-uuid" },

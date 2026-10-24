@@ -125,7 +125,14 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
         authority: { kind: "tracker", provider: "github" },
         branch: { state: "ready", name: prScope.head, start: "main", target: "main", source: "generated" },
         integrations: [
-            { role: "tracker", provider: "github", repository: repo, state: "bound", external: { issueNumber: 23 } },
+            {
+                role: "tracker",
+                provider: "github",
+                repository: repo,
+                planComment: { state: "unpublished" },
+                state: "bound",
+                external: { issueNumber: 23 },
+            },
             {
                 role: "forge",
                 provider: "github",
@@ -367,6 +374,7 @@ describe("resource ID operations", () => {
                         {
                             role: "tracker",
                             provider: "github",
+                            planComment: { state: "unpublished" },
                             repository: repo,
                             state: "awaiting",
                             operation: "create issue",

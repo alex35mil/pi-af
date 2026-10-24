@@ -9,6 +9,7 @@ allowed-tools:
     - "set_workflow_phase"
     - "confirm_tracker_initialization"
     - "render_provider_body"
+    - "tracker_publication"
     - "verify_artifact_projection"
     - "integration_context"
     - "resource_ids"
@@ -50,6 +51,8 @@ At every material Task decision and before final review, compare the Task outcom
 - **The Epic contract remains accurate:** Keep implementation details in Task artifacts and do not rewrite the Epic item after its one-time Task ID tag. Task progress comes from the child lifecycle.
 - **A mismatch or domain decision is unresolved:** Explain the mismatch and ask the user before changing any Epic artifact.
 - **The user approves an Epic contract change:** Update Epic working state, revise its `.local/draft.md`, run `review` with `entity: "epic"` and `phase: "plan"`, then present the approved snapshot through the configured `epic.md` write/edit diff gate.
+
+After accepting a parent `epic.md` change, project that exact parent's accepted source through the shared integration contract: Use `tracker_publication` with the parent `entityDir` and its saved publication state: GitHub updates that Epic's issue comment; Linear updates that Epic's Project-attached document. The Task's own document belongs to its issue, not the parent Project. Remain on the Task branch.
 
 Do not request Task final review while an approved parent-contract change remains unsynchronized. If the user rejects or defers a needed Epic contract change, keep the unresolved divergence current in the Task and parent local notes; do not request final review or mark the Task `done` unless the user explicitly accepts completion with that divergence.
 

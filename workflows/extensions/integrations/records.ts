@@ -3,6 +3,8 @@ import { type Static, type TProperties, type TSchema, Type } from "typebox"
 import { type EntityIdentity, PRIORITY_NOT_SET, readyBranch, type ReadyBranchContract } from "../__lib/domain.js"
 import type { EntityStatus } from "../__lib/entity.js"
 import type { WorkflowEnvironment } from "./policy.js"
+import { assertPlanCommentUrl, PlanCommentSchema } from "./plan-comment.js"
+import { assertPlanDocumentUrl, PlanDocumentSchema } from "./plan-document.js"
 
 const LINEAR_PRIORITIES = { Urgent: 1, High: 2, Medium: 3, Low: 4, [PRIORITY_NOT_SET]: 0 } as const
 export type LinearPriority = keyof typeof LINEAR_PRIORITIES
@@ -125,7 +127,11 @@ function issueTrackerRecords<P extends TProperties, I extends TSchema, B extends
     ] as const
 }
 
-const GitHubTrackerProperties = { provider: Type.Literal("github"), repository: GitHubRepositorySchema }
+const GitHubTrackerProperties = {
+    provider: Type.Literal("github"),
+    repository: GitHubRepositorySchema,
+    planComment: PlanCommentSchema,
+}
 const GitHubTrackerRecordSchema = Type.Union([
     ...unboundTrackerRecords(GitHubTrackerProperties),
     ...issueTrackerRecords(GitHubTrackerProperties, IssueBindingSchema, IssueBindingSchema),
@@ -144,18 +150,22 @@ const LinearTaskIssueIdentitySchema = Type.Object(
 const LinearGigIssueIdentitySchema = Type.Object({ issueId: OneLineSchema }, { additionalProperties: false })
 
 const LinearTrackerRecordSchema = Type.Union([
-    ...unboundTrackerRecords({ provider: Type.Literal("linear"), resource: LinearResourceSchema }),
+    ...unboundTrackerRecords({
+        provider: Type.Literal("linear"),
+        planDocument: PlanDocumentSchema,
+        resource: LinearResourceSchema,
+    }),
     ...boundTrackerRecords(
-        { provider: Type.Literal("linear"), resource: Type.Literal("project") },
+        { provider: Type.Literal("linear"), planDocument: PlanDocumentSchema, resource: Type.Literal("project") },
         LinearProjectBindingSchema,
     ),
     ...issueTrackerRecords(
-        { provider: Type.Literal("linear"), resource: Type.Literal("task-issue") },
+        { provider: Type.Literal("linear"), planDocument: PlanDocumentSchema, resource: Type.Literal("task-issue") },
         LinearTaskIssueIdentitySchema,
         LinearTaskIssueIdentitySchema,
     ),
     ...issueTrackerRecords(
-        { provider: Type.Literal("linear"), resource: Type.Literal("gig-issue") },
+        { provider: Type.Literal("linear"), planDocument: PlanDocumentSchema, resource: Type.Literal("gig-issue") },
         LinearGigIssueIdentitySchema,
         LinearGigIssueIdentitySchema,
     ),
@@ -319,6 +329,7 @@ export function createInitialIntegrationRecords(
                           repository: { ...environment.tracker.config.repository },
                           state: "bound-pending",
                           external: { issueNumber: input.source.issueNumber },
+                          planComment: { state: "unpublished" },
                           operations: [
                               ...(exposesSystemTraces ? ["apply configured Kind label and Internal ID"] : []),
                               "move Project Status to In Progress",
@@ -332,6 +343,7 @@ export function createInitialIntegrationRecords(
                           repository: { ...environment.tracker.config.repository },
                           state: "awaiting",
                           operation: "create issue",
+                          planComment: { state: "unpublished" },
                       },
             ]
         case "linear":
@@ -342,18 +354,16 @@ export function createInitialIntegrationRecords(
                             ? {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "project",
                                   state: "bound-pending",
                                   external: { projectId: input.source.projectId },
-                                  operations: [
-                                      ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear Project to In Progress",
-                                      "project Planning Phase",
-                                  ],
+                                  operations: ["move Linear Project to In Progress", "project Planning Phase"],
                               }
                             : {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "project",
                                   state: "awaiting",
                                   operation: "create Linear Project",
@@ -365,21 +375,19 @@ export function createInitialIntegrationRecords(
                             ? {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "task-issue",
                                   state: "bound-pending",
                                   external: {
                                       issueId: input.source.issueId,
                                       projectId: input.source.projectId,
                                   },
-                                  operations: [
-                                      ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear issue to In Progress",
-                                      "project Planning Phase",
-                                  ],
+                                  operations: ["move Linear issue to In Progress", "project Planning Phase"],
                               }
                             : {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "task-issue",
                                   state: "awaiting",
                                   operation: parentLinearProjectId
@@ -393,18 +401,16 @@ export function createInitialIntegrationRecords(
                             ? {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "gig-issue",
                                   state: "bound-pending",
                                   external: { issueId: input.source.issueId },
-                                  operations: [
-                                      ...(exposesSystemTraces ? ["embed Internal ID"] : []),
-                                      "move Linear issue to In Progress",
-                                      "project Planning Phase",
-                                  ],
+                                  operations: ["move Linear issue to In Progress", "project Planning Phase"],
                               }
                             : {
                                   role: "tracker",
                                   provider: "linear",
+                                  planDocument: { state: "unpublished" },
                                   resource: "gig-issue",
                                   state: "awaiting",
                                   operation: "create Linear issue",
@@ -432,7 +438,18 @@ export function assertIntegrationInvariants(status: EntityStatus, fail: (message
                 fail("forge association must match the ready branch contract")
             }
         }
+        if (integration.role === "tracker" && integration.provider === "github") {
+            const comment = integration.planComment
+            if (comment.state !== "unpublished" && integration.state !== "bound")
+                fail("plan comment publication requires confirmed tracker initialization")
+            if (comment.state === "published" && "external" in integration)
+                assertPlanCommentUrl(integration.repository, integration.external.issueNumber, comment.id, comment.url)
+        }
         if (integration.role === "tracker" && integration.provider === "linear") {
+            const document = integration.planDocument
+            if (document.state !== "unpublished" && integration.state !== "bound")
+                fail("plan document publication requires confirmed tracker initialization")
+            if (document.state === "published") assertPlanDocumentUrl(document.url)
             const expectedResource =
                 status.entity === "epic" ? "project" : status.entity === "task" ? "task-issue" : "gig-issue"
             if (integration.resource !== expectedResource) {

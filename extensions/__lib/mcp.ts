@@ -105,10 +105,11 @@ export function isMcpRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // Provider evidence may arrive as decoded JSON or a complete native MCP result.
-export function mcpResponsePayload(response: unknown): Record<string, unknown> {
-    if (!isMcpRecord(response)) throw new Error("Provider evidence requires an object response")
-    if (!Array.isArray(response.content)) return response
+export function mcpResponseValue(response: unknown): unknown {
+    if (Array.isArray(response)) return response
+    if (!isMcpRecord(response)) throw new Error("Provider evidence requires an object or array response")
     if (response.isError === true) throw new Error("MCP error results cannot establish provider evidence")
+    if (!Array.isArray(response.content)) return response
     let payload: unknown
     if (response.structuredContent !== undefined) payload = response.structuredContent
     else {
@@ -126,6 +127,12 @@ export function mcpResponsePayload(response: unknown): Record<string, unknown> {
             throw new Error("MCP evidence text is not JSON")
         }
     }
+    return payload
+}
+
+export function mcpResponsePayload(response: unknown): Record<string, unknown> {
+    if (!isMcpRecord(response)) throw new Error("Provider evidence requires an object response")
+    const payload = mcpResponseValue(response)
     if (!isMcpRecord(payload)) throw new Error("MCP evidence payload must be an object")
     return payload
 }

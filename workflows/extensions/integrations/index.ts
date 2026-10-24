@@ -26,6 +26,7 @@ import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { finalizeLinearBranch } from "./tracker/linear.js"
 import { registerWorkflowOperations } from "./operations.js"
 import { registerWorkflowPublication } from "./publication-mcp.js"
+import { registerTrackerPublication } from "./tracker-publication.js"
 import { incomingPullRequestContext } from "./forge/github/incoming-pr-context.js"
 import {
     IncomingMergeContextSchema,
@@ -127,6 +128,7 @@ export default function (pi: ExtensionAPI): void {
     const tools = observeMcpTools(pi)
     const resourceIdsMemo = new OperationResourceIdsMemo()
     registerResourceIds(pi, resourceIdsMemo, tools)
+    registerTrackerPublication(pi, tools)
     registerWorkflowOperations(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
@@ -415,18 +417,35 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                       mode: workflowPolicy.projection,
                       source: "exact accepted epic.md or plan.md",
                       contentPolicy:
-                          "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed ## Overview visible and collapse all remaining sections; never summarize or condense during publication",
+                          "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed overview prose visible and collapse all remaining sections; never summarize or condense during publication",
                       rendering:
-                          "Call render_provider_body with the complete approved source and destination; publish its exact returned markdown. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
+                          environment.tracker.kind === "github"
+                              ? "Call tracker_publication prepare with the complete approved source; execute its exact registered comment mutation and record first-creation evidence. Preserve issue title/description. Workflow publication code applies communication attribution; keep source artifacts signature-free."
+                              : "Call tracker_publication prepare with the complete approved source; execute its exact registered document mutation and record first-creation evidence. Preserve issue/Project title/name and description. Published documents require prepareUpdate with exact get_document and parent read evidence. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
+                      ...(environment.tracker.kind === "github"
+                          ? {
+                                planComment: entity?.status.integrations.find(
+                                    (entry) => entry.role === "tracker" && entry.provider === "github",
+                                )?.planComment,
+                            }
+                          : environment.tracker.kind === "linear"
+                            ? {
+                                  planDocument: entity?.status.integrations.find(
+                                      (entry) => entry.role === "tracker" && entry.provider === "linear",
+                                  )?.planDocument,
+                              }
+                            : {}),
                       attribution:
                           "AI-assisted text is signed by workflow publication code using current runtime identity. Automatically select local __pi_authorship: user-verbatim for complete unchanged user-written messages, without special user opt-out wording; generated or reworded content remains ai-assisted. Code strips the local mode before sending. Use complete text, not patches or template-only content.",
                       changedCandidateGate:
                           "deterministic renderer output needs no second approval; code-owned communication attribution also needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers the complete source before rendering",
-                      ownership: "workflow" as const,
+                      authority: "local accepted artifact" as const,
                       outcomeProof:
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
                       recovery:
-                          "after uncertain or partial success, read the exact provider body and reconcile before retrying; retry only confirmed non-application",
+                          environment.tracker.kind === "github"
+                              ? "after uncertain or partial creation, reconcile complete registered comment pages with tracker_publication recover; pending creation never automatically retries. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
+                              : "after uncertain creation, use tracker_publication recover with an exact parent UUID/identifier read, complete list_documents cursor pages, and full get_document reads requested for matching-parent candidates. Listings truncate content. Preserve pending state on missing/ambiguous evidence; never automatically create again. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
                       discussion:
                           "keep discussion in comments; requirements and agreed decisions belong in the accepted source artifact",
                       ...(workflowPolicy.projection === "restricted"
@@ -476,7 +495,7 @@ export function renderEntityProviderBody(
     if (input.destination === "tracker") {
         if (environment.tracker.kind === "none") throw new Error("tracker rendering requires a configured tracker")
         return renderProviderBody(input.source, {
-            kind: environment.tracker.kind === "github" ? "github-tracker" : "linear-tracker",
+            kind: environment.tracker.kind === "github" ? "github-plan-comment" : "linear-plan-document",
         })
     }
     if (environment.forge.kind === "none") throw new Error("pull-request rendering requires a configured forge")
