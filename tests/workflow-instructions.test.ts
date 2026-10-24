@@ -37,7 +37,7 @@ describe("workflow instruction ownership", () => {
         const task = fs.readFileSync("workflows/skills/task/SKILL.md", "utf-8")
         const delivery = fs.readFileSync("workflows/references/epic.md", "utf-8")
         for (const requirement of [
-            /Before the first Task is initialized, explain the tradeoff/,
+            /During Epic planning, explain the tradeoff before the first Task is initialized/,
             /Recommend a strategy based on the ordered decomposition and obtain explicit user approval/,
             /Record the approved strategy and rationale in the reviewed `epic.md`/,
             /## Task delivery strategy/,
@@ -45,6 +45,9 @@ describe("workflow instruction ownership", () => {
             /target: default/,
             /target: epic/,
             /existing Tasks retain their stored start\/target/,
+            /record the approved routing choice through `set_epic_task_target` before any planning commit/,
+            /do not change the pointer after merging merely to record delivery/,
+            /New undelivered Epic work blocks default-target Task initialization until delivered/,
         ])
             assert.match(epic, requirement)
         assert.match(task, /read the parent\x27s user-approved Task delivery strategy/)
@@ -59,8 +62,22 @@ describe("workflow instruction ownership", () => {
             /working accepted parent `epic.md` blob must also exactly match/,
             /Explicit PR evidence must pass its route even when local ancestry also holds/,
             /Strategy approval and plan acceptance do not authorize/,
+            /The setter accepts no `epicDelivery`/,
+            /Commit and deliver the accepted plan and routing metadata together/,
+            /Every new\/adopted default-target Task initialization revalidates/,
         ])
             assert.match(delivery, requirement)
+        for (const file of [
+            "workflows/README.md",
+            "workflows/extensions/init/README.md",
+            "workflows/references/tools.md",
+            "workflows/references/artifacts.md",
+            "workflows/references/integrations/forge/github.md",
+        ]) {
+            const source = fs.readFileSync(file, "utf-8")
+            assert.match(source, /routing (?:intent|metadata)/, file)
+            assert.match(source, /before committing/, file)
+        }
     })
 
     it("keeps GitHub presentation setup and manual verification at the owning boundary", () => {

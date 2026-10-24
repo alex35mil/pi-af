@@ -269,6 +269,28 @@ describe("incoming PR operational contract", () => {
         assert.ok(skill.includes("../../references/pr/shipping.md"))
     })
 
+    it("keeps workflow checks proportional and delegates merge rejection to GitHub", () => {
+        const tools = fs.readFileSync("workflows/references/tools.md", "utf-8")
+        const common = fs.readFileSync("workflows/references/integrations/forge/merge.md", "utf-8")
+        for (const pattern of [
+            /## Preflight checks and failure handling/,
+            /local commands, Git operations, artifact changes, and integrations/,
+            /Cheap, useful local checks are fine/,
+            /execute remote operations directly and rely on their authoritative validation/,
+            /explain what it prevents that handling the operation's error cannot/,
+            /preserve work, stop dependent steps, and report the actual error/,
+            /reconcile its actual state before any retry/,
+        ])
+            assert.match(tools, pattern)
+        const shipping = fs.readFileSync("workflows/references/pr/shipping.md", "utf-8")
+        for (const source of [common, procedure, shipping]) {
+            assert.match(source, /tools\.md#preflight-checks-and-failure-handling/)
+            assert.match(source, /GitHub.*(?:validates|validate) access/)
+            assert.match(source, /requested.*method, configured protections, and mergeability/)
+            assert.match(source, /rejected merge stops/)
+        }
+    })
+
     it("shares the repository merge contract with Deliverable finish", () => {
         const common = fs.readFileSync("workflows/references/integrations/forge/merge.md", "utf-8")
         const deliverable = fs.readFileSync("workflows/references/integrations/forge/github.md", "utf-8")
@@ -302,8 +324,8 @@ describe("incoming PR operational contract", () => {
             /non-fast-forward rejection stops/,
             /repeat verification\/private review/,
             /Only request merge approval after concerns are resolved and required verification passes/,
-            /repository merge requirements/,
-            /Unknown checks, access, protection requirements or mergeability block/,
+            /review\/CI evidence for the reviewed head/,
+            /rely on GitHub's merge response to validate access/,
             /required local checks that were not run remain blockers to merging/,
             /`expectedHeadSha` equal to the freshly verified reviewed head/,
             /no bypass, protection change, method substitution/,

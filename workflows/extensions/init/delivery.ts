@@ -16,7 +16,7 @@ export const EpicDeliverySchema = Type.Union([
 ])
 export type EpicDelivery = Static<typeof EpicDeliverySchema>
 
-// The same current-revision boundary protects target switching and every new Task.
+// Every new/adopted default-target Task verifies current delivery; routing intent alone is not proof.
 export function assertEpicDelivered(
     root: string,
     branch: ReadyBranchContract,

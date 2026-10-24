@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5QJZVKC",
+  "rawId": "01M5QJZVKC",
+  "slug": "configure-github-forge-merge-tools",
+  "title": "Configure GitHub forge tools required by workflow merge checks",
+  "createdAt": "2026-10-24T18:32:54.636Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5qjzvkc-configure-github-forge-merge-tools",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 75
+      },
+      "planComment": {
+        "state": "published",
+        "token": "271245b9-6fd8-4c0d-95b3-65b3476b849d",
+        "id": 6388338629,
+        "url": "https://github.com/alex35mil/pi-af/issues/75#issuecomment-6388338629"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5qjzvkc-configure-github-forge-merge-tools",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}

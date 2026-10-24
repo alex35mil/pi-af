@@ -9,7 +9,7 @@ Use actual configured `pull_request_read:get` evidence for the exact repository 
 - Deliverable finish verifies the recorded PR, immutable branch contract, local head and required workflow phase.
 - Incoming shipping verifies the selected PR/fork and final reviewed/published revision, without creating an entity. Use `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence` and fresh actual `evidence`.
 
-Before merging, establish required verification, reviews, access, repository protections and mergeability. Unknown required facts block shipment. A local `merge-needed` decision establishes matching evidence and arguments, not readiness, permission or approval by itself.
+Before merging, complete required verification and reviews and obtain the exact finish/ship approval. Follow [Preflight checks and failure handling](../../tools.md#preflight-checks-and-failure-handling): GitHub validates access, the requested merge method, configured protections, and mergeability when processing the merge request. Use that authoritative result rather than requiring separate repository-policy or permission inspection to predict rejection. A local `merge-needed` decision establishes matching evidence and arguments, not completion of verification, review, or approval. A rejected merge stops dependent delivery steps; preserve work and report the error and blocker.
 
 ## Merge and confirm
 
