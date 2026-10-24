@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5PJVT7X",
+  "rawId": "01M5PJVT7X",
+  "slug": "fix-github-mutation-evidence-recording",
+  "title": "GitHub mutation recording rejects successful Project additions and comment creation",
+  "createdAt": "2026-10-24T09:11:27.741Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5pjvt7x-fix-github-mutation-evidence-recording",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 76
+      },
+      "planComment": {
+        "state": "published",
+        "token": "c046fbac-1b2f-43cc-bf5d-e09b9f95794e",
+        "id": 6382568463,
+        "url": "https://github.com/alex35mil/pi-af/issues/76#issuecomment-6382568463"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5pjvt7x-fix-github-mutation-evidence-recording",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "bugfix"
+}
