@@ -70,6 +70,12 @@ After final review passes, you review the finished work and decide whether to su
 
 Submitting and finishing are separate. Submission commits the work and opens or updates a PR when configured. An explicit finish request handles merging, marking the work Done, and cleaning up the local branch. See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
+## Epic Task delivery strategy
+
+Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
+
+Default targeting requires the Epic planning work to be delivered first. Verified GitHub squash delivery is supported alongside local ancestry, with repository, branch, revision, and versioned-plan checks. Changing the strategy affects future Tasks only. See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
+
 ## Readable tracker and PR bodies
 
 Every GitHub tracker issue keeps its original request title and description. New and adopted issues publish the first accepted plan in one managed comment and update that same comment thereafter; no ownership classification is needed. Local accepted artifacts remain authoritative. Linear preserves the original request in its issue/Project title/name and description and publishes plans in one attached document.

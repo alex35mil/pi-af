@@ -14,7 +14,7 @@ The existing permissions-decorated Codemode is required. An explicit tool allowl
 | Task | `init_task` | `adopt_github_task` | `adopt_linear_task` |
 | Gig | `init_gig` | `adopt_github_gig` | `adopt_linear_gig` |
 
-The operation fixes entity and source identity; do not supply those discriminators. Adopt tools take the verified provider IDs and addressing in `source`, without `mode`, `provider`, or Linear `resource`. Preserve all intake, hierarchy, branch, artifact-persistence, and approval gates. `set_epic_task_target` and `finalize_linear_branch` retain their focused contracts.
+The operation fixes entity and source identity; do not supply those discriminators. Adopt tools take the verified provider IDs and addressing in `source`, without `mode`, `provider`, or Linear `resource`. Preserve all intake, hierarchy, branch, artifact-persistence, and approval gates. `set_epic_task_target` and all three Task initialization tools accept `epicDelivery` for default targeting: `{ kind: "git-ancestry" }` (the omitted-input behavior) or `{ kind: "github-pr", evidence }`. See [Epic delivery](./epic.md) for the shared current-revision checks, exact registered PR-get envelope, and separate Git approvals. `finalize_linear_branch` retains its focused contract.
 
 ## Integration contexts and state
 

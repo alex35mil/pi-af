@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5QF2G0X",
+  "rawId": "01M5QF2G0X",
+  "slug": "explicit-epic-task-branch-strategy",
+  "title": "Make Epic Task branch strategy an explicit planning decision",
+  "createdAt": "2026-10-24T17:24:26.781Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5qf2g0x-explicit-epic-task-branch-strategy",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 79
+      },
+      "planComment": {
+        "state": "published",
+        "token": "a74bc26e-0aa4-4c36-a20a-aad9b0eb19f1",
+        "id": 6387343211,
+        "url": "https://github.com/alex35mil/pi-af/issues/79#issuecomment-6387343211"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5qf2g0x-explicit-epic-task-branch-strategy",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "feature"
+}

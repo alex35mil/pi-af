@@ -4,6 +4,10 @@ This procedure owns workflow-created PR submission and finish. Existing incoming
 
 First follow `../shared.md` for local configuration, Resource IDs, full-body ownership, and permissions. Ordinary resume does not discover PRs.
 
+## Epic planning delivery
+
+[Epic delivery](../../epic.md) defines how target switching and Task initialization verify a delivered Epic revision, including a squash-merged planning PR. It trusts exact registered GitHub merged-PR confirmation, with local source revision and versioned accepted-plan checks, without creating a forge intent, changing lifecycle, or authorizing a merge. The Epic skill owns strategy approval and separate delivery-operation approval.
+
 ## Submission and revisions
 
 Final completion-artifact acceptance authorizes the submission set in `../../deliverable.md`, not finishing or merging.

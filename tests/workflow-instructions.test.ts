@@ -32,6 +32,37 @@ function guidanceGraph(entry: string, seen = new Set<string>()): Set<string> {
 }
 
 describe("workflow instruction ownership", () => {
+    it("makes Epic Task delivery an approved planning decision with shared evidence checks", () => {
+        const epic = fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8")
+        const task = fs.readFileSync("workflows/skills/task/SKILL.md", "utf-8")
+        const delivery = fs.readFileSync("workflows/references/epic.md", "utf-8")
+        for (const requirement of [
+            /Before the first Task is initialized, explain the tradeoff/,
+            /Recommend a strategy based on the ordered decomposition and obtain explicit user approval/,
+            /Record the approved strategy and rationale in the reviewed `epic.md`/,
+            /## Task delivery strategy/,
+            /initial `taskTarget: epic` is a provisioning value, not user approval/,
+            /target: default/,
+            /target: epic/,
+            /existing Tasks retain their stored start\/target/,
+        ])
+            assert.match(epic, requirement)
+        assert.match(task, /read the parent\x27s user-approved Task delivery strategy/)
+        assert.match(task, /earlier target switch does not establish current delivery/)
+        for (const skill of ["epic", "task"])
+            assert.ok(guidanceGraph(`workflows/skills/${skill}/SKILL.md`).has("workflows/references/epic.md"))
+        for (const requirement of [
+            /`init_task`, `adopt_github_task`, and `adopt_linear_task`/,
+            /PR head SHA equal to the current local Epic branch SHA/,
+            /Trust that exact GitHub confirmation as delivery evidence/,
+            /without original-head ancestry/,
+            /working accepted parent `epic.md` blob must also exactly match/,
+            /Explicit PR evidence must pass its route even when local ancestry also holds/,
+            /Strategy approval and plan acceptance do not authorize/,
+        ])
+            assert.match(delivery, requirement)
+    })
+
     it("keeps GitHub presentation setup and manual verification at the owning boundary", () => {
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
         const reference = fs.readFileSync("workflows/references/setup.md", "utf-8")

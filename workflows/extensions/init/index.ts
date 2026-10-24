@@ -12,6 +12,8 @@ import {
     setEpicTaskTarget,
 } from "./entity.js"
 import { workflowTools } from "../__lib/tools.js"
+import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
+import { EpicDeliverySchema } from "./delivery.js"
 import {
     GitHubInitializationSourceSchema,
     LinearProjectInitializationSourceSchema,
@@ -25,12 +27,14 @@ const SetEpicTaskTargetSchema = Type.Object(
     {
         entityDir: Type.String({ minLength: 1 }),
         target: Type.Enum(["epic", "default"], { type: "string" }),
+        epicDelivery: Type.Optional(EpicDeliverySchema),
     },
     { additionalProperties: false },
 )
 
 export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "initialization")
+    const mcpTools = observeMcpTools(pi)
     const entities = [
         {
             entity: "epic",
@@ -95,7 +99,7 @@ export default function (pi: ExtensionAPI): void {
                         input,
                         signal,
                     )
-                    const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch })
+                    const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch, tools: mcpTools })
                     await seedInitializedEntityResourceIds(initialized, ctx.cwd)
                     return {
                         content: [{ type: "text" as const, text: formatInitializedEntity(initialized) }],
@@ -110,11 +114,15 @@ export default function (pi: ExtensionAPI): void {
         name: "set_epic_task_target",
         label: "set_epic_task_target",
         description:
-            "Set whether future Tasks use the Epic branch or repository default branch. Default requires a locally verified merged Epic branch.",
+            "Set where future Tasks start and deliver. Default requires local Epic ancestry or exact GitHub confirmation that the matching Epic revision was merged into its stored target. Existing Tasks keep their targets.",
         parameters: SetEpicTaskTargetSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(SetEpicTaskTargetSchema, params)
-            const status = setEpicTaskTarget(input.entityDir, input.target, { cwd: ctx.cwd })
+            const status = setEpicTaskTarget(input.entityDir, input.target, {
+                cwd: ctx.cwd,
+                epicDelivery: input.epicDelivery,
+                tools: mcpTools,
+            })
             if (status.entity !== "epic" || status.branch.state !== "ready") {
                 throw new Error("updated entity is not a ready Epic")
             }
