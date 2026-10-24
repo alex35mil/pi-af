@@ -68,6 +68,52 @@ export const SetWorkflowPhaseSchema = Type.Union([
 ])
 export type SetWorkflowPhaseInput = Static<typeof SetWorkflowPhaseSchema>
 
+export const GitHubPhaseInputSchema = Type.Object(
+    {
+        field: NativePhaseFactsSchema.anyOf[0].properties.field,
+        current: Type.Optional(NameSchema),
+    },
+    { additionalProperties: false },
+)
+export const LinearPhaseInputSchema = Type.Object(
+    {
+        catalog: Type.Array(
+            Type.Object(
+                {
+                    id: NameSchema,
+                    name: NameSchema,
+                    team: Type.Optional(NameSchema),
+                    parentId: Type.Optional(NameSchema),
+                    isGroup: Type.Boolean(),
+                    groupType: Type.Optional(Type.Enum(["singleSelect", "multiSelect"], { type: "string" })),
+                    retiredAt: Type.Optional(NameSchema),
+                },
+                { additionalProperties: false },
+            ),
+        ),
+        applied: Type.Array(NameSchema, { uniqueItems: true }),
+    },
+    { additionalProperties: false },
+)
+
+/** Absence denotes the observed native empty value, never missing overall read evidence. */
+export function githubPhaseFacts(input: Static<typeof GitHubPhaseInputSchema>): NativePhaseFacts {
+    return { provider: "github", field: input.field, current: input.current ?? null }
+}
+export function linearPhaseFacts(input: Static<typeof LinearPhaseInputSchema>): NativePhaseFacts {
+    return {
+        provider: "linear",
+        catalog: input.catalog.map((label) => ({
+            ...label,
+            team: label.team ?? null,
+            parentId: label.parentId ?? null,
+            groupType: label.groupType ?? null,
+            retiredAt: label.retiredAt ?? null,
+        })),
+        applied: input.applied,
+    }
+}
+
 export function setWorkflowPhase(status: EntityStatus, environment: WorkflowEnvironment, input: SetWorkflowPhaseInput) {
     Value.Parse(SetWorkflowPhaseSchema, input)
     assertEntityEnvironment(status, environment)

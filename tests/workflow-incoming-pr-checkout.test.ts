@@ -9,6 +9,7 @@ import { Value } from "typebox/value"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
+import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
 import { IncomingCheckoutSchema, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
@@ -130,10 +131,10 @@ function fixture(mode: "versioned" | "unversioned", diverged = false) {
         registerCommand: () => {},
     } as never)
     events.emit(MCP_TOOL_CATALOG_EVENT, workflowMcpCatalog("fixture"))
-    const tool = tools.find((item) => item.name === "incoming_pull_request_checkout")!
-    assert.ok(tool, "The actual PR extension must register the checkout tool")
     const call = async (operation: IncomingCheckoutInput["operation"], selectedEvidence = evidence) => {
-        const input = { operation, reference: "#12", evidence: selectedEvidence }
+        const tool = tools.find((item) => item.name === INCOMING_CHECKOUT_TOOLS[operation])!
+        assert.ok(tool, "The actual PR extension must register the selected operation")
+        const input = { reference: "#12", evidence: selectedEvidence }
         assert.ok(Value.Check(tool.parameters, input), "Exercise the real registered schema")
         const result = await tool.execute(
             "fixture",

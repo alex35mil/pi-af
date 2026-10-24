@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5PN2DNK",
+  "rawId": "01M5PN2DNK",
+  "slug": "fix-claude-code-and-glm-tool-compatibility",
+  "title": "Fix Claude Code and GLM tool compatibility",
+  "createdAt": "2026-10-24T09:50:01.395Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5pn2dnk-fix-claude-code-and-glm-tool-compatibility",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "planComment": {
+        "state": "published",
+        "token": "95024ae6-4ec4-46be-938d-50538a84b3b2",
+        "id": 6383395531,
+        "url": "https://github.com/alex35mil/pi-af/issues/80#issuecomment-6383395531"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 80
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5pn2dnk-fix-claude-code-and-glm-tool-compatibility",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "refactor"
+}

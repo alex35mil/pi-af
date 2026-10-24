@@ -2,19 +2,46 @@
 name: task
 description: "Use for Deliverable work belonging to exactly one Epic under <repo>/.project/epics/<epic>/tasks/."
 allowed-tools:
-    - "init"
-    - "review"
-    - "prepare_plan_presentation"
+    - "init_task"
+    - "adopt_github_task"
+    - "adopt_linear_task"
+    - "review_task"
+    - "prepare_task_plan_presentation"
+    - "review_epic"
+    - "prepare_epic_plan_presentation"
     - "prepare_artifacts"
-    - "set_workflow_phase"
-    - "confirm_tracker_initialization"
+    - "set_local_workflow_phase"
+    - "set_github_workflow_phase"
+    - "set_linear_workflow_phase"
+    - "confirm_versioned_github_tracker"
+    - "confirm_unversioned_github_tracker"
+    - "confirm_linear_tracker"
     - "render_provider_body"
-    - "tracker_publication"
+    - "prepare_tracker_publication"
+    - "prepare_tracker_publication_update"
+    - "record_tracker_publication"
+    - "recover_tracker_publication"
     - "verify_artifact_projection"
-    - "integration_context"
-    - "resource_ids"
+    - "inspect_integrations"
+    - "inspect_adoption"
+    - "initialize_integration"
+    - "resume_integration"
+    - "prepare_integration_projection"
+    - "prepare_integration_pull_request"
+    - "prepare_integration_finish"
+    - "prepare_integration_merge"
+    - "prepare_tracker_mutation"
+    - "prepare_github_phase_mutation"
+    - "prepare_linear_phase_mutation"
+    - "begin_resource_creation"
+    - "record_resource_creation"
+    - "resolve_resource_ids"
+    - "record_resource_ids"
+    - "invalidate_resource_ids"
+    - "select_pull_request_resource"
     - "finalize_linear_branch"
-    - "cleanup_delivery_branch"
+    - "cleanup_ancestry_delivery_branch"
+    - "cleanup_github_delivery_branch"
     - "read(.project/*)"
     - "write(.project/*)"
     - "edit(.project/*)"
@@ -36,11 +63,11 @@ Use the shared Deliverable preparation, entity-selection, and artifact-read flow
 
 ## Initialize
 
-Follow the approved intake in `../../references/artifacts.md`. A Task additionally requires the user to identify one initialized parent Epic under `.project/epics/` and one prospective Task by its exact bold title in the accepted `epic.md` ordered plan. Read that parent before `init`; do not infer the selection or initialize prospective work automatically. Adoption uses the selected provider's Task preflight, including exact parent Linear Project validation.
+Follow the approved intake in `../../references/artifacts.md`. A Task additionally requires the user to identify one initialized parent Epic under `.project/epics/` and one prospective Task by its exact bold title in the accepted `epic.md` ordered plan. Read that parent before initialization; do not infer the selection or initialize prospective work automatically. Adoption uses the selected provider's Task preflight, including exact parent Linear Project validation.
 
-After these gates, call `init` with `entity: "task"`, the exact repo-relative `parentEpicDir`, the selected `epicItemTitle`, approved metadata, the approved Request summary as `request`, slug, and source variant. The Task's approved `title` may differ from the Epic item's title. The tool requires exactly one ordered Task entry with `epicItemTitle`, generates the Task ID, tags that entry as `[TASK-<raw-id>]`, and thereafter identity—not title or ordering—is the relation. It also creates the timestamp/ID directory and renders the project-wide configured branch. `tracker` format uses the exact Linear issue branch.
+After these gates, call `init_task`, `adopt_github_task`, or `adopt_linear_task` as appropriate, with the exact repo-relative `parentEpicDir`, the selected `epicItemTitle`, approved metadata, the approved Request summary as `request`, slug, and verified adoption `source` facts when applicable. The Task's approved `title` may differ from the Epic item's title. The tool requires exactly one ordered Task entry with `epicItemTitle`, generates the Task ID, tags that entry as `[TASK-<raw-id>]`, and thereafter identity—not title or ordering—is the relation. It also creates the timestamp/ID directory and renders the project-wide configured branch. `tracker` format uses the exact Linear issue branch.
 
-The Task copies the parent Epic's current `taskTarget` into its own immutable `start`/`target`: the Epic branch before an early Epic merge, or the repository default branch afterward. In versioned mode, default targeting requires the accepted parent `epic.md` to be reachable from default. A new Linear Task using `tracker` format initially stores `tracker-pending`; initialize its tracker projection, persist the returned `gitBranchName`, call `finalize_linear_branch`, then switch to the ready branch. Static formats create the ready branch during `init`. Follow the shared Deliverable lifecycle only after readiness.
+The Task copies the parent Epic's current `taskTarget` into its own immutable `start`/`target`: the Epic branch before an early Epic merge, or the repository default branch afterward. In versioned mode, default targeting requires the accepted parent `epic.md` to be reachable from default. A new Linear Task using `tracker` format initially stores `tracker-pending`; initialize its tracker projection, persist the returned `gitBranchName`, call `finalize_linear_branch`, then switch to the ready branch. Static formats create the ready branch during initialization. Follow the shared Deliverable lifecycle only after readiness.
 
 ## Parent synchronization
 
@@ -50,9 +77,9 @@ At every material Task decision and before final review, compare the Task outcom
 
 - **The Epic contract remains accurate:** Keep implementation details in Task artifacts and do not rewrite the Epic item after its one-time Task ID tag. Task progress comes from the child lifecycle.
 - **A mismatch or domain decision is unresolved:** Explain the mismatch and ask the user before changing any Epic artifact.
-- **The user approves an Epic contract change:** Update Epic working state, revise its `.local/draft.md`, run `review` with `entity: "epic"` and `phase: "plan"`, then present the approved snapshot through the configured `epic.md` write/edit diff gate.
+- **The user approves an Epic contract change:** Update Epic working state, revise its `.local/draft.md`, run `review_epic` with `phase: "plan"`, then present the approved snapshot through the configured `epic.md` write/edit diff gate.
 
-After accepting a parent `epic.md` change, project that exact parent's accepted source through the shared integration contract: Use `tracker_publication` with the parent `entityDir` and its saved publication state: GitHub updates that Epic's issue comment; Linear updates that Epic's Project-attached document. The Task's own document belongs to its issue, not the parent Project. Remain on the Task branch.
+After accepting a parent `epic.md` change, project that exact parent's accepted source through the shared integration contract: Use `prepare_tracker_publication` with the parent `entityDir` and its saved publication state: GitHub updates that Epic's issue comment; Linear updates that Epic's Project-attached document. The Task's own document belongs to its issue, not the parent Project. Remain on the Task branch.
 
 Do not request Task final review while an approved parent-contract change remains unsynchronized. If the user rejects or defers a needed Epic contract change, keep the unresolved divergence current in the Task and parent local notes; do not request final review or mark the Task `done` unless the user explicitly accepts completion with that divergence.
 

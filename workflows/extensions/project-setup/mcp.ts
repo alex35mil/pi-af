@@ -13,12 +13,12 @@ export const LOCAL_MCP_SETTINGS_EXCLUDE = "/.agents/mcp.local.json"
 
 const EnvironmentNameSchema = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })
 const ServerNameSchema = Type.String({ minLength: 1, pattern: "^[A-Za-z0-9_-]+$" })
-const SettingsTargetSchema = Type.Union([Type.Literal("project"), Type.Literal("local")])
-const GitHubRoleSchema = Type.Union([Type.Literal("tracker"), Type.Literal("forge")])
+const SettingsTargetSchema = Type.Enum(["project", "local"], { type: "string" })
+const GitHubRoleSchema = Type.Enum(["tracker", "forge"], { type: "string" })
 
 const LinearRegistrationSchema = Type.Object(
     {
-        provider: Type.Literal("linear"),
+        provider: Type.Enum(["linear"], { type: "string" }),
         name: ServerNameSchema,
         credentialEnv: EnvironmentNameSchema,
     },
@@ -27,7 +27,7 @@ const LinearRegistrationSchema = Type.Object(
 
 const GitHubRegistrationSchema = Type.Object(
     {
-        provider: Type.Literal("github"),
+        provider: Type.Enum(["github"], { type: "string" }),
         name: ServerNameSchema,
         credentialEnv: EnvironmentNameSchema,
         roles: Type.Array(GitHubRoleSchema, { minItems: 1, uniqueItems: true }),

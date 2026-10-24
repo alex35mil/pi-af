@@ -3,7 +3,10 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { DeliveryCleanupSchema } from "../workflows/extensions/deliverable/cleanup.ts"
+import {
+    AncestryDeliveryCleanupInputSchema,
+    GitHubDeliveryCleanupInputSchema,
+} from "../workflows/extensions/deliverable/cleanup.ts"
 
 function markdownFiles(directory: string): string[] {
     return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -33,7 +36,7 @@ describe("workflow instruction ownership", () => {
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
         const reference = fs.readFileSync("workflows/references/setup.md", "utf-8")
         for (const requirement of [
-            /operation: inspectProject/,
+            /`inspect_github_project`/,
             /require explicit selection of one exact view ID/,
             /separate choices, both enabled/,
             /Before removing an existing association.*default repository in Settings/,
@@ -83,7 +86,7 @@ describe("workflow instruction ownership", () => {
         for (const skill of ["epic", "task", "gig"]) {
             assert.match(
                 fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8"),
-                /    - "prepare_plan_presentation"/,
+                new RegExp(`    - "prepare_${skill}_plan_presentation"`),
             )
             const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
             for (const reference of [
@@ -115,7 +118,7 @@ describe("workflow instruction ownership", () => {
         assert.match(todo, /requests to report a workflow defect or friction/)
         assert.match(todo, /Ordinary intake uses `target: "current"`/)
         assert.match(todo, /Report this workflow issue.*`target: "workflow"`/)
-        assert.match(todo, /allowed-tools:\n    - "integration_context"\n---/)
+        assert.match(todo, /allowed-tools:\n    - "inspect_integrations"\n    - "inspect_queue_intake"\n---/)
         const queue = fs.readFileSync("workflows/references/queue.md", "utf-8")
         for (const requirement of [
             /Ordinary.*`target: "current"`/,
@@ -146,7 +149,7 @@ describe("workflow instruction ownership", () => {
         assert.match(setup, /source's `\.project\/integrations\.json` and `\.project\/config\.json`/)
         assert.match(setup, /Stop the attempt without setup questions, automatic repair/)
         const setupSkill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
-        assert.match(setupSkill, /`operation: inspect` and `target: "current"`/)
+        assert.match(setupSkill, /`inspect_integrations` with `target: "current"`/)
     })
 
     it("treats explicit queued-work selection as intake approval", () => {
@@ -155,7 +158,10 @@ describe("workflow instruction ownership", () => {
         assert.match(artifacts, /existing title or name, description, Priority, and available workflow Kind/)
         assert.match(artifacts, /after the selected provider's read-only preflight/)
         assert.match(artifacts, /Ask only for missing or conflicting information/)
-        assert.match(artifacts, /proceed to `init` without a separate confirmation/)
+        assert.match(
+            artifacts,
+            /proceed to the matching entity\/provider adoption tool without a separate confirmation/,
+        )
         assert.match(artifacts, /For new work, present the cleaned title and Request together for approval/)
         assert.match(artifacts, /Ask before changing meaning, scope, Priority, or Kind/)
         assert.match(artifacts, /Never rename an adopted tracker item without separate approval/)
@@ -210,15 +216,15 @@ describe("workflow instruction ownership", () => {
         const planning = fs.readFileSync("workflows/references/planning.md", "utf-8")
         assert.match(planning, /## Material replanning/)
         assert.match(planning, /Restore lifecycle to `inProgress` when it is `inReview`/)
-        assert.match(planning, /`set_workflow_phase` for Planning/)
-        assert.match(planning, /remain in Planning while calling `prepare_plan_presentation`/)
+        assert.match(planning, /authority\/provider-specific Phase tool for Planning/)
+        assert.match(planning, /remain in Planning while calling `prepare_epic_plan_presentation`/)
         assert.match(planning, /The tool selects a validated approved snapshot and returns its source and target paths/)
         assert.match(planning, /the write tool presents the approval diff/)
         assert.match(
             planning,
             /Keep `phase: planning` while correcting the reviewed plan, rerunning planning review, presenting it, and waiting for user approval/,
         )
-        assert.match(planning, /On acceptance, call `set_workflow_phase` for Execution/)
+        assert.match(planning, /On acceptance, set Execution with the authority\/provider-specific Phase tool/)
         const review = fs.readFileSync("workflows/references/review.md", "utf-8")
         assert.match(review, /plan review, corrections, presentation, and waiting for plan approval remain in Planning/)
         assert.match(
@@ -250,7 +256,10 @@ describe("workflow instruction ownership", () => {
             phase,
             /Keep the entire planning loop in Planning: drafting, review, corrections, presentation, and waiting for plan approval/,
         )
-        assert.match(phase, /Use Planning for `review` with category `plan` and for `prepare_plan_presentation`/)
+        assert.match(
+            phase,
+            /Use Planning for the matching `review_epic`.*category `plan`.*entity-specific plan-presentation tool/,
+        )
         assert.match(phase, /Use Execution for accepted implementation and implementation corrections/)
         assert.match(phase, /Enter Self-Review before interim\/final review and local user review of delivered work/)
         assert.match(phase, /remain there while awaiting feedback/)
@@ -258,7 +267,7 @@ describe("workflow instruction ownership", () => {
         assert.match(phase, /With no external submission route, do not set In Review/)
         assert.match(phase, /applies equally to versioned and unversioned/)
         assert.match(phase, /A local commit is not submission/)
-        assert.match(deliverable, /`set_workflow_phase` for Self-Review/)
+        assert.match(deliverable, /set Self-Review with the authority\/provider-specific Phase tool/)
         assert.match(deliverable, /Enter lifecycle `inReview` only after confirmed external submission/)
         assert.match(deliverable, /Revisions on an open PR return to In Progress\/Execution/)
         const shared = fs.readFileSync("workflows/references/integrations/shared.md", "utf-8")
@@ -349,11 +358,11 @@ describe("workflow instruction ownership", () => {
         for (const skill of ["epic", "task", "gig"]) {
             const instructions = fs.readFileSync(`workflows/skills/${skill}/SKILL.md`, "utf-8")
             assert.match(instructions, /render_provider_body/)
-            assert.match(instructions, /- "tracker_publication"/)
+            assert.match(instructions, /- "prepare_tracker_publication"/)
         }
         assert.match(
             fs.readFileSync("workflows/skills/epic/SKILL.md", "utf-8"),
-            /follow the shared complete-body publishing contract.*GitHub uses `tracker_publication`.*Trust established clear success and reconcile uncertain outcomes/,
+            /follow the shared complete-body publishing contract.*GitHub uses `prepare_tracker_publication`.*Trust established clear success and reconcile uncertain outcomes/,
         )
     })
 
@@ -378,18 +387,18 @@ describe("workflow instruction ownership", () => {
         assert.match(shared, /both visible and collapsed content/)
         assert.match(shared, /require approval before rendering/)
         assert.match(shared, /Folding is not a privacy boundary/)
-        assert.match(shared, /call `tracker_publication`.*complete approved candidate/)
-        assert.match(shared, /For tracker plans in either provider, call `tracker_publication`/)
+        assert.match(shared, /call `prepare_tracker_publication`.*complete approved candidate/)
+        assert.match(shared, /For tracker plans in either provider, call `prepare_tracker_publication`/)
         assert.match(shared, /For PR bodies, call `render_provider_body`/)
-        assert.match(shared, /action: prepareUpdate/)
+        assert.match(shared, /`prepare_tracker_publication_update`/)
         assert.match(shared, /Listings truncate content/)
         assert.match(shared, /Before adopting queued work.*read the selected object's discussion.*complete pagination/)
         assert.match(shared, /Resolve material questions with the maintainer before initialization/)
         assert.match(shared, /Every GitHub tracker issue keeps its original request.*one managed comment/)
-        assert.match(shared, /pending GitHub comment creation requires `tracker_publication recover`/)
+        assert.match(shared, /pending GitHub comment creation requires `recover_tracker_publication`/)
         assert.match(shared, /No match, duplicate matches.*without another automatic create/)
         const task = fs.readFileSync("workflows/skills/task/SKILL.md", "utf-8")
-        assert.match(task, /tracker_publication.*parent `entityDir`.*saved publication state/)
+        assert.match(task, /prepare_tracker_publication.*parent `entityDir`.*saved publication state/)
         assert.match(
             shared,
             /Deterministic renderer output, the opaque plan-publication marker, and the code-owned attribution treatment need no second approval/,
@@ -400,8 +409,8 @@ describe("workflow instruction ownership", () => {
         assert.match(review, /Overview accurately represents the complete detailed contract or evidence/)
         assert.match(review, /keeps material limitations visible/)
         const linear = fs.readFileSync("workflows/references/integrations/tracker/linear.md", "utf-8")
-        assert.match(linear, /`tracker_publication prepare` with the complete approved source/)
-        assert.match(linear, /`tracker_publication prepareUpdate`/)
+        assert.match(linear, /`prepare_tracker_publication` with the complete approved source/)
+        assert.match(linear, /`prepare_tracker_publication_update`/)
         assert.match(linear, /List\/create content is truncated/)
         assert.match(linear, /Live document UI rendering must be verified separately/)
         assert.match(linear, /shared discussion-reading requirement.*`list_comments`/)
@@ -460,12 +469,21 @@ describe("workflow instruction ownership", () => {
         const deliverable = fs.readFileSync("workflows/references/deliverable.md", "utf-8")
         assert.match(
             deliverable,
-            /Within that same explicit finish request, call `cleanup_delivery_branch` once without another cleanup question/,
+            /Within that same explicit finish request, call `cleanup_github_delivery_branch` or `cleanup_ancestry_delivery_branch` once.*without another cleanup question/,
         )
         assert.match(deliverable, /Final completion-artifact acceptance authorizes submission, not finishing/)
         assert.match(deliverable, /requires exact target\/origin equality/)
         assert.match(deliverable, /Epic-target Tasks remain on the Epic branch and leave main intact/)
-        assert.deepEqual(Object.keys(DeliveryCleanupSchema.properties).sort(), ["completion", "entityDir", "merge"])
+        assert.deepEqual(Object.keys(AncestryDeliveryCleanupInputSchema.properties).sort(), [
+            "completionAuthority",
+            "entityDir",
+        ])
+        assert.deepEqual(Object.keys(GitHubDeliveryCleanupInputSchema.properties).sort(), [
+            "completionAuthority",
+            "entityDir",
+            "merge",
+        ])
+        assert.match(deliverable, /Supply `completionAuthority`.*current Done outcome was confirmed/)
     })
 
     it("offers useful integration permissions with explicit selection and preserved constraints", () => {

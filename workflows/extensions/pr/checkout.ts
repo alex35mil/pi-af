@@ -7,6 +7,7 @@ import { StringEnum } from "@earendil-works/pi-ai"
 import { withFileMutationQueue, truncateHead, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -39,6 +40,7 @@ import {
 import { evidenceLocation } from "./paths.js"
 import { continueRebase, observeTarget, publishRebase, startRebase } from "./rebase.js"
 import { commitFixes, publishFixes } from "./fixes.js"
+import { INCOMING_CHECKOUT_TOOLS } from "./operations.js"
 import { cleanupCheckout, inspectRemoval } from "./cleanup.js"
 
 const common = {
@@ -150,85 +152,107 @@ async function save(file: string, content: string): Promise<void> {
 }
 
 export function registerIncomingCheckout(pi: ExtensionAPI, tools: McpToolCatalog): void {
-    pi.registerTool({
-        name: "incoming_pull_request_checkout",
-        label: "incoming_pull_request_checkout",
-        description:
-            "Perform approved incoming-PR checkout/review setup, inspection, static-fix transition, target observation, or STANDARD REBASE with immediate SHA-pinned --force-with-lease update of the existing contributor branch. Rebase/continuation may create replacement commits and push on success; obtain approval for that exact set and contributor consent/access first. Conflict outcomes preserve work for approved resolution. publishRebase reconciles/retries only the recorded result/lease. GitHub fetch/observation/push use SSH with existing authentication; no HTTPS credential setup or parent/global configuration changes. commitFixes creates only an approved additive commit; publishFixes separately publishes that recorded result without force. cleanup is included in an exact ship/merge request and requires confirmed merge/Project Done plus no extra/unpublished work; it removes only the managed checkout, retaining private evidence, parent state and contributor branches. No contributor-code execution, unapproved commits, GitHub publication/merge, arbitrary Git commands or plain force push. Output is limited to 2000 lines/50KB with complete private evidence paths.",
-        parameters: IncomingCheckoutSchema,
-        async execute(_id, params, signal, _update, ctx) {
-            const input = Value.Parse(IncomingCheckoutSchema, params)
-            assertGitEnvironment()
-            const root = (await parentGit(ctx.cwd, ["rev-parse", "--show-toplevel"], signal)).trim()
-            const context = incomingPullRequestContext(root, input.reference, tools)
-            const revision = incomingRevision(
-                context.roles.forge.config,
-                context.incomingPullRequest,
-                input.evidence,
-                tools,
-            )
-            const local = (name: string) =>
-                resolveIncomingLocalPath(root, revision, path.join(context.incomingPullRequest.localDirectory, name))
-            const directory = local("checkout")
-            const stateFile = local("checkout.json")
-            return withFileMutationQueue(stateFile, async () => {
-                local("checkout")
-                local("checkout.json")
-                const before = await parentState(root, signal)
-                let result: unknown
-                let failure: unknown
-                try {
-                    result = await operate(
+    const toolsApi = workflowTools(pi, "pull_requests")
+    const [simple, rebase, continuation, commit, cleanup] = IncomingCheckoutSchema.anyOf
+    const operations = [
+        ["prepare", simple],
+        ["checkout", simple],
+        ["inspect", simple],
+        ["beginFixes", simple],
+        ["observeTarget", simple],
+        ["publishRebase", simple],
+        ["publishFixes", simple],
+        ["rebase", rebase],
+        ["continueRebase", continuation],
+        ["commitFixes", commit],
+        ["cleanup", cleanup],
+    ] as const
+    for (const [operation, schema] of operations) {
+        const name = INCOMING_CHECKOUT_TOOLS[operation]
+        const parameters = Type.Omit(schema, ["operation"])
+        toolsApi.registerTool({
+            name,
+            label: name,
+            description: `${name.replaceAll("_", " ")} for the selected incoming PR under its exact operation approval. Rebase/continuation may create replacement commits and push on success; obtain approval for that exact set and contributor consent/access first. Conflict outcomes preserve work for approved resolution. Rebase publication reconciles/retries only the recorded result/lease. GitHub fetch/observation/push use SSH with existing authentication; no HTTPS credential setup or parent/global configuration changes. Fix commits are additive and separately approved; fixes publication separately publishes that recorded result without force. Checkout cleanup is included in an exact ship/merge request and requires confirmed merge/Project Done plus no extra/unpublished work; it removes only the managed checkout, retaining private evidence, parent state and contributor branches. No contributor-code execution, unapproved commits, GitHub publication/merge, arbitrary Git commands or plain force push. Output is limited to 2000 lines/50KB with complete private evidence paths.`,
+            parameters,
+            async execute(_id, params, signal, _update, ctx) {
+                const input = Value.Parse(IncomingCheckoutSchema, { ...Value.Parse(parameters, params), operation })
+                assertGitEnvironment()
+                const root = (await parentGit(ctx.cwd, ["rev-parse", "--show-toplevel"], signal)).trim()
+                const context = incomingPullRequestContext(root, input.reference, tools)
+                const revision = incomingRevision(
+                    context.roles.forge.config,
+                    context.incomingPullRequest,
+                    input.evidence,
+                    tools,
+                )
+                const local = (name: string) =>
+                    resolveIncomingLocalPath(
                         root,
-                        directory,
-                        stateFile,
-                        local,
                         revision,
-                        context.roles.forge.config,
-                        input,
-                        tools,
-                        signal,
+                        path.join(context.incomingPullRequest.localDirectory, name),
                     )
-                } catch (error) {
-                    failure = error
-                }
-                const after = await parentState(root)
-                const saved = fs.existsSync(stateFile)
-                    ? readCheckoutState(stateFile, revision, context.roles.forge.config, tools)
-                    : null
-                const publication = saved ? currentPublication(saved) : null
-                const localOutcome =
-                    saved?.phase === "removed"
-                        ? "Managed checkout removed; private evidence retained."
-                        : saved?.phase === "deleting"
-                          ? "Owned source removal started; inspect saved cleanup state."
-                          : "Checkout preserved;"
-                if (!isDeepStrictEqual(before, after))
-                    throw new Error(
-                        `Parent repository changed; no restoration attempted. ${localOutcome} Publication facts: ${JSON.stringify(publication)}. ${failure instanceof Error ? failure.message : ""}`,
-                    )
-                if (failure)
-                    throw new Error(
-                        `${failure instanceof Error ? failure.message : String(failure)}\n${localOutcome} parent repository verified unchanged. Publication facts: ${JSON.stringify(publication)}. Do not retry using Bash.`,
-                    )
-                const details = { ...(result as object), parent: { verifiedUnchanged: true } }
-                const output = truncateHead(JSON.stringify(details, null, 2))
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text:
-                                output.content +
-                                (output.truncated
-                                    ? `\nOutput truncated; complete checkout state: ${local("checkout-inspection.json")}`
-                                    : ""),
-                        },
-                    ],
-                    details,
-                }
-            })
-        },
-    })
+                const directory = local("checkout")
+                const stateFile = local("checkout.json")
+                return withFileMutationQueue(stateFile, async () => {
+                    local("checkout")
+                    local("checkout.json")
+                    const before = await parentState(root, signal)
+                    let result: unknown
+                    let failure: unknown
+                    try {
+                        result = await operate(
+                            root,
+                            directory,
+                            stateFile,
+                            local,
+                            revision,
+                            context.roles.forge.config,
+                            input,
+                            tools,
+                            signal,
+                        )
+                    } catch (error) {
+                        failure = error
+                    }
+                    const after = await parentState(root)
+                    const saved = fs.existsSync(stateFile)
+                        ? readCheckoutState(stateFile, revision, context.roles.forge.config, tools)
+                        : null
+                    const publication = saved ? currentPublication(saved) : null
+                    const localOutcome =
+                        saved?.phase === "removed"
+                            ? "Managed checkout removed; private evidence retained."
+                            : saved?.phase === "deleting"
+                              ? "Owned source removal started; inspect saved cleanup state."
+                              : "Checkout preserved;"
+                    if (!isDeepStrictEqual(before, after))
+                        throw new Error(
+                            `Parent repository changed; no restoration attempted. ${localOutcome} Publication facts: ${JSON.stringify(publication)}. ${failure instanceof Error ? failure.message : ""}`,
+                        )
+                    if (failure)
+                        throw new Error(
+                            `${failure instanceof Error ? failure.message : String(failure)}\n${localOutcome} parent repository verified unchanged. Publication facts: ${JSON.stringify(publication)}. Do not retry using Bash.`,
+                        )
+                    const details = { ...(result as object), parent: { verifiedUnchanged: true } }
+                    const output = truncateHead(JSON.stringify(details, null, 2))
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text:
+                                    output.content +
+                                    (output.truncated
+                                        ? `\nOutput truncated; complete checkout state: ${local("checkout-inspection.json")}`
+                                        : ""),
+                            },
+                        ],
+                        details,
+                    }
+                })
+            },
+        })
+    }
 }
 
 async function operate(

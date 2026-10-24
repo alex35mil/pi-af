@@ -7,7 +7,7 @@ Deliverables and incoming PRs use one repository merge policy: **squash merge**,
 Use actual configured `pull_request_read:get` evidence for the exact repository and PR. Confirm expected base/head repository/ref association and the full expected head SHA. The workflow adapter supplies its own association:
 
 - Deliverable finish verifies the recorded PR, immutable branch contract, local head and required workflow phase.
-- Incoming shipping verifies the selected PR/fork and final reviewed/published revision, without creating an entity. Use `integration_context` operation `incomingPullRequestMerge` with `reference`, the actual `reviewedEvidence` and fresh actual `evidence`.
+- Incoming shipping verifies the selected PR/fork and final reviewed/published revision, without creating an entity. Use `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence` and fresh actual `evidence`.
 
 Before merging, establish required verification, reviews, access, repository protections and mergeability. Unknown required facts block shipment. A local `merge-needed` decision establishes matching evidence and arguments, not readiness, permission or approval by itself.
 

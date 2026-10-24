@@ -7,6 +7,7 @@ import { describe, it } from "node:test"
 import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
 import registerPr from "../workflows/extensions/pr/index.ts"
+import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
 import type { IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
@@ -135,9 +136,9 @@ function fixture(mode: "versioned" | "unversioned" = "versioned", kind: Kind = "
         registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
     } as never)
     events.emit(MCP_TOOL_CATALOG_EVENT, workflowMcpCatalog("fixture", "board"))
-    const tool = tools.find((entry) => entry.name === "incoming_pull_request_checkout")!
     const call = async (operation: IncomingCheckoutInput["operation"], extra: object = {}) => {
-        const input = { operation, reference: "#12", evidence, ...extra }
+        const tool = tools.find((entry) => entry.name === INCOMING_CHECKOUT_TOOLS[operation])!
+        const input = { reference: "#12", evidence, ...extra }
         assert.ok(Value.Check(tool.parameters, input))
         const result = await tool.execute(
             "fixture",

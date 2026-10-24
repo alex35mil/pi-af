@@ -27,6 +27,8 @@ Upgrading from an older version? See the [upgrade guide](UPGRADING.md).
 
 ## Project workflows
 
+Workflow operations are discovered on demand through the existing permission-aware Codemode instead of declaring the full catalog in every request. See [tool discovery](workflows/references/tools.md). Reviewer subprocesses load the selected Claude Code provider only when needed, while retaining their read-only isolation.
+
 [`workflows/`](workflows/) contains reusable workflows for Epics, Tasks, and Gigs:
 
 - `/project-setup` — interactively configure artifacts, branches, optional integrations, and policies;

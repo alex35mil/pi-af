@@ -330,7 +330,7 @@ describe("managed GitHub plan comments", () => {
                             assert.fail()
                         assert.match(
                             context.projection.rendering,
-                            /tracker_publication prepare.*Preserve issue title\/description/,
+                            /prepare_tracker_publication.*Preserve issue title\/description/,
                         )
                         assert.ok("planComment" in context.projection)
                         assert.deepEqual(context.projection.planComment, identity)

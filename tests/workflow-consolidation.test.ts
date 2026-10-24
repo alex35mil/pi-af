@@ -148,11 +148,12 @@ describe("workflow consolidation contracts", () => {
         assert.throws(() =>
             parseReviewReport(JSON.stringify({ findings: [{ ...finding, severity: "warning" }], signoff: "approved" })),
         )
+        const { userDecision: _userDecision, ...inputFinding } = finding
         const response = {
             entityDir: "example",
             phase: "plan",
             round: 1,
-            findings: [{ ...finding, title: " " }],
+            findings: [{ ...inputFinding, title: " " }],
             status: "Corrected",
         }
         assert.equal(Value.Check(RecordReviewResponseSchema, response), true)

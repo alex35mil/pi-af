@@ -13,7 +13,7 @@ Recognize: a GitHub tracker integration record has no `repository` and its `exte
 
 Convert:
 
-- GitHub trackers keep `repository` (copy it from `.project/integrations.json`) and `external: { issueNumber }` only; database IDs, URLs, and Project-item IDs move to the ignored `.local/metadata.json` Resource IDs cache through `resource_ids record`.
+- GitHub trackers keep `repository` (copy it from `.project/integrations.json`) and `external: { issueNumber }` only; database IDs, URLs, and Project-item IDs move to the ignored `.local/metadata.json` Resource IDs cache through `record_resource_ids`.
 - Linear trackers keep object UUIDs and the Task parent Project UUID; URLs and display identifiers move to that cache.
 - Linear issue branch names live in the branch contract, not the tracker record.
 - GitHub PR records keep repository/head/target intent only; PR number/URL move to that cache.
@@ -24,7 +24,7 @@ Preserve: identity, authority, pending work, accepted artifacts, and branch name
 
 Recognize: the actively operated entity has a GitHub tracker record without `planComment`.
 
-Convert: add `planComment: { state: "unpublished" }` to that record. GitHub accepted plans use one managed comment for every issue. No ownership question or source/provenance inference is needed. Preserve the external title and description as they are; do not reconstruct unknown original text or select an arbitrary existing comment. First accepted-plan publication after conversion uses the shared `tracker_publication` operation.
+Convert: add `planComment: { state: "unpublished" }` to that record. GitHub accepted plans use one managed comment for every issue. No ownership question or source/provenance inference is needed. Preserve the external title and description as they are; do not reconstruct unknown original text or select an arbitrary existing comment. First accepted-plan publication after conversion uses the shared `prepare_tracker_publication` operation.
 
 Preserve: entity identity, authority, Phase, branch contract, relationships, initialization checkpoints, pending work, and accepted artifacts. Convert only the active entity; completed historical entities remain untouched.
 

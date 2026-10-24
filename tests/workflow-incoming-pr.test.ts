@@ -29,11 +29,17 @@ import {
 import { executeReviewRound, recordRoundResponse } from "../workflows/extensions/review/round.ts"
 import { buildReviewerArgs } from "../workflows/extensions/review/agent.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
+import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 
 import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("contributions")
+const isolatedReviewerEnvironment = {
+    defaultProvider: undefined,
+    defaultModel: undefined,
+    claudeCode: { kind: "unavailable" },
+} as const
 
 const forge = {
     provider: "github" as const,
@@ -221,20 +227,9 @@ describe("incoming PR identity and context", () => {
                 assert.equal(result.incomingPullRequest.localDirectory, ".project/.local/pull-requests/12")
                 assert.equal(result.incomingPullRequest.checkoutDirectory, ".project/.local/pull-requests/12/checkout")
                 assert.equal(result.incomingPullRequest.reviewsDirectory, ".project/.local/pull-requests/12/reviews")
-                assert.equal(result.safety.checkout.tool, "incoming_pull_request_checkout")
-                assert.deepEqual(result.safety.checkout.operations, [
-                    "prepare",
-                    "checkout",
-                    "inspect",
-                    "beginFixes",
-                    "observeTarget",
-                    "rebase",
-                    "continueRebase",
-                    "publishRebase",
-                    "commitFixes",
-                    "publishFixes",
-                    "cleanup",
-                ])
+                assert.deepEqual(result.safety.checkout.tools, INCOMING_CHECKOUT_TOOLS)
+                assert.equal(result.safety.checkout.tools.prepare, "prepare_incoming_pr_checkout")
+                assert.equal(result.safety.checkout.tools.rebase, "rebase_incoming_pr")
                 assert.match(result.safety.checkout.orchestration, /Never reconstruct this Git orchestration in Bash/)
                 assert.deepEqual(
                     result.safety.checkout.scale.map(({ score }) => score),
@@ -424,6 +419,7 @@ describe("incoming PR private review", () => {
             )
             const { report, artifactText } = await executeReviewRound(
                 {
+                    environment: isolatedReviewerEnvironment,
                     cwd: first.root,
                     directory: first.directory,
                     prompt: first.prompt,
@@ -433,7 +429,10 @@ describe("incoming PR private review", () => {
                 },
                 async (options) => {
                     assert.equal(options.cwd, f.root)
-                    const args = buildReviewerArgs(options.agentName, "prompt.md")
+                    const args = buildReviewerArgs(options.agentName, "prompt.md", {
+                        kind: "standard",
+                        model: options.model,
+                    })
                     assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls")
                     assert.ok(args.includes("--no-extensions"))
                     assert.ok(args.includes("--no-skills"))
@@ -753,6 +752,7 @@ describe("incoming PR private review", () => {
                 await assert.rejects(
                     executeReviewRound(
                         {
+                            environment: isolatedReviewerEnvironment,
                             cwd: f.root,
                             directory: prepared.directory,
                             prompt: prepared.prompt,
@@ -772,6 +772,7 @@ describe("incoming PR private review", () => {
                 await assert.rejects(
                     executeReviewRound(
                         {
+                            environment: isolatedReviewerEnvironment,
                             cwd: f.root,
                             directory: prepared.directory,
                             prompt: "replace input",
@@ -805,7 +806,7 @@ describe("incoming PR entry and existing permissions", () => {
             },
             sendUserMessage: (...args: unknown[]) => messages.push(args),
         } as never)
-        assert.deepEqual(tools, ["incoming_pull_request_checkout"])
+        assert.deepEqual(tools, Object.values(INCOMING_CHECKOUT_TOOLS))
         const ctx = { ui: { notify: (...args: unknown[]) => notifications.push(args) } }
         await commands.pr.handler("", ctx)
         assert.equal(messages.length, 0)

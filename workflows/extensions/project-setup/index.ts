@@ -4,6 +4,7 @@ import * as path from "node:path"
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
@@ -25,6 +26,7 @@ import {
 const EmptySchema = Type.Object({}, { additionalProperties: false })
 
 export default function (pi: ExtensionAPI): void {
+    const tools = workflowTools(pi, "setup")
     let mcpCatalog: McpToolCatalog = new Map()
     const disposeCatalog = pi.events.on(MCP_TOOL_CATALOG_EVENT, (data) => {
         mcpCatalog = data instanceof Map ? new Map(data as McpToolCatalog) : new Map()
@@ -43,7 +45,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "inspect_project_setup",
         label: "inspect_project_setup",
         description:
@@ -59,7 +61,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "prepare_artifacts",
         label: "prepare_artifacts",
         description:
@@ -83,7 +85,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "configure_mcp",
         label: "configure_mcp",
         description:
@@ -108,7 +110,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "inspect_permissions",
         label: "inspect_permissions",
         description:
@@ -123,7 +125,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "configure_permissions",
         label: "configure_permissions",
         description:
@@ -142,7 +144,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "inspect_linear_workspace",
         label: "inspect_linear_workspace",
         description:
@@ -157,7 +159,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    tools.registerTool({
         name: "render_incoming_pr_intake",
         label: "render_incoming_pr_intake",
         description:
@@ -172,20 +174,35 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
-        name: "provision_github_project",
-        label: "provision_github_project",
-        description:
-            "Inspect Projects and views, preview or apply explicitly approved fields, labels, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
-        parameters: GitHubProjectSetupToolSchema,
-        async execute(_toolCallId, params, signal) {
-            const result = await runGitHubProjectSetup(params, { signal })
-            return {
-                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-                details: result,
-            }
-        },
-    })
+    const [repository, inspect, project, preview, apply] = GitHubProjectSetupToolSchema.anyOf
+    const operations = [
+        ["inspect_github_repository_setup", "inspectRepository", repository],
+        ["inspect_github_project_setup", "inspect", inspect],
+        ["inspect_github_project", "inspectProject", project],
+        ["preview_github_project_setup", "preview", preview],
+        ["apply_github_project_setup", "apply", apply],
+    ] as const
+    for (const [name, operation, schema] of operations) {
+        const parameters = Type.Omit(schema, ["operation"])
+        tools.registerTool({
+            name,
+            label: name,
+            description:
+                "Inspect Projects and views, preview or apply explicitly approved fields, labels, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
+            parameters,
+            async execute(_toolCallId, params, signal) {
+                const input = Value.Parse(GitHubProjectSetupToolSchema, {
+                    ...Value.Parse(parameters, params),
+                    operation,
+                })
+                const result = await runGitHubProjectSetup(input, { signal })
+                return {
+                    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                    details: result,
+                }
+            },
+        })
+    }
 }
 
 const PROJECT_SETUP_FILES = [

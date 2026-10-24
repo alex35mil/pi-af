@@ -1,5 +1,13 @@
 # Upgrading
 
+## Workflow tool discovery and names
+
+Workflow operations now use concrete, operation-specific tools discovered through the existing permission-aware Codemode. Keep Codemode enabled for workflows; explicit tool allowlists and exclusions remain authoritative. See the [current operation catalog](workflows/references/tools.md). Ordinary coding tools remain direct.
+
+Update custom scripts, instructions, and explicit workflow-tool permission selectors to the current names. Replaced dispatch interfaces have no aliases. Incoming-PR checkout actions each have their own selector and remain outside skill-derived allows; review the [complete ask example](workflows/references/pr/incoming.md#existing-permission-prompts) before approving settings changes. Package upgrades do not rewrite private permission settings.
+
+This interface change requires no `.project` artifact migration. Domain schemas, persisted state, approval gates, and provider-side records retain their existing contracts. Reviewer model overrides remain explicit; otherwise the configured startup default is used, not the parent conversation model. Claude Code reviewers require the installed/enabled provider, loaded alone alongside rules and permissions; no provider installation or credential/default-model change occurs.
+
 ## Pi 1.3.0
 
 pi-af now uses native MCP and tool execution APIs. Configuration names change without compatibility readers:

@@ -3,13 +3,22 @@ import * as path from "node:path"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
+import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { assertEntityBranchReady, readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
-import { NativePhaseFactsSchema, phaseProjectionContract, planPhaseMutation } from "./phase.js"
+import {
+    NativePhaseFactsSchema,
+    GitHubPhaseInputSchema,
+    LinearPhaseInputSchema,
+    githubPhaseFacts,
+    linearPhaseFacts,
+    phaseProjectionContract,
+    planPhaseMutation,
+} from "./phase.js"
 import { assertArtifactPersistencePrepared, resolveWorkflowProject } from "../__lib/project-config.js"
 import * as Git from "../__lib/git.js"
 import {
@@ -52,14 +61,14 @@ const ProjectionVerificationSchema = Type.Object(
 export const RenderProviderBodySchema = Type.Object(
     {
         entityDir: Type.String({ minLength: 1 }),
-        destination: Type.Union([Type.Literal("tracker"), Type.Literal("pullRequest")]),
+        destination: Type.Enum(["tracker", "pullRequest"], { type: "string" }),
         source: Type.String(),
     },
     { additionalProperties: false },
 )
 
-const ContextEntitySchema = Type.Union([Type.Literal("epic"), Type.Literal("task"), Type.Literal("gig")])
-const ContextTargetSchema = Type.Union([Type.Literal("current"), Type.Literal("workflow")])
+const ContextEntitySchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
+const ContextTargetSchema = Type.Enum(["current", "workflow"], { type: "string" })
 export const IntegrationContextSchema = Type.Union([
     IncomingMergeContextSchema,
     IncomingProjectContextSchema,
@@ -87,12 +96,7 @@ export const IntegrationContextSchema = Type.Union([
         {
             operation: Type.Literal("trackerMutation"),
             entityDir: Type.String({ minLength: 1 }),
-            change: Type.Union([
-                Type.Literal("labels"),
-                Type.Literal("lifecycle"),
-                Type.Literal("priority"),
-                Type.Literal("hierarchy"),
-            ]),
+            change: Type.Enum(["labels", "lifecycle", "priority", "hierarchy"], { type: "string" }),
         },
         { additionalProperties: false },
     ),
@@ -108,13 +112,9 @@ export const IntegrationContextSchema = Type.Union([
     ),
     Type.Object(
         {
-            operation: Type.Union([
-                Type.Literal("initialize"),
-                Type.Literal("resume"),
-                Type.Literal("artifactProjection"),
-                Type.Literal("pullRequest"),
-                Type.Literal("finishRead"),
-            ]),
+            operation: Type.Enum(["initialize", "resume", "artifactProjection", "pullRequest", "finishRead"], {
+                type: "string",
+            }),
             entityDir: Type.String({ minLength: 1 }),
         },
         { additionalProperties: false },
@@ -124,6 +124,7 @@ export const IntegrationContextSchema = Type.Union([
 export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 
 export default function (pi: ExtensionAPI): void {
+    const toolsApi = workflowTools(pi, "integrations")
     registerWorkflowPublication(pi)
     const tools = observeMcpTools(pi)
     const resourceIdsMemo = new OperationResourceIdsMemo()
@@ -132,7 +133,7 @@ export default function (pi: ExtensionAPI): void {
     registerWorkflowOperations(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
-    pi.registerTool({
+    toolsApi.registerTool({
         name: "finalize_linear_branch",
         label: "finalize_linear_branch",
         description:
@@ -190,7 +191,7 @@ export default function (pi: ExtensionAPI): void {
         })
     }
 
-    pi.registerTool({
+    toolsApi.registerTool({
         name: "render_provider_body",
         label: "render_provider_body",
         description:
@@ -206,7 +207,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
+    toolsApi.registerTool({
         name: "verify_artifact_projection",
         label: "verify_artifact_projection",
         description:
@@ -222,22 +223,95 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    pi.registerTool({
-        name: "integration_context",
-        label: "integration_context",
-        description:
-            "Read tracker/forge configuration and entity state. incomingPullRequest resolves a PR reference without an entity; incomingPullRequestMerge uses the shared repository merge operation for reviewed/fresh evidence; incomingPullRequestProject plans scoped native membership/Status/close calls without executing them. For inspect/queueIntake, select current or workflow explicitly. Validate finish evidence without external operations or configuration changes.",
-        parameters: IntegrationContextSchema,
-        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(IntegrationContextSchema, params)
-            resourceIdsMemo.reset()
-            const result = buildIntegrationContext(ctx, input, tools)
-            return {
-                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-                details: result,
-            }
-        },
-    })
+    const [merge, , incoming, inspect, queue, adopt, finishMerge, mutation, phase, entity] =
+        IntegrationContextSchema.anyOf
+    const contexts = [
+        ["inspect_integrations", "inspect", inspect],
+        ["inspect_queue_intake", "queueIntake", queue],
+        ["inspect_adoption", "adopt", adopt],
+        ["initialize_integration", "initialize", entity],
+        ["resume_integration", "resume", entity],
+        ["prepare_integration_projection", "artifactProjection", entity],
+        ["prepare_integration_pull_request", "pullRequest", entity],
+        ["prepare_integration_finish", "finishRead", entity],
+        ["prepare_integration_merge", "finishMerge", finishMerge],
+        ["prepare_tracker_mutation", "trackerMutation", mutation],
+        ["inspect_incoming_pr_context", "incomingPullRequest", incoming],
+        ["plan_incoming_pr_merge", "incomingPullRequestMerge", merge],
+    ] as const
+    for (const [name, operation, schema] of contexts) {
+        const parameters = Type.Omit(schema, ["operation"])
+        toolsApi.registerTool({
+            name,
+            label: name,
+            description: `${name.replaceAll("_", " ")}: read the exact configured tracker/forge context and required evidence. Select current/workflow explicitly when required. Return context or approved-operation arguments only; never execute provider operations or change configuration.`,
+            parameters,
+            async execute(_id, params, _signal, _onUpdate, ctx) {
+                const input = Value.Parse(IntegrationContextSchema, { ...Value.Parse(parameters, params), operation })
+                resourceIdsMemo.reset()
+                const result = buildIntegrationContext(ctx, input, tools)
+                return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+            },
+        })
+    }
+    const phaseContexts = [
+        ["prepare_github_phase_mutation", GitHubPhaseInputSchema],
+        ["prepare_linear_phase_mutation", LinearPhaseInputSchema],
+    ] as const
+    for (const [name, native] of phaseContexts) {
+        const parameters = Type.Object(
+            { ...Type.Omit(phase, ["operation", "change", "native"]).properties, native },
+            { additionalProperties: false },
+        )
+        toolsApi.registerTool({
+            name,
+            label: name,
+            description:
+                "Calculate the native Phase assignment from fresh lifecycle and provider-specific metadata/selection facts. Omit only observed empty native leaves. Never execute a provider mutation or change lifecycle.",
+            parameters,
+            async execute(_id, params, _signal, _onUpdate, ctx) {
+                const native =
+                    name === "prepare_github_phase_mutation"
+                        ? githubPhaseFacts(Value.Parse(GitHubPhaseInputSchema, params.native))
+                        : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
+                const input = Value.Parse(IntegrationContextSchema, {
+                    ...params,
+                    operation: "trackerMutation",
+                    change: "phase",
+                    native,
+                })
+                resourceIdsMemo.reset()
+                const result = buildIntegrationContext(ctx, input, tools)
+                return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+            },
+        })
+    }
+    const [intake, projectAction] = IncomingProjectContextSchema.anyOf
+    const projects = [
+        ["plan_incoming_pr_intake", "intake", intake],
+        ["plan_incoming_pr_review", "review", projectAction],
+        ["plan_incoming_pr_ship", "ship", projectAction],
+        ["plan_incoming_pr_cancel", "cancel", projectAction],
+    ] as const
+    for (const [name, action, schema] of projects) {
+        const parameters = Type.Omit(schema, ["operation", "action"])
+        toolsApi.registerTool({
+            name,
+            label: name,
+            description: `Plan scoped incoming-PR Project ${action} from complete exact native membership, field, and PR evidence. Return native operation arguments without executing them; preserve maintainer-controlled Status and separate approval requirements.`,
+            parameters,
+            async execute(_id, params, _signal, _onUpdate, ctx) {
+                const input = Value.Parse(IntegrationContextSchema, {
+                    ...Value.Parse(parameters, params),
+                    operation: "incomingPullRequestProject",
+                    action,
+                })
+                resourceIdsMemo.reset()
+                const result = buildIntegrationContext(ctx, input, tools)
+                return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+            },
+        })
+    }
 }
 
 type IncomingContextInput = Extract<IntegrationContextInput, { operation: "incomingPullRequest" }>
@@ -420,8 +494,8 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                           "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed overview prose visible and collapse all remaining sections; never summarize or condense during publication",
                       rendering:
                           environment.tracker.kind === "github"
-                              ? "Call tracker_publication prepare with the complete approved source; execute its exact registered comment mutation and record first-creation evidence. Preserve issue title/description. Workflow publication code applies communication attribution; keep source artifacts signature-free."
-                              : "Call tracker_publication prepare with the complete approved source; execute its exact registered document mutation and record first-creation evidence. Preserve issue/Project title/name and description. Published documents require prepareUpdate with exact get_document and parent read evidence. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
+                              ? "Call prepare_tracker_publication with the complete approved source; execute its exact registered comment mutation and save first-creation evidence with record_tracker_publication. Preserve issue title/description. Workflow publication code applies communication attribution; keep source artifacts signature-free."
+                              : "Call prepare_tracker_publication with the complete approved source; execute its exact registered document mutation and save first-creation evidence with record_tracker_publication. Preserve issue/Project title/name and description. Published documents require prepare_tracker_publication_update with exact get_document and parent read evidence. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
                       ...(environment.tracker.kind === "github"
                           ? {
                                 planComment: entity?.status.integrations.find(
@@ -444,8 +518,8 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
                       recovery:
                           environment.tracker.kind === "github"
-                              ? "after uncertain or partial creation, reconcile complete registered comment pages with tracker_publication recover; pending creation never automatically retries. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
-                              : "after uncertain creation, use tracker_publication recover with an exact parent UUID/identifier read, complete list_documents cursor pages, and full get_document reads requested for matching-parent candidates. Listings truncate content. Preserve pending state on missing/ambiguous evidence; never automatically create again. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
+                              ? "after uncertain or partial creation, reconcile complete registered comment pages with recover_tracker_publication; pending creation never automatically retries. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
+                              : "after uncertain creation, use recover_tracker_publication with an exact parent UUID/identifier read, complete list_documents cursor pages, and full get_document reads requested for matching-parent candidates. Listings truncate content. Preserve pending state on missing/ambiguous evidence; never automatically create again. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
                       discussion:
                           "keep discussion in comments; requirements and agreed decisions belong in the accepted source artifact",
                       ...(workflowPolicy.projection === "restricted"

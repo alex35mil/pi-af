@@ -13,8 +13,14 @@ export const INTEGRATION_CONFIG_PATH = ".project/integrations.json"
 const FieldNameSchema = Type.String({ minLength: 1 })
 
 export const ScopedFieldSchema = Type.Union([
-    Type.Object({ scope: Type.Literal("issue"), field: FieldNameSchema }, { additionalProperties: false }),
-    Type.Object({ scope: Type.Literal("project"), field: FieldNameSchema }, { additionalProperties: false }),
+    Type.Object(
+        { scope: Type.Enum(["issue"], { type: "string" }), field: FieldNameSchema },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        { scope: Type.Enum(["project"], { type: "string" }), field: FieldNameSchema },
+        { additionalProperties: false },
+    ),
 ])
 export type ScopedField = Static<typeof ScopedFieldSchema>
 
@@ -23,7 +29,7 @@ const PriorityOptionSchema = Type.String({ minLength: 1, pattern: "^(?!not set$)
 export const PriorityFieldSchema = Type.Union([
     Type.Object(
         {
-            scope: Type.Literal("issue"),
+            scope: Type.Enum(["issue"], { type: "string" }),
             field: FieldNameSchema,
             values: Type.Array(PriorityOptionSchema, { minItems: 1, uniqueItems: true }),
         },
@@ -31,7 +37,7 @@ export const PriorityFieldSchema = Type.Union([
     ),
     Type.Object(
         {
-            scope: Type.Literal("project"),
+            scope: Type.Enum(["project"], { type: "string" }),
             field: FieldNameSchema,
             values: Type.Array(PriorityOptionSchema, { minItems: 1, uniqueItems: true }),
         },
@@ -73,7 +79,7 @@ export type PhaseValues = Static<typeof PhaseValuesSchema>
 
 export const PhaseLabelGroupSchema = Type.Object(
     {
-        scope: Type.Union([Type.Literal("workspace"), Type.Literal("team")]),
+        scope: Type.Enum(["workspace", "team"], { type: "string" }),
         group: FieldNameSchema,
         values: PhaseValuesSchema,
     },
@@ -99,7 +105,7 @@ const GitHubRepositorySchema = Type.Object(
     { additionalProperties: false },
 )
 const GitHubRoleProperties = {
-    provider: Type.Literal("github"),
+    provider: Type.Enum(["github"], { type: "string" }),
     mcpServer: McpServerSchema,
     repository: GitHubRepositorySchema,
 }
@@ -110,7 +116,7 @@ export const GitHubTrackerSchema = Type.Object(
         project: Type.Object(
             {
                 owner: Type.String({ minLength: 1 }),
-                ownerType: Type.Union([Type.Literal("user"), Type.Literal("org")]),
+                ownerType: Type.Enum(["user", "org"], { type: "string" }),
                 number: Type.Integer({ minimum: 1 }),
             },
             { additionalProperties: false },
@@ -146,7 +152,7 @@ export type GitHubTracker = Static<typeof GitHubTrackerSchema>
 
 export const LinearTrackerSchema = Type.Object(
     {
-        provider: Type.Literal("linear"),
+        provider: Type.Enum(["linear"], { type: "string" }),
         mcpServer: McpServerSchema,
         team: Type.String({ minLength: 1 }),
         phase: Type.Object(
