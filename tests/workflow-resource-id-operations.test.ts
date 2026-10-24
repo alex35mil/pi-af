@@ -204,6 +204,104 @@ describe("resource ID operations", () => {
         }
     })
 
+    it("records native Project-addition database IDs in the cache and operation memo", async () => {
+        const f = fixture()
+        try {
+            const context = resolveResourceIdsContext(f.root, f.directory, "github-project-item")
+            const payload = { id: "PVTI_example", item_id: 42, full_database_id: "42" }
+            for (const response of [
+                payload,
+                { content: [{ type: "text", text: JSON.stringify(payload) }] },
+                { content: [], structuredContent: payload },
+            ]) {
+                const memo = new OperationResourceIdsMemo()
+                const recorded = await recordResourceIdsEvidence(
+                    context,
+                    {
+                        tool: "mcp__github__projects_write",
+                        arguments: {
+                            method: "add_project_item",
+                            owner: "alex",
+                            owner_type: "user",
+                            project_number: 2,
+                            item_owner: "alex",
+                            item_repo: "example",
+                            item_type: "issue",
+                            issue_number: 23,
+                        },
+                        response,
+                    },
+                    memo,
+                    mcpTools,
+                )
+                assert.deepEqual(recorded.value, { itemId: 42 })
+                assert.deepEqual(memo.resolve(context.scope), recorded)
+                assert.deepEqual(readResourceIdsCache(f.directory)!.resourceIds, [recorded])
+            }
+        } finally {
+            f.cleanup()
+        }
+    })
+
+    it("preserves Project IDs when addition evidence has invalid identity or scope", async () => {
+        const f = fixture()
+        try {
+            const context = resolveResourceIdsContext(f.root, f.directory, "github-project-item")
+            const memo = new OperationResourceIdsMemo()
+            await recordResourceIds(f.directory, [{ scope: itemScope, value: { itemId: 77 } }])
+            await resolveResourceIds(context, memo)
+            const before = readResourceIdsCache(f.directory)
+            const previous = memo.resolve(context.scope)
+            const addition = {
+                tool: "mcp__github__projects_write",
+                arguments: {
+                    method: "add_project_item",
+                    owner: "alex",
+                    owner_type: "user",
+                    project_number: 2,
+                    item_owner: "alex",
+                    item_repo: "example",
+                    item_type: "issue",
+                    issue_number: 23,
+                },
+                response: { id: "PVTI_example", item_id: 42, full_database_id: "42" },
+            }
+            for (const item_id of [undefined, null, "PVTI_example", "42.5", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+                await assert.rejects(
+                    recordResourceIdsEvidence(
+                        context,
+                        { ...addition, response: { ...addition.response, item_id } },
+                        memo,
+                        mcpTools,
+                    ),
+                    /invalid Project item ID/,
+                )
+                assert.deepEqual(readResourceIdsCache(f.directory), before)
+                assert.deepEqual(memo.resolve(context.scope), previous)
+            }
+            for (const invalid of [
+                { ...addition, tool: "mcp__other__projects_write" },
+                { ...addition, response: { isError: true, content: [], structuredContent: addition.response } },
+                ...Object.entries({
+                    method: "update_project_item",
+                    owner: "other",
+                    owner_type: "org",
+                    project_number: 3,
+                    item_owner: "other",
+                    item_repo: "other",
+                    item_type: "pull_request",
+                    issue_number: 24,
+                }).map(([key, value]) => ({ ...addition, arguments: { ...addition.arguments, [key]: value } })),
+            ]) {
+                await assert.rejects(recordResourceIdsEvidence(context, invalid, memo, mcpTools))
+                assert.deepEqual(readResourceIdsCache(f.directory), before)
+                assert.deepEqual(memo.resolve(context.scope), previous)
+            }
+        } finally {
+            f.cleanup()
+        }
+    })
+
     it("records the exact required Project read and reuses its issue ID", async () => {
         const f = fixture()
         try {

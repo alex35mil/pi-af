@@ -26,11 +26,10 @@ export function githubPublication(
     })
     const requireCall = (evidence: ProviderEvidence, operation: string, args: Record<string, unknown>) =>
         requirePublicationCall(evidence, server, operation, args, tools)
-    const identity = (response: Record<string, unknown>) => {
-        const { id, html_url: url } = response
+    const identity = (id: unknown, url: unknown) => {
         if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 1 || typeof url !== "string")
             throw new Error(
-                "comment response lacks a numeric ID and issue-scoped html_url; recover through explicit comment reads",
+                "comment response lacks a positive safe integer ID and issue-scoped browser URL; recover through explicit comment reads",
             )
         assertPlanCommentUrl(tracker.repository, tracker.external.issueNumber, id, url)
         return { id, url }
@@ -46,7 +45,10 @@ export function githubPublication(
             requireCall(evidence, "add_issue_comment", address)
             if (!hasPublicationMarker(evidence.arguments.body, token))
                 throw new Error("created comment arguments lack the pending publication marker")
-            return identity(mcpResponsePayload(evidence.response))
+            const response = mcpResponsePayload(evidence.response)
+            const id = typeof response.id === "string" && /^\d+$/.test(response.id) ? Number(response.id) : response.id
+            const url = "html_url" in response ? response.html_url : response.url
+            return identity(id, url)
         },
         recoveryLookups: () => [call("issue_read", { method: "get_comments", ...address, page: 1, perPage: 100 })],
         recover(pages, token) {
@@ -67,7 +69,7 @@ export function githubPublication(
             }
             return comments
                 .filter((item) => hasPublicationMarker(item.body, token))
-                .map((item) => ({ ...identity(item), body: item.body as string }))
+                .map((item) => ({ ...identity(item.id, item.html_url), body: item.body as string }))
         },
     }
 }

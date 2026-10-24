@@ -149,6 +149,7 @@ function fixture(
         trackerPublication(root, { action: "recover", entityDir: directory, pages }, tools)
     const remote = (body: string, id = 123) => ({
         id,
+        url: `https://api.github.com/repos/example/project/issues/comments/${id}`,
         html_url: `https://github.com/example/project/issues/42#issuecomment-${id}`,
         body,
     })
@@ -198,6 +199,85 @@ describe("managed GitHub plan comments", () => {
             { state: "unpublished", token },
         ])
             assert.equal(Value.Check(PlanCommentSchema, state), false)
+    })
+
+    for (const mode of ["raw", "text", "structured"] as const)
+        for (const shape of ["minimal", "full"] as const)
+            it(`records ${shape} comment creation and updates the same comment (${mode})`, async () => {
+                const f = fixture()
+                try {
+                    const prepared = await f.prepare()
+                    assert.ok(prepared.state === "mutation-needed")
+                    assert.ok(typeof prepared.mutation.arguments.body === "string")
+                    const full = f.remote(prepared.mutation.arguments.body)
+                    const response = shape === "minimal" ? { id: "123", url: full.html_url } : full
+                    await f.record({ ...prepared.mutation, response: envelope(response, mode) })
+                    assert.deepEqual(f.saved().integrations[0].planComment, {
+                        state: "published",
+                        token: f.saved().integrations[0].planComment.token,
+                        id: 123,
+                        url: full.html_url,
+                    })
+                    f.read()
+                    const updated = await f.prepare(source.replace("Update the plan.", "Updated scope."))
+                    assert.ok(updated.state === "mutation-needed")
+                    assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
+                    assert.equal(updated.mutation.arguments.comment_id, 123)
+                } finally {
+                    f.dispose()
+                }
+            })
+
+    it("preserves pending publication for invalid minimal and full creation evidence", async () => {
+        const f = fixture()
+        try {
+            const prepared = await f.prepare()
+            assert.ok(prepared.state === "mutation-needed")
+            const before = f.saved()
+            const url = "https://github.com/example/project/issues/42#issuecomment-123"
+            const minimal = { id: "123", url }
+            for (const response of [
+                ...[
+                    undefined,
+                    null,
+                    0,
+                    -1,
+                    1.5,
+                    "",
+                    " 123",
+                    "1e2",
+                    "123.5",
+                    Number.MAX_SAFE_INTEGER + 1,
+                    "9007199254740993",
+                ].map((id) => ({ ...minimal, id })),
+                { id: "123" },
+                { ...minimal, url: "https://github.com/example/project/issues/43#issuecomment-123" },
+                { ...minimal, url: "https://github.com/example/project/issues/42#issuecomment-124" },
+                { ...minimal, url: "https://github.com/other/project/issues/42#issuecomment-123" },
+                { ...minimal, url: "https://api.github.com/repos/example/project/issues/comments/123" },
+                { ...minimal, html_url: null },
+                { ...minimal, html_url: "https://github.com/example/project/issues/43#issuecomment-123" },
+                { isError: true, content: [], structuredContent: minimal },
+            ]) {
+                await assert.rejects(f.record({ ...prepared.mutation, response }))
+                assert.deepEqual(f.saved(), before)
+            }
+            for (const invalid of [
+                { ...prepared.mutation, tool: "mcp__other__add_issue_comment" },
+                ...Object.entries({ owner: "other", repo: "other", issue_number: 43, body: "No marker" }).map(
+                    ([key, value]) => ({
+                        ...prepared.mutation,
+                        arguments: { ...prepared.mutation.arguments, [key]: value },
+                    }),
+                ),
+            ]) {
+                await assert.rejects(f.record({ ...invalid, response: minimal }))
+                assert.deepEqual(f.saved(), before)
+            }
+            assert.equal((await f.prepare()).state, "recovery-required")
+        } finally {
+            f.dispose()
+        }
     })
 
     for (const kind of ["epic", "task", "gig"] as const)

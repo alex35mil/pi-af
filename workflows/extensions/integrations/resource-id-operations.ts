@@ -308,7 +308,7 @@ export async function recordResourceIdsEvidence(
         })
         primary = parseResourceIds({
             scope: context.scope,
-            value: { itemId: positiveInteger(responseObject(evidence).id, "Project item ID") },
+            value: { itemId: positiveInteger(responseObject(evidence).item_id, "Project item ID") },
         })
     } else primary = resourceIdsFromRead(context.scope, evidence, tools)
     const resourceIds = [primary]
