@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5QWN1D4",
+  "rawId": "01M5QWN1D4",
+  "slug": "remove-brittle-prose-presence-tests",
+  "title": "Remove brittle prose-presence tests",
+  "createdAt": "2026-10-24T21:21:45.892Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5qwn1d4-remove-brittle-prose-presence-tests",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 13
+      },
+      "planComment": {
+        "state": "published",
+        "token": "95a7a3d8-6496-4375-bf09-80d2e0c7f877",
+        "id": 6389952505,
+        "url": "https://github.com/alex35mil/pi-af/issues/13#issuecomment-6389952505"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5qwn1d4-remove-brittle-prose-presence-tests",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "refactor"
+}

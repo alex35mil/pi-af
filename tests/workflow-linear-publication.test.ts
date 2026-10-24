@@ -480,7 +480,6 @@ describe("managed Linear plan documents", () => {
             legacy.integrations[0].planDocument = { state: "unpublished" }
             fs.writeFileSync(f.file, JSON.stringify(legacy))
             assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)), original)
-            assert.match(fs.readFileSync("workflows/MIGRATIONS.md", "utf8"), /Linear managed plan documents/)
         } finally {
             f.dispose()
         }

@@ -151,14 +151,11 @@ describe("workflow project configuration", () => {
 
     it("loads operational Markdown dependencies from workflow references", () => {
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
-        const setupReference = fs.readFileSync("workflows/references/setup.md", "utf-8")
         const markdownDependencies = [...skill.matchAll(/`(\.\.\/\.\.\/[^`\n]+\.md)`/g)].map((match) => match[1])
 
         assert.ok(markdownDependencies.length > 0)
         assert.ok(markdownDependencies.every((dependency) => dependency.startsWith("../../references/")))
-        assert.match(skill, /references\/setup\.md/)
-        assert.match(setupReference, /Accepted-artifact permission gates/)
-        assert.match(setupReference, /\.project\/integrations\.json/)
+        assert.ok(markdownDependencies.includes("../../references/setup.md"))
     })
 
     it("starts guided setup without creating artifacts", async () => {
