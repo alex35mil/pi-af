@@ -4,7 +4,9 @@ Read this only when a provider outcome is uncertain or partial, or a tool return
 
 ## Pending plan publication
 
-The first plan publication saves a pending opaque token before its non-idempotent create. A later `prepare_tracker_publication` call returns `recovery-required` instead of another create. Never create a replacement automatically.
+The first `prepare_tracker_publication` call for an unpublished plan saves a pending opaque token before returning its non-idempotent create. Any later call returns `recovery-required` instead of another create. Never create a replacement automatically.
+
+This means preparing without running the returned create leaves the entity stuck: recovery finds no marked comment or document and returns `blocked`. Recovery can't tell "never sent" from "sent, outcome unknown". Prevent it by running the returned mutation in the same step as the prepare call, and never calling prepare again just to look at the output. When it has already happened, report it to the maintainer; don't edit `metadata.json` by hand without their approval. The fix is tracked in #87.
 
 ### GitHub comment
 

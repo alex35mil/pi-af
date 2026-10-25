@@ -15,6 +15,7 @@ These rules apply to every workflow. Other files refer to them by name instead o
 - **Evidence.** Tools that consume provider results take `evidence: { tool, arguments, response }`: the registered tool name, the exact arguments, and the actual response, unmodified.
 - **Proportional checks.** Run cheap local checks freely, and batch independent ones in Codemode. Once scope and approval are settled, call remote operations directly and let them validate. Add a costly preflight only when it prevents concrete harm that handling the operation's error cannot, such as a wrong target, unauthorized side effects, or irreversible loss.
 - **Ordering.** A step that writes workflow metadata finishes before the next step that depends on it. For example, `begin_resource_creation` finishes before staging the commit that must include its change.
+- **Prepare-then-run tools.** Some prepare tools save state before returning a mutation, notably the first `prepare_tracker_publication` call. Run the returned mutation in the same step, and never call such a tool again just to look at its output.
 
 ## MCP boundary
 

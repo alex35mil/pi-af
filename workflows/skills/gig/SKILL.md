@@ -59,14 +59,18 @@ The Deliverable lifecycle owns planning, root cause, review, implementation, ver
 
 ## Resume
 
-Use the shared Deliverable preparation, entity-selection, and artifact-read flow for a Gig under `.project/gigs/`. Verify `entity: "gig"` with no Task containment relationship, then continue the shared lifecycle.
+Follow the Deliverable resume steps for a Gig under `.project/gigs/`. Verify `entity: "gig"` and that it isn't inside an Epic, then continue the lifecycle.
 
 ## Initialize
 
-When adopting Backlog or Todo work, first read the selected tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies), and complete its preflight before calling the adoption tool.
+1. **Adoption preflight:** when adopting Backlog or Todo work, first read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Gig preflight; on Linear, the issue must have no Project.
+2. **Create:** follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs). Call `init_gig` for new work, `adopt_github_gig` for a GitHub issue, or `adopt_linear_gig` for a projectless Linear issue, passing:
+   - the approved values;
+   - the Request as `request`;
+   - the slug;
+   - the adoption `source` facts, when adopting.
 
-Follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs) and the selected provider's Gig preflight when adopting Backlog or Todo work; Linear requires a projectless issue. Then call `init_gig` for new work, `adopt_github_gig` for the selected GitHub issue, or `adopt_linear_gig` for the selected projectless Linear issue, with approved values, the approved Request as `request`, slug, and verified adoption `source` facts when applicable.
-
-The tool creates identity, artifacts, and the configured branch with repository-default start/target. Continue through the shared integration boundary, including tracker binding and `finalize_linear_branch` for a pending Linear branch, before planning.
+   The tool creates identity, artifacts, and the configured branch, starting from and targeting the repository default.
+3. **Before planning,** complete the Deliverable integration boundary, including tracker binding and, for a pending Linear branch, `finalize_linear_branch`.
 
 A Gig must never contain parent Epic fields or be converted into a Task.

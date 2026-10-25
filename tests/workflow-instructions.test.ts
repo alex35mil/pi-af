@@ -183,11 +183,11 @@ describe("workflow guidance structure", () => {
         // Measured after the #84 restructure plus ~10% headroom. Lower these as text
         // shrinks; raising one is a deliberate change that needs a stated reason.
         const budgets: Record<string, number> = {
-            backlog: 13_500,
-            todo: 13_700,
-            gig: 41_500,
-            task: 46_500,
-            epic: 50_000,
+            backlog: 12_800,
+            todo: 13_200,
+            gig: 36_300,
+            task: 40_900,
+            epic: 42_300,
             pr: 45_500,
             "project-setup": 88_600,
         }

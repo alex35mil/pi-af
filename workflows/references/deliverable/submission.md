@@ -19,17 +19,20 @@ These rules apply to every Deliverable commit, including an accepted intermediat
 
 ## With a forge
 
-1. Before staging the last Deliverable commit, call `prepare_integration_pull_request`, then `begin_resource_creation` with role `forge`, and wait for both to finish. With planned commit steps, that is the last step's commit; otherwise it is the single submission commit. `begin_resource_creation` only saves immutable PR repository, head, and target intent in `metadata.json`. It is a local checkpoint that authorizes no push or PR. Include that change in the same commit, never a follow-up commit. When intent already exists or IDs are missing, investigate through the configured provider tools; never prepare a replacement creation.
-2. Call `render_provider_body` with the complete synchronized `result.md` or `report.md` and destination `pullRequest`. Publish its returned Markdown unchanged.
-3. Push only the stored entity branch.
-4. Create the PR with one direct native call:
+1. **Save PR intent.** Before staging the last Deliverable commit, call `prepare_integration_pull_request`, then `begin_resource_creation` with role `forge`, and let both finish. The last commit is the last planned step's commit, or the single submission commit.
+   - `begin_resource_creation` only saves the immutable PR repository, head, and target in `metadata.json`. It's a local checkpoint and authorizes no push or PR.
+   - Include that change in the same commit, never a follow-up commit.
+   - When intent already exists or IDs are missing, investigate through the configured tools. Never prepare a replacement creation.
+2. **Render the body.** Call `render_provider_body` with the complete synchronized `result.md` or `report.md` and destination `pullRequest`. Publish its Markdown unchanged.
+3. **Push** only the stored entity branch.
+4. **Create the PR** with one direct native call:
    - title: the approved entity title, without an internal or tracker identifier;
    - head: the stored branch `name`;
    - base: the stored `target`.
 
    Approval never changes that contract. Don't discover PRs first.
-5. On clear success, call `record_resource_creation` with the create evidence. It records the PR number and URL in the local Resource IDs file only; it never changes versioned metadata or causes a follow-up commit. Use the number from the PR URL, not the database ID.
-6. After the PR is created or recovered, set lifecycle `inReview` through its authority and clear native Phase (see [Phase](../phase.md)). A local commit or push without a reviewable PR is not submission.
+5. **Record.** On clear success, call `record_resource_creation` with the create evidence. It records the PR number and URL only in the local Resource IDs file; it never changes versioned metadata or causes a follow-up commit. Use the number from the PR URL, not the database ID.
+6. **In Review.** After the PR is created or recovered, set lifecycle `inReview` through its authority and clear native Phase (see [Phase](../phase.md)). A local commit or push without a reviewable PR is not submission.
 
 Without a forge, perform no remote Git or PR operation. Never set In Review.
 

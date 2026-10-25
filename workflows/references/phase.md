@@ -1,55 +1,69 @@
-# Workflow Phase
+# Phase
 
-Phase describes the current activity; Status describes lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Tracker Status/Priority remain provider authority. Trackerless lifecycle remains in `.local/status.md` and Phase stays in metadata only.
+Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Tracker Status and Priority stay with the provider. Without a tracker, lifecycle stays in `.local/status.md` and Phase only in metadata.
 
 ## Transitions
 
-| Activity/event | Status | Metadata Phase | Native Phase |
+| Activity or event | Status | Metadata Phase | Native Phase |
 | --- | --- | --- | --- |
-| Backlog/Todo queue | Backlog/Todo | no initialized entity | absent |
-| Initialization, investigation, plan drafting, material replanning | In Progress | Planning | Planning |
+| Backlog or Todo queue | Backlog, Todo | no entity yet | absent |
+| Initialization, investigation, drafting, material replanning | In Progress | Planning | Planning |
 | Plan review, corrections, presentation, waiting for plan approval | In Progress | Planning | Planning |
-| Accepted implementation or implementation corrections | In Progress | Execution | Execution |
-| Adversarial interim/final review of delivered work | In Progress | Self-Review | Self-Review |
-| Local user review of delivered work, including waiting for approval | In Progress | Self-Review | Self-Review |
-| Plan acceptance and continuation | In Progress | Execution | Execution |
-| Successful submission/resubmission for external human review | In Review | retain last Phase | absent |
-| Implementation corrections on submitted work | In Progress | Execution | Execution |
-| Local review of implementation corrections | In Progress | Self-Review | Self-Review |
-| Confirmed completion or cancellation | Done/Canceled | retain last Phase | absent |
+| Plan accepted; implementation or implementation corrections | In Progress | Execution | Execution |
+| Interim or final review of delivered work | In Progress | Self-Review | Self-Review |
+| User review of delivered work, including waiting for approval | In Progress | Self-Review | Self-Review |
+| PR created, or revisions published, for external human review | In Review | keep last | absent |
+| Corrections on submitted work | In Progress | Execution | Execution |
+| Local review of those corrections | In Progress | Self-Review | Self-Review |
+| Confirmed completion or cancellation | Done, Canceled | keep last | absent |
 
-Keep the entire planning loop in Planning: drafting, review, corrections, presentation, and waiting for plan approval. Material replanning explicitly returns to Planning. Use Execution for accepted implementation and implementation corrections. Plan acceptance, completion artifacts, and review approval remain required for the work being performed. The review tool's `phase: plan | interim | final` identifies the review category, not workflow Phase.
+- Use Planning for `review_epic`, `review_task`, or `review_gig` with category `plan`, and for the plan-presentation tool.
+- Enter Self-Review before interim or final review and before user review of delivered work. Stay there while waiting for feedback.
+- After corrections, repeat the required review in the Phase for that activity.
+- The review tool's `plan`, `interim`, or `final` category is not a workflow Phase.
+- Plan acceptance, completion artifacts, and review approval remain required for the work being done.
 
-Use Planning for the matching `review_epic`, `review_task`, or `review_gig` tool with category `plan` and for the matching entity-specific plan-presentation tool. Enter Self-Review before interim/final review and local user review of delivered work; remain there while awaiting feedback. After corrections, repeat the required review in the Phase for that activity. Keep lifecycle In Progress throughout those local loops, including revisions to an already-open PR.
+**In Review** starts only after real submission for external human review: a successfully created or recovered reviewable PR, or successful publication of approved revisions.
 
-Set In Review only after work is actually submitted for external human review. First submission requires a successfully created/recovered reviewable PR; resubmission requires successful publication of approved revisions. A local commit is not submission. With no external submission route, do not set In Review. Existing delivery evidence may still allow direct completion. Epic acceptance returns to Execution and its existing explicit completion route remains In Progress to Done.
+- A local commit is not submission. With no external submission route, never set In Review.
+- Existing delivery evidence can still allow direct completion.
+- Accepting an Epic returns it to Execution. Its explicit completion goes from In Progress straight to Done.
 
-Provider automation can change native Status, including GitHub returning pushed work to In Progress. Reuse fresh provider facts and skip already-applied assignments; do not configure automation or infer workflow Phase from native Status.
+Provider automation can change native Status; for example, GitHub can move pushed work back to In Progress. Reuse fresh provider facts and skip assignments that are already applied. Don't configure automation or infer Phase from native Status.
 
-## Native projection invariant
+## Native projection
 
-During initialized In Progress work, project exactly the authoritative Phase. Outside In Progress, clear native Phase. Queue work has no Phase. This applies equally to versioned and unversioned artifact modes; native Phase is explicitly allowed in unversioned projects while other disclosure restrictions remain.
+During In Progress, native Phase equals the metadata Phase. Outside In Progress, clear it. Queued work has no Phase. This applies in both artifact modes; native Phase is explicitly allowed in unversioned projects, and the other disclosure limits still apply.
 
-GitHub uses the configured Project single-select Phase field. Linear Epic uses the configured Project-label group; Task/Gig use the configured issue-label group. Linear groups are mutually exclusive and only their children are applied. Preserve all unrelated labels.
+- **GitHub:** the configured Project single-select Phase field.
+- **Linear:** the configured label group, a Project-label group for Epics and an issue-label group for Tasks and Gigs. The groups are mutually exclusive; apply only their children and keep every unrelated label.
 
-## Reconcile initialized work
+## Reconciling
 
-1. For a required lifecycle transition, use its existing authority and confirm the outcome first. Never cache tracker lifecycle in metadata or substitute local authority.
-2. During In Progress work on a ready branch, call `set_local_workflow_phase`, `set_github_workflow_phase`, or `set_linear_workflow_phase` matching the metadata authority/provider, with `entityDir` and the intended `phase`. Do not pass authority/provider selectors. Tracker authority also requires fresh semantic `lifecycle` and normalized `native` facts below; reuse current-operation reads. Workflow authority uses local lifecycle and accepts no tracker facts. The tool validates before changing metadata and returns any native assignment; a matching Phase is a metadata no-op, not permission to skip native reconciliation.
-3. For initialization before branch readiness, or clearing native Phase outside In Progress, retain metadata Phase and use projection-only `prepare_github_phase_mutation` or `prepare_linear_phase_mutation` with `entityDir`, fresh `lifecycle`, and provider-specific `native` facts. Do not pass operation/change/provider selectors.
-4. Apply a returned changed `phaseMutation` directly through the configured MCP tool: its `value` for GitHub or entire `labels` set for Linear. Skip unchanged assignments; never replace the full Linear label set with just the Phase child. Neither local operation executes provider calls or grants approval.
-5. Follow existing clear-success and uncertain-outcome rules. Read required outcome facts absent from successful responses and reconcile uncertainty before retrying. Provider failure preserves authoritative Phase; no local tracker-lifecycle substitute is created.
+1. **Lifecycle first.** For a required lifecycle change, use its authority and confirm the outcome. Never cache tracker lifecycle in metadata or substitute local authority.
+2. **Setting Phase during In Progress on a ready branch:** call `set_local_workflow_phase`, `set_github_workflow_phase`, or `set_linear_workflow_phase` with `entityDir` and the target `phase`.
+   - Tracker authority also needs fresh `lifecycle` and `native` facts (below); reuse reads from this operation. Workflow authority takes no tracker facts.
+   - The tool validates before changing metadata and returns any native assignment. A matching Phase is a metadata no-op, not a reason to skip native reconciliation.
+3. **Projection only:** before branch readiness, or when clearing native Phase outside In Progress, keep metadata Phase. Call `prepare_github_phase_mutation` or `prepare_linear_phase_mutation` with `entityDir`, fresh `lifecycle`, and `native` facts.
+4. **Apply a changed `phaseMutation`** through the configured MCP tool. On GitHub, write its `value`. On Linear, write its entire `labels` set; never replace the full set with only the Phase label. Skip unchanged assignments.
+5. Neither local tool calls providers or grants approval. Outcomes follow [core outcome rules](./core.md#outcomes-and-recovery). A provider failure keeps metadata Phase and creates no local lifecycle substitute.
 
-For a first initialized create, use the approved saved `authority.desired.lifecycle` intent and an empty initial applied-label set, with freshly validated native label metadata. Include Planning in the create request. Once an object exists, use fresh native lifecycle/applied-state facts rather than initialization intent. GitHub Phase is assigned after Project membership is established.
+**First creation:** use the saved `authority.desired.lifecycle` intent and an empty applied-label set, with freshly validated label metadata, and include Planning in the create request. Once the object exists, use fresh native facts instead of the initialization intent. GitHub Phase is assigned after Project membership exists.
 
 ### Fresh native facts
 
-For GitHub pass `{ field: { name, dataType, options }, current }`: the exact field name, native `SINGLE_SELECT` type, complete option names, and the current selected name. Omit `current` only for an observed empty selection; code converts that absence to the established domain null. The field must contain all configured Phase options; unrelated additional options are preserved.
+Omit an optional field only when you actually read it and it was empty. Code turns that absence into null. Never omit a value you didn't read.
 
-For Linear pass `{ catalog, applied }`. `applied` is the complete list of currently applied label IDs. `catalog` contains the selected group, all its children, and any same-named group candidates needed to prove exact scope/identity; finish pagination before supplying these facts. Each entry requires `id`, `name`, and `isGroup`. Supply `team`, `parentId`, `groupType` (`singleSelect` or `multiSelect`), and `retiredAt` when present in the observed facts; omit only genuinely empty leaves. The adapter converts those observed absences to domain nulls, not to guessed values. `catalog` and `applied` remain required, including when empty. Normalize only observed read facts. Project groups are single-select by Linear's documented contract and need no issue-only `groupType` field; omit that leaf there.
+**GitHub:** `{ field: { name, dataType, options }, current }`, with the exact field name, the native `SINGLE_SELECT` type, all option names, and the current selection. The field must include every configured Phase option; extra options are kept.
 
-The configured group must identify one active group in its exact workspace/team scope. Each configured Phase identifies one active child of that group. Issue groups require native `singleSelect`. For Projects use Project-label reads; for issues use issue-label reads. Same-named children outside the selected group are unrelated labels and must survive reconciliation. Removing or replacing Phase removes all currently applied children of the managed group, including extra children, without changing any other applied ID.
+**Linear:** `{ catalog, applied }`, both required even when empty.
+
+- `applied`: every currently applied label ID.
+- `catalog`: the selected group, all its children, and any same-named groups needed to prove scope and identity. Finish pagination first. Each entry has `id`, `name`, and `isGroup`, plus `team`, `parentId`, `groupType`, and `retiredAt` when present.
+- The configured group must resolve to one active group in its workspace or team scope, and each Phase to one active child of it. Issue groups must be `singleSelect`. Project groups are single-select by Linear's contract, so omit `groupType` there.
+- Use Project-label reads for Projects and issue-label reads for issues.
+- Same-named children outside the group are unrelated labels and must survive. Replacing Phase removes every applied child of the managed group, including extras, and changes no other ID.
 
 ## Setup
 
-GitHub setup provisions or validates the exact Project field/options under its existing preview/hash approval. Linear setup stays read-only: require and validate one applicable Project-label group and one applicable issue-label group, each with the three configured active children; ask the user to configure missing/incompatible metadata. No implicit native-metadata creation occurs during runtime.
+GitHub setup provisions or validates the Project field and options under its preview and hash approval. Linear setup is read-only: it requires one Project-label group and one issue-label group, each with the three active children, and asks the user to fix anything missing. Runtime never creates native metadata.

@@ -1,76 +1,179 @@
 # Integration roles
 
-`tracker` owns external work objects, Backlog/Todo queues, lifecycle, priority, hierarchy, and accepted task-definition projection. `forge` owns pull requests. Either role may be absent. Persisted `.project/` artifacts remain authoritative in versioned or unversioned mode.
+There are two optional integration roles:
 
-When changing Phase, read [Phase](../phase.md). The [MCP boundary](../core.md#mcp-boundary) and [outcome rules](../core.md#outcomes-and-recovery) apply to every provider call.
+- **tracker:** external work items, Backlog and Todo queues, lifecycle, Priority, hierarchy, and publication of accepted plans;
+- **forge:** pull requests.
 
-The named integration context tools read local configuration, authority and entity state. An enabled role means it is configured, not that the harness has probed its provider tools. Follow that provider's reference. Tracker-backed lifecycle and Priority never fall back to workflow authority.
+Either may be absent. The `.project/` artifacts stay authoritative in both artifact modes.
 
-Durable operation checkpoints are limited to non-idempotent creation/provisioning, duplicate-creation risk, or an exact user choice unavailable elsewhere. Already-bound lifecycle/Priority assignments and updates to established publication destinations create no checkpoint; recover them through provider read-back and safe absolute retry. First plan-comment/document creation uses the durable pending token before its non-idempotent create.
+- An enabled role means it's configured, not that its provider tools have been probed. For each enabled role, follow its provider reference.
+- Tracker lifecycle and Priority never fall back to workflow authority.
+- The [MCP boundary](../core.md#mcp-boundary) and [outcome rules](../core.md#outcomes-and-recovery) apply to every provider call. When changing Phase, read [Phase](../phase.md).
+
+**Durable checkpoints** exist only for non-idempotent creation or provisioning, duplicate-creation risk, or a user choice that can't be recovered elsewhere. Lifecycle and Priority updates on a bound object, and updates to an established publication, create none; recover them by reading provider state and retrying the absolute value. The first plan comment or document saves a pending token before its create.
 
 ## Operations and Resource IDs
 
-`inspect_integrations` is local/read-only. `inspect_integrations` and `inspect_queue_intake` require an explicit `target: "current" | "workflow"`: ordinary project operations use `current`; workflow-problem Todo intake uses the global source reference with `workflow`. When reporting a workflow problem, read [queue](../queue.md#prepare-a-workflow-report). Use the returned selected-project tracker and artifact policy. The context's local `projectRoot` is not external report content. Missing or invalid source configuration stops the attempt with a corrective error, without setup or fallback. Select queue entity/Priority/Kind before `inspect_queue_intake`; explicit selected existing work uses `inspect_adoption`. Initialized work supplies `entityDir` for `initialize_integration`, `resume_integration`, tracker-only `prepare_integration_projection`, or forge `prepare_integration_pull_request`. A required correction uses tracker-only `prepare_tracker_mutation` with the selected labels/lifecycle/Priority/Task-hierarchy change. Phase uses `prepare_github_phase_mutation` or `prepare_linear_phase_mutation`; those tools additionally supply fresh native lifecycle and normalized Phase metadata/applied-label facts as specified in `../phase.md`; the local tool validates and calculates the assignment without executing it. An explicit request to ship a Task or Gig uses `prepare_integration_shipping` and only when merging is necessary `prepare_integration_merge`.
+### Context tools
 
-Provider references own call procedures. The agent uses approved content, exact configured names, recorded IDs and required live responses directly. Evidence accepts the actual decoded provider object or complete native MCP result. The shared MCP boundary extracts structured content or one JSON text block and rejects error or ambiguous results; consumers retain their exact identity and outcome checks. The harness validates its own inputs/configuration and actual delivery evidence, not provider-tool schemas. `prepare_integration_merge` consumes exact PR-get evidence and compares the recorded PR number, repository/head/base and local source SHA. It returns fixed expected-head squash for an unmerged PR, complete merged proof or a blocked decision.
+These tools read local configuration, authority, and entity state. They never call providers.
 
-Strict `.local/metadata.json` remains outside Git in both artifact modes. Its root is `{ entityId, resourceIds }`; entries store IDs/URLs under exact entity/server/repository/Project/team/object or head/target scope. Lifecycle, Priority, labels, bodies, branch names and merge state remain live or authoritative facts, not cache snapshots.
+| Situation | Tool |
+| --- | --- |
+| Inspect configuration | `inspect_integrations`, with `target` |
+| Queue intake (choose entity, Priority, and Kind first) | `inspect_queue_intake`, with `target` |
+| Adopt explicitly selected work | `inspect_adoption` |
+| Start or resume an initialized entity | `initialize_integration`, `resume_integration` |
+| Publish an accepted plan (tracker only) | `prepare_integration_projection` |
+| Submit a PR (forge only) | `prepare_integration_pull_request` |
+| Correct labels, lifecycle, Priority, or Task hierarchy (tracker only) | `prepare_tracker_mutation` |
+| Reconcile native Phase | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation`, with the fresh facts in [Phase](../phase.md#fresh-native-facts) |
+| Ship a Task or Gig | `prepare_integration_shipping`, then `prepare_integration_merge` only when a merge is needed |
 
-| Object | Durable identity/progress | Local Resource IDs |
+- `target: "current"` covers ordinary work. `target: "workflow"` is only for workflow-problem reports through Todo; when reporting, read [queue](../queue.md#prepare-a-workflow-report). Use the returned tracker and artifact policy.
+- The returned local `projectRoot` is never report content. Missing or invalid source configuration stops with a corrective error, without starting setup or falling back.
+- `prepare_integration_merge` takes the PR read as `evidence` and checks the recorded PR number, repository, head, base, and local branch SHA. It returns squash-merge arguments pinned to the head, complete merged proof, or a blocker.
+
+**Evidence and validation:**
+
+- Provider references own the call procedures. Use approved content, configured names, recorded IDs, and required live responses directly.
+- Evidence is the actual decoded provider object or the complete native MCP result. The MCP layer extracts structured content or one JSON text block and rejects errors or ambiguous results.
+- The harness validates its own inputs, configuration, and delivery evidence, not provider tool schemas.
+
+### Resource IDs
+
+`.local/metadata.json` is strict and local in both artifact modes. Its root is `{ entityId, resourceIds }`, and each entry stores IDs and URLs under an exact scope: entity, server, repository, Project, team, object, or head and target. Lifecycle, Priority, labels, bodies, branch names, and merge state are never cached; they're live or authoritative facts.
+
+| Object | Durable identity and progress | Local Resource IDs |
 | --- | --- | --- |
-| GitHub tracker | repository/issue number, pending creation/initialization work, and authoritative plan-comment identity/creation state | numeric issue ID/URL and exact configured Project-item ID |
-| Linear Project | Project UUID, pending work, and authoritative plan-document identity/creation state | URL |
-| Linear issue | issue UUID; Task parent Project UUID; branch contract; authoritative plan-document identity/creation state | identifier/URL |
-| GitHub PR | immutable versioned repository/head/target intent | currently recorded PR number/URL |
+| GitHub tracker issue | repository and issue number; pending creation or initialization work; plan-comment state | numeric issue ID and URL; the configured Project-item ID |
+| Linear Project | Project UUID; pending work; plan-document state | URL |
+| Linear issue | issue UUID; a Task's parent Project UUID; branch contract; plan-document state | identifier and URL |
+| GitHub PR | immutable versioned repository, head, and target intent | current PR number and URL |
 
-Use local `resolve_resource_ids`, `record_resource_ids`, and `invalidate_resource_ids` when a consumer needs addressing values. Resolution uses the operation memo or scoped cache and reports missing IDs without generating provider calls. Recording validates actual required-read or clear-success mutation evidence before caching; invalidation removes only provider-proven stale IDs. Scope mismatch discards only the affected entry; access/network errors preserve it. Missing/stale data and malformed caches require agent investigation through the configured tracker/forge tools under normal permissions. Record the actual evidence afterward. Reuse required live facts from that response; do not read merely to populate cache.
+- **`resolve_resource_ids`** reads the operation memo or scoped cache and reports missing IDs without calling providers.
+- **`record_resource_ids`** validates a required read, or a clear-success mutation, before caching.
+- **`invalidate_resource_ids`** removes only IDs the provider proved stale. A scope mismatch drops only that entry; access or network errors keep it.
+- **Missing, stale, or malformed data:** investigate through the configured tracker or forge tools, then record the actual evidence. Reuse required live facts from that response; never read just to fill the cache.
+- **Memo:** each context request starts a fresh addressing memo, and shutdown or reload discards it. Lifecycle and merge reads always use current facts.
 
-For tracker initialization, `begin_resource_creation` retains its existing attempted-create metadata under approval. For a PR, it prepares only immutable repository/head/target intent before the first push; commit that change with the Deliverable. The agent then makes one native create and supplies clear-success evidence to `record_resource_creation`, which saves number/URL directly in the existing IDs file. Explicit `select_pull_request_resource` records the user's chosen PR in that same file. Post-submit recording never changes versioned metadata. Existing intent or uncertain outcomes require agent investigation, not blind replacement. Adoption and mutations seed IDs already obtained; queued work retains IDs only during its operation.
+### Creation checkpoints
 
-Each context request starts a fresh addressing-fact memo; shutdown/reload discards it. Required lifecycle/merge reads use current facts. Saved-data rejections follow [core migrations](../core.md#saved-data-migrations).
+- **Tracker initialization:** `begin_resource_creation` records the attempted create under its approval.
+- **PRs:** `begin_resource_creation` saves only the immutable repository, head, and target intent, before staging the last Deliverable commit; commit that change with the work. Then make one native create, and pass clear-success evidence to `record_resource_creation`, which saves the number and URL in the local IDs file. When choosing an existing PR, `select_pull_request_resource` records the user's choice in the same file.
+- Recording never changes versioned metadata. Existing intent or an uncertain outcome needs investigation, never a blind replacement.
+- Adoption and mutations seed IDs they already have. Queued work keeps IDs only during its own operation.
+
+Saved-data rejections follow [core migrations](../core.md#saved-data-migrations).
 
 ## Confirm initialized tracker outcomes
 
-After the provider's initialization steps are confirmed, call `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, or `confirm_linear_tracker` matching the configured provider/artifact mode, with `entityDir` and `facts` from current-operation reads or established clear-success mutations. It validates consistency against pending approved intent and updates the existing binding. It does not execute provider calls, independently authenticate freshness/provenance, record Resource IDs, or provision branches. Missing/conflicting facts leave the binding pending; investigate through the configured MCP tools. Reuse outcome proof already obtained rather than adding routine confirmation reads.
+After the provider's initialization steps succeed, call the confirmation tool for the configured provider and artifact mode: `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, or `confirm_linear_tracker`.
 
-Every confirmation tool requires native `lifecycle`, `priority`, and `phase` facts under [Phase](../phase.md). Provider and artifact mode determine the remaining fields:
+- Pass `entityDir` and `facts` from this operation's reads or clear-success mutations. Reuse proof you already have; don't add routine confirmation reads.
+- The tool checks the facts against the pending approved intent and completes the binding. It calls no providers, doesn't verify freshness on its own, records no Resource IDs, and provisions no branches.
+- Missing or conflicting facts leave the binding pending; investigate through the configured MCP tools.
+- It returns `changed`. An already-bound object is a local no-op. Branch naming and finalization, and creation and Resource ID recording, stay at their own steps.
 
-- GitHub: exact `repository`, `issueNumber`, configured `project` (`owner`, `ownerType`, `number`), observed `itemId`, and `parentIssueNumber` for a Task (omit only an observed absent parent otherwise). Priority is the configured native value or `not set`.
-- Linear: `resource: project | task-issue | gig-issue`, immutable object UUID as `id`, configured `team`, and `projectId` for a Task (omit only an observed absent Project otherwise). Priority uses the native 0–4 value.
-- Unversioned GitHub supplies no `systemMetadata`. Versioned GitHub supplies `{ labels, internalId: { scope, field, value } }` using complete observed issue labels and the configured Internal ID field outcome. Linear supplies `systemMetadata: { mode: versioned | unversioned }` matching configuration; it projects no embedded workflow ID. Its provider UUID and relationships remain the binding identity.
+Every confirmation needs native `lifecycle`, `priority`, and `phase` facts ([Phase](../phase.md#fresh-native-facts)). The rest depends on provider and mode:
 
-The tool returns `changed`; an already-bound object is a local no-op. Only identified pending bindings with matching In Progress/Planning, copied Priority, relationships and applicable system metadata can complete. Keep exact branch naming/finalization and creation/Resource ID recording at their existing boundaries.
+| | Required facts | Priority | System metadata |
+| --- | --- | --- | --- |
+| Versioned GitHub | `repository`, `issueNumber`, configured `project` (`owner`, `ownerType`, `number`), observed `itemId`, and `parentIssueNumber` for a Task | configured value or `not set` | `{ labels, internalId: { scope, field, value } }` with the complete observed labels and the Internal ID outcome |
+| Unversioned GitHub | same as versioned | same | none |
+| Linear | `resource: project \| task-issue \| gig-issue`, the object UUID as `id`, configured `team`, and `projectId` for a Task | native 0–4 | `{ mode: versioned \| unversioned }` matching configuration; no embedded workflow ID |
+
+Omit `parentIssueNumber` or `projectId` only when the relationship was observed to be absent. A binding completes only for a pending, identified object with matching In Progress and Planning, copied Priority, relationships, and applicable system metadata. For Linear, the UUID and relationships are the binding identity.
 
 ## Provider bodies
 
-`prepare_integration_projection` requires only the tracker role. Its source is the accepted `epic.md` or `plan.md`. Every GitHub tracker issue keeps its original request in its title/description and publishes the accepted plan in one managed comment; new and adopted issues use this same route. Linear retains the original title/name and description and publishes the accepted plan in one document attached to the existing issue or Project. Pull-request bodies use the synchronized `result.md` or `report.md`.
+**Sources:**
 
-The accepted local artifact owns the task definition or result content; the workflow publication layer owns its attribution footer. Discussion, feedback, screenshots, logs, and supporting links belong in separate comments. Requirements and agreed decisions belong in the accepted source artifact. Before adopting queued work, and whenever reconciling requirements, read the selected object's discussion through registered provider tools with complete pagination. Resolve material questions with the maintainer before initialization or a plan change. Contributor discussion does not itself authorize scope changes.
+- `prepare_integration_projection` needs only the tracker role. It publishes the accepted `epic.md` or `plan.md`.
+- PR bodies use the synchronized `result.md` or `report.md`.
+- The tracker item keeps its original request in its title or name and description. GitHub publishes the plan as one managed issue comment, the same for new and adopted issues. Linear publishes it as one document attached to the issue or Project.
 
-AI-assisted human-facing communication through the official GitHub/Linear MCP registrations is signed in code: GitHub uses a final `<sub>` paragraph and Linear uses italics, without an added divider. This includes initialization, queues, artifact publication, and comments. Keep signatures out of repository artifacts and do not add them manually. Prepared provider requests retain the approved content plus this sole deterministic attribution addition.
+**Ownership and discussion:**
 
-Automatically set local `__pi_authorship: "user-verbatim"` when the user supplies the complete message and you relay it unchanged. No special user opt-out wording is needed. Do not use verbatim mode for messages you compose, reword, expand, or generate around a user quotation; those use normal `ai-assisted` signing. Code preserves verbatim text byte-for-byte and removes the local mode before sending. The mode is per call, not a persistent setting. Metadata-only operations remain unchanged.
+- The accepted artifact owns the content; the publication layer owns the attribution footer.
+- Discussion, feedback, screenshots, logs, and supporting links go in separate comments. Requirements and agreed decisions go in the accepted artifact.
+- Before adopting queued work, and whenever reconciling requirements, read the object's full discussion through registered tools, with complete pagination. Resolve material questions with the maintainer before initialization or a plan change. Contributor comments don't authorize scope changes on their own.
 
-Use complete communication text for edits. Patch-only or template-only content writes require explicit registered reads as needed and a full-text write; signing never performs hidden provider calls.
+### Attribution
 
-1. Start from the complete approved source artifact in the reviewed document shape in `../artifacts.md`: a nonempty `## Overview` followed by nonempty level-two supporting sections. Tracker Overview explains the brief and carries `### Plan highlights`; PR Overview explains the delivered outcome or report conclusion and material limitations. Both portions belong to the same reviewed source. Never summarize or condense during publication.
-2. For unversioned projection, first remove or minimally rewrite only the forbidden content listed below from both visible and collapsed content. Present the complete sanitized candidate or exact diff, explain every change, and require approval before rendering. Folding is not a privacy boundary; keep the sanitized Overview/details shape.
-3. For tracker plans in either provider, call `prepare_tracker_publication` with `entityDir` and the complete approved candidate as `source`. Execute its exact registered mutation under existing approval and permissions, and record first creation through `record_tracker_publication` with actual tool/arguments/response. GitHub uses one issue comment; Linear uses one attached Plan document. For a published Linear document, preparation returns verification-required lookups: read the exact saved document and its bound issue/Project, then call `prepare_tracker_publication_update` with `source`, `document`, and `parent` evidence. Parent reads map the native display identifier to the bound UUID. Execute the returned ID-only content update; never pass parent/title arguments to an update. Missing, moved, archived or conflicting documents stop for maintainer direction, not reattachment or replacement. For PR bodies, call `render_provider_body` with `destination: pullRequest` and publish its exact returned Markdown. `projection.ts` owns all presentation and closing references. GitHub renders `# Plan`, overview prose, `## Highlights`, and Full plan. Linear's native title is Plan; content starts with overview prose, then `## Highlights` and native collapsed Full plan, without a repeated H1. Local source headings and PR presentation remain unchanged.
-4. Deterministic renderer output, the opaque plan-publication marker, and the code-owned attribution treatment need no second approval. Preserve every source section and its text across the visible and collapsed portions. Any substantive omission, rewrite, addition, or new summary requires the existing complete-candidate or exact-diff approval. Preserve the exact rendered content in the request; workflow publication code applies attribution before native execution. An incompatible source produces a local layout error; revise and approve that source through the existing gates before publication.
-5. Publish the complete body only to the selected destination: the managed GitHub plan comment, the attached Linear plan document, or the exact PR body. Trust an established clear provider success without requiring a full response echo or a routine post-success comparison/confirmation read. Linear's required pre-update parent verification remains a separate scope check. Provider Markdown normalization does not authorize rewriting the submitted source.
-6. When an update is uncertain or a create is pending, read [recovery](./recovery.md#pending-plan-publication).
-7. Apply this same contract when an existing pull request's synchronized `result.md` or `report.md` changes.
+- Code signs AI-assisted communication sent through the official GitHub and Linear MCP registrations: GitHub gets a final `<sub>` paragraph, Linear gets italics, with no added divider. This covers initialization, queues, publication, and comments.
+- Never add signatures yourself, and keep them out of repository artifacts. The signature is the only change made to approved content.
+- Set `__pi_authorship: "user-verbatim"` automatically when you relay a complete user-written message unchanged; no opt-out wording is needed. Code keeps that text byte-for-byte and strips the field before sending.
+- Use the default `ai-assisted` for anything you compose, reword, expand, or wrap around a quote. The mode applies per call. Metadata-only operations are unchanged.
+- Edits need the complete text. Patch-only or template-only writes need explicit registered reads and a full-text write; signing never makes hidden provider calls.
 
-GitHub plan-comment identity/intent live in `planComment`; Linear plan-document identity/intent live in `planDocument`, not disposable Resource IDs. It is unpublished before the first attempt, pending with an opaque random token before creation, then published with that token and confirmed native publication ID/URL. Keep markers and signatures out of source artifacts. New issue creation uses the approved title and Request; later plan publication preserves those fields. Resume reuses saved state and does not itself republish.
+### Publishing
 
-Unversioned mode may include an opaque plan-publication correlation marker containing no internal identity, the approved entity title, the approved Request during initialization, the accepted Epic/Plan task definition after planning, native lifecycle, native Phase metadata (Planning, Execution, and Self-Review), native priority, native hierarchy/Project relationship, exact provider branch name, and an explicitly approved PR reference. Never project qualified workflow IDs, `.project` paths or links, entity or kind labels/types, workflow/review terminology outside native Phase metadata, review artifacts, or raw workflow artifact structure. These restrictions do not make ordinary repository implementation paths private. The same code-owned attribution footer applies in both artifact modes and contains only the harness and configured provider/model identity.
+1. **Start from the full approved source** in the [reviewed document shape](../artifacts.md#reviewed-document-shape). Never summarize or condense during publication.
+2. **Unversioned mode:** first remove or minimally rewrite only the forbidden content (below), in both visible and folded parts. Show the full sanitized candidate or exact diff, explain each change, and get approval before rendering. Folding is not a privacy boundary.
+3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full approved source.
+   - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output. A second call returns `recovery-required`, and when nothing was posted, recovery can't proceed without the maintainer (#87).
+   - Record a first creation with `record_tracker_publication`, passing the actual call as `evidence`.
+   - For a published Linear document, preparation asks for verification reads. Read the saved document and its bound issue or Project, then call `prepare_tracker_publication_update` with `source`, `document`, and `parent` evidence. The parent read maps the native display identifier to the bound UUID. Run the returned update by document ID only, never with parent or title arguments.
+   - A missing, moved, archived, or conflicting document stops for maintainer direction, never reattachment or replacement.
+4. **PR bodies:** call `render_provider_body` with `destination: pullRequest` and publish its returned Markdown unchanged.
+5. **Rendering:** `projection.ts` owns presentation and closing references.
+   - GitHub plans render `# Plan`, the overview prose, `## Highlights`, and a folded Full plan.
+   - Linear's native document title is Plan; the content is the overview prose, `## Highlights`, and a native folded Full plan, with no repeated H1.
+   - Source headings and PR presentation are unchanged.
+6. **No second approval** is needed for deterministic renderer output, the opaque publication marker, or code-owned attribution. Any substantive omission, rewrite, addition, or new summary needs the full-candidate or exact-diff approval again. An incompatible source fails locally; fix and re-approve the source first.
+7. **Publish** the complete body only to its destination: the managed GitHub comment, the attached Linear document, or the PR body.
+   - Trust a clear provider success without an echo, comparison, or confirmation read. Linear's pre-update parent check is a separate scope check.
+   - Provider Markdown normalization never justifies rewriting the source.
+8. **Uncertain updates and pending creates:** read [recovery](./recovery.md#pending-plan-publication).
+
+The same contract applies when an open PR's synchronized `result.md` or `report.md` changes.
+
+**Publication state:**
+
+- GitHub keeps plan-comment identity in `planComment`; Linear keeps plan-document identity in `planDocument`. They're not disposable Resource IDs.
+- Each is `unpublished` before the first attempt, `pending` with an opaque token before creation, then `published` with that token and the confirmed native ID and URL.
+- Markers and signatures stay out of source artifacts.
+- New issues use the approved title and Request; later publication leaves those fields alone. Resume reuses saved state and never republishes on its own.
+
+### Unversioned disclosure
+
+**May be projected:**
+
+- an opaque publication marker with no internal identity;
+- the approved title, and the approved Request during initialization;
+- the accepted plan after planning;
+- native lifecycle, native Phase (Planning, Execution, Self-Review), and Priority;
+- native hierarchy and Project relationships;
+- the exact provider branch name;
+- an explicitly approved PR reference.
+
+**Never projected:**
+
+- qualified workflow IDs;
+- `.project` paths or links;
+- entity or kind labels and types;
+- workflow or review terminology beyond native Phase;
+- review artifacts;
+- raw workflow artifact structure.
+
+Ordinary repository implementation paths aren't private. The same attribution footer, carrying only the harness and the configured provider and model, applies in both modes.
 
 ## Branch gate
 
-A ready branch contract contains exact `name`, `start`, `target`, and generated/tracker source. A Linear `tracker` Epic is immediately ready after reconstructing current provider branch settings; a Linear Task/Gig can be `tracker-pending`, `tracker-named` (exact saved name), or `provisioning` (name/start commit) before ready. Save a needed returned name before creating its local branch; generated naming needs no provider branch. Do not plan, review, push, or create a PR until `finalize_linear_branch` returns a ready contract. Never invent or rewrite a provider-generated branch name.
+- A ready branch contract has exact `name`, `start`, `target`, and a generated or tracker source.
+- A Linear `tracker` Epic is ready once current branch settings are reconstructed.
+- A Linear Task or Gig passes through `tracker-pending`, `tracker-named` (the saved name), and `provisioning` (name and start commit) before ready. Save a returned name before creating its local branch. Generated names need no provider branch.
+- Don't plan, review, push, or create a PR until `finalize_linear_branch` returns a ready contract. Never invent or rewrite a provider-generated name.
 
 ## Workflow-first updates
 
-For initialized entities, update workflow kind, `phase`, and artifacts first. Without a tracker, workflow authority stores Priority in `metadata.authority` and initialized lifecycle in `.local/status.md`. With a tracker, tracker authority uses native provider Status/Priority and `.local/status.md` is absent. For an already-bound tracker object, read required fresh provider values, set only the intended absolute lifecycle/Priority or changed label values through the selected operation, and verify required outcome facts absent from established clear-success responses. Reconcile uncertain/partial application before retry. Tracker authority never falls back to workflow authority. Versioned GitHub reconciles its managed Kind label from workflow metadata; unversioned GitHub and Linear keep Kind in workflow artifacts only. Provider failure never rolls workflow artifacts back.
+For initialized entities, update workflow kind, `phase`, and artifacts first.
 
-Adding work to Backlog or Todo creates no workflow artifact or saved workflow recovery state. Recover uncertain provider results through read-back.
+- Workflow authority keeps Priority in `metadata.authority` and lifecycle in `.local/status.md`. Tracker authority uses native Status and Priority, with no `.local/status.md`.
+- For a bound tracker object, read the required fresh values, then set only the intended absolute lifecycle, Priority, or changed labels. Verify required outcome facts that a clear-success response didn't include. Reconcile uncertain or partial results before retrying.
+- Versioned GitHub reconciles the managed Kind label from workflow metadata. Unversioned GitHub and Linear keep Kind in workflow artifacts only.
+- A provider failure never rolls back workflow artifacts.
+
+Adding work to Backlog or Todo creates no workflow artifact or saved recovery state. Recover uncertain results by reading provider state.

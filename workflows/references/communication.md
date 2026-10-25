@@ -1,21 +1,44 @@
-# Human-facing communication and writing
+# Communication
 
-Apply these rules to user-facing messages and every prose artifact created or updated by the workflow, including briefs, plans, Epic documents, logs, review responses, issues, and documentation.
+These rules apply to chat and to every prose artifact the workflow writes: briefs, plans, Epic documents, logs, review responses, issues, and documentation.
 
-1. In chat, use the established conversation context and do not restate it unnecessarily. Write durable artifacts and externally consumed text so they stand alone for their intended reader without access to the conversation.
-2. State what happens and why it matters before implementation or architecture details.
-3. Use clear everyday language. Remove fluff and unnecessary jargon; briefly define specialized terms and acronyms on first use.
-4. Use concrete examples when they materially clarify behavior, configuration, state, failure handling, or expected outcomes.
-5. For every finding, concern, risk, or recommendation, state the problem directly, then give the simplest concrete supported use case or user flow that exposes it. Include the initiating user action or system event, the minimum relevant steps, the observable outcome, and why it matters before prescribing a change. Prefer a user flow when a user is affected. The example must make the concern's credibility and realism easy to evaluate; do not rely on a theoretical scenario or make the reader reconstruct the causal chain from implementation details.
-6. Clearly distinguish established decisions, observed evidence, unresolved questions, and proposed changes. Never present an inference as a decision or a possibility as implemented behavior.
-7. Preserve every material settled behavior, constraint, boundary, failure contract, compatibility requirement, and migration state needed by the reader. Do not hide required context only in chat or another internal artifact.
-8. Keep only useful structure. Omit empty or irrelevant sections and template filler, not material information.
-9. Be concise by removing repetition and boilerplate, never by compressing away meaning or making prose cryptic.
-10. Record conclusions and useful evidence rather than conversation transcripts. Explain implementation detail only to the depth the document's audience needs.
-11. Prefer direct statements and specific outcomes over vague summaries, labels, or unexplained shorthand.
-12. Describe the current contract directly. Mention removed or rejected designs only when the intended reader needs migration, compatibility, or decision-history context.
-13. Improve concision while drafting and reviewing an artifact, with normal user/reviewer feedback. Once the user accepts text, preserve its exact meaning and content unless the user explicitly approves a change required by that text's owning workflow.
+## Audience
 
-## Workflow reporting opportunity
+- **Chat:** rely on context you've already established; don't restate it.
+- **Durable and external text** must make sense to its reader without the conversation.
 
-After materially advancing the active task, briefly offer reporting when evidence shows a reproducible workflow defect or recurring workflow friction. Distinguish workflow behavior from consuming-project policy/configuration and a one-off agent mistake. Keep the task's scope and lifecycle unchanged. On an explicit request to report, use the Todo skill and [queue reporting guidance](./queue.md#prepare-a-workflow-report); nothing is transmitted before exact-content and destination approval.
+## Order and plain language
+
+- Say what happens and why it matters before implementation or architecture.
+- Use clear, everyday language. Remove fluff and unnecessary jargon, and briefly define specialized terms and acronyms on first use.
+- Use concrete examples when they clarify behavior, configuration, state, failure handling, or outcomes.
+
+## Findings, concerns, and recommendations
+
+1. State the problem directly.
+2. Give the simplest realistic use case or user flow that shows it: the triggering action or event, the minimum steps, and the observable outcome. Prefer a user flow when a user is affected.
+3. Say why it matters, then what to change.
+
+The example must make the concern easy to judge. Don't rely on a theoretical scenario or leave the reader to reconstruct the causal chain from implementation details.
+
+## Accuracy
+
+- Separate decisions, evidence, open questions, and proposals. Never present an inference as a decision or a possibility as implemented.
+- Keep every settled behavior, constraint, boundary, failure contract, compatibility requirement, and migration state the reader needs. Don't hide required context in chat or another internal artifact.
+- Describe the current contract. Mention removed or rejected designs only when the reader needs migration, compatibility, or decision history.
+- Prefer direct statements and specific outcomes over vague summaries, labels, or unexplained shorthand.
+
+## Length and structure
+
+- Keep only useful structure. Omit empty or irrelevant sections and template filler.
+- Be concise by removing repetition and boilerplate, never by dropping meaning or writing cryptically.
+- Record conclusions and useful evidence, not transcripts. Explain implementation only to the depth the reader needs.
+- Tighten wording while drafting and reviewing. Once the user accepts text, keep its meaning and content unless they approve a change that the text's workflow requires.
+
+## Offering a workflow report
+
+After meaningfully advancing the task, briefly offer to report a workflow problem when the evidence shows a reproducible workflow defect or recurring friction.
+
+- Distinguish workflow behavior from the consuming project's policy or configuration, and from a one-off agent mistake.
+- Keep the current task's scope and lifecycle unchanged.
+- When the user asks you to report, use the Todo skill and [report preparation](./queue.md#prepare-a-workflow-report). Nothing is sent before the exact content and destination are approved.

@@ -56,7 +56,11 @@ Every Deliverable has exactly one kind: `feature`, `bugfix`, `refactor`, `resear
 
 ### Research and audit reports
 
-Write a durable `report.md` in the [reviewed document shape](./artifacts.md#reviewed-document-shape). The Overview states the question or scope, the key conclusion, and material uncertainty. The following sections keep the full evidence, findings, conclusions, and next steps. A report is a result, not a transcript or a substitute for the plan. Use only relevant sections.
+Write a durable `report.md` in the [reviewed document shape](./artifacts.md#reviewed-document-shape).
+
+- The Overview states the question or scope, the key conclusion, and material uncertainty.
+- The following sections keep the full evidence, findings, conclusions, and next steps. Use only relevant sections.
+- A report is a result, not a transcript or a substitute for the plan.
 
 When the user asks to change kind, read [kind changes](./deliverable/extras.md#changing-kind).
 
@@ -66,7 +70,11 @@ When accepted behavior, strategy, scope, or decomposition must change after exec
 
 ## Reviews
 
-Every plan, interim, and final review follows [review](./review.md). The reviewer only critiques, the main agent makes changes, and the user owns product decisions and approval. Reviews and correction loops proceed automatically once their prerequisites are met. Pause for unresolved user decisions and for the configured blocked-review confirmation. Accepting the reviewed plan and accepting the final result are separate approvals.
+Every plan, interim, and final review follows [review](./review.md).
+
+- The reviewer only critiques, the main agent makes changes, and the user owns product decisions and approval.
+- Reviews and correction loops run automatically once their prerequisites are met. Pause for unresolved user decisions and for the configured blocked-review checkpoint.
+- Accepting the reviewed plan and accepting the final result are separate approvals.
 
 ## Implementation and verification
 
@@ -81,7 +89,12 @@ Every plan, interim, and final review follows [review](./review.md). The reviewe
 9. When user review leads to changes, return to Execution, update the artifact, then go back to Self-Review and rerun final review for every material change.
 10. When the user accepts, read [submission](./deliverable/submission.md). When the user asks to ship, read [shipping](./deliverable/shipping.md).
 
-When the plan defines commit steps, run steps 1–9 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review. When the user accepts a step, read [commits](./deliverable/submission.md#commits) and commit it; that step acceptance authorizes only its commit, not push or PR. With a forge, before staging the last step's commit, save forge intent as described in [submission](./deliverable/submission.md#with-a-forge) so it lands in that commit. Run the final review over the whole branch before submission.
+**When the plan defines commit steps:**
+
+- Run steps 1–9 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review.
+- When the user accepts a step, read [commits](./deliverable/submission.md#commits) and commit it. Accepting a step authorizes only its commit, not a push or PR.
+- With a forge, save PR intent before staging the last step's commit, as described in [submission](./deliverable/submission.md#with-a-forge), so it lands in that commit.
+- Run the final review over the whole branch before submission.
 
 ## Completion artifact
 
