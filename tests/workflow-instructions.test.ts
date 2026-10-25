@@ -138,7 +138,18 @@ describe("workflow guidance structure", () => {
             const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
             assert.ok(graph.has("workflows/references/core.md"), `${skill} must reach core.md`)
             assert.ok(graph.has("workflows/MIGRATIONS.md"), `${skill} must reach MIGRATIONS.md`)
-            if (skill === "pr") continue
+            if (skill === "pr") {
+                for (const reference of ["incoming", "checkout", "fixes", "publishing", "project", "shipping", "automation"])
+                    assert.ok(graph.has(`workflows/references/pr/${reference}.md`), `pr must reach pr/${reference}.md`)
+                assert.ok(graph.has("workflows/references/integrations/forge/merge.md"), "pr must reach forge/merge.md")
+                continue
+            }
+            if (skill === "project-setup")
+                for (const reference of ["github-project", "incoming-pr-intake", "permissions"])
+                    assert.ok(
+                        graph.has(`workflows/references/setup/${reference}.md`),
+                        `project-setup must reach setup/${reference}.md`,
+                    )
             assert.ok(graph.has("workflows/references/integrations/shared.md"))
             assert.ok(graph.has("workflows/references/integrations/tracker/github.md"))
             assert.ok(graph.has("workflows/references/integrations/tracker/linear.md"))
@@ -194,7 +205,7 @@ describe("workflow guidance structure", () => {
             gig: 36_300,
             task: 40_900,
             epic: 42_300,
-            pr: 45_500,
+            pr: 30_000,
             "project-setup": 48_200,
         }
         assert.deepEqual(Object.keys(budgets).sort(), fs.readdirSync("workflows/skills").sort())

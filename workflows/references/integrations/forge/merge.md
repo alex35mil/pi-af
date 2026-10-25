@@ -26,7 +26,7 @@ Before merging, complete required verification and reviews and get the shipping 
 
 - Pass the returned arguments unchanged to the configured `merge_pull_request`: `merge_method: squash` and the pinned `expectedHeadSha`.
 - Prepare `commit_title` with the `commit` skill's message rules, using the Deliverable's approved title or the incoming PR's existing title. Keep the PR title and body.
-- No per-flow method setting, alternative strategy, protection bypass, or automatic history update after a rejection.
+- No per-flow method setting, alternative strategy, protection bypass or change, or automatic history update after a rejection.
 
 **Confirming:**
 

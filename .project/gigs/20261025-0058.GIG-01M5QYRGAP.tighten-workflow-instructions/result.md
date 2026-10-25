@@ -2,6 +2,9 @@
 
 ## Overview
 
+- **Size targets:**
+  - **Met:** up-front context per skill. Gig 33 KB (from ~249), Task 37 KB (from ~254), Epic 38 KB, pr 27 KB (from ~218), project-setup 44 KB (from ~256), Backlog and Todo 12 KB.
+  - **Missed:** total guidance shrank about 12.5% (336 KB to 294 KB), not the planned 35%. Splitting paragraphs into steps and tables saves less space than expected, and reviews restored several rules the first drafts had dropped. The user accepted this shortfall, since what loads into an agent's context is the up-front size.
 - **Commit A, size and structure.** Skills now load only what they list under `## Read first`. Every other reference is read only when its step is reached. Starting a Gig loads 38 KB instead of about 249 KB.
 - **New files:**
   - `references/core.md` owns the shared rules: tool discovery and evidence shape, the MCP boundary, outcomes and recovery, approvals, and migrations;
@@ -36,7 +39,13 @@
   - The `project-setup` skill is reorganized around its eight-step decision order and links to those files instead of restating them.
   - Setup now loads about 44 KB up front instead of about 81 KB.
   - Broken links outside `workflows/` are fixed: the permissions README's link to the moved permissions section, and an older `extensions/mcp/README.md` link to the Pi 1.3.0 migration that had been wrong since `7d1d5dc`.
-- **Limitation:** commit D (incoming PR) hasn't started. The ≥35% total reduction target applies after D.
+- **Commit D, incoming-PR rewrite:**
+  - `pr/incoming.md` keeps selection and inspection, the safety score, the checkout and execution boundary, evidence and review, the approval table, and the permission-prompt example.
+  - Rare paths moved to new step files: `pr/fixes.md` (the move to fixes, approved rebase with immediate update, small fixes, consent and write access, committing and pushing) and `pr/publishing.md` (GitHub review publication).
+  - The old Explicit merge section is merged into `pr/shipping.md`.
+  - `pr/checkout.md`, `pr/project.md`, `pr/automation.md`, and the `pr` skill are rewritten as steps, bullets, and tables.
+  - The `pr` skill now loads 27 KB up front instead of about 42 KB.
+  - Rules restored after review: never bypass or change branch protections to get a merge through (pr/shipping.md and forge/merge.md), and read fixes.md before moving to fixes.
 
 ## Measurements
 
@@ -47,16 +56,21 @@ Up front means the skill file plus files listed under its `## Read first`.
 | gig | 249 KB (21 files) | 38.1 KB | 33.0 KB | 36.3 KB |
 | task | 254 KB (21) | 42.7 KB | 37.2 KB | 40.9 KB |
 | epic | 239 KB (20) | 46.0 KB | 38.4 KB | 42.3 KB |
-| pr | 218 KB (18) | 41.3 KB | 41.6 KB | 45.5 KB |
+| pr | 218 KB (18) | 41.3 KB | 41.6 KB (after D: 27.3 KB) | 30.0 KB |
 | project-setup | 256 KB (19) | 80.6 KB | 80.8 KB (after C: 43.9 KB) | 48.2 KB |
 | backlog | 141 KB (12) | 12.1 KB | 11.7 KB | 12.8 KB |
 | todo | 142 KB (12) | 12.4 KB | 12.0 KB | 13.2 KB |
 
-pr is unchanged until commit D rewrites it.
-
 \* The literal closure is the old measurement: every Markdown link in any sentence mentioning "read" or "follow". It over-counts now that links say "When …, read …", which is why epic and project-setup still show high values. The convention-based Read first size is what the budget test enforces.
 
-Total guidance (references, skills, `workflows/README.md`, `MIGRATIONS.md`): about 336 KB before, 327 KB after A, 309 KB after B.
+Total guidance (references, skills, `workflows/README.md`, `MIGRATIONS.md`): about 336 KB before, 327 KB after A, 309 KB after B, 296 KB after C, 294 KB after D.
+
+**Against the plan's targets:**
+
+- **Met:** Gig and Task load at most about 70 KB up front. They load 33.0 KB and 37.2 KB, from about 249 KB and 254 KB.
+- **Not met:** the total shrank only about 12.5%, short of the 35% target. The rewrites split long paragraphs into steps, bullets, and tables, which saves less space than expected, and the review rounds restored several rules the first drafts had dropped. The large cut is in what each skill loads up front, which is what actually reaches an agent's context, not in total file size.
+
+D's rule map, `.local/scratch/rule-map-D.md`: 276 restrictive sentences from the pre-D incoming-PR files, checked with the proximity pass from the start. 258 pass automatically, and 18 were checked by hand; all are present, reworded.
 
 C's rule map, `.local/scratch/rule-map-C.md`: 244 normative sentences in pre-C `setup.md` and the `project-setup` skill.
 
