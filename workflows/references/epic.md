@@ -1,47 +1,74 @@
 # Epic delivery and future Task targets
 
-The Epic skill owns the user-approved Task delivery strategy recorded in reviewed `epic.md`. `taskTarget` selects where future Tasks start and deliver; it is routing intent, not proof of delivery. It does not retarget existing Tasks, change the Epic branch identity, or complete the Epic lifecycle.
+The Epic skill owns the approved Task delivery strategy, recorded in reviewed `epic.md`. `taskTarget` decides where future Tasks start and deliver. It's routing intent, not proof of delivery. It never retargets existing Tasks, changes the Epic's branch identity, or completes the Epic.
 
 ## Apply the approved strategy
 
-During Epic planning, obtain approval for the strategy and record it in the reviewed `epic.md`. On acceptance, apply the choice before any planning commit:
+During Epic planning, get the strategy approved and record it in reviewed `epic.md`. On acceptance, apply it before any planning commit:
 
 - **Epic:** keep `taskTarget: epic`, or call `set_epic_task_target` with `target: epic`. The local Epic branch must exist.
-- **Default:** call `set_epic_task_target` with `target: default`. The local Epic and stored default-target branches must exist, but delivery is not a prerequisite for selecting this intent.
+- **Default:** call `set_epic_task_target` with `target: default`. The local Epic and default-target branches must exist. Delivery isn't required to select this intent.
 
-The setter accepts no `epicDelivery`; a failed branch/entity/persistence check leaves metadata unchanged. Commit and deliver the accepted plan and routing metadata together through the approved normal Git/PR flow. No post-merge metadata switch is needed. An undelivered revision with default intent still cannot initialize a Task.
+**The setter:**
 
-Strategy approval and plan acceptance do not authorize a commit, push, PR, merge, fetch, reset, checkout, or cleanup. Obtain the existing exact-operation approvals. Never delete an Epic branch still targeted by active Tasks. An existing Task always retains its copied start/target even after its parent's pointer changes.
+- takes no `epicDelivery`;
+- leaves metadata unchanged when a branch, entity, or persistence check fails.
 
-## Select delivery evidence
+**Delivery:**
 
-`init_task`, `adopt_github_task`, and `adopt_linear_task` share the same current-revision delivery boundary for default-target Task initialization. Supply `epicDelivery` only to these Task tools when targeting default, never to the routing setter. Both local Epic and stored target branches must exist in the current clone.
+- Commit and deliver the accepted plan and routing metadata together through the normal approved Git and PR flow. No metadata change is needed after the merge.
+- A revision with default intent that isn't delivered still can't initialize a Task.
+
+**Approvals:**
+
+- Strategy approval and plan acceptance don't authorize a commit, push, PR, merge, fetch, reset, checkout, or cleanup. Each needs its own approval.
+- Never delete an Epic branch that active Tasks still target.
+- An existing Task keeps its copied start and target even after the parent's pointer changes.
+
+## Choose delivery evidence
+
+`init_task`, `adopt_github_task`, and `adopt_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
 
 ### Local ancestry
 
-Use `epicDelivery: { kind: "git-ancestry" }`, or omit the input for the existing ancestry behavior. Git must confirm that the current local Epic branch head is an ancestor of its stored local target.
+Use `epicDelivery: { kind: "git-ancestry" }`, or omit it. Git must confirm that the current local Epic head is an ancestor of the stored local target.
 
-Fast-forward and merge-commit delivery preserve this ancestry. Squash and rebase delivery do not generally preserve the original Epic commits, so use the verified GitHub route for non-ancestral delivery. Content similarity and commit messages are not delivery evidence.
+- Fast-forward and merge-commit delivery keep ancestry.
+- Squash and rebase delivery usually don't, so use the GitHub route for them.
+- Similar content or commit messages are not evidence.
 
 ### Merged GitHub PR
 
-Use `epicDelivery: { kind: "github-pr", evidence: { tool, arguments, response } }` with the actual configured forge's registered `pull_request_read` call, `method: get`, its exact arguments, and actual decoded JSON or complete native MCP result. A tracker alone does not provide forge authority. Resolve the exact Epic planning PR through configured provider tools when its number is unknown; stop for user selection on ambiguity, without creating or replacing a PR.
+Use `epicDelivery: { kind: "github-pr", evidence: { tool, arguments, response } }`, with the configured forge's registered `pull_request_read` `get` call, its exact arguments, and the actual response.
 
-The shared validator requires:
+- A tracker alone doesn't count as forge authority.
+- When the planning PR number is unknown, find it through the configured tools. Stop for a user choice when ambiguous, and never create or replace a PR.
 
-- Exact configured registered server/operation and read arguments for the repository and PR number.
-- Matching response PR number/URL, base repository and stored target branch, and same-repository Epic head branch.
-- PR head SHA equal to the current local Epic branch SHA; new Epic commits require new delivery.
-- `merged: true` and a nonempty merge timestamp.
+The validator requires:
 
-Trust that exact GitHub confirmation as delivery evidence. Merge-commit, squash, and rebase deliveries can all satisfy this contract without original-head ancestry. The local source revision and existing local target branch are checked, and versioned Task initialization also verifies the accepted plan below. This route does not independently prove that the local target contains the resulting merge commit or every merged implementation change. The guard never fetches or changes Git refs; synchronize local branches only through separately approved operations.
+- the configured server and operation, with read arguments for this repository and PR;
+- a matching PR number and URL, base repository and stored target, and same-repository Epic head branch;
+- a PR head SHA equal to the current local Epic branch SHA. New Epic commits need new delivery;
+- `merged: true` and a merge timestamp.
 
-Explicit PR evidence must pass its route even when local ancestry also holds. Invalid or unavailable evidence never falls back to another route or bypasses MCP permissions. No merged boolean, provider-response snapshot, or forge-creation intent is saved merely to remember delivery.
+**What this proves:**
+
+- GitHub's confirmation is trusted as delivery evidence, so merge-commit, squash, and rebase all qualify without ancestry.
+- The local source revision and target branch are checked, and versioned Task initialization also checks the accepted plan (below).
+- It doesn't prove that the local target contains the merge commit or every merged change.
+- The guard never fetches or moves refs; sync branches only through separately approved operations.
+
+**Rules:**
+
+- Explicit PR evidence must pass its own route even when ancestry also holds.
+- Invalid or unavailable evidence never falls back to another route or bypasses MCP permissions.
+- No merged flag, response snapshot, or forge intent is saved to remember delivery.
 
 ## Initialize a Task
 
-Read the approved strategy and current parent pointer before initialization. Resolve a missing or conflicting decision through the Epic skill's plan acceptance and routing-selection flow; do not infer approval from the initial `taskTarget: epic`.
+1. **Strategy.** Read the approved strategy and the current parent pointer. Resolve a missing or conflicting decision through the Epic skill's plan acceptance and routing step. The initial `taskTarget: epic` is not approval.
+2. **Delivery.** Every new or adopted default-target Task revalidates the current Epic revision and its delivery evidence; recorded routing intent proves nothing. Pass current PR evidence again when using that route.
+3. **Versioned plan check.** The working parent `epic.md` must match the stored target branch's copy exactly, so the accepted plan and its Task markers are reachable. Changed or missing content blocks before any branch, artifact, or parent annotation. Unversioned artifacts keep their exclusion rules and skip this check.
+4. **Initialize.** Copy the parent's target into the Task's immutable start and target, and annotate its plan item once.
 
-Every new/adopted default-target Task initialization revalidates the current Epic revision and delivery evidence; recorded routing intent is not proof. Pass current-operation PR evidence again when selecting that route. In versioned mode, the working accepted parent `epic.md` blob must also exactly match the stored target branch's blob. This preserves accepted-plan reachability, including its current Task markers. Changed or missing target content blocks before Task branch/artifact creation and parent annotation. Unversioned artifacts retain their existing exclusion rules and need no versioned blob comparison.
-
-After these checks, normal initialization copies the selected parent target into the Task's immutable start/target and annotates its selected plan item once. Existing parent, item, hierarchy, Priority, persistence, and branch-readiness gates remain in force. No Epic lifecycle transition or remote operation is implied.
+All other parent, item, hierarchy, Priority, persistence, and branch-readiness gates still apply. No Epic lifecycle change or remote operation is implied.

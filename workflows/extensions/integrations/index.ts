@@ -29,7 +29,7 @@ import {
 } from "./policy.js"
 import { renderProviderBody, verifyMarkdownProjection } from "./projection.js"
 import { isResourceIdsKind, OperationResourceIdsMemo, readCachedResourceIds } from "./resource-ids.js"
-import { finishReadDecision, resolveResourceIdsContext } from "./resource-id-operations.js"
+import { shippingReadDecision, resolveResourceIdsContext } from "./resource-id-operations.js"
 import type { GitHubMergeDecision } from "./forge/github/merge.js"
 import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { finalizeLinearBranch } from "./tracker/linear.js"
@@ -89,7 +89,7 @@ export const IntegrationContextSchema = Type.Union([
     ),
     Type.Object({ operation: Type.Literal("adopt"), entity: ContextEntitySchema }, { additionalProperties: false }),
     Type.Object(
-        { operation: Type.Literal("finishMerge"), entityDir: Type.String({ minLength: 1 }), evidence: EvidenceSchema },
+        { operation: Type.Literal("shippingMerge"), entityDir: Type.String({ minLength: 1 }), evidence: EvidenceSchema },
         { additionalProperties: false },
     ),
     Type.Object(
@@ -112,7 +112,7 @@ export const IntegrationContextSchema = Type.Union([
     ),
     Type.Object(
         {
-            operation: Type.Enum(["initialize", "resume", "artifactProjection", "pullRequest", "finishRead"], {
+            operation: Type.Enum(["initialize", "resume", "artifactProjection", "pullRequest", "shippingRead"], {
                 type: "string",
             }),
             entityDir: Type.String({ minLength: 1 }),
@@ -223,7 +223,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    const [merge, , incoming, inspect, queue, adopt, finishMerge, mutation, phase, entity] =
+    const [merge, , incoming, inspect, queue, adopt, shippingMerge, mutation, phase, entity] =
         IntegrationContextSchema.anyOf
     const contexts = [
         ["inspect_integrations", "inspect", inspect],
@@ -233,8 +233,8 @@ export default function (pi: ExtensionAPI): void {
         ["resume_integration", "resume", entity],
         ["prepare_integration_projection", "artifactProjection", entity],
         ["prepare_integration_pull_request", "pullRequest", entity],
-        ["prepare_integration_finish", "finishRead", entity],
-        ["prepare_integration_merge", "finishMerge", finishMerge],
+        ["prepare_integration_shipping", "shippingRead", entity],
+        ["prepare_integration_merge", "shippingMerge", shippingMerge],
         ["prepare_tracker_mutation", "trackerMutation", mutation],
         ["inspect_incoming_pr_context", "incomingPullRequest", incoming],
         ["plan_incoming_pr_merge", "incomingPullRequestMerge", merge],
@@ -290,8 +290,8 @@ export default function (pi: ExtensionAPI): void {
     const projects = [
         ["plan_incoming_pr_intake", "intake", intake],
         ["plan_incoming_pr_review", "review", projectAction],
-        ["plan_incoming_pr_ship", "ship", projectAction],
-        ["plan_incoming_pr_cancel", "cancel", projectAction],
+        ["plan_incoming_pr_shipping", "shipping", projectAction],
+        ["plan_incoming_pr_cancellation", "cancellation", projectAction],
     ] as const
     for (const [name, action, schema] of projects) {
         const parameters = Type.Omit(schema, ["operation", "action"])
@@ -383,7 +383,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     const entityDir = "entityDir" in input ? input.entityDir : undefined
     const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
     const requiresTracker = ["queueIntake", "adopt", "trackerMutation"].includes(operation)
-    const forgeOnly = ["pullRequest", "finishRead", "finishMerge"].includes(operation)
+    const forgeOnly = ["pullRequest", "shippingRead", "shippingMerge"].includes(operation)
     const loaded = loadIntegrationConfig(cwd)
     if ("target" in input && input.target === "workflow" && (loaded.state === "disabled" || !loaded.config.tracker)) {
         throw new Error(`Configure a tracker in ${loaded.path}.`)
@@ -416,21 +416,21 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
         throw new Error(`${operation} requires a configured forge`)
     }
     if (forgeOnly && entity) assertEntityBranchReady(entity.status)
-    if ((operation === "finishRead" || operation === "finishMerge") && entity?.status.entity === "epic")
-        throw new Error("finish operations require a Task or Gig")
-    let finish: GitHubMergeDecision | undefined
-    if (input.operation === "finishMerge") {
+    if ((operation === "shippingRead" || operation === "shippingMerge") && entity?.status.entity === "epic")
+        throw new Error("shipping operations require a Task or Gig")
+    let shipping: GitHubMergeDecision | undefined
+    if (input.operation === "shippingMerge") {
         const status = entity!.status
         assertEntityBranchReady(status)
         if (status.phase !== "selfReview") {
-            finish = { state: "blocked", reason: "finish requires completed Self-Review" }
+            shipping = { state: "blocked", reason: "shipping requires completed Self-Review" }
         } else {
             const context = resolveResourceIdsContext(cwd, input.entityDir, "github-pull-request")
-            if (context.scope.kind !== "github-pull-request") throw new Error("finish requires PR addressing")
+            if (context.scope.kind !== "github-pull-request") throw new Error("shipping requires PR addressing")
             const saved = readCachedResourceIds(context.directory, context.scope)
-            finish =
+            shipping =
                 saved && isResourceIdsKind(saved, "github-pull-request")
-                    ? finishReadDecision(
+                    ? shippingReadDecision(
                           context.scope,
                           input.evidence,
                           Git.run(cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
@@ -439,7 +439,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                       )
                     : {
                           state: "blocked",
-                          reason: "finish requires locally recorded PR resource IDs; investigate and record the exact PR first",
+                          reason: "shipping requires locally recorded PR resource IDs; investigate and record the exact PR first",
                       }
         }
     }
@@ -470,7 +470,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                   state: "enabled" as const,
                   provider: environment.forge.kind,
                   config: environment.forge.config,
-                  ...(finish ? { finish } : {}),
+                  ...(shipping ? { shipping } : {}),
               }
             : undefined
 

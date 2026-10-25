@@ -226,7 +226,7 @@ export function resourceIdsFromRead(
     }
 }
 
-export function finishReadDecision(
+export function shippingReadDecision(
     scope: Extract<ResourceIdsScope, { kind: "github-pull-request" }>,
     evidence: ProviderEvidence,
     localHeadSha: string,
@@ -235,9 +235,9 @@ export function finishReadDecision(
 ): GitHubMergeDecision {
     try {
         const resourceIds = resourceIdsFromRead(scope, evidence, tools)
-        if (!isResourceIdsKind(resourceIds, "github-pull-request")) throw new Error("finish requires exact PR evidence")
+        if (!isResourceIdsKind(resourceIds, "github-pull-request")) throw new Error("shipping requires exact PR evidence")
         if (resourceIds.value.number !== expectedPrNumber)
-            throw new Error("finish PR does not match the locally recorded PR")
+            throw new Error("shipping PR does not match the locally recorded PR")
         return planGitHubMerge(
             {
                 mcpServer: scope.mcpServer,

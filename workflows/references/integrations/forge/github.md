@@ -1,39 +1,22 @@
 # GitHub forge
 
-This procedure owns workflow-created PR submission and finish. Existing incoming contributions follow [incoming PR handling](../../pr/incoming.md), with separate identity, approvals and execution boundaries.
+This covers workflow-created PR submission and shipping. Incoming contributions follow [incoming PR handling](../../pr/incoming.md), which has its own identity, approvals, and execution boundaries.
 
-First follow `../shared.md` for local configuration, Resource IDs, full-body ownership, and permissions. Ordinary resume does not discover PRs.
+This procedure extends [integration roles](../shared.md). Ordinary resume never discovers PRs. Tracker reads use the tracker's registration; PR reads use the forge's. `list_pull_requests` gives addressing, not authoritative merge state.
 
 ## Epic planning delivery
 
-[Epic delivery](../../epic.md) separates approved routing intent from Task initialization's current-revision delivery proof. Record the choice before committing, and deliver the accepted plan and routing metadata together through the approved normal PR flow; no post-merge target mutation is needed. Every default-target Task initialization verifies delivery, including a squash-merged planning PR. It trusts exact registered GitHub merged-PR confirmation, with local source revision and versioned accepted-plan checks, without creating a forge intent, changing lifecycle, or authorizing a merge. The Epic skill owns strategy approval and separate delivery-operation approval.
+[Epic delivery](../../epic.md) keeps the approved routing intent separate from the delivery proof checked at Task initialization.
 
-## Submission and revisions
+- Record the routing choice before committing, and deliver the accepted plan and its routing metadata together through the normal PR flow. No target change is needed after the merge.
+- Every default-target Task initialization verifies delivery, including a squash-merged planning PR, from GitHub's merged-PR confirmation plus local revision and versioned plan checks.
+- It creates no forge intent, changes no lifecycle, and authorizes no merge.
+- The Epic skill owns the strategy approval and each delivery operation's approval.
 
-Final completion-artifact acceptance authorizes the submission set in `../../deliverable.md`, not finishing or merging.
+## Submission
 
-1. Render the complete approved synchronized `result.md`/`report.md` with `render_provider_body`. Use destination `pullRequest` and publish the exact returned Markdown. Follow `../shared.md` for deterministic presentation approval and disclosure boundaries. Use the approved entity title without an identifier, the immutable branch `name` as head, and stored `target` as base.
-2. Before the submission commit, call `prepare_integration_pull_request`. With no prior forge intent, call `begin_resource_creation` with role `forge`: it saves immutable versioned repository/head/target intent. Include that intent with the reviewed implementation in the one authorized submission commit/push. Push only the stored branch; commit-only/no-push/no-PR requests do not prepare PR creation.
-3. Call the first registered create tool directly after pushing, without preliminary discovery. Existing intent or missing IDs require agent investigation through configured provider tools before continuing; it never authorizes replacement creation.
-4. On established clear create success, call `record_resource_creation` with the exact registered tool, accepted arguments, and actual response. The repository-specific URL supplies the PR number; the returned database ID is not that number. The returned number/URL is recorded directly in the existing ignored Resource IDs file. Creation recording never updates versioned metadata afterward, creates another commit, amends, or pushes bookkeeping. Do not fetch merely to populate cache or revalidate accepted create arguments.
-5. Use `resolve_resource_ids` to resolve locally recorded PR addressing. Missing/stale IDs or uncertain attempts require agent investigation through configured provider tools and conversation when a choice is needed. Record the actual exact PR read after verifying repository/head/base. Tracker reads use the tracker registration; PR reads use the forge registration. Preserve existing intent, creation history and explicit choices; a closed or ambiguous PR is not permission to replace it.
-6. For an approved revised completion artifact, render and update the exact scoped PR's whole body directly. Trust established clear success without a routine body read/comparison or confirmation read. After uncertain/partial outcomes, read the exact PR and reconcile before retrying; never create another PR for a body update.
+Submission, revisions, and choosing an existing PR are in [Deliverable submission](../../deliverable/submission.md).
 
-When investigation requires choosing an existing PR, ask the user and pass that PR's actual exact read to `select_pull_request_resource`. The chosen number/URL replaces the recorded PR ID in the existing IDs file, preserving versioned intent. Finish and cleanup require evidence for that recorded number.
+## Shipping a Task or Gig
 
-Follow `../../phase.md`: keep In Progress/Self-Review until successful creation or recovery of a reviewable PR, then enter In Review and clear native Phase through the lifecycle authority. For PR revisions return to In Progress/Execution for corrections and Self-Review for adversarial/local user reviews; return to In Review only after successful approved resubmission. Reuse native automation outcomes on pushed commits and skip already-applied writes. A commit-only/no-PR route does not enter In Review. Creation errors do not prove absence. Preserve stored intent and known identity, and complete only confirmed unfinished work; never blindly retry a non-idempotent create.
-
-## Explicit Task/Gig finish
-
-Follow the [shared repository merge contract](./merge.md), also used by incoming PR shipping. An explicit finish request authorizes merge-if-needed, Done, stored-target synchronization/checkout, and deletion of the local Deliverable branch without another cleanup question. It does not authorize Epic merging or a different target/method.
-
-1. Call `prepare_integration_finish` with locally known PR addressing. Use one exact `pull_request_read:get` response to establish current state, repository, stored `head.ref`/`base.ref`, and `head.sha` equal to the local Deliverable head. Reuse a matching required read already obtained in this operation.
-2. Already merged: reuse its complete verified evidence. Not merged: after all completion requirements pass, call `prepare_integration_merge` with the same exact PR-get `evidence` (`tool`, actual `arguments`, actual `response`). The local context compares it with the stored local branch SHA and recorded PR number. Read `roles.forge.finish` from the returned context and branch on its `state`. Inspect the returned decision before calling a provider mutation:
-    - `merge-needed`: use the available `commit` skill's selection and message rules to prepare `commit_title`, using `metadata.title` as the summary in the selected style. Keep the readable PR title unchanged. Call `merge_pull_request` with `roles.forge.finish.arguments` unchanged and add explicit `commit_title` under the common title/message rules. When the tool reports that checks failed, stop without merging.
-    - `merged`: reuse `roles.forge.finish.merge` as the complete confirmed delivery proof without another merge call.
-    - `blocked`: report `roles.forge.finish.reason` and stop.
-3. Require the PR number, `merged: true`, exact repository/head/base/head SHA and `merged_at` from fresh exact PR get before Done. After a new merge, obtain only the missing merged-state facts; reuse matching current-operation evidence. Missing facts, mismatch, denial, or blocked merge stops. Reconcile an uncertain merge through exact PR get before retrying. Delivery trusts GitHub's merged-state confirmation; later target-history rewrites are outside this proof.
-4. Set Done through the existing authority, clear native Phase while retaining the last metadata Phase, then call `cleanup_github_delivery_branch` with the same exact merged-state evidence, including repository. The local finalizer validates the recorded PR number, semantic intent, source head, lifecycle, worktree safety and equality with freshly fetched origin before deletion.
-5. Successful finish leaves the clone on that exact synchronized target with only the local Deliverable branch deleted. An Epic-target Task leaves main and the Epic branch intact. Failed synchronization or proof preserves the source branch and never undoes confirmed Done. Never force-reset, stash, clean unrelated work, push the target to hide divergence, or delete remote/Epic branches.
-
-`list_pull_requests` is addressing evidence, not authoritative merge state. Use required exact get for merge facts and preserve its provenance. Missing merge evidence blocks completion even when creation/update/merge mutations otherwise succeeded.
+The shipping procedure is in [Deliverable shipping](../../deliverable/shipping.md). It uses the [repository merge contract](./merge.md), shared with incoming PR shipping. Missing merge evidence blocks completion even when every mutation succeeded.

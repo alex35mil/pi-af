@@ -52,7 +52,7 @@ export const IncomingProjectContextSchema = Type.Union([
         { additionalProperties: false },
     ),
     Type.Object(
-        { ...common, action: Type.Enum(["review", "ship", "cancel"], { type: "string" }) },
+        { ...common, action: Type.Enum(["review", "shipping", "cancellation"], { type: "string" }) },
         { additionalProperties: false },
     ),
 ])
@@ -257,7 +257,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                 ...args,
             })
         let desired: string
-        if (input.action === "ship" || (input.action === "cancel" && response.merged === true)) {
+        if (input.action === "shipping" || (input.action === "cancellation" && response.merged === true)) {
             const proof = planGitHubMerge(
                 {
                     mcpServer: revision.mcpServer,
@@ -272,7 +272,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             )
             if (proof.state !== "merged") throw new Error("Confirm exact PR merge before Project Done")
             desired = values.done
-        } else if (input.action === "cancel") {
+        } else if (input.action === "cancellation") {
             if (response.merged !== false) throw new Error("Confirm PR merge/close outcome before cancellation")
             if (response.state === "open") {
                 decision = mutation(

@@ -16,8 +16,9 @@ const checkout = fs.readFileSync(checkoutPath, "utf-8")
 
 describe("incoming PR guidance structure", () => {
     it("resolves the skill entry point and scoped PR reference links", () => {
-        const entry = skill.match(/Read and follow `([^`]+)`/)?.[1]
-        assert.ok(entry)
+        const readFirst = skill.match(/^## Read first\n\n((?:- .*\n)+)/m)?.[1] ?? ""
+        const entry = [...readFirst.matchAll(/\]\(([^)#\s]+\.md)\)/g)].map((match) => match[1]).find((link) => link.includes("/pr/"))
+        assert.ok(entry, "pr skill must list its incoming procedure under Read first")
         assert.equal(path.resolve("workflows/skills/pr", entry), path.resolve(procedurePath))
         for (const [file, source] of [
             [procedurePath, procedure],

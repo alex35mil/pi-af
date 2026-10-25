@@ -1,43 +1,52 @@
-# Shared planning protocol
+# Planning
 
-Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define plan content and any explicit inquiry-to-investigation branch. Follow `./review.md` for finding adjudication in every review phase and `./phase.md` for the shared workflow Phase contract.
+The shared planning protocol for Epic, Task, and Gig. Entity and kind skills define plan content, and Bugfix defines when inquiry turns into investigation. When reviewing, read [review](./review.md). When changing Phase, read [Phase](./phase.md).
 
 ## Research and inquiry
 
-1. Inspect relevant repository files, the parent Epic for a Task, and Project Policies before asking questions those sources can answer. Search or fetch external sources when they materially inform the plan, and record the resulting evidence.
-2. Keep the approved Request unchanged in `brief.md`. Put transient understanding, findings, and open questions in `.local/notes.md`; put settled plan decisions in `.local/draft.md` and then the accepted artifact. Never leave required context only in chat.
-3. Ask only questions whose answers can change behavior, outcome, scope, constraints, architecture, verification, decomposition, or—for Bugfix—reproduction and causal evidence. Ask one small coherent batch at a time; do not use a fixed questionnaire.
-4. After each answer, update the relevant local notes or draft before relying on it. Repeat inspection and questions until no material question remains. Bugfix inquiry may continue during investigation when new evidence exposes a material question.
-5. When no material questions remain, proceed directly: Bugfix enters investigation, while every other kind and Epic writes the detailed draft. The next user approval is reviewed-plan diff acceptance.
+1. **Inspect first.** Check relevant repository files, the parent Epic for a Task, and Project Policies before asking anything they can answer. Search or fetch external sources when they materially inform the plan, and record the evidence.
+2. **Keep things in their place.**
+   - The approved Request stays unchanged in `brief.md`.
+   - Transient understanding, findings, and open questions go in `.local/notes.md`.
+   - Settled decisions go in `.local/draft.md`, then the accepted artifact.
 
-## Draft variants
+   Never leave required context only in chat.
+3. **Ask only what matters.** Ask only questions whose answers can change behavior, outcome, scope, constraints, architecture, verification, or decomposition. For Bugfix, that includes reproduction and causal evidence. Ask one small coherent batch at a time, not a fixed questionnaire.
+4. **Record answers before relying on them.** Update notes or the draft after each answer. Repeat until no material question remains. Bugfix inquiry may continue during investigation when new evidence raises a material question.
+5. **Then proceed.** Bugfix starts investigating; every other kind, and Epic, writes the draft. The next user approval is accepting the reviewed plan's diff.
 
-| Entity   | Mutable local draft | Authoritative accepted artifact |
-| -------- | ------------------- | ------------------------------- |
-| Epic     | `.local/draft.md`   | `epic.md`                       |
-| Task/Gig | `.local/draft.md`   | `plan.md`                       |
+## Drafts
 
-Write the smallest self-contained draft that carries every settled decision needed for that entity. Follow the reviewed document shape in `./artifacts.md`: begin with `## Overview`, explaining the brief and why the work matters, then a few accepted-scope and behavior bullets under `### Plan highlights`. Keep all supporting contract sections below Overview. The overview is reviewed and accepted with those details, not generated at publication time; keep the highlights synchronized with plan changes. Entity skills define its content and review criteria.
+| Entity | Draft | Accepted artifact |
+| --- | --- | --- |
+| Epic | `.local/draft.md` | `epic.md` |
+| Task, Gig | `.local/draft.md` | `plan.md` |
+
+- Write the smallest self-contained draft that carries every settled decision. Entity skills define its content and review criteria.
+- Use the [reviewed document shape](./artifacts.md#reviewed-document-shape): `## Overview` explains the brief and why it matters, then a few scope and behavior bullets under `### Plan highlights`, then the supporting sections.
+- The Overview is reviewed and accepted with the details, not generated at publication. Keep the highlights in sync with plan changes.
+
+## Plan review and acceptance
+
+Lifecycle stays `inProgress` and Phase stays Planning throughout: drafting, review, corrections, presentation, and waiting for approval.
+
+1. Set Planning with the Phase tool for the current authority. Then call `review_epic`, `review_task`, or `review_gig` with `entityDir` and `phase: "plan"`. The tool snapshots the draft and numbers the round.
+2. Adjudicate every finding as described in [review](./review.md). Repeat until review approves with no unresolved user decision.
+3. When review approves, call `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` with `entityDir`. It returns the approved snapshot path and the target path. Read the snapshot and write its exact content to the target with the write tool, which shows the user the approval diff. Don't print the candidate first.
+4. A rejection or an unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
+5. When the user edits the target directly, compare it with the reviewed snapshot. Editorial edits may proceed. A material change to behavior, strategy, or decomposition goes back into the draft and through review again.
+6. Before acceptance, record every material user note in the accepted artifact or `.local/notes.md`, whichever owns it. The root `epic.md` or `plan.md` is the only accepted plan.
+7. On acceptance, set Execution. Lifecycle stays `inProgress`.
+
+Review criteria and what happens after acceptance are entity-specific. Round numbering, adjudication, signoff parsing, and diff presentation are shared.
 
 ## Material replanning
 
-When an accepted `epic.md` or `plan.md` must change materially after execution began, enter planning before writing or reviewing the replacement draft:
+When accepted behavior, strategy, scope, or decomposition must change after execution began:
 
-1. Reject replanning for lifecycle `done`; separately initialized work owns any later change.
-2. Restore lifecycle to `inProgress` when it is `inReview`: update `.local/status.md` for workflow authority or update and re-read the provider's native Status for tracker authority.
-3. Set Planning with the authority/provider-specific Phase tool and apply any returned native assignment through `./phase.md`.
-4. Copy the accepted artifact into `.local/draft.md`, apply the material change there, and repeat planning review and acceptance. Acceptance enters Execution while lifecycle remains `inProgress`.
+1. Refuse when lifecycle is `done`; separately initialized work owns later changes.
+2. When lifecycle is `inReview`, restore `inProgress`: update `.local/status.md` for workflow authority, or update and re-read native Status for tracker authority.
+3. Set Planning with the Phase tool and apply any returned native assignment.
+4. Copy the accepted artifact into `.local/draft.md`, make the change there, and repeat plan review and acceptance.
 
-Editorial changes that do not alter behavior, strategy, scope, or decomposition do not enter material replanning.
-
-## Planning review and acceptance
-
-1. Use the authority/provider-specific Phase tool for Planning and reconcile through `./phase.md`, retaining lifecycle `inProgress`. Then call `review_epic`, `review_task`, or `review_gig` matching the selected entity, with `entityDir` and `phase: "plan"`. The tool owns the immutable candidate snapshot and numbered review artifacts.
-2. Follow `./review.md`: adjudicate every finding through `record_review_response`, present its exact returned Markdown in chat, and continue until review is approved with no unresolved user decision.
-3. When review approves, remain in Planning while calling `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` matching the same entity, with `entityDir` and waiting for user diff approval. The tool selects a validated approved snapshot and returns its source and target paths. Read the snapshot and write that exact content to the authoritative target through the configured write/edit user-diff gate; the write tool presents the approval diff. Do not print the candidate first.
-4. A rejection or unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
-5. Compare any user-modified authoritative artifact with the reviewed snapshot. Editorial changes may proceed; a material change to behavior, strategy, or decomposition must become the mutable draft and pass a new review before implementation.
-6. Keep `phase: planning` while correcting the reviewed plan, rerunning planning review, presenting it, and waiting for user approval. Plan acceptance is required before implementation.
-7. Before acceptance, incorporate every material user note into the authoritative artifact or `.local/notes.md`, according to ownership. The root `epic.md` or `plan.md` is the sole accepted plan. Proceed only when no note remains blocking. On acceptance, set Execution with the authority/provider-specific Phase tool and reconcile through `./phase.md`, retaining lifecycle `inProgress`.
-
-Review criteria and downstream lifecycle remain entity-specific; local round identity, adjudication, exact signoff parsing, and user diff presentation do not.
+Editorial changes that don't alter behavior, strategy, scope, or decomposition skip replanning.

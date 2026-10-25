@@ -1,0 +1,52 @@
+{
+  "id": "GIG-01M5QYRGAP",
+  "rawId": "01M5QYRGAP",
+  "slug": "tighten-workflow-instructions",
+  "title": "Tighten workflow instructions and cap their context size",
+  "createdAt": "2026-10-24T21:58:36.630Z",
+  "phase": "selfReview",
+  "branch": {
+    "state": "ready",
+    "name": "gig-01m5qyrgap-tighten-workflow-instructions",
+    "start": "main",
+    "target": "main",
+    "source": "generated"
+  },
+  "integrations": [
+    {
+      "role": "tracker",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "state": "bound",
+      "external": {
+        "issueNumber": 84
+      },
+      "planComment": {
+        "state": "published",
+        "token": "d18a022b-202f-4f28-8fd8-328bd3a9ca91",
+        "id": 6394389663,
+        "url": "https://github.com/alex35mil/pi-af/issues/84#issuecomment-6394389663"
+      }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5qyrgap-tighten-workflow-instructions",
+      "target": "main",
+      "state": "intent"
+    }
+  ],
+  "authority": {
+    "kind": "tracker",
+    "provider": "github"
+  },
+  "entity": "gig",
+  "kind": "refactor"
+}

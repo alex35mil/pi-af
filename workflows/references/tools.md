@@ -1,71 +1,86 @@
-# Workflow tool discovery
+# Workflow tool catalog
 
-Workflow operations are native deferred tools. In Codemode, use `searchTools()` to find the needed operation and `describeTool()` to read its exact input contract before calling `tools.<name>(args)`. Namespaces group initialization, integrations, setup, reviews, pull requests, and delivery under `workflows_<group>`; initialization uses `workflows_initialization` and incoming PR checkout uses `workflows_pull_requests`.
+Workflow operations are native deferred tools. In Codemode, find one with `searchTools()` and read its input schema with `describeTool()` before the first call ([core tool calls](./core.md#tool-calls)). Tools are grouped under `workflows_<group>` namespaces, for example `workflows_initialization` and `workflows_pull_requests`.
 
-Discovery returns full typed schemas without putting the entire catalog into ordinary requests. It grants no execution, publication, lifecycle, or Git approval. Calls still pass through native validation, permission hooks, scoped rules, editor review, and cancellation. Coding tools remain directly available. Workflow transitions, reload, and resume retain on-demand discoverability rather than activating the whole catalog.
+**Discovery:**
 
-The existing permissions-decorated Codemode is required. An explicit tool allowlist or Codemode exclusion remains authoritative; use `--tools +codemode` or an appropriate explicit allowlist when workflow access is intended. The package does not rewrite user settings or silently expose all workflows as a fallback. Reviewer subprocesses retain their separate read-only tool selection.
+- Discovering a tool grants no approval. Calls still go through validation, permission hooks, scoped rules, editor review, and cancellation.
+- Coding tools stay directly available. Transitions, reload, and resume keep discovery on demand rather than loading the whole catalog.
 
-## Preflight checks and failure handling
+**Codemode and permissions:**
 
-Choose workflow checks by their concrete benefit and cost, rather than requiring preflight for every operation. This applies to local commands, Git operations, artifact changes, and integrations.
+- The permissions-decorated Codemode is required. An explicit tool allowlist or Codemode exclusion still wins; use `--tools +codemode` or a suitable allowlist when workflows are wanted.
+- The package never rewrites user settings or exposes all workflows as a fallback.
+- Reviewer subprocesses keep their own read-only tool set.
 
-- Cheap, useful local checks are fine; batch independent checks through Codemode where practical.
-- Once scope and approval are established, execute remote operations directly and rely on their authoritative validation. Avoid extra network calls or user interruptions merely to predict rejection, such as checking permissions or supported settings that the operation itself validates safely.
-- Retain required tests, reviews, approvals, and safety checks that prevent concrete harm. Before adding a costly preflight or blocking on extra evidence, explain what it prevents that handling the operation's error cannot: for example, a wrong-target change, unauthorized side effects, irreversible loss, or costly partial execution.
-- On failure, preserve work, stop dependent steps, and report the actual error, confirmed outcomes, and blocker to the user. Continue only independent work. Do not bypass a denial, change the approved operation, or retry an uncertain mutation blindly; reconcile its actual state before any retry under the existing recovery procedure.
+**Input conventions:**
+
+- Each tool takes only its own operation's fields; no `action`, `operation`, entity, or provider selector.
+- Optional fact fields may be omitted only when they were read and found empty ([Phase](./phase.md#fresh-native-facts)).
 
 ## Initialization
 
-| Work | New work | Adopt explicit GitHub work | Adopt explicit Linear work |
+| Work | New | Adopt GitHub work | Adopt Linear work |
 | --- | --- | --- | --- |
 | Epic | `init_epic` | `adopt_github_epic` | `adopt_linear_epic` |
 | Task | `init_task` | `adopt_github_task` | `adopt_linear_task` |
 | Gig | `init_gig` | `adopt_github_gig` | `adopt_linear_gig` |
 
-The operation fixes entity and source identity; do not supply those discriminators. Adopt tools take the verified provider IDs and addressing in `source`, without `mode`, `provider`, or Linear `resource`. Preserve all intake, hierarchy, branch, artifact-persistence, and approval gates. `set_epic_task_target` records approved routing intent before committing Epic planning; it accepts no delivery evidence and proves no delivery. Only the three Task initialization tools accept `epicDelivery` for default-target Tasks: `{ kind: "git-ancestry" }` (the omitted-input behavior) or `{ kind: "github-pr", evidence }`. Every such initialization independently verifies delivery. See [Epic delivery](./epic.md) for the shared current-revision checks, exact registered PR-get envelope, and separate Git approvals. `finalize_linear_branch` retains its focused contract.
+- Adoption tools take the verified provider IDs and addressing in `source`.
+- `set_epic_task_target` records approved routing intent before committing Epic planning; it takes no delivery evidence and proves no delivery.
+- Only the three Task tools take `epicDelivery`, for default-target Tasks ([Epic delivery](./epic.md)).
+- `finalize_linear_branch` completes a pending Linear branch.
 
-## Integration contexts and state
+## Integration context and state
 
 | Purpose | Tool |
 | --- | --- |
-| Inspect current/workflow-source configuration | `inspect_integrations` |
-| Prepare Backlog/Todo intake context | `inspect_queue_intake` |
-| Inspect explicit adoption context | `inspect_adoption` |
-| Initialize or resume an entity's integration context | `initialize_integration`, `resume_integration` |
-| Prepare tracker artifact projection | `prepare_integration_projection` |
-| Prepare forge PR submission context | `prepare_integration_pull_request` |
-| Read finish addressing/context; validate exact PR merge evidence | `prepare_integration_finish`, `prepare_integration_merge` |
-| Prepare labels/lifecycle/Priority/hierarchy context | `prepare_tracker_mutation` |
-| Calculate native Phase reconciliation without setting metadata Phase | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
-| Set metadata Phase and calculate reconciliation | `set_local_workflow_phase`, `set_github_workflow_phase`, `set_linear_workflow_phase` |
-| Confirm pending initialization | `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, `confirm_linear_tracker` |
+| Inspect configuration (current or workflow source) | `inspect_integrations` |
+| Prepare Backlog or Todo intake | `inspect_queue_intake` |
+| Prepare adoption of selected work | `inspect_adoption` |
+| Start or resume an entity's integrations | `initialize_integration`, `resume_integration` |
+| Prepare plan publication | `prepare_integration_projection` |
+| Prepare PR submission | `prepare_integration_pull_request` |
+| Prepare shipping; validate PR merge evidence | `prepare_integration_shipping`, `prepare_integration_merge` |
+| Prepare a label, lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
+| Calculate native Phase without changing metadata | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
+| Set metadata Phase and calculate native Phase | `set_local_workflow_phase`, `set_github_workflow_phase`, `set_linear_workflow_phase` |
+| Confirm a pending tracker binding | `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, `confirm_linear_tracker` |
 
-Supply `entityDir` for entity operations and explicit `target: current | workflow` for inspection/intake. Context tools return configuration, addressing, evidence requirements, or native operation arguments; they do not execute provider calls or grant approval. A Phase context tool fixes `change: phase` and provider identity; do not supply those discriminators. `prepare_tracker_mutation` retains only its uniform labels/lifecycle/Priority/hierarchy `change` enum.
-
-Phase-setting tools fix authority/provider; supply fresh lifecycle and that provider's `native` facts when using a tracker. Native Phase inputs omit `provider`. Omit `current` only for an observed empty GitHub selection. In complete Linear label reads, omit only genuinely empty `team`, `parentId`, `groupType`, or `retiredAt` leaves; `catalog` and `applied` remain required. Code maps those observed empty leaves to domain nulls. Never use omission to conceal an unread value or missing evidence.
-
-Binding confirmation fixes provider and, for GitHub, artifact mode. Its `facts` omit `provider`; provider-specific `phase` has the same leaf conventions above. Omit `parentIssueNumber` or `projectId` only for an observed absent relationship. Versioned GitHub `systemMetadata` requires complete labels/Internal ID but omits fixed `mode`; unversioned GitHub has no `systemMetadata` input. Linear requires its `systemMetadata.mode` enum. Preserve all confirmation and freshness requirements in the provider reference.
+Context tools return configuration, addressing, evidence requirements, or native call arguments. They never call providers or grant approval.
 
 ## Resource identity and publication
 
-- Creation checkpoints: `begin_resource_creation`, then `record_resource_creation` with actual clear-success evidence and the same tracker/forge role.
-- IDs: `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and explicit approved `select_pull_request_resource`. These tools do not call providers or turn identity/lifecycle/merge facts into disposable cache state.
-- Plans: `prepare_tracker_publication`; published Linear document updates additionally use `prepare_tracker_publication_update` with exact document/parent evidence. Save first-creation evidence with `record_tracker_publication`; recover uncertain identity through `recover_tracker_publication` and complete native read pages. Pending creation never automatically retries.
-- Bodies and comparison: `render_provider_body`, `verify_artifact_projection`.
+- **Creation checkpoints:** `begin_resource_creation`, then `record_resource_creation` with the create's evidence.
+- **Resource IDs:** `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and `select_pull_request_resource` for an approved choice of existing PR.
+- **Plans:**
+  - `prepare_tracker_publication`, and `prepare_tracker_publication_update` for a published Linear document;
+  - `record_tracker_publication` for a first creation;
+  - `recover_tracker_publication` for pending or uncertain identity ([recovery](./integrations/recovery.md)).
+- **Bodies:** `render_provider_body`, `verify_artifact_projection`.
 
-Operation-specific tools take only their operation's fields, not an `action` or `operation` selector. PR selection supplies its fixed resource internally; ID resolution, recording, and invalidation retain their explicit resource enum. Respect the shared complete-body, signing, approval, and uncertainty contracts.
+None of these call providers or turn identity, lifecycle, or merge facts into cache.
 
 ## Setup, review, and delivery
 
-Setup uses `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, and `render_incoming_pr_intake`. GitHub provisioning uses `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, and `apply_github_project_setup`. Preview/apply preserve complete structured specifications, approval hashes, credential isolation, and provider effects; they take no operation selector.
+- **Setup:** `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, `render_incoming_pr_intake`.
+- **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
+- **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
+- **Plan presentation:** `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, `prepare_gig_plan_presentation`.
+- **Delivery cleanup:**
+  - `cleanup_github_delivery_branch`, which takes the merged PR read as `evidence`;
+  - `cleanup_ancestry_delivery_branch`, which proves delivery by Git ancestry.
 
-Reviews use `review_epic`, `review_task`, or `review_gig` with the exact category/inputs. Presentation uses `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation`. No entity selector is needed. `record_review_response`, `review_pull_request`, and `record_pull_request_review_response` retain their names; omit a finding's `userDecision` only when none is needed. Stored reports keep their strict existing null representation. Reviewer provider loading preserves the explicit override or configured startup default, not the parent session's current model, and loads only the selected Claude Code extension alongside rules and permissions.
-
-Delivery cleanup uses `cleanup_ancestry_delivery_branch` or `cleanup_github_delivery_branch`, with required `completionAuthority: workflow | github | linear` identifying the authority whose Done outcome was confirmed. GitHub cleanup additionally takes its exact `merge` proof without fixed `kind`/`source`; ancestry cleanup fixes its Git-ancestry proof. Neither choice establishes remote Done or authorizes cleanup without the existing explicit finish/delivery gates.
+  Both need `completionAuthority`, the authority whose Done was confirmed. Neither establishes Done or authorizes cleanup outside the shipping gates.
 
 ## Incoming PRs
 
-Use `inspect_incoming_pr_context` for configured addressing and `plan_incoming_pr_merge` for exact reviewed/fresh merge evidence. Project intents use `plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_ship`, or `plan_incoming_pr_cancel`, preserving structured membership/read evidence. They return scoped native operations without executing them.
+- **Context and merge:** `inspect_incoming_pr_context`, `plan_incoming_pr_merge`.
+- **Board:** `plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_shipping`, `plan_incoming_pr_cancellation`. They return scoped native calls without running them.
+- **Review:** `review_pull_request`, `record_pull_request_review_response`.
+- **Checkout:**
+  - `prepare_incoming_pr_checkout`, `checkout_incoming_pr`, `inspect_incoming_pr_checkout`, `begin_incoming_pr_fixes`;
+  - `observe_incoming_pr_target`, `rebase_incoming_pr`, `continue_incoming_pr_rebase`, `publish_incoming_pr_rebase`;
+  - `commit_incoming_pr_fixes`, `publish_incoming_pr_fixes`, `cleanup_incoming_pr_checkout`.
 
-Checkout actions are separate tools: `prepare_incoming_pr_checkout`, `checkout_incoming_pr`, `inspect_incoming_pr_checkout`, `begin_incoming_pr_fixes`, `observe_incoming_pr_target`, `rebase_incoming_pr`, `continue_incoming_pr_rebase`, `publish_incoming_pr_rebase`, `commit_incoming_pr_fixes`, `publish_incoming_pr_fixes`, and `cleanup_incoming_pr_checkout`. Do not pass an operation selector. The incoming context's `safety.checkout.tools` map supplies these exact names. Separate checkout, execution, Git-write, publication, and merge approvals still apply; keep these actions outside PR skill-derived allow rules.
+  The incoming context's `safety.checkout.tools` map supplies these names. Checkout, execution, Git writes, publication, and merge each keep their own approval; keep these tools outside PR skill-derived allow rules.

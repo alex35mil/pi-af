@@ -26,210 +26,295 @@ allowed-tools:
 
 # Project setup
 
-Interactively configure the repository for Epic/Task/Gig workflows. Setup may inspect Linear read-only through `inspect_linear_workspace`, inspect GitHub, and—only through an exact separately approved `preview_github_project_setup` result—create or complete GitHub Project configuration. Never initialize an entity, mutate Linear, mutate GitHub work items or pull requests, stage files, alter the Git index, commit, or push.
+Interactively configure the repository for Epic, Task, and Gig workflows.
 
-Read `../../references/tools.md` for native tool discovery and `../../references/setup.md` for the configuration-file contract. When integrations are requested, also read `../../references/integrations/shared.md` and the selected provider behavior from `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`.
+**Allowed:**
+
+- inspect Linear read-only, through `inspect_linear_workspace`;
+- inspect GitHub;
+- create or complete GitHub Project configuration, but only through a separately approved `preview_github_project_setup` result.
+
+**Never:** initialize an entity, mutate Linear, mutate GitHub work items or pull requests, stage files, alter the Git index, commit, or push.
+
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Setup configuration contract](../../references/setup.md)
+
+When integrations are requested, read [integration roles](../../references/integrations/shared.md) and the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md), [Linear tracker](../../references/integrations/tracker/linear.md), or [GitHub forge](../../references/integrations/forge/github.md).
 
 ## Inspect first
 
-`/project-setup` supplies a deterministic read-only snapshot containing the repository root, credential-safe GitHub identities from fetch remotes in `repositoryIdentity.githubCandidates`, exact setup files, global and repository-local workflow settings, `.git/info/exclude` state, `.project` paths in Git or staged, bound entity tracker summaries, and a credential-redacted inventory of global, committed-project, and local MCP registrations. Recognized official registrations may expose their environment-variable name but never its value. Use that snapshot directly. Do not repeat its Git checks through Bash or another shell command. The default branch is irrelevant to setup and must not be inspected.
+**The snapshot:**
 
-For a natural-language invocation without the command snapshot, call `inspect_project_setup` before asking setup questions. It returns the same read-only context through the same inspector, including missing or invalid setup files that need reconfiguration. Reuse a supplied snapshot rather than inspecting twice. Use its effective MCP inventory and recognized credential environment references instead of asking for known names. Ask only for genuinely missing information. Do not run Git or shell discovery; the snapshot supplies observed Git facts, while `prepare_artifacts` forces setup's persistence validation and permitted exclusion preparation. Routine workflow tools use the shared operational guard.
+- `/project-setup` supplies a read-only snapshot ([setup context](../../references/setup.md#read-only-setup-context)). Use it directly.
+- For a natural-language request without one, call `inspect_project_setup` before asking anything. It returns the same context, including missing or invalid setup files. Reuse a supplied snapshot rather than inspecting twice.
 
-Before asking questions:
+**Using it:**
 
-1. If setup already exists, summarize it and ask which exact parts the user wants changed. Preserve every unmentioned value. When `boundEntityTrackers` contains GitHub work, never replace its configured Project; explain that the user must direct a separate migration.
-2. Do not overwrite or silently replace existing setup files.
-3. Ask only the current setup decision. Do not mention or preview later optional decisions. Introduce Project Policies only when their final dedicated question is reached, and do not inspect the broader repository for policy ideas unless the user accepts that help.
+- Take MCP servers and recognized credential variable names from its inventory instead of asking. Ask only for genuinely missing information.
+- Don't run Git or shell discovery at all: the snapshot supplies the Git facts setup needs, and `prepare_artifacts` does persistence validation. In particular, don't repeat its Git checks with Bash, and don't inspect the default branch; it's irrelevant to setup.
+- `prepare_artifacts` performs setup's persistence validation and permitted exclusions. Routine workflow tools use the shared guard.
 
-## Decision tables
+**Before asking questions:**
 
-### Artifact persistence
+1. **Existing setup:** summarize it and ask which parts to change. Keep every unmentioned value. When `boundEntityTrackers` lists GitHub work, never replace its configured Project; explain that the user must direct a separate migration.
+2. **Files:** never overwrite or silently replace existing setup files.
+3. **One decision at a time:** ask only the current decision, and don't preview later optional ones. Bring up Project Policies only at their own final question, and don't inspect the repository for policy ideas unless the user accepts that help.
 
-| Choice        | Meaning                                        |
-| ------------- | ---------------------------------------------- |
-| `versioned`   | Durable `.project/` artifacts belong in Git    |
-| `unversioned` | Every `.project/` artifact remains outside Git |
+## Asking questions
 
-Read and follow `../../references/artifacts.md` for exact setup actions and transition blockers. Removal from Git requires separate explicit approval and is outside setup.
+Ask small, coherent batches, and explain consequences before asking for a choice. For every finite choice:
 
-### Blocked-review confirmation
-
-| Choice                 | Configuration                                         |
-| ---------------------- | ----------------------------------------------------- |
-| Disabled               | Omit `reviews`                                        |
-| Enabled after N blocks | `reviews.userConfirmationAfter` is positive integer N |
-
-Counting is separate for each entity and review phase. The checkpoint stops immediately after the threshold blocking result and before correcting that round. Reviews continue until approved whether or not this checkpoint is configured.
-
-### Integration roles
-
-| Role    | Choices              | Owns                                                                                      |
-| ------- | -------------------- | ----------------------------------------------------------------------------------------- |
-| tracker | none, GitHub, Linear | backlog/work objects, lifecycle, priority, hierarchy, accepted task-definition projection |
-| forge   | none, GitHub         | pull requests                                                                             |
-
-Either role may be configured alone. Omit `.project/integrations.json` when both are none. Never create placeholder, disabled, or secret-bearing configuration. Select the tracker provider before asking about branch naming; forge selection does not affect branch options.
-
-### MCP registration
-
-After integration providers are selected, use the snapshot's effective MCP inventory to select configured servers and reuse their recognized credential environment-variable names. That inventory describes configuration, not active tool availability. Establish selected-provider availability through its registered provider tools under normal permissions. Operational `inspect_integrations` validation belongs after approved, valid workflow configuration is saved.
-
-For each provider, reuse a suitable active MCP server when one exists; ask the user to select it when multiple names are suitable. A configured but inactive server is not usable: report it and stop for authentication/configuration correction rather than silently replacing it.
-
-When one or more required providers have no configured server, offer to add their official servers. Before asking for any MCP server name, credential variable, or provider-specific configuration, ask one shared persistence question for all new MCP registrations:
-
-1. Private local checkout configuration (`local`) — `.agents/mcp.local.json`, using `mcpServers`
-2. Committed project configuration (`project`) — `.agents/mcp.json`, using `mcpServers`
-
-The adapter merges global, project, then local entries by exact name and registers every effective server through `pi.registerMcpServer()`. Later entries replace earlier entries; normalized-name conflicts are errors. Keep private registrations project-scoped; never move them into global configuration. Project trust is required before reading or configuring either project tier.
-
-Accept the number or exact value, confirm the interpreted selection as muted context, and apply it to every new MCP registration in this setup. Never infer the persistence choice or ask it again per provider. Only then ask for each missing server's name and credential environment-variable name. Both forms contain only an environment-variable reference, never a credential. Default credential variable names are `LINEAR_API_KEY` and `GITHUB_PERSONAL_ACCESS_TOKEN`, but the user may provide another valid environment-variable name.
-
-Before adding registrations, preview the exact server entries, shared target file, and—when local is selected—the exact `/.agents/mcp.local.json` append to `.git/info/exclude`. Obtain explicit approval, then call `configure_mcp`. This tool preserves unrelated settings, rejects conflicting names, never changes the Git index, and enables only `issues,projects` for a GitHub tracker plus `pull_requests` for a GitHub forge.
-
-New MCP registrations are unavailable to the running Pi session. When `configure_mcp` reports `restartRequired`, make no `.project` writes: tell the user which environment variables must be exported, then instruct them to reload or restart Pi and restore this current session. Do not tell them to open an empty session or run `/project-setup` again; the restored conversation contains the approved answers needed to continue. After restoration, refresh the configured inventory with `inspect_project_setup`, continue from the next unanswered setup decision, and proceed only when the selected registered provider tools are available under normal permissions.
-
-### Branch naming
-
-| Selected tracker and choice | Project-wide format                                 |
-| --------------------------- | --------------------------------------------------- |
-| none                        | user-selected static format                         |
-| GitHub                      | user-selected static format                         |
-| Linear, use Linear naming   | `tracker` for Epic, Task, and Gig                   |
-| Linear, use workflow naming | user-selected static format for Epic, Task, and Gig |
-
-For no tracker or GitHub, offer `identifier-title` as the neutral default and ask for one static format.
-
-For Linear, ask whether all workflow branches should use Linear's naming:
-
-1. Use Linear branch naming (`tracker`)
-2. Use one static workflow format (`static`)
-
-When `tracker` is selected, require the prior `inspect_linear_workspace` result to have a supported template and a recognized credential environment reference on the configured Linear MCP registration. Persist exactly `"branches": { "format": "tracker" }`. Explain that Task/Gig use exact issue `gitBranchName`; Epic initialization reads current Linear branch settings again and reconstructs that template using the current `viewer.username`, lowercase workflow Epic ID, and normalized Epic slug. Do not ask for or read local/global workflow username settings. For an unsupported template or unavailable credential reference, require the user to select a static format, correct Linear/MCP configuration, or rerun inspection; never normalize or approximate the template.
-
-When `static` is selected, offer `identifier-title` as the neutral default and ask for one format used by Epic, Task, and Gig. Persist the selected format once at `branches.format`.
-
-Present all seven static formats from `../../references/setup.md` as numbered choices.
-
-When the selected static format begins with `username`, use the repository-local `.project/config.local.json` username when present, otherwise the global `workflows.json` username. If neither exists, ask for it and propose strict `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`. Never store username in committed `.project/config.json`, infer it from Git/provider identity, or ask for it for `tracker` or a static format without `username`.
-
-## Guided inquiry
-
-Ask small coherent question batches and explain consequences before asking for a choice. For every finite choice:
-
-- present selectable options as a numbered list, never an unordered bullet list;
-- accept either the displayed number or the exact displayed label/config value;
-- state each interpreted selection as muted context before continuing, using a Markdown blockquote such as `> ✓ Tracker: Linear (\`linear\`)`;
-- leave a blank line between that blockquote and the next question;
-- ask separate questions when reusing numbers in one message could make the reply ambiguous.
+- show options as a numbered list, never bullets;
+- accept the number or the exact label or config value;
+- confirm the interpreted choice as muted context, as a blockquote such as `> ✓ Tracker: Linear (\`linear\`)`, followed by a blank line before the next question;
+- ask separately when reusing numbers in one message could make a reply ambiguous.
 
 For example:
 
 1. Versioned (`versioned`)
 2. Unversioned (`unversioned`)
 
-Ask the setup decisions in this order:
+**Order of decisions:**
 
 1. Artifact persistence.
-2. Tracker and forge roles plus provider choices.
-3. Reuse or bootstrap required MCP registrations; restart and resume when new registrations are added.
-4. For Linear, run the read-only public API inspection below.
-5. Branch naming, filtered by the selected tracker provider and informed by Linear inspection when applicable.
-6. Exact provider configuration, only for selected roles; once GitHub forge and Project are known, offer optional fork-only incoming PR intake.
-7. Whether to enable user confirmation after a positive number of consecutive blocked reviews. Disabled omits `reviews`; never write `false`, zero, or an empty object.
-8. Optional Project Policies, then integration convenience permissions and independently selectable accepted-artifact diff gates.
+2. Tracker and forge roles, and their providers.
+3. Reuse or add MCP registrations; restart and resume when new ones are added.
+4. For Linear, the read-only workspace inspection.
+5. Branch naming, filtered by tracker and informed by Linear inspection.
+6. Provider configuration for the selected roles. Once GitHub forge and Project are both known, offer fork-only incoming PR intake.
+7. Blocked-review confirmation.
+8. Project Policies, then convenience permissions and artifact diff gates.
 
-For a Linear tracker, obtain the credential environment-variable name from the recognized effective MCP registration when available; otherwise ask only for an environment-variable name, never its value. Call `inspect_linear_workspace` after the MCP server is active and before branch naming. The operation reads only workspace identity, authenticated viewer Full Name and Username, accessible teams, team issue statuses, applicable Project statuses, and the workspace branch template. A missing variable, denied access, or API/GraphQL failure stops automatic discovery: report the exact failure and ask whether the user wants to correct access or explicitly continue with manual status/team values. Never silently fall back. `tracker` branch format additionally requires the configured MCP registration to expose that recognized credential environment reference because every Epic initialization re-reads current branch settings.
+## Decisions
 
-Present accessible teams as numbered choices. After the user selects one, present that team's issue statuses and Project statuses scoped to the workspace or that team, including native type and scope. Have the user select six distinct exact issue names and six distinct exact Project names for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`; never infer lifecycle semantics from names or native types. Each persisted name must identify one applicable status unambiguously. Use the inspection's exact branch-format result as described above. Native priority needs no configuration.
+### 1. Artifact persistence
 
-For Linear Phase, follow `../../references/phase.md` and the exact shape in `../../references/setup.md`. Read applicable Project and issue labels through the registered MCP tools, including groups and complete pagination. Have the user select one exact workspace/team group for Projects and one for issues, with active Planning, Execution, and Self-Review children. Verify child membership and issue single-select; Project groups are mutually exclusive by provider contract. Missing/incompatible groups require user configuration before proceeding; setup does not mutate Linear. Persist the selected scopes/names/child mappings, not provider IDs.
+| Choice | Meaning |
+| --- | --- |
+| `versioned` | Durable `.project/` artifacts belong in Git |
+| `unversioned` | Every `.project/` artifact stays outside Git |
 
-For GitHub tracker, reuse the selected active MCP server and existing repository configuration. For new configuration, use the snapshot’s `repositoryIdentity.githubCandidates`: one distinct identity supplies the current repository; multiple candidates require a numbered selection; when there are no candidates, ask for repository identity. State the reused identity rather than asking users to repeat it. Do not choose between fork/upstream remotes, infer identity from the directory name, or guess SSH aliases. The snapshot contains only validated owner/repo identities and contributing remote names, never raw remote URLs or credentials.
+When applying it, read [artifacts](../../references/artifacts.md#persistence-and-authority) for the setup actions and transition blockers. Removing files from Git needs separate approval and is outside setup.
 
-An environment-backed GitHub token is additionally required for direct setup APIs: reuse the configured credential environment-variable name when known; for a reused registration whose credential source is not available, ask only for an environment-variable name and never its value. Call `inspect_github_repository_setup` with credential environment and repository to verify canonical owner/name and owner type before asking about Project ownership or field scopes. Stop on inspection failure; do not guess ownership.
+### 2. Integration roles
 
-Explain that the Project owner is the GitHub account or organization that contains the Project and controls its access. Offer numbered choices to reuse the verified repository owner (show its login/type) or use another explicit owner. Ask only for missing login/type; never infer account type from a name.
+| Role | Choices | Owns |
+| --- | --- | --- |
+| tracker | none, GitHub, Linear | work items, Backlog and Todo, lifecycle, Priority, hierarchy, plan publication |
+| forge | none, GitHub | pull requests |
 
-Call `inspect_github_project_setup` with the verified repository, selected Project owner login/type, credential environment, and `includeOrganizationMetadata: false`. Present existing Projects without preferring organization metadata. If the repository owner is an organization and the user wants to consider organization-native or custom field scope, repeat `inspect_github_project_setup` with `includeOrganizationMetadata: true` and present discovered Issue Fields. Ask whether to adopt an existing Project or create one. For creation, offer `suggestedProjectTitle` (the verified repository name) as the default with an explicit override, and ask `private`/`public`. Resolve the exact title into the specification and provisioning preview before creation; preserve adopted Project titles. Offer repository association and default-repository configuration as separate choices, both enabled for the setup repository by default. `defaultRepository: unmanaged` skips configuration without clearing an existing value. Setting the default requires association; resolve a contradictory choice before preview. Before removing an existing association, have the user inspect the Project's default repository in Settings and resolve a default pointing to that repository before approving removal. Stop when its state cannot be established.
+- Either role may be configured alone. Omit `.project/integrations.json` when both are none.
+- Never create placeholder, disabled, or secret-bearing configuration.
+- Choose the tracker before branch naming; the forge doesn't affect branch options.
 
-For an existing or `resume-created` Project, call `inspect_github_project` with the credential environment, Project owner, and `projectNumber`. Present the returned views and require explicit selection of one exact view ID. Use `presentation.target: { mode: selected, viewId }`; only a new Project uses `{ mode: initial }`. For a freshly created empty Project using Board layout, the initial target creates the configured Board through REST, verifies its settings, then deletes only the captured, unchanged automatically generated default view. Preserve all unrelated views. No initial view means no deletion; multiple initial views require explicit selection and renewed preview. New table/roadmap layouts retain initial-view configuration. Existing and `resume-created` Projects only update the explicitly selected view; they never replace or delete views.
+### 3. MCP registrations
 
-For a verified personal repository, explain that organization Issue Fields are unavailable and use Project-contained Priority and Internal ID without asking a scope question. Include those resolved scopes in the approval preview. Only for organization-owned repositories, ask for one field metadata model:
+**Choosing servers:**
 
-1. Project-contained — Project fields for Priority and Internal ID.
-2. Organization-native — organization Issue Fields for Priority and Internal ID.
-3. Custom — choose each field's scope independently.
+- Use the snapshot's MCP inventory to pick servers and reuse their credential variable names. The inventory describes configuration, not active tools; confirm availability through the provider's registered tools.
+- Reuse a suitable active server for each provider; ask when several fit.
+- A configured but inactive server isn't usable. Report it and stop for the user to fix authentication or configuration; never silently replace it.
 
-Status and Phase are always Project fields. Phase has Planning, Execution, and Self-Review options and projects initialized In Progress activity in both artifact modes. Setup owns the fixed Epic and six Deliverable Kind labels. Kind labels classify versioned GitHub issues; unversioned workflows never apply or validate them. Native GitHub issue Type remains independent and unmanaged. Never use labels for lifecycle or Priority, and never use Custom Properties. A personal Project may use organization issue metadata when its repository belongs to that organization, but availability never selects scope. Project-contained configuration ignores organization metadata even when available. Internal ID metadata and the managed label catalog are still configured in unversioned mode.
+**Adding missing servers:**
 
-Offer the editable `defaults` returned by `inspect_github_project_setup`: six queue/lifecycle Status options, the Phase field and three options, exact Kind label definitions, Priority options, and the Internal ID text field. Every label name/color/description is an exact provisioning input; only names are persisted in tracker configuration. Require Kind label names to remain distinct case-insensitively and all Project field names, including Phase, to be distinct. Explain that Project-option colors, descriptions, visual ordering, and extra options are not runtime workflow inputs; exact configured field and option names are. For organization-native/custom scope, ask whether missing Issue Fields should be provisioned or the affected metadata should switch to Project scope. Organization provisioning requires an organization repository and organization-administrator/token permissions.
+1. Offer to add the official servers. First ask one shared persistence question for every new registration in this setup:
+   1. Private local checkout configuration (`local`) — `.agents/mcp.local.json`
+   2. Committed project configuration (`project`) — `.agents/mcp.json`
 
-Offer the returned presentation defaults: **Board** name/layout; visible Title, Assignees, configured Status, Linked pull requests, Sub-issues progress, Labels, configured Priority, and configured Phase. For Boards, these are a visible-field selection, not a promised card-field order; GitHub controls their returned/display sequence. Table views retain ordered fields. Internal ID stays provisioned but hidden. Visible fields use `{ kind: field, name }` or `{ kind: workflow, field: status | priority | phase }`; keep semantic references so custom metadata names resolve correctly. A requested issue-scoped field not exposed on the Project requires explicit user correction or a changed visible-field selection, never silent omission or a duplicate custom field. Kind remains repository labels; provision only configured workflow fields, with no automatic field deletion. A fresh Board also requires its configured Priority to be exposed on the Project for sorting, even when hidden from visible fields; resolve missing exposure explicitly rather than omitting the sort.
+   Never infer this choice or ask it per provider. Project trust is required for either.
+2. Then ask for each missing server's name and credential variable name, never the value. Defaults are `LINEAR_API_KEY` and `GITHUB_PERSONAL_ACCESS_TOKEN`.
+3. Preview the exact server entries, the target file, and, for local, the `/.agents/mcp.local.json` exclude append. Get approval, then call `configure_mcp`. Merge order, name conflicts, and toolsets are in [MCP registrations](../../references/setup.md#mcp-registrations).
 
-Set the Project's short description to `Repository: https://github.com/<owner>/<repo>` using the resolved setup repository, not the Project owner. The API reads and writes `shortDescription`, preserving the Project README. Include the exact existing description and replacement in preview/hash approval for existing and resumed Projects; matching text needs no write. Description read-back must match before API provisioning is verified.
+**Restarting:**
 
-The [presentation contract](../../references/setup.md#github-project-presentation) owns supported API changes and precise manual steps for Status columns, no swimlanes, Priority sorting with Urgent first (Urgent → High → Medium → Low), Count, no slicing, and default repository. Read it before presenting the complete proposal. Layout/name/visible fields are editable; roadmap requires an empty visible-field selection. Preserve unrelated views and saved filters/settings during API writes. A saved Priority order must produce the requested sequence in either native sort direction. Resolve blocked option-order mismatches before approval: inspect the named field settings and separately approve aligning existing options or changing the requested order. Reordering is field-wide; preserve all option values.
+- New registrations aren't available to the running session. When `configure_mcp` reports `restartRequired`:
+  - make no `.project` writes;
+  - tell the user which variables to export;
+  - ask them to reload or restart Pi and restore this session. Not an empty session, and not `/project-setup` again; the restored conversation holds the approved answers.
+- After restoring, refresh with `inspect_project_setup`, continue from the next unanswered decision, and proceed only once the provider's registered tools are available.
 
-Construct the exact strict specification and call `preview_github_project_setup`. A blocked preview performs no mutation: resolve incompatible existing fields or label metadata without deleting native fields, or select an exact-title Project as `resume-created`. A newly created or confirmed `resume-created` empty Project updates GitHub's native Status field in place with the complete option set while preserving matching option IDs; an ordinary existing Project's incompatible Status is never changed. The preview also creates or validates the exact Phase single-select field/options and every Kind repository label. Present every intended provider effect in user-facing terms, including owner, resolved title, visibility, short-description replacement, repository association, native Status update, fields/options and resolved scopes, managed labels, Issue Field visibility, organization-level creation, exact view changes, and every returned manual step. For a fresh Board, explicitly include REST creation with configured Status columns, no swimlanes, sole configured Priority sort/order, and deletion limited to the captured unchanged default view after successful verification. Disclose that setting the default repository also links it; omit that step after default-repository opt-out. Require explicit approval of that exact `planHash`, then call `apply_github_project_setup` with the unchanged specification/hash. Never call apply from a general approval of the later repository-file proposal.
+### 4. Linear workspace inspection
 
-Apply preserves a partially created Project on failure. Report the tool’s safe request method/path, failed setup stage, and specific failed verification checks; keep credentials, authorization headers, and request bodies out of diagnostics. Fresh Board creation uses numeric provider field IDs and the encoded owner login in the personal or organization REST route. Verify name/layout/visible fields, Status columns, no swimlanes, and the sole Priority sort before default-view deletion. An edited default or nonempty Project stops cleanup. Unexpected or lost Board-create responses require exact-state reconciliation with exactly one newly appeared matching Board; zero or multiple matches stop without another create. Lost delete responses require exact absence confirmation. After an interrupted or failed apply, inspect the confirmed Project, explicitly select the existing Board as `resume-created`, and approve a fresh preview/hash; this changes only that selected view and preserves the default and unrelated views. Never infer deletion permission or default-view provenance across invocations. When the Project-create response was uncertain, inspect and explicitly select the confirmed Project as `resume-created`; do not infer a deletable default later. Resume by reading GitHub state: continue from one confirmed exact Project, retry only after confirmed absence, and report ambiguous or inconsistent state; never blindly recreate it. `state: provisioned` verifies API configuration only. A verified fresh Board leaves Count, no slicing, the opted-in default repository, and the Status field's default value as manual steps; adopted/resumed views retain the additional applicable column/group/sort steps. Always present the `defaultStatus` manual follow-up note: available MCP tools and documented public APIs do not expose a setter, so this default was not applied automatically. The note names the configured Status field and Backlog option and directs the user to Project Settings → that field → Default value → configured Backlog, then save and reload. Require user confirmation or a screenshot of the saved Status-field default before full setup completion, including with default-repository opt-out. Leave built-in automations and existing item values unchanged. Present the returned manual steps and exact Project/view links, guide the user through saving them, and verify readable settings through `inspect_github_project`; unreadable settings require user confirmation or a screenshot of saved state. Do not claim full setup complete while required manual work remains unconfirmed. Default-repository opt-out adds no manual completion requirement. Use only returned `trackerConfig` in `.project/integrations.json`; presentation and manual confirmation stay outside runtime configuration. If initialized entities are already bound to another GitHub Project, stop; Project replacement requires a separate user-directed migration.
+1. **Call `inspect_linear_workspace`** after the MCP server is active and before branch naming. Use the credential variable from the recognized registration, or ask for the variable's name only.
+2. **On a missing variable, denied access, or API failure,** report the exact error and ask whether to fix access or continue with manual team and status values. Never fall back silently.
+3. **Team and statuses:**
+   - Show teams as numbered choices. For the selected team, show its issue statuses and the workspace or team Project statuses, with native type and scope.
+   - The user picks six distinct issue names and six distinct Project names for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`.
+   - Never infer lifecycle meaning from names or types. Each saved name must identify one status unambiguously. Native Priority needs no configuration.
+4. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker).
+   - Read Project and issue labels through registered tools, with pagination.
+   - The user picks one workspace or team group for Projects and one for issues, each with active Planning, Execution, and Self-Review children. Verify membership and issue single-select.
+   - Missing or incompatible groups need user fixes first; setup never mutates Linear.
+   - Save scopes, names, and child mappings, not provider IDs.
 
-For GitHub forge, reuse the known repository and selected MCP server. With forge-only setup, use the same snapshot candidate selection rules; ask only for missing or ambiguous identity. When tracker and forge use the same repository/server, state reuse rather than asking twice.
+### 5. Branch naming
 
-When both GitHub forge and GitHub Project configuration are known, offer the [fork-only intake option](../../references/setup.md#fork-only-incoming-pr-intake) as a numbered enable/decline choice. Same-repository PRs, including Deliverables, are excluded. The metadata-only Action adds membership and relies on the existing native Backlog default; it never updates an existing item's Status. Declining changes no file or setting. Enabling requires only a GitHub-valid Actions secret name with Project API access, never its value or copied MCP credentials. Call `render_incoming_pr_intake` with the selected `forge`, `tracker` and `tokenSecret`; include its exact file candidate and all returned prerequisites in the repository-file approval. Inspect the managed path from the setup snapshot and preserve unrelated files; existing content requires its exact reviewed diff, not silent replacement. Do not create secrets, weaken event policies, change native automation, deploy or run a probe. The reference distinguishes rendered/prepared files from confirmed active automation.
+| Tracker and choice | Format |
+| --- | --- |
+| none or GitHub | one static format the user selects |
+| Linear, Linear naming | `tracker` for Epic, Task, and Gig |
+| Linear, workflow naming | one static format the user selects |
 
-Briefly explain the Project Policy boundary from `../../references/setup.md` and precedence from `../../references/artifacts.md`, then ask whether the user wants help creating them. If not, omit `.project/policies.md` without inspecting the broader repository. If yes, ask which workflow behavior they want to add to or override, then inspect only the relevant workflow and repository guidance. Keep generic repository instructions in their existing harness-owned location. Propose evidence-backed policies naming the affected workflow stage or behavior and the specific addition or override; present each for acceptance.
+**Static formats:**
 
-### Optional permissions
+- Offer `identifier-title` as the neutral default, and show all seven static formats from the [setup contract](../../references/setup.md#project-configuration) as numbered choices. Save the choice once as `branches.format`.
+- For Linear, first ask: 1. Use Linear branch naming (`tracker`), or 2. Use one static workflow format (`static`).
 
-Offer convenience permissions only for selected active integration providers, using the recommendation matrix in `../../references/setup.md`. Use each selected server's exact name and deduplicate a server shared by tracker and forge. Recommend provider-scoped read-only access plus the available frequent tracker writes defined by that matrix. A forge-only GitHub server gets the read-only option, not tracker writes. With no integrations, omit convenience options and still offer accepted-artifact diff gates independently.
+**`tracker`:**
 
-Call read-only `inspect_permissions` with candidate MCP rules before presenting the choices. It uses the live MCP catalog and persistent global/project/local settings. Omit unavailable, fully blocked, and already-covered candidates from new additions; report their status and existing blockers. For partial read-only conflicts, show the blocked tools and rules and let the user select the rule for its remaining access. Preserve existing `ask` and `deny` rules; never remove or weaken them to make an allow work. Unverified conflicts are not proven matches. Session overrides and skill-derived allows are temporary and do not prove persistent coverage. Report required workflow read tools missing true annotations by inspecting their exact selectors as needed; do not claim the hint covers them or automatically add those diagnostic selectors.
+- Requires the Linear inspection to report a supported template, and the Linear MCP registration to expose a recognized credential reference, since every Epic initialization re-reads branch settings.
+- Save exactly `"branches": { "format": "tracker" }`.
+- Explain that Task and Gig use the issue's `gitBranchName`, and Epic rebuilds the template with the current `viewer.username`, the lowercase Epic ID, and the slug.
+- Don't ask for or read username settings.
+- For an unsupported template or missing credential reference, the user picks a static format, fixes Linear or MCP, or reruns inspection. Never approximate the template.
 
-Present numbered, independently selectable options, including decline-all. Explain beside each rule what it grants and why it avoids frequent prompts. `hint: readOnly` trusts the server's explicit `readOnlyHint: true`; missing/false hints do not match. Each write-tool allow grants the entire tool, including mutations beyond the workflow examples, across the server credential's accessible resources—not just this repository or Project. Workflow content, submission, and finish approvals still apply. Do not recommend whole-server write wildcards, PR merge allows, or unrelated write tools. Do not revoke any existing allows.
+**Username (static formats starting with `username`):**
 
-Offer the accepted-artifact diff gates defined in `../../references/setup.md` independently of integration allows. Declining every new permission changes no permission file or exclusion. Once new rules are selected, ask once where the combined permission configuration should be stored before preparing the final file proposal:
+- Use `.project/config.local.json` when it has one, otherwise the global `workflows.json`.
+- When neither has one, ask and propose `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`.
+- Never store it in `.project/config.json`, infer it from Git or provider identity, or ask for it otherwise.
 
-1. Local checkout configuration (`local`) — `.agents/permissions.local.json`
-2. Committed project configuration (`project`) — `.agents/permissions.json`
+### 6. Provider configuration
 
-Accept the number or exact value and confirm it as muted context. Never infer this choice from artifact or MCP persistence. Include the selected target, exact `allow` and `ask` additions, skipped rules, and conflicts in the final proposal. `configure_permissions` owns validated merging, rechecking current coverage/conflicts, unrelated-setting preservation, and local exclusion; do not edit permission settings manually.
+#### GitHub tracker
+
+**Repository and credential:**
+
+- Reuse the selected active MCP server and existing repository configuration.
+- For new configuration, take the identity from `repositoryIdentity.githubCandidates`: one candidate is used directly, several need a numbered choice, and none means asking. State the reused identity rather than asking again. Never choose between fork and upstream remotes, infer from the directory name, or guess SSH aliases.
+- Direct setup APIs also need an environment-backed GitHub token. Reuse the known credential variable name, or ask for the name only.
+
+**Discovery and choices:** read [GitHub Project setup](../../references/setup/github-project.md) before discovery, then:
+
+1. **Repository.** Call `inspect_github_repository_setup` to verify the canonical repository and owner type. Stop on failure; never guess ownership.
+2. **Project owner.** Explain that the Project owner contains the Project and controls access. Offer the verified repository owner, showing its login and type, or another explicit owner. Ask only for a missing login or type, and never infer the type from a name.
+3. **Owner-level discovery.** Call `inspect_github_project_setup` with `includeOrganizationMetadata: false` and show existing Projects, without preferring ones that have organization metadata. For an organization repository, when the user wants organization-native or custom scope, call it again with `includeOrganizationMetadata: true` and show the Issue Fields.
+4. **Adopt or create.**
+   - For creation, offer `suggestedProjectTitle` with an override, and ask `private` or `public`.
+   - Offer repository association and default repository as separate choices, both enabled by default.
+   - Before removing an existing association, the user checks the default repository in Settings first.
+5. **Existing or `resume-created` Project.** Call `inspect_github_project`, show its views, and require selection of one exact view ID.
+6. **Field scope.**
+   - Personal repositories: explain that organization Issue Fields are unavailable, and use Project-contained Priority and Internal ID without asking.
+   - Organization repositories: ask one of: 1. Project-contained, 2. Organization-native, 3. Custom (each field separately).
+   - For organization-native or custom scope, ask whether missing Issue Fields should be created (this needs an organization repository and admin token permissions) or switched to Project scope.
+7. **Defaults.** Offer the editable `defaults`: six Status options, the Phase field and its options, the Kind labels, Priority options, and the Internal ID field.
+   - Label names, colors, and descriptions are exact inputs; only names are saved.
+   - Kind label names stay distinct case-insensitively, and all Project field names, Phase included, stay distinct.
+   - Option colors, descriptions, visual order, and extra options aren't runtime inputs; configured names are.
+8. **Presentation.** Offer the Board defaults ([presentation](../../references/setup/github-project.md#presentation)).
+   - Name, layout, and visible fields are editable.
+   - For a Board, visible fields are a selection, not a card order.
+   - List Status, Priority, and Phase as semantic `{ kind: workflow, field }` references, never by literal name, so custom-named fields resolve.
+   - A requested issue-scoped field not exposed on the Project needs explicit correction or a changed selection, never silent omission or a duplicate field.
+
+**Field rules:**
+
+- Status and Phase are always Project fields. Phase has Planning, Execution, and Self-Review and projects In Progress activity in both artifact modes.
+- Setup owns the Epic and six Deliverable Kind labels. They classify versioned issues only; unversioned workflows never apply or validate them.
+- Native issue Type stays unmanaged. Never use labels for lifecycle or Priority, or Custom Properties for anything.
+- Internal ID and the managed label catalog are configured even in unversioned mode.
+- A personal Project may use organization issue metadata when its repository belongs to that organization, but availability never selects the scope. Project-contained configuration ignores organization metadata.
+
+**Preview, apply, and confirm:**
+
+1. **Preview.** Build the strict specification and call `preview_github_project_setup`.
+   - A blocked preview changes nothing. Resolve incompatible fields or labels without deleting native fields, or select an exact-title Project as `resume-created`. Resolve Priority order mismatches as [described](../../references/setup/github-project.md#priority-order).
+   - A new or confirmed `resume-created` empty Project updates the native Status field in place, keeping matching option IDs. An ordinary existing Project's incompatible Status is never changed.
+2. **Present every effect** in plain terms:
+   - owner, resolved title, visibility, and the short-description replacement;
+   - repository association and default repository (setting the default also links it);
+   - the native Status update, fields, options, and scopes;
+   - managed labels, Issue Field visibility, and organization-level creation;
+   - exact view changes (for a fresh Board, everything listed in [preview and approval](../../references/setup/github-project.md#preview-and-approval));
+   - every returned manual step.
+3. **Approve and apply.** Require explicit approval of that exact `planHash`, then call `apply_github_project_setup` with the unchanged specification and hash. A general approval of the later file proposal never counts.
+4. **Failures and recovery** follow [diagnostics](../../references/setup/github-project.md#diagnostics) and [recovery](../../references/setup/github-project.md#recovery). Resume from GitHub state: continue from one confirmed Project, retry only after confirmed absence, and never blindly recreate.
+5. **Manual steps.** `state: provisioned` verifies API configuration only.
+   - Present the returned [manual steps](../../references/setup/github-project.md#guided-ui-steps) and links, guide the user through them, and verify readable settings with `inspect_github_project`.
+   - Always present the `defaultStatus` note: available MCP tools and public APIs don't expose a setter, so the user sets Project Settings → the Status field → Default value → the configured Backlog option, then saves and reloads.
+   - Require confirmation or a screenshot of that saved default, and of any other unreadable setting, before claiming full setup. That applies with or without a default repository; opting out of the default repository adds no requirement.
+   - Leave built-in automations and existing item values unchanged.
+6. **Configuration.** Use only the returned `trackerConfig` in `.project/integrations.json`. Presentation and manual confirmation stay out of runtime configuration.
+
+When initialized entities are already bound to another GitHub Project, stop. Replacing the Project needs a separate, user-directed migration.
+
+#### GitHub forge
+
+Reuse the known repository and selected server. For forge-only setup, use the same candidate rules and ask only for missing or ambiguous identity. When tracker and forge share a repository and server, say so rather than asking twice.
+
+#### Fork-only incoming PR intake
+
+When GitHub forge and Project configuration are both known, read [incoming PR intake](../../references/setup/incoming-pr-intake.md) and offer it as a numbered enable or decline choice.
+
+### 7. Blocked-review confirmation
+
+| Choice | Configuration |
+| --- | --- |
+| Disabled | Omit `reviews`; never write `false`, zero, or an empty object |
+| Enabled after N blocks | `reviews.userConfirmationAfter` is a positive integer N |
+
+Counting is per entity and review category. The checkpoint stops right after the threshold result, before that round is corrected. Reviews continue until approved either way.
+
+### 8. Project Policies and permissions
+
+**Project Policies:**
+
+- Briefly explain the boundary ([setup](../../references/setup.md#project-policies)) and precedence ([artifacts](../../references/artifacts.md#project-policy-precedence)), then ask whether the user wants help.
+- If not, omit `.project/policies.md` without inspecting the repository.
+- If yes, ask which behavior to add or override, inspect only the relevant workflow and repository guidance, and propose evidence-backed policies naming the stage or behavior, each for acceptance. Generic repository instructions stay where the harness keeps them.
+
+**Permissions:** read [setup permissions](../../references/setup/permissions.md).
+
+- Offer convenience permissions only for selected active integration providers, deduplicating shared servers. With no integrations, offer only the artifact diff gates.
+- Call `inspect_permissions` before presenting choices, and follow its result table.
+- Never remove or weaken existing `ask` and `deny` rules, and never revoke existing allows. Never recommend whole-server write wildcards, PR merge allows, or unrelated writes.
+- Present numbered, independently selectable options, including decline-all. Explain each grant: a write-tool allow covers the entire tool across the credential's resources, and workflow content, submission, and shipping approvals still apply.
+- Declining everything changes no permission file or exclusion.
+- Once rules are selected, ask once where to store them, `local` (`.agents/permissions.local.json`) or `project` (`.agents/permissions.json`). Never infer this from the artifact or MCP choice.
+- `configure_permissions` does the merging; never edit permission settings by hand.
 
 ## Preview and approval
 
-GitHub provider provisioning has its own exact preview/hash approval above and must complete before this repository-file proposal. Except for the separately approved MCP bootstrap and GitHub provider provisioning, before any write show one bounded proposal containing:
+GitHub provisioning has its own preview and hash approval and must finish first. Apart from that and the MCP bootstrap, show one bounded proposal before any write:
 
-- exact `.project/config.json`, which never contains username;
-- exact `.project/config.local.json` when a repository-local username is needed, or the existing global username source/no local file;
-- exact `.project/integrations.json`, or that it will be absent;
-- exact `.project/policies.md`, or that it will be absent;
-- for opted-in fork-only intake, the exact rendered `.github/workflows/incoming-pr-project.yml` diff, selected Project/repository, Actions secret name and activation prerequisites; otherwise preserve that path unchanged;
-- exact missing `.gitignore` lines for versioned mode;
-- for unversioned mode, either an explicit `info/exclude` no-op when `/.project/` already exists or this exact managed append:
+- **`.project/config.json`**, exactly; it never contains a username.
+- **`.project/config.local.json`**, exactly, when a local username is needed; otherwise the existing global username source, or no local file.
+- **`.project/integrations.json`**, exactly, or that it will be absent.
+- **`.project/policies.md`**, exactly, or that it will be absent.
+- **Fork-only intake**, when opted in: the rendered `.github/workflows/incoming-pr-project.yml` diff, the Project and repository, the secret name, and the prerequisites. Otherwise the path stays unchanged.
+- **Versioned mode:** the exact missing `.gitignore` lines. Mention the `/.project/config.local.json` exclusion only when that local file exists or is proposed, either as an existing no-op or as the exact append.
+- **Unversioned mode:** an explicit `info/exclude` no-op when `/.project/` is already there, or this exact managed append:
 
     ```gitignore
     # unversioned workflow artifacts
     /.project/
     ```
 
-- for versioned mode, mention `.git/info/exclude` for `.project/config.local.json` only when that local file already exists or is proposed: either report the existing exact exclusion as a no-op or propose the exact `/.project/config.local.json` append; when no local file exists or is proposed, omit this exclusion entirely;
-- the selected permission-settings target, exact `allow` and `ask` additions, skipped rules, and conflicts when new permissions are selected;
-- for local permission additions, that `configure_permissions` will keep `.agents/permissions.local.json` outside Git and ensure exact `/.agents/permissions.local.json` in `.git/info/exclude`; an unchanged permission configuration adds no exclusion.
+- **Permissions**, when selected: the target, the exact `allow` and `ask` additions, skipped rules, and conflicts. For local additions, note that `configure_permissions` keeps `.agents/permissions.local.json` outside Git and ensures its exclude entry; unchanged permissions add no exclusion.
 
-Require explicit approval of that proposal. Workflow-owned JSON must satisfy the current documented shapes, contain no credentials, and end with a newline. Do not infer missing product rules, lifecycle mappings, field scopes, provider identities, or policy text.
+Require explicit approval. Workflow JSON must match the documented shapes, contain no credentials, and end with a newline. Never infer missing product rules, lifecycle mappings, field scopes, provider identities, or policy text.
 
 ## Write and validate
 
 After approval:
 
-1. Create or edit only the approved workflow files, preserving unrelated content. Create `.project/` when absent.
-2. In versioned mode, add only missing local-file rules to `.gitignore`. In unversioned mode, do not add any `.project/` ignore rule there.
-3. When new permissions are selected, call `configure_permissions` once with the approved `target` and exact `allow` and `ask` arrays (use `[]` for an unselected list). Report actual additions, skipped rules, and conflicts; a skipped rule is not newly granted access. Do not write or merge permission settings manually. A changed conflict requiring a different grant needs renewed approval; never weaken existing rules.
-4. Call `prepare_artifacts`. Stop on any Git-membership/exclusion conflict; never repair it by changing the index.
-5. If integrations are configured, call `inspect_integrations` with `target: "current"` to confirm operational configuration and roles. Validate each role independently, reusing native metadata facts already verified during setup/provisioning and obtaining only missing facts through registered read-only provider tools. Configured roles do not establish provider availability. Report unavailable roles without removing or changing another valid role.
-6. Re-read every created/edited file and confirm strict configuration loads. Trust returned tool results for Git safety; do not run shell-based Git verification.
-7. Report artifact mode using exact `versioned` or `unversioned` wording, branch formats and username source, configured roles, policy status, permission-settings scope, files changed, and validation results. Do not label commands as `Next` or imply another action is required. End with `Available workflow commands when you want to start work:` and briefly define `/epic <initiative>`, `/task <request and parent Epic>`, `/gig <standalone request>`, and—only when a tracker is configured—`/backlog <potential work>` plus `/todo <queued work>`.
+1. Create or edit only the approved files, preserving unrelated content. Create `.project/` when absent.
+2. Versioned mode: add only missing local-file rules to `.gitignore`. Unversioned mode: add no `.project/` rule there.
+3. When permissions are selected, call `configure_permissions` once with the approved `target`, `allow`, and `ask` (use `[]` for an unselected list). Report actual additions, skips, and conflicts; a skipped rule grants nothing. A changed conflict needing a different grant needs approval again.
+4. Call `prepare_artifacts`. Stop on any Git-membership or exclusion conflict; never fix it by changing the index.
+5. With integrations, call `inspect_integrations` with `target: "current"`.
+   - Validate each role independently, reusing facts already verified during setup and reading only missing ones through read-only tools.
+   - Configured roles don't prove availability. Report an unavailable role without changing another valid one.
+6. Re-read every created or edited file and confirm strict configuration loads. Trust tool results for Git safety; no shell Git checks.
+7. Report:
+   - artifact mode, as `versioned` or `unversioned`;
+   - branch formats and the username source;
+   - roles, policy status, and permission scope;
+   - changed files and validation results.
 
-Never claim setup succeeded until these checks pass. If a check fails, preserve approved files and any partially provisioned GitHub Project unless reverting/deleting them is separately approved, explain the exact correction needed, and perform no unapproved provider mutation.
+   Don't label anything `Next` or imply another action is required. End with `Available workflow commands when you want to start work:` and briefly define `/epic <initiative>`, `/task <request and parent Epic>`, `/gig <standalone request>`, and, only with a tracker, `/backlog <potential work>` and `/todo <queued work>`.
+
+Never claim success until these checks pass. When one fails, keep approved files and any partially provisioned GitHub Project unless reverting is separately approved, explain the exact fix, and make no unapproved provider change.

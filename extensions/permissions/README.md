@@ -74,7 +74,7 @@ allowed-tools:
 
 Project setup's `inspect_permissions` tool reuses this extension's persistent settings loader, MCP parser, and matcher to report covered rules, current matching tools, and ask/deny blockers with source paths. Inspection excludes session overrides and skill-derived allows; those temporary grants are not durable coverage. Equivalent and broader selectors cover narrower rules, but exact allows for today's read tools do not cover future annotated tools under a read-only selector. Unknown annotations never prove a read-only match.
 
-Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into the selected project/local file, preserving existing constraints and unrelated settings. It skips covered, fully blocked, or unavailable allows and reports partial blockers without removing them. An MCP write allow grants every operation exposed by that tool across its credential scope, not just the workflow's current repository or operation. See [setup permissions](../../workflows/references/setup.md#integration-convenience-permissions) for recommendations and approval behavior.
+Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into the selected project/local file, preserving existing constraints and unrelated settings. It skips covered, fully blocked, or unavailable allows and reports partial blockers without removing them. An MCP write allow grants every operation exposed by that tool across its credential scope, not just the workflow's current repository or operation. See [setup permissions](../../workflows/references/setup/permissions.md#integration-convenience-permissions) for recommendations and approval behavior.
 
 ## Safety Features
 

@@ -26,7 +26,7 @@ allowed-tools:
     - "resume_integration"
     - "prepare_integration_projection"
     - "prepare_integration_pull_request"
-    - "prepare_integration_finish"
+    - "prepare_integration_shipping"
     - "prepare_integration_merge"
     - "prepare_tracker_mutation"
     - "prepare_github_phase_mutation"
@@ -49,16 +49,28 @@ allowed-tools:
 
 A Gig is a standalone Deliverable with no parent Epic.
 
-First read and follow `../../references/deliverable.md` relative to this skill directory. That file owns planning, root-cause, review, implementation, verification, integration, and final-approval behavior. This file owns only Gig identification and initialization.
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Deliverable lifecycle](../../references/deliverable.md)
+- [Artifacts](../../references/artifacts.md)
+
+The Deliverable lifecycle owns planning, root cause, review, implementation, verification, integration, and final approval. This file owns only Gig identification and initialization.
 
 ## Resume
 
-Use the shared Deliverable preparation, entity-selection, and artifact-read flow for a Gig under `.project/gigs/`. Verify `entity: "gig"` with no Task containment relationship, then continue the shared lifecycle.
+Follow the Deliverable resume steps for a Gig under `.project/gigs/`. Verify `entity: "gig"` and that it isn't inside an Epic, then continue the lifecycle.
 
 ## Initialize
 
-Follow approved intake in `../../references/artifacts.md` and the selected provider's Gig preflight when adopting Backlog or Todo work; Linear requires a projectless issue. Then call `init_gig` for new work, `adopt_github_gig` for the selected GitHub issue, or `adopt_linear_gig` for the selected projectless Linear issue, with approved values, the approved Request as `request`, slug, and verified adoption `source` facts when applicable.
+1. **Adoption preflight:** when adopting Backlog or Todo work, first read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Gig preflight; on Linear, the issue must have no Project.
+2. **Create:** follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs). Call `init_gig` for new work, `adopt_github_gig` for a GitHub issue, or `adopt_linear_gig` for a projectless Linear issue, passing:
+   - the approved values;
+   - the Request as `request`;
+   - the slug;
+   - the adoption `source` facts, when adopting.
 
-The tool creates identity, artifacts, and the configured branch with repository-default start/target. Continue through the shared integration boundary, including tracker binding and `finalize_linear_branch` for a pending Linear branch, before planning.
+   The tool creates identity, artifacts, and the configured branch, starting from and targeting the repository default.
+3. **Before planning,** complete the Deliverable integration boundary, including tracker binding and, for a pending Linear branch, `finalize_linear_branch`.
 
 A Gig must never contain parent Epic fields or be converted into a Task.

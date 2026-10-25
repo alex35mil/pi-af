@@ -8,6 +8,11 @@ allowed-tools:
 
 # Backlog
 
-Read and follow `../../references/queue.md` with exact destination `backlog`.
+Backlog is work we may do later but haven't committed to. Use destination `backlog`.
 
-Backlog means work we may do later and have not committed to doing. It is an external queue state, not a required step before Todo or In Progress.
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Queue](../../references/queue.md)
+
+Backlog is an external queue state, not a required step before Todo or In Progress.

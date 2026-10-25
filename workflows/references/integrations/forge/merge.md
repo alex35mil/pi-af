@@ -1,22 +1,40 @@
 # Repository merge contract
 
-Deliverables and incoming PRs use one repository merge policy: **squash merge**, pinned to the verified reviewed head. The shared forge operation in `workflows/extensions/integrations/forge/github/merge.ts` owns the native arguments and confirmed merged proof. Neither workflow chooses or overrides the method.
+Deliverables and incoming PRs share one merge policy: **squash merge, pinned to the verified reviewed head**. The shared operation in `workflows/extensions/integrations/forge/github/merge.ts` owns the native arguments and the merged proof. Neither workflow chooses or overrides the method.
 
 ## Validate and plan
 
-Use actual configured `pull_request_read:get` evidence for the exact repository and PR. Confirm expected base/head repository/ref association and the full expected head SHA. The workflow adapter supplies its own association:
+Use the configured `pull_request_read` `get` evidence for the PR. Confirm the expected base and head repository and ref, and the full expected head SHA. Each workflow adds its own checks:
 
-- Deliverable finish verifies the recorded PR, immutable branch contract, local head and required workflow phase.
-- Incoming shipping verifies the selected PR/fork and final reviewed/published revision, without creating an entity. Use `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence` and fresh actual `evidence`.
+- **Deliverable shipping:** the recorded PR, the immutable branch contract, the local head, and the required Phase.
+- **Incoming shipping:** the selected PR or fork and the final reviewed and published revision, with no entity. Call `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence`, and fresh `evidence`.
 
-Before merging, complete required verification and reviews and obtain the exact finish/ship approval. Follow [Preflight checks and failure handling](../../tools.md#preflight-checks-and-failure-handling): GitHub validates access, the requested merge method, configured protections, and mergeability when processing the merge request. Use that authoritative result rather than requiring separate repository-policy or permission inspection to predict rejection. A local `merge-needed` decision establishes matching evidence and arguments, not completion of verification, review, or approval. A rejected merge stops dependent delivery steps; preserve work and report the error and blocker.
+Before merging, complete required verification and reviews and get the shipping approval.
+
+- Under [proportional checks](../../core.md#tool-calls), GitHub validates access, the merge method, protections, and mergeability when it processes the merge; don't inspect repository policy or permissions first to predict rejection.
+- A local `merge-needed` decision only means the evidence matches and the arguments are ready. It doesn't mean verification, review, or approval is complete.
+- A rejected merge stops dependent steps; preserve work and report the error.
 
 ## Merge and confirm
 
-An explicit finish/ship request for the exact ready PR and reviewed head authorizes conditional merge, confirmed Done and the workflow's safe local cleanup as one set. Do not ask a second merge or cleanup question when that exact set is already approved. Changed relevant facts require reassessment; ordinary resume, local signoff and an externally changed status do not authorize shipment.
+**Authorization:**
 
-Pass the shared operation's returned arguments unchanged to the configured `merge_pull_request`: fixed `merge_method: squash` and pinned `expectedHeadSha`. Prepare `commit_title` with the available commit skill's selection/message rules, using the approved Deliverable title or the incoming PR's existing title as the semantic title data. Preserve the PR title/body. No per-flow method setting, alternative merge strategy, protection bypass or automatic history update is permitted after rejection.
+- An explicit request to ship the ready PR and reviewed head authorizes, as one set, a conditional merge, confirmed Done, and the workflow's safe local cleanup. Don't ask again about merge or cleanup.
+- Changed relevant facts need reassessment. Ordinary resume, a local signoff, or an externally changed status doesn't authorize shipping.
 
-After a merge, establish `merged: true`, the exact matching association/head and a nonempty merge timestamp through actual exact PR-get evidence. Reuse complete current-operation facts; read only missing facts. The shared operation returns confirmed proof for an already-merged PR instead of another merge call. Reconcile uncertain native writes before retrying; never merge twice to repair a board or cleanup failure.
+**Merging:**
 
-Only confirmed delivery permits Done. The workflow adapter owns its tracker/Project update and safe cleanup. A later failure preserves confirmed merge/Done and resumes only the unfinished step; report each actual outcome separately. The different incoming checkout and Deliverable branch cleanup do not change this merge policy.
+- Pass the returned arguments unchanged to the configured `merge_pull_request`: `merge_method: squash` and the pinned `expectedHeadSha`.
+- Prepare `commit_title` with the `commit` skill's message rules, using the Deliverable's approved title or the incoming PR's existing title. Keep the PR title and body.
+- No per-flow method setting, alternative strategy, protection bypass or change, or automatic history update after a rejection.
+
+**Confirming:**
+
+- After a merge, establish `merged: true`, the expected association and head, and a merge timestamp from an actual PR read. Reuse complete facts from this operation and read only what's missing.
+- For an already-merged PR, the shared operation returns the merged proof instead of another merge call.
+- Reconcile uncertain writes before retrying. Never merge twice to repair a board or cleanup failure.
+
+**Completion:**
+
+- Only confirmed delivery permits Done. Each workflow owns its own tracker or Project update and cleanup.
+- A later failure keeps the confirmed merge and Done, and resumes only the unfinished step. Report each outcome separately.

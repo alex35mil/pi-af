@@ -23,7 +23,17 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 
 Only `/backlog` and `/todo` require a tracker. Prospective Tasks and queued Backlog/Todo objects do not receive workflow identity until explicitly initialized.
 
-`/pr` requires a configured GitHub forge, not a tracker or initialized entity. It privately reviews an existing contribution and requests separate approval for exact review text/verdict/comments, fixes, pushes and merging. Existing permission prompts can enforce per-call confirmation without new approval machinery. Fork heads retain their own repository identity; PR title/body and branches stay intact. An explicitly approved standard rebase rewrites the contribution onto the separately observed target and immediately updates the same contributor branch with a SHA-pinned `--force-with-lease`, after approved conflict resolutions and before later fixes/testing. Before checkout, it presents a 1–5 malicious-code safety score with evidence and limitations; every score requires explicit approval. Named registered incoming-PR checkout tooling owns object preparation, exact nested checkout, contributor-only review setup, inspection, validated clean-head transitions, target observation, standard rebase/continuation and immediate lease-protected publication before later approved uncommitted fixes. It returns paths/revision/phase/diff state, preserves unexpected work and verifies the parent repository is untouched; the agent does not reconstruct Git orchestration in Bash. Static work is available now; contributor-code execution requires separate command/environment approval, and unavailable runtime checks are reported as not run. The agent/editor remain rooted in the parent repository; this does not add nested-checkout browsing support to Delta or pi.nvim. See [incoming PR handling](references/pr/incoming.md).
+`/pr` reviews an existing contribution privately. It needs a configured GitHub forge, but no tracker or initialized entity.
+
+- **Before checkout:** you get a 1–5 malicious-code safety score with evidence and limitations. Every score needs your explicit approval before anything is checked out.
+- **Checkout:** registered tools manage an independent nested checkout. The agent never reconstructs that Git work in Bash, and the parent repository stays untouched.
+- **Separate approvals:** review text and verdict, fixes, commits, pushes, publication, and merging each need their own approval. Existing permission prompts can enforce per-call confirmation.
+- **Rebase:** an approved standard rebase moves the contribution onto the observed target and immediately updates the same contributor branch with a SHA-pinned `--force-with-lease`, before any later fixes or testing.
+- **Running contributor code:** needs separate command and environment approval. Checks that can't run are reported as not run.
+- **Fork heads** keep their own repository identity. The PR title, body, and branches stay intact.
+- **Editor:** the agent and editor stay rooted in the parent repository; nested-checkout browsing isn't added to Delta or pi.nvim.
+
+See [incoming PR handling](references/pr/incoming.md).
 
 ## Setup
 
@@ -48,7 +58,12 @@ Set the source reference once in private global `workflows.json` in Pi's agent d
 { "workflowProject": "/absolute/path/to/pi-af" }
 ```
 
-The agent reads that source checkout's `.project/integrations.json` and `.project/config.json`, not the consuming project's tracker or policy. Missing or invalid configuration produces a short error naming what to fix and where; you lead the fix separately. Reporting requires the source tracker's named MCP tools to be registered in the current session. Nothing is transmitted without approval, and unsafe project details stay local. See [source configuration](references/setup.md#workflow-reporting-source) and [report preparation](references/queue.md#prepare-a-workflow-report).
+- The agent reads that source checkout's `.project/integrations.json` and `.project/config.json`, not the consuming project's tracker or policy.
+- Missing or invalid configuration gives a short error naming what to fix and where; you fix it separately.
+- The source tracker's MCP tools must be registered in the current session.
+- Nothing is sent without your approval, and unsafe project details stay local.
+
+ See [source configuration](references/setup.md#workflow-reporting-source) and [report preparation](references/queue.md#prepare-a-workflow-report).
 
 ## Working lifecycle
 
@@ -62,40 +77,76 @@ Completed:   done (native Phase cleared)
 Canceled:    terminal unsuccessful status for queued or initialized work
 ```
 
-Backlog and Todo are independent unstarted queues; either may move directly to In Progress. Work is clarified, independently reviewed, and accepted through the plan diff before execution. Bugfix investigates its cause before plan acceptance; Research/Audit produce reports without changing product behavior. Kind can change at any point without restarting the workflow. [Deliverable guidance](references/deliverable.md) covers kind changes, verification, completion artifacts, submission, and cleanup.
+**Planning:**
 
-Plan drafting, review, corrections, presentation, and waiting for approval stay in Planning. Interim/final reviews and local user review of delivered work use Self-Review. Status remains In Progress throughout these local loops. Phase appears as a GitHub Project field or a mutually exclusive Linear label group in both artifact modes; trackerless Phase stays in workflow metadata. See [Phase](references/phase.md).
+- Backlog and Todo are independent queues of unstarted work; either can move straight to In Progress.
+- Work is clarified, independently reviewed, and accepted through the plan diff before execution.
+- Bugfix investigates its cause before the plan is accepted. Research and Audit produce reports without changing product behavior.
+- Kind can change at any time without restarting.
 
-After final review passes, you review the finished work and decide whether to submit it. Approving an earlier draft or file write is not submission approval.
+**Phase and Status:**
 
-Submitting and finishing are separate. Submission commits the work and opens or updates a PR when configured. An explicit finish request handles merging, marking the work Done, and cleaning up the local branch. See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
+- Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Interim and final reviews, and your review of delivered work, use Self-Review.
+- Status stays In Progress through all of these local loops.
+- Phase shows as a GitHub Project field or a Linear label group in both artifact modes; without a tracker it stays in workflow metadata. See [Phase](references/phase.md).
+
+**Submitting and shipping:**
+
+- After final review passes, you review the work and decide whether to submit it. Approving an earlier draft or file write isn't submission approval.
+- A Deliverable may have several commits within its accepted scope. When the plan defines commit steps, each step is reviewed and then committed before the next.
+- Submitting and shipping are separate. Submission commits the work and opens or updates a PR when a forge is configured. An explicit request to ship merges, marks the work Done, and cleans up the local branch.
+
+See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
 ## Epic Task delivery strategy
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
-Record the approved routing intent before committing Epic planning, and deliver the plan and metadata together. Selecting default does not prove delivery: every new/adopted default-target Task initialization requires the planning work to be delivered first. Verified GitHub squash delivery is supported alongside local ancestry, with repository, branch, revision, and versioned-plan checks. Changing the strategy affects future Tasks only. See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
+- Record the approved routing intent before committing Epic planning, and deliver the plan and metadata together.
+- Selecting default doesn't prove delivery: every new or adopted default-target Task requires the planning work to be delivered first.
+- Delivery is checked by local ancestry or a verified merged GitHub PR, which also covers squash merges, along with repository, branch, revision, and versioned-plan checks.
+- Changing the strategy affects future Tasks only.
+
+ See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
 
 ## Readable tracker and PR bodies
 
-Every GitHub tracker issue keeps its original request title and description. New and adopted issues publish the first accepted plan in one managed comment and update that same comment thereafter; no ownership classification is needed. Local accepted artifacts remain authoritative. Linear preserves the original request in its issue/Project title/name and description and publishes plans in one attached document.
+**Plan publication:**
 
-Accepted plans and completion artifacts keep a concise `## Overview` with the full supporting sections in the same reviewed document. GitHub plan comments show `# Plan`, the overview prose, and `## Highlights` above a collapsed Full plan. Linear documents use the native title Plan, overview prose, and `## Highlights` above their native collapsed Full plan; content does not repeat the Plan H1. GitHub PRs show the delivered outcome or report conclusion, then a divider and one fold per supporting section labeled with its heading. Not run stays inside Verification. GitHub uses `<details>`; Linear trackers use native `+++` sections. No content is summarized or discarded during publication.
+- Tracker items keep their original request title and description.
+- On GitHub, new and adopted issues publish the accepted plan as one managed comment, updated in place afterward.
+- On Linear, the plan is one document attached to the issue or Project.
+- Local accepted artifacts stay authoritative.
 
-Unversioned disclosure approval covers visible and hidden content alike. Older source documents are updated through their normal review and acceptance gates before publication; reads do not rewrite completed artifacts. Local tests verify generated Markdown, not live Linear issue/Project rendering. See the [document shape](references/artifacts.md#reviewed-document-shape) and [provider-body contract](references/integrations/shared.md#provider-bodies).
+Accepted plans and completion artifacts start with a concise `## Overview`, followed by the full supporting sections in the same reviewed document.
+
+| Destination | Shown |
+| --- | --- |
+| GitHub plan comment | `# Plan`, the overview, and `## Highlights` above a folded Full plan |
+| Linear plan document | native title Plan, the overview, and `## Highlights` above a native folded Full plan |
+| GitHub PR | the delivered outcome or report conclusion, then a divider and one fold per supporting section; Not run stays inside Verification |
+
+GitHub folds use `<details>`; Linear uses native `+++` sections. Nothing is summarized or dropped.
+
+- Unversioned disclosure approval covers visible and folded content alike.
+- Older documents are brought into this shape through normal review before publication; reads never rewrite completed artifacts.
+- Local tests check the generated Markdown, not live Linear rendering.
+
+ See the [document shape](references/artifacts.md#reviewed-document-shape) and [provider-body contract](references/integrations/shared.md#provider-bodies).
 
 ## Contract ownership
 
-Skills own entry routing, workflow sequence, and entity-specific decisions. References own shared operational contracts. Extension READMEs describe registered interfaces and implementation boundaries. This README is a user guide, not an additional operational specification.
+Skills own entry routing, workflow sequence, and entity-specific decisions. References own shared operational contracts; [core](references/core.md) owns the rules every workflow shares. When editing guidance, follow the [instruction style guide](STYLE.md). Extension READMEs describe registered interfaces and implementation boundaries. This README is a user guide, not an additional operational specification.
 
 | Contract                                                      | Canonical guidance                                                                                                                                                                |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared rules: tools, MCP boundary, recovery, approvals       | [Core](references/core.md)                                                                                                                                                        |
 | Artifacts, intake, persistence, authority, policy precedence  | [Artifacts](references/artifacts.md)                                                                                                                                              |
 | Workflow activity and native Phase projection                 | [Phase](references/phase.md)                                                                                                                                                      |
 | Configuration files and permission gates                      | [Setup](references/setup.md)                                                                                                                                                      |
 | Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
-| Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md)                                                                                                                                          |
+| Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md), [submission](references/deliverable/submission.md), [shipping](references/deliverable/shipping.md)                                      |
 | Backlog and Todo                                              | [Queue](references/queue.md)                                                                                                                                                      |
 | Provider-body and integration rules                           | [Integration roles](references/integrations/shared.md)                                                                                                                            |
 | Provider operations                                           | [GitHub tracker](references/integrations/tracker/github.md), [Linear tracker](references/integrations/tracker/linear.md), [GitHub forge](references/integrations/forge/github.md) |

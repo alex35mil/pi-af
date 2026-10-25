@@ -341,7 +341,7 @@ describe("maintainer-controlled incoming PR Project", () => {
     it("limits reconciled intake to its explicit choice without a fabricated success response", () => {
         const f = fixture()
         try {
-            for (const action of ["review", "ship", "cancel"])
+            for (const action of ["review", "shipping", "cancellation"])
                 assert.equal(
                     Value.Check(IntegrationContextSchema, f.request({ action, membership: reconciled() })),
                     false,
@@ -399,31 +399,31 @@ describe("maintainer-controlled incoming PR Project", () => {
     it("requires confirmed merge before Done and confirmed unmerged close before Canceled", () => {
         const f = fixture()
         try {
-            assert.equal(f.plan({ action: "ship" }).state, "blocked")
-            const close = f.plan({ action: "cancel" })
+            assert.equal(f.plan({ action: "shipping" }).state, "blocked")
+            const close = f.plan({ action: "cancellation" })
             assert.deepEqual(mutation(close), {
                 tool: "mcp__forge__update_pull_request",
                 arguments: { ...repository, pullNumber: 12, state: "closed" },
             })
             const closed = read()
             closed.response.state = "closed"
-            assert.deepEqual(mutation(f.plan({ action: "cancel", evidence: closed })).arguments.updated_field, {
+            assert.deepEqual(mutation(f.plan({ action: "cancellation", evidence: closed })).arguments.updated_field, {
                 name: "Status",
                 value: "Canceled",
             })
-            assert.deepEqual(f.plan({ action: "cancel", evidence: closed, membership: present("Canceled") }), {
+            assert.deepEqual(f.plan({ action: "cancellation", evidence: closed, membership: present("Canceled") }), {
                 state: "unchanged",
                 status: "Canceled",
             })
             closed.response.merged = true
             closed.response.merged_at = "2026-10-21T12:00:00Z"
-            for (const action of ["ship", "cancel"])
+            for (const action of ["shipping", "cancellation"])
                 assert.deepEqual(mutation(f.plan({ action, evidence: closed })).arguments.updated_field, {
                     name: "Status",
                     value: "Done",
                 })
             closed.response.merged_at = null
-            assert.equal(f.plan({ action: "ship", evidence: closed }).state, "blocked")
+            assert.equal(f.plan({ action: "shipping", evidence: closed }).state, "blocked")
         } finally {
             f.close()
         }
@@ -446,12 +446,12 @@ describe("maintainer-controlled incoming PR Project", () => {
                 },
             }
             assert.deepEqual(
-                f.plan({ action: "ship", evidence: merged, membership: { state: "present", evidence: write } }),
+                f.plan({ action: "shipping", evidence: merged, membership: { state: "present", evidence: write } }),
                 { state: "unchanged", status: "Done" },
             )
             assert.equal(
                 f.plan({
-                    action: "ship",
+                    action: "shipping",
                     evidence: merged,
                     membership: { state: "present", evidence: { ...write, response: { id: 99 } } },
                 }).state,
