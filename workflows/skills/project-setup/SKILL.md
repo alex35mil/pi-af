@@ -28,7 +28,12 @@ allowed-tools:
 
 Interactively configure the repository for Epic/Task/Gig workflows. Setup may inspect Linear read-only through `inspect_linear_workspace`, inspect GitHub, and—only through an exact separately approved `preview_github_project_setup` result—create or complete GitHub Project configuration. Never initialize an entity, mutate Linear, mutate GitHub work items or pull requests, stage files, alter the Git index, commit, or push.
 
-Read `../../references/tools.md` for native tool discovery and `../../references/setup.md` for the configuration-file contract. When integrations are requested, also read `../../references/integrations/shared.md` and the selected provider behavior from `../../references/integrations/tracker/github.md`, `../../references/integrations/tracker/linear.md`, or `../../references/integrations/forge/github.md`.
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Setup configuration contract](../../references/setup.md)
+
+When integrations are requested, read [integration roles](../../references/integrations/shared.md) and the selected provider reference: [GitHub tracker](../../references/integrations/tracker/github.md), [Linear tracker](../../references/integrations/tracker/linear.md), or [GitHub forge](../../references/integrations/forge/github.md).
 
 ## Inspect first
 
@@ -51,7 +56,7 @@ Before asking questions:
 | `versioned`   | Durable `.project/` artifacts belong in Git    |
 | `unversioned` | Every `.project/` artifact remains outside Git |
 
-Read and follow `../../references/artifacts.md` for exact setup actions and transition blockers. Removal from Git requires separate explicit approval and is outside setup.
+When applying persistence, read [artifacts](../../references/artifacts.md#persistence-and-authority) for exact setup actions and transition blockers. Removal from Git requires separate explicit approval and is outside setup.
 
 ### Blocked-review confirmation
 
@@ -144,7 +149,7 @@ For a Linear tracker, obtain the credential environment-variable name from the r
 
 Present accessible teams as numbered choices. After the user selects one, present that team's issue statuses and Project statuses scoped to the workspace or that team, including native type and scope. Have the user select six distinct exact issue names and six distinct exact Project names for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`; never infer lifecycle semantics from names or native types. Each persisted name must identify one applicable status unambiguously. Use the inspection's exact branch-format result as described above. Native priority needs no configuration.
 
-For Linear Phase, follow `../../references/phase.md` and the exact shape in `../../references/setup.md`. Read applicable Project and issue labels through the registered MCP tools, including groups and complete pagination. Have the user select one exact workspace/team group for Projects and one for issues, with active Planning, Execution, and Self-Review children. Verify child membership and issue single-select; Project groups are mutually exclusive by provider contract. Missing/incompatible groups require user configuration before proceeding; setup does not mutate Linear. Persist the selected scopes/names/child mappings, not provider IDs.
+For Linear Phase, read [Phase](../../references/phase.md#setup) and the exact shape in [setup](../../references/setup.md#linear-tracker). Read applicable Project and issue labels through the registered MCP tools, including groups and complete pagination. Have the user select one exact workspace/team group for Projects and one for issues, with active Planning, Execution, and Self-Review children. Verify child membership and issue single-select; Project groups are mutually exclusive by provider contract. Missing/incompatible groups require user configuration before proceeding; setup does not mutate Linear. Persist the selected scopes/names/child mappings, not provider IDs.
 
 For GitHub tracker, reuse the selected active MCP server and existing repository configuration. For new configuration, use the snapshot’s `repositoryIdentity.githubCandidates`: one distinct identity supplies the current repository; multiple candidates require a numbered selection; when there are no candidates, ask for repository identity. State the reused identity rather than asking users to repeat it. Do not choose between fork/upstream remotes, infer identity from the directory name, or guess SSH aliases. The snapshot contains only validated owner/repo identities and contributing remote names, never raw remote URLs or credentials.
 
@@ -188,7 +193,7 @@ Offer convenience permissions only for selected active integration providers, us
 
 Call read-only `inspect_permissions` with candidate MCP rules before presenting the choices. It uses the live MCP catalog and persistent global/project/local settings. Omit unavailable, fully blocked, and already-covered candidates from new additions; report their status and existing blockers. For partial read-only conflicts, show the blocked tools and rules and let the user select the rule for its remaining access. Preserve existing `ask` and `deny` rules; never remove or weaken them to make an allow work. Unverified conflicts are not proven matches. Session overrides and skill-derived allows are temporary and do not prove persistent coverage. Report required workflow read tools missing true annotations by inspecting their exact selectors as needed; do not claim the hint covers them or automatically add those diagnostic selectors.
 
-Present numbered, independently selectable options, including decline-all. Explain beside each rule what it grants and why it avoids frequent prompts. `hint: readOnly` trusts the server's explicit `readOnlyHint: true`; missing/false hints do not match. Each write-tool allow grants the entire tool, including mutations beyond the workflow examples, across the server credential's accessible resources—not just this repository or Project. Workflow content, submission, and finish approvals still apply. Do not recommend whole-server write wildcards, PR merge allows, or unrelated write tools. Do not revoke any existing allows.
+Present numbered, independently selectable options, including decline-all. Explain beside each rule what it grants and why it avoids frequent prompts. `hint: readOnly` trusts the server's explicit `readOnlyHint: true`; missing/false hints do not match. Each write-tool allow grants the entire tool, including mutations beyond the workflow examples, across the server credential's accessible resources—not just this repository or Project. Workflow content, submission, and shipping approvals still apply. Do not recommend whole-server write wildcards, PR merge allows, or unrelated write tools. Do not revoke any existing allows.
 
 Offer the accepted-artifact diff gates defined in `../../references/setup.md` independently of integration allows. Declining every new permission changes no permission file or exclusion. Once new rules are selected, ask once where the combined permission configuration should be stored before preparing the final file proposal:
 

@@ -1,96 +1,103 @@
 # Deliverable
 
-Task and Gig are concrete Deliverable variants. Follow this lifecycle exactly for both; variant skills add only initialization and Task parent synchronization.
+Task and Gig are the two Deliverable variants. Both follow this lifecycle exactly. Their skills add only initialization and, for Task, parent synchronization.
 
-Read and follow `./artifacts.md` for authoritative paths and file ownership, `./communication.md` for human-facing communication and prose artifacts, `./review.md` for finding adjudication in every review phase, and `./planning.md` for adaptive inquiry, kind-specific investigation progression, planning review rounds, and user diff presentation.
+Related files, read when the step is reached:
 
-## Authoritative state
+- When writing or reading artifacts, read [artifacts](./artifacts.md).
+- When planning, read [planning](./planning.md).
+- When running or adjudicating any review, read [review](./review.md).
+- When writing human-facing text or prose artifacts, read [communication](./communication.md).
+- When changing Phase or lifecycle, read [Phase](./phase.md).
 
-Start with the preparation and explicit entity-selection gates in `./artifacts.md`.
+## Resume
 
-At every resume, read the Deliverable's `brief.md`, `metadata.json`, `.local/notes.md`, `.local/pending.md` when present, authoritative `plan.md`, any existing `result.md`/`report.md`, and the relevant local review round when present. Create missing local notes/pending-work files when continuing local work. Read `.local/status.md` only when `metadata.authority.kind` is `workflow`; tracker authority requires that file to be absent and a fresh provider lifecycle/Priority read. Read `<repo>/.project/policies.md` when present and apply it throughout planning, implementation, verification, and review.
+1. Follow the preparation and entity-selection gates in [artifacts](./artifacts.md#initialization-inputs).
+2. Read:
+   - `brief.md`, `metadata.json`, `.local/notes.md`, and `.local/pending.md` when present;
+   - `plan.md`, any `result.md` or `report.md`, and the relevant local review round;
+   - `<repo>/.project/policies.md` when present. Apply it throughout.
 
-If an operational read rejects an in-progress Deliverable's saved state, check `workflows/MIGRATIONS.md`: when the reported violations match an entry's recognition cues, convert that one Deliverable by applying every applicable entry in one rewrite straight to the current schema, read it back, and continue. When they do not match any entry, investigate the incompatible data with the user instead of guessing. Done entities are never converted.
-
-Before planning work, require `metadata.branch.state: ready`, switch to its exact `name`, and verify its stored `start`/`target`. For a pending Linear Task/Gig, finish tracker binding and call `finalize_linear_branch` first. A ready branch contract is immutable; the tracker-pending→tracker-named→provisioning→ready progression uses Linear's exact saved generated name. Never invent a branch name/base override. Push, PR creation, merge, branch deletion, and worktree operations require approval of the exact operation or set; Submission below defines the operation set authorized by final-artifact acceptance.
+   Create missing notes or pending files when continuing local work.
+3. Lifecycle authority:
+   - workflow authority: read `.local/status.md`;
+   - tracker authority: that file must be absent; read lifecycle and Priority fresh from the provider.
+4. Branch: require `metadata.branch.state: ready`. Switch to its `name` and verify its stored `start` and `target`. For a pending Linear branch, finish tracker binding and call `finalize_linear_branch` first. A ready branch contract is immutable. Never invent a branch name or base.
 
 ## Integration boundary
 
-After initialization, call `initialize_integration` with the Deliverable `entityDir`. On resume, reuse the initial `resume_integration` result from the artifact gate rather than repeating it.
+After initialization, call `initialize_integration` with the Deliverable `entityDir`. On resume, reuse the `resume_integration` result from the artifact gate.
 
-- `disabled`: continue silently; authoritative `integrations` remains empty.
-- `enabled`: first follow `./integrations/shared.md`; then dispatch enabled roles by exact provider to `./integrations/tracker/github.md`, `./integrations/tracker/linear.md`, or `./integrations/forge/github.md`; report an unavailable role without blocking the other.
-- unavailable roles, permission denial, invalid configuration, or provider failure: follow the failure boundary in `./integrations/shared.md`. Preserve work; never bypass MCP permissions or substitute workflow authority for an unavailable tracker.
+- `disabled`: continue silently.
+- `enabled`: read [integration roles](./integrations/shared.md), then the provider reference for each enabled role: [GitHub tracker](./integrations/tracker/github.md), [Linear tracker](./integrations/tracker/linear.md), or [GitHub forge](./integrations/forge/github.md). Report an unavailable role without blocking the other.
+- Unavailable role, permission denial, invalid configuration, or provider failure: follow the [MCP boundary](./core.md#mcp-boundary). Never substitute workflow authority for an unavailable tracker.
 
-After every accepted `plan.md` change, call tracker-only `prepare_integration_projection` and follow `./integrations/shared.md` for projection, approval, and verification. Use `prepare_tracker_publication` with the complete approved plan: GitHub maintains one issue comment; Linear maintains one document attached to the bound issue or Project. Preserve tracker request titles/names and descriptions. For published Linear documents, follow its explicit document/parent verification and `prepare_tracker_publication_update` flow before the ID-only content update. Unversioned mode applies its existing restricted-content approval before rendering.
-
-## Material replanning
-
-When accepted Deliverable behavior, strategy, scope, or decomposition must change after execution began, use the material-replanning transition in `./planning.md` before rewriting `.local/draft.md`. This transition owns the lifecycle and `phase` reset for every authority/provider; provider references own only their external projection. Repeat the normal review, acceptance, artifact projection, implementation, verification, and final-review flow from the corrected plan.
+After every accepted `plan.md` change, publish the plan as described in [provider bodies](./integrations/shared.md#provider-bodies).
 
 ## Kind strategy
 
-Every Deliverable has exactly one current kind: `feature`, `bugfix`, `refactor`, `research`, `audit`, or `chore`. Match `metadata.json` exactly and follow only that branch; there is no generic fallback.
+Every Deliverable has exactly one kind: `feature`, `bugfix`, `refactor`, `research`, `audit`, or `chore`. Follow only the matching strategy; there is no generic fallback. Unless stated otherwise, use the shared [planning](./planning.md) protocol.
 
-### `feature`
+| Kind | Plan defines | Execution | Final review checks |
+| --- | --- | --- | --- |
+| `feature` | behavior and interfaces, ownership, affected files, docs, verification | implement the accepted plan | delivered behavior, integration, regressions, verification |
+| `refactor` | structural goal, unchanged behavior and interfaces, invariants, migration boundary, verification | only behavior-preserving structural work | stated invariants hold; no unintended behavior change |
+| `research` | question, required evidence, method, boundaries, intended output | read the repo and external sources; probes only under `.local/scratch/`; no product changes | evidence supports conclusions; uncertainty is explicit |
+| `audit` | scope, criteria, evidence sources, boundaries, report expectations | inspect without remediating; use an implementation kind for approved fixes | findings are evidenced, complete against scope, actionable |
+| `chore` | maintenance outcome, affected config, docs, tooling, or code, constraints, verification | only that maintenance scope | requested outcome and practical verification |
+| `bugfix` | see below | apply only the accepted fix and run its verification | the evidenced cause is fixed without regressions |
 
-Follow the shared planning protocol. The plan covers intended behavior and interfaces, implementation ownership, affected files, documentation, and verification. Execute the accepted plan in product code and supporting artifacts. Final review checks delivered behavior, integration, regressions, and verification.
+### Bugfix
 
-### `bugfix`
+1. Ask only for context that inspection can't recover and that changes reproduction, expected behavior, scope, evidence, or access. When enough is known, investigate.
+2. Investigate the symptom and evidence before editing product code. When investigation exposes an unresolved product decision, stop and ask.
+3. Once the cause is evidenced, write `.local/draft.md` with Root cause, Symptom, Evidence, Cause, Proposed fix, and Verify. Then follow the shared plan review and acceptance.
+4. Edit product code only after the plan is accepted.
 
-1. Use the shared adaptive inquiry mechanics before and during investigation. Ask only for material context that inspection cannot recover and that changes reproduction, expected behavior, scope, evidence, or access.
-2. When enough information exists to investigate, proceed directly into investigation.
-3. Investigate the symptom and evidence before editing product code. If investigation exposes an unresolved product/domain decision, stop and ask before selecting a cause or fix.
-4. Once the cause is evidenced, write `.local/draft.md` with Root cause, Symptom, Evidence, Cause, Proposed fix, and Verify.
-5. Use the shared plan review, immutable snapshot, entity-specific plan-presentation tool, and user-diff acceptance flow. Do not edit product code before the root-cause-shaped plan is accepted.
-6. Apply only the accepted fix and run its verification.
-7. Final review checks that the evidenced cause is fixed without regressions.
+### Research and audit reports
 
-### `refactor`
+Write a durable `report.md` in the [reviewed document shape](./artifacts.md#reviewed-document-shape). The Overview states the question or scope, the key conclusion, and material uncertainty. The following sections keep the full evidence, findings, conclusions, and next steps. A report is a result, not a transcript or a substitute for the plan. Use only relevant sections.
 
-Follow the shared planning protocol. The plan defines the structural goal, behavior and interfaces that must remain unchanged, invariants, migration boundary, implementation, and verification. Execute only behavior-preserving structural work. Final review checks the stated invariants and absence of unintended behavior changes.
+When the user asks to change kind, read [kind changes](./deliverable/extras.md#changing-kind).
 
-### `research`
+## Material replanning
 
-Follow the shared planning protocol. The plan defines the question, evidence required, investigation method, boundaries, and intended output. Investigation may read the repository and external sources and may create temporary probes under `.local/scratch/`, but does not modify product behavior. Write durable `report.md` with the question, evidence, findings, conclusion, uncertainty, and next steps. Final review checks that evidence supports the conclusions and uncertainty is explicit.
+When accepted behavior, strategy, scope, or decomposition must change after execution began, use [material replanning](./planning.md#material-replanning) before rewriting `.local/draft.md`. Then repeat review, acceptance, publication, implementation, verification, and final review from the corrected plan.
 
-### `audit`
+## Reviews
 
-Follow the shared planning protocol. The plan defines scope, criteria, evidence sources, boundaries, and report expectations. Inspect without remediating findings in product code. Write durable `report.md` with scope/criteria, evidence, findings, recommendations, and limitations. Final review checks that findings are evidenced, complete against scope, and actionable. Use an implementation kind for user-approved remediation.
+Every plan, interim, and final review follows [review](./review.md). The reviewer only critiques, the main agent makes changes, and the user owns product decisions and approval. Reviews and correction loops proceed automatically once their prerequisites are met. Pause for unresolved user decisions and for the configured blocked-review confirmation. Accepting the reviewed plan and accepting the final result are separate approvals.
 
-### `chore`
+## Implementation and verification
 
-Follow the shared planning protocol. The plan defines the concrete maintenance outcome, affected configuration/docs/tooling/code, operational constraints, and verification. Execute only that maintenance scope. Final review checks the requested outcome and practical verification without imposing feature boilerplate.
+1. When implementation begins, set Execution through the Phase tool for the current authority. Lifecycle stays `inProgress`.
+2. Implement the complete approved change at its owning abstraction. Leave unrelated working-tree changes untouched.
+3. Run focused checks while developing. Run all plan and Project Policy verification before final review.
+4. A Task runs its skill's parent synchronization. A Gig has none.
+5. Create or update the completion artifact: `result.md` for feature, bugfix, refactor, and chore; `report.md` for research and audit. Never claim verification that didn't run.
+6. Resolve every unchecked `.local/pending.md` entry, or move it to separately approved work. A missing file counts as empty.
+7. Set Self-Review, then call `review_task` or `review_gig` with `phase: "final"`. Repeat review and correction until approved, keeping the completion artifact current.
+8. Stay in Self-Review while presenting the implementation and completion artifact for user review.
+9. When user review leads to changes, return to Execution, update the artifact, then go back to Self-Review and rerun final review for every material change.
+10. When the user accepts, read [submission](./deliverable/submission.md). When the user asks to ship, read [shipping](./deliverable/shipping.md).
 
-Use only relevant report sections. Follow the reviewed document shape in `./artifacts.md`: a concise `## Overview` states the question/scope, key conclusion, and material uncertainty; subsequent nonempty level-two sections preserve the evidence-rich findings, conclusions, and next steps. The overview is reviewed with the full report. A report is a durable result, not a conversation transcript or substitute for the accepted plan.
+When the plan defines commit steps, run steps 1–9 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review. When the user accepts a step, read [commits](./deliverable/submission.md#commits) and commit it; that step acceptance authorizes only its commit, not push or PR. With a forge, before staging the last step's commit, save forge intent as described in [submission](./deliverable/submission.md#with-a-forge) so it lands in that commit. Run the final review over the whole branch before submission.
 
-## Changing kind
+## Completion artifact
 
-When the user requests or approves a kind change, update `kind` in `metadata.json`. Any supported kind can change to any other supported kind at any lifecycle, including `done` and `canceled`.
-
-Versioned GitHub reconciles the managed Kind label, preserving unrelated labels. Linear and unversioned GitHub keep Kind in workflow metadata only.
-
-Leave lifecycle, Phase, identity, branch, Task parent, `brief.md`, and existing artifacts unchanged for a kind-only update. Future work follows the current kind's strategy. Actual scope or behavior changes follow the normal planning and approval rules, separately from changing kind.
-
-## Review handling
-
-Follow `./review.md` for every plan, interim, and final review. The review agent is critique-only and read-only; the main agent owns changes; the user owns product decisions and approval. Reviews and correction loops proceed automatically once their lifecycle prerequisites are met. Pause for unresolved user decisions or concerns and the configured blocked-review confirmation threshold under `./review.md`. Reviewed-plan diff acceptance and final user acceptance remain separate approval gates.
-
-## Completion artifacts
-
-Research and Audit complete their evidence-rich root `report.md` before final subagent review because the report is their reviewed output. For Feature, Bugfix, Refactor, and Chore, create root `result.md` before final subagent review so the reviewer receives the actual outcome and verification evidence:
+Write `result.md` before final review so the reviewer sees the actual outcome:
 
 ```markdown
 # Result
 
 ## Overview
 
-- A concise walkthrough of the actual delivered behavior, why it matters, and material implementation or integration changes.
+- A concise walkthrough of the delivered behavior, why it matters, and material implementation or integration changes.
 - Material limitations or intentionally unchanged boundaries.
 
 ## Implementation walkthrough
 
-Optional deeper code and architecture explanation when it materially helps reviewers; omit this section when unnecessary.
+Optional deeper code or architecture explanation; omit when unnecessary.
 
 ## Verification
 
@@ -101,42 +108,11 @@ Optional deeper code and architecture explanation when it materially helps revie
 - `<planned check>` — `<specific reason>`
 ```
 
-A Research/Audit continued into implementation keeps `report.md` unchanged as prior evidence and adds `result.md` before final subagent review of the implementation.
+- Describe actual outcomes, not plans or a transcript. It must make sense without the conversation.
+- Include only the delivered behavior, material changes, limitations, and verification of the Deliverable itself. Leave out workflow housekeeping: tracker or forge state, lifecycle, Priority, labels, review state, projection, and branch, PR, or merge steps.
+- Omit the **Not run** list when every planned check ran.
+- Keep the artifact current after every review change, implementation change, or rerun. A material change requires another final review.
+- Present it with every user review and with final approval. Keep provider metadata and links out of it.
+- Research or audit work that continues into implementation keeps `report.md` as prior evidence and adds `result.md`.
 
-Write actual outcomes, not planned work or a chronological transcript. `result.md` contains only delivered behavior, material implementation or integration changes, limitations, and verification of the deliverable itself. Exclude evidence that exists only to run or close the workflow: tracker or forge state and read-back, lifecycle or Priority, labels, review state, artifact projection, and branch, pull-request, or merge housekeeping. Keep the primary walkthrough concise and understandable without the conversation. Include the ordinary Markdown Implementation walkthrough section only when deeper code or architecture detail materially helps review. Keep Overview concise and accurate, supporting sections complete, and Not run inside Verification. Provider presentation belongs to `render_provider_body`. List verification that ran with its observed result. When a planned check did not run, add the compact `**Not run:**` list with its specific reason; omit that list when every planned check ran. Once `result.md` exists, update it after every user-review change, implementation revision, or verification rerun so it always describes the current result. A material implementation change requires another final subagent review; include the synchronized `result.md` in that rerun. Present the current completion artifact with every final user-review iteration and include it in final user approval. Keep provider metadata and links out of the artifact.
-
-## Implementation and verification
-
-1. When approved implementation begins, set Execution with the authority/provider-specific Phase tool and reconcile through `./phase.md`; lifecycle remains `inProgress`.
-2. Implement the complete approved change at its owning abstraction. Keep unrelated working-tree changes untouched.
-3. Run focused verification while developing and all plan/Project Policy verification before final review.
-4. For a Task, run the parent-synchronization flow in its skill. A Gig has no parent-synchronization step.
-5. Create or synchronize the applicable `result.md` or `report.md` with the actual implementation and verification evidence. Do not claim unrun verification.
-6. Check `.local/pending.md`. Resolve or move every active entry to separately approved work; final review requires zero unchecked entries. A missing file is empty.
-7. Keep lifecycle `inProgress`, set Self-Review with the authority/provider-specific Phase tool and reconcile through `./phase.md`. Then call `review_task` or `review_gig` matching the entity, with `phase: "final"`.
-8. Follow `./review.md`, synchronize the completion artifact after every implementation or verification change, and repeat final subagent review until approved.
-9. Remain in Self-Review while presenting the implementation and reviewed completion artifact together for final user review and awaiting approval.
-10. When user review causes a change, enter In Progress/Execution for corrections and verification, synchronize `result.md` or `report.md`, then return to Self-Review before rerunning final subagent review for every material implementation or report change. Repeat the user-review presentation with the synchronized artifact.
-11. Continue through Submission below. Enter lifecycle `inReview` only after confirmed external submission and clear native Phase. Revisions on an open PR return to In Progress/Execution, then Self-Review for adversarial/local user reviews, then In Review after successful resubmission. With no external submission route, never set In Review.
-12. An explicit Task/Gig finish request, including `ship it`, `ship this`, or `finish it`, authorizes the complete remaining delivery sequence: commit approved work, push the stored branch, create or update the PR, merge, reconcile Done, and perform target/branch cleanup. Carry that finish intent through Submission even when the PR does not exist yet; complete every required verification, review, and merge-protection gate, then finish without another merge or cleanup approval question. Use only the configured delivery route, immutable stored target, and local Deliverable branch deletion. Final completion-artifact acceptance authorizes submission, not finishing; ordinary resume or an externally changed tracker status is not itself a finish request. With a forge, use `prepare_integration_finish` and conditional `prepare_integration_merge`: require exact repository/head/base/head SHA and complete merged PR-get evidence, using the [shared repository merge contract](./integrations/forge/merge.md) with the verified expected head when a merge is needed. Without a forge, retain the confirmed Git-ancestry delivery route; no automatic local or Epic merge is added. Only after confirmed delivery set `done` through the existing authority, retain the last metadata Phase, and confirm native Status/Priority and absent native Phase as required. This lifecycle update never creates a repository commit.
-13. Within that same explicit finish request, call `cleanup_github_delivery_branch` or `cleanup_ancestry_delivery_branch` once, using the established delivery route, without another cleanup question. Supply `completionAuthority` for the authority whose current Done outcome was confirmed. For a semantic GitHub forge association, supply fresh exact `pull_request_read:get` evidence including repository, PR number, merged=true, stored head/base, local head SHA and merge timestamp. Otherwise use Git source-ancestry evidence. The tool checks out only the stored target, fast-forwards it to freshly fetched origin, requires exact target/origin equality and lifecycle/head/worktree safety, then deletes only the local Deliverable branch. The no-forge route additionally verifies source ancestry. Epic-target Tasks remain on the Epic branch and leave main intact.
-14. Any blocked merge, missing evidence, unavailable origin, ahead/diverged target, head mismatch, or worktree failure preserves the Deliverable branch. Never stash, reset, clean unrelated files, force checkout, push the target to hide divergence, delete remote/Epic branches, or revert confirmed `done`. Report confirmed completed steps and the exact blocker; claim full finalization only when the clone is on the synchronized stored target with the local source branch deleted.
-
-## Submission
-
-Submission starts only after final subagent approval, synchronized `result.md` or `report.md`, and final user review.
-
-1. An explicit finish request follows the complete finish flow above after Submission; it is not submission-only acceptance. Acceptance of the final `result.md` or `report.md` diff otherwise starts submission by default: final commit and—when a forge is configured—push of the stored branch plus creation or recovery of the exact stored-head/stored-target PR. Do not ask for another delivery choice, title approval, or body approval. When the user explicitly requests commit-only, no push, or no PR, stop after the commit.
-2. Before the commit, for configured-forge submission (not commit-only/no-push/no-PR), call `prepare_integration_pull_request`. On the first approved creation, call `begin_resource_creation` with role `forge`, to save immutable PR repository/head/target intent. Include the intent in the one reviewed submission commit. Existing intent or missing IDs require agent investigation through configured provider tools; do not prepare a replacement creation. Use the available `commit` skill for the commit, following its selection and message rules. Without one, use plain Git to create one focused commit containing only the exact reviewed implementation and durable artifacts, following repository commit conventions. Preserve every unrelated staged change and every unrelated path in Git or outside Git; never amend another commit unless explicitly requested.
-3. For an explicit commit-only/no-push/no-PR request, report the commit and stop.
-4. When a forge is configured, call `render_provider_body` with the complete synchronized `result.md` or `report.md`. Use destination `pullRequest` and publish its exact returned Markdown under the shared publishing contract. The exact approved entity title, without an internal or tracker identifier, is the PR title. The stored branch `name` is the head and stored `target` is the base; approval never changes this contract.
-5. With a configured forge, push only the stored entity branch. First approved PR creation is one direct native call using the stored head/target and approved title/body, without preliminary discovery. Record its clear-success number/URL directly in the existing Resource IDs file; recording leaves versioned metadata unchanged and creates no metadata-only follow-up commit/push/CI run. Use locally recorded IDs. Missing/stale data and uncertain attempts require agent investigation through configured provider tools. Record an approved explicit PR choice in the IDs file; ask the user when investigation requires a selection. Never replace an ambiguous or closed PR. Without a forge, perform no submission Git remote or PR operation.
-6. After a synchronized and approved post-creation `result.md` or `report.md` change, rebuild and directly publish the complete body under `./integrations/shared.md`. Trust established clear success. After an uncertain or partial update, read the exact PR before retrying and retry only confirmed non-application; never create another PR.
-7. After successful creation or recovery of a reviewable PR, set lifecycle `inReview` through its authority and clear native Phase using `./phase.md`. A local commit or push without an external review submission does not set In Review. After successful approved resubmission, reconcile the same In Review/absent-Phase outcome; reuse native automation outcomes and skip already-applied writes.
-8. A failure stops at its current confirmed state and resumes from remote evidence; never repeat uncertain PR creation blindly. An uncertain submission does not itself prove In Review is appropriate.
-
-## Design artifacts
-
-When the requested output is a UI mockup, layout, or visual concept, create and iterate on a self-contained HTML file under `.local/designs/` by default. Include CSS/JS inline, require no build/server/network/CDN, and make it directly openable from disk. Present the exact repository-relative path as a standalone path token on its own line so Neovim `gx` can recognize it through `<cfile>`; do not add a label, line suffix, or trailing punctuation to that line. Give the concise description separately, then ask the user to review it and provide feedback. Resolve that feedback before requesting final approval.
-
-Only an explicit user request makes a design durable. In versioned mode, copy the exact selected file into the Deliverable's root `designs/` and include only that copy in the approved commit. Continue later experiments under `.local/designs/`; update the durable copy only on another explicit request. In unversioned mode, explain that `.project/` cannot be committed under the current policy and require a separately approved project migration before creating a versioned design artifact.
+When the output is a UI mockup, layout, or visual concept, read [design artifacts](./deliverable/extras.md#design-artifacts).

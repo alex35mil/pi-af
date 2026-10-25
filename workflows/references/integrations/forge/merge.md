@@ -6,14 +6,14 @@ Deliverables and incoming PRs use one repository merge policy: **squash merge**,
 
 Use actual configured `pull_request_read:get` evidence for the exact repository and PR. Confirm expected base/head repository/ref association and the full expected head SHA. The workflow adapter supplies its own association:
 
-- Deliverable finish verifies the recorded PR, immutable branch contract, local head and required workflow phase.
+- Deliverable shipping verifies the recorded PR, immutable branch contract, local head and required workflow phase.
 - Incoming shipping verifies the selected PR/fork and final reviewed/published revision, without creating an entity. Use `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence` and fresh actual `evidence`.
 
-Before merging, complete required verification and reviews and obtain the exact finish/ship approval. Follow [Preflight checks and failure handling](../../tools.md#preflight-checks-and-failure-handling): GitHub validates access, the requested merge method, configured protections, and mergeability when processing the merge request. Use that authoritative result rather than requiring separate repository-policy or permission inspection to predict rejection. A local `merge-needed` decision establishes matching evidence and arguments, not completion of verification, review, or approval. A rejected merge stops dependent delivery steps; preserve work and report the error and blocker.
+Before merging, complete required verification and reviews and obtain the exact shipping approval. Under [proportional checks](../../core.md#tool-calls), GitHub validates access, the requested merge method, configured protections, and mergeability when processing the merge request. Use that authoritative result rather than requiring separate repository-policy or permission inspection to predict rejection. A local `merge-needed` decision establishes matching evidence and arguments, not completion of verification, review, or approval. A rejected merge stops dependent delivery steps; preserve work and report the error and blocker.
 
 ## Merge and confirm
 
-An explicit finish/ship request for the exact ready PR and reviewed head authorizes conditional merge, confirmed Done and the workflow's safe local cleanup as one set. Do not ask a second merge or cleanup question when that exact set is already approved. Changed relevant facts require reassessment; ordinary resume, local signoff and an externally changed status do not authorize shipment.
+An explicit request to ship the exact ready PR and reviewed head authorizes conditional merge, confirmed Done and the workflow's safe local cleanup as one set. Do not ask a second merge or cleanup question when that exact set is already approved. Changed relevant facts require reassessment; ordinary resume, local signoff and an externally changed status do not authorize shipping.
 
 Pass the shared operation's returned arguments unchanged to the configured `merge_pull_request`: fixed `merge_method: squash` and pinned `expectedHeadSha`. Prepare `commit_title` with the available commit skill's selection/message rules, using the approved Deliverable title or the incoming PR's existing title as the semantic title data. Preserve the PR title/body. No per-flow method setting, alternative merge strategy, protection bypass or automatic history update is permitted after rejection.
 

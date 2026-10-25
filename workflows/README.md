@@ -68,7 +68,7 @@ Plan drafting, review, corrections, presentation, and waiting for approval stay 
 
 After final review passes, you review the finished work and decide whether to submit it. Approving an earlier draft or file write is not submission approval.
 
-Submitting and finishing are separate. Submission commits the work and opens or updates a PR when configured. An explicit finish request handles merging, marking the work Done, and cleaning up the local branch. See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
+Submitting and shipping are separate. Submission commits the work and opens or updates a PR when configured. An explicit request to ship handles merging, marking the work Done, and cleaning up the local branch. See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
 ## Epic Task delivery strategy
 
@@ -86,16 +86,17 @@ Unversioned disclosure approval covers visible and hidden content alike. Older s
 
 ## Contract ownership
 
-Skills own entry routing, workflow sequence, and entity-specific decisions. References own shared operational contracts. Extension READMEs describe registered interfaces and implementation boundaries. This README is a user guide, not an additional operational specification.
+Skills own entry routing, workflow sequence, and entity-specific decisions. References own shared operational contracts; [core](references/core.md) owns the rules every workflow shares. When editing guidance, follow the [instruction style guide](STYLE.md). Extension READMEs describe registered interfaces and implementation boundaries. This README is a user guide, not an additional operational specification.
 
 | Contract                                                      | Canonical guidance                                                                                                                                                                |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared rules: tools, MCP boundary, recovery, approvals       | [Core](references/core.md)                                                                                                                                                        |
 | Artifacts, intake, persistence, authority, policy precedence  | [Artifacts](references/artifacts.md)                                                                                                                                              |
 | Workflow activity and native Phase projection                 | [Phase](references/phase.md)                                                                                                                                                      |
 | Configuration files and permission gates                      | [Setup](references/setup.md)                                                                                                                                                      |
 | Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
 | Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
-| Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md)                                                                                                                                          |
+| Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md), [submission](references/deliverable/submission.md), [shipping](references/deliverable/shipping.md)                                      |
 | Backlog and Todo                                              | [Queue](references/queue.md)                                                                                                                                                      |
 | Provider-body and integration rules                           | [Integration roles](references/integrations/shared.md)                                                                                                                            |
 | Provider operations                                           | [GitHub tracker](references/integrations/tracker/github.md), [Linear tracker](references/integrations/tracker/linear.md), [GitHub forge](references/integrations/forge/github.md) |

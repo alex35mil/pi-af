@@ -64,7 +64,17 @@ export const AncestryDeliveryCleanupInputSchema = Type.Object(cleanupInputProper
 export const GitHubDeliveryCleanupInputSchema = Type.Object(
     {
         ...cleanupInputProperties,
-        merge: Type.Omit(MergeEvidenceSchema.anyOf[1], ["kind", "source"]),
+        evidence: Type.Object(
+            {
+                tool: Type.String({ minLength: 1 }),
+                arguments: Type.Record(Type.String(), Type.Unknown()),
+                response: Type.Unknown({ description: "Actual provider JSON or complete native MCP result." }),
+            },
+            {
+                additionalProperties: false,
+                description: "Exact configured pull_request_read get evidence for the recorded PR after merge.",
+            },
+        ),
     },
     { additionalProperties: false },
 )

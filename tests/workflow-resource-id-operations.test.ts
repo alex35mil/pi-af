@@ -18,7 +18,7 @@ import {
 } from "../workflows/extensions/integrations/resource-ids.ts"
 import { ResourceIdsToolSchema } from "../workflows/extensions/integrations/resource-id-tool.ts"
 import {
-    finishReadDecision,
+    shippingReadDecision,
     invalidateStaleResourceIds,
     recordResourceIdsEvidence,
     resourceIdsFromRead,
@@ -399,7 +399,7 @@ describe("resource ID operations", () => {
             const actual = { ...pr, head: { ...pr.head, sha }, merged: false }
             const read = { ...evidence, response: actual }
             await selectPullRequestResourceIds(f.context(), read, new OperationResourceIdsMemo(), mcpTools)
-            const decision = finishReadDecision(prScope, read, sha, 7, mcpTools)
+            const decision = shippingReadDecision(prScope, read, sha, 7, mcpTools)
             assert.deepEqual(decision, {
                 state: "merge-needed",
                 arguments: {
@@ -412,23 +412,23 @@ describe("resource ID operations", () => {
             const context = buildIntegrationContext(
                 { cwd: f.root } as never,
                 {
-                    operation: "finishMerge",
+                    operation: "shippingMerge",
                     entityDir: f.directory,
                     evidence: read,
                 },
                 mcpTools,
             )
-            if (context.state !== "enabled") assert.fail("enabled finish expected")
-            assert.deepEqual(context.roles.forge?.finish, decision)
+            if (context.state !== "enabled") assert.fail("enabled shipping expected")
+            assert.deepEqual(context.roles.forge?.shipping, decision)
             const merged = { ...actual, merged: true, merged_at: "2026-10-01T08:10:44Z" }
-            assert.equal(finishReadDecision(prScope, { ...read, response: merged }, sha, 7, mcpTools).state, "merged")
+            assert.equal(shippingReadDecision(prScope, { ...read, response: merged }, sha, 7, mcpTools).state, "merged")
             for (const response of [
                 { ...actual, number: 8, html_url: "https://github.com/alex/example/pull/8" },
                 { ...actual, head: { ...actual.head, sha: "0".repeat(40) } },
                 { ...actual, head: { ...actual.head, ref: "other" } },
                 { ...actual, merged: true },
             ])
-                assert.equal(finishReadDecision(prScope, { ...read, response }, sha, 7, mcpTools).state, "blocked")
+                assert.equal(shippingReadDecision(prScope, { ...read, response }, sha, 7, mcpTools).state, "blocked")
             const selected = { ...actual, number: 8, html_url: "https://github.com/alex/example/pull/8" }
             await selectPullRequestResourceIds(
                 f.context(),
@@ -443,14 +443,14 @@ describe("resource ID operations", () => {
             const mismatch = buildIntegrationContext(
                 { cwd: f.root } as never,
                 {
-                    operation: "finishMerge",
+                    operation: "shippingMerge",
                     entityDir: f.directory,
                     evidence: read,
                 },
                 mcpTools,
             )
-            if (mismatch.state !== "enabled") assert.fail("enabled finish expected")
-            assert.equal(mismatch.roles.forge?.finish?.state, "blocked")
+            if (mismatch.state !== "enabled") assert.fail("enabled shipping expected")
+            assert.equal(mismatch.roles.forge?.shipping?.state, "blocked")
         } finally {
             f.cleanup()
         }

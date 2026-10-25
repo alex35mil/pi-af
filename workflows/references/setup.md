@@ -137,7 +137,7 @@ Every role has a non-empty MCP server name containing only letters, digits, `_`,
 
 Issue and Project Status mappings each require all six queue/lifecycle keys and six distinct, non-empty provider option names. `team` is non-empty. Linear Priority is native and is not configured here.
 
-Both Phase label-group mappings are required. Each has `scope: workspace | team`, one exact non-empty group name, and distinct non-empty child names for `planning`, `execution`, and `selfReview`. Team scope means the exact configured team; workspace scope means no team. Through registered Linear label reads, require the active applicable group and all three children, including issue single-select validation and pagination. Project-label groups are mutually exclusive by Linear's documented contract. Setup stays read-only and asks the user to configure missing/incompatible metadata. Follow `./phase.md` for runtime reconciliation and complete-label preservation.
+Both Phase label-group mappings are required. Each has `scope: workspace | team`, one exact non-empty group name, and distinct non-empty child names for `planning`, `execution`, and `selfReview`. Team scope means the exact configured team; workspace scope means no team. Through registered Linear label reads, require the active applicable group and all three children, including issue single-select validation and pagination. Project-label groups are mutually exclusive by Linear's documented contract. Setup stays read-only and asks the user to configure missing/incompatible metadata. Runtime reconciliation and complete-label preservation are in [Phase](./phase.md).
 
 During guided setup, `inspect_linear_workspace` reads the authenticated workspace, authenticated viewer, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. `viewer.name` is Full Name; `viewer.displayName` is the workspace-unique Username/Nickname and is returned as `viewer.username`. The API performs no mutation. Setup persists only the exact team, status names, and Phase group scopes/names/child mappings the user selects; provider IDs, viewer identity, branch template, and credentials remain outside workflow configuration. A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
@@ -306,7 +306,7 @@ Before declaring automation active, require confirmation of the native Backlog f
 
 ## Artifact persistence
 
-Read and follow `./artifacts.md` for the canonical persistence and authority contract, including exact ignore/exclude rules, Git-membership checks, and both mode transitions. For manual setup, create the configuration above, apply that contract's setup rule, then call `prepare_artifacts`. Call preparation again after configuration changes.
+The canonical persistence and authority contract is in [artifacts](./artifacts.md#persistence-and-authority), including exact ignore/exclude rules, Git-membership checks, and both mode transitions. For manual setup, create the configuration above, apply that contract's setup rule, then call `prepare_artifacts`. Call preparation again after configuration changes.
 
 ## MCP registrations
 
@@ -344,7 +344,7 @@ Example project registrations produced by `configure_mcp` for the supported prov
 
 ## Project Policies
 
-`.project/policies.md` is optional Markdown containing user-approved repository-specific additions or overrides to these Epic/Task/Gig workflows. Each policy names the workflow stage or behavior it affects and states what it adds or replaces. Generic repository instructions belong in `AGENTS.md` or the harness-equivalent instruction file; provider configuration belongs in the setup JSON files. Omit policies when the user declines them. Follow `./artifacts.md` for policy precedence, overrides, and persistence.
+`.project/policies.md` is optional Markdown containing user-approved repository-specific additions or overrides to these Epic/Task/Gig workflows. Each policy names the workflow stage or behavior it affects and states what it adds or replaces. Generic repository instructions belong in `AGENTS.md` or the harness-equivalent instruction file; provider configuration belongs in the setup JSON files. Omit policies when the user declines them. Policy precedence, overrides, and persistence are in [artifacts](./artifacts.md#project-policy-precedence).
 
 Example:
 
@@ -371,7 +371,7 @@ Offer these independently selectable options only for selected active integratio
 | Linear tracker                | `mcp(<server>, save_project)`   | Entire Project save tool for Epics, including creation, description, labels, lifecycle, priority, and other supported updates.                                                  |
 | Linear tracker                | `mcp(<server>, save_document)`  | Entire document create/update tool, including attachment/reparenting; used for maintained plan documents. Workflow updates omit parent arguments. |
 
-A forge-only GitHub server gets read-only access, not tracker write recommendations. Omit inactive servers and unavailable tools. Do not recommend whole-server write wildcards, PR merge allows, or unrelated writes. These rules are not restricted by tool arguments, repository, or Project: they cover the server credential's accessible resources. Tool permissions remove prompts, not workflow content, submission, or finish approval gates. Existing permissions are not revoked.
+A forge-only GitHub server gets read-only access, not tracker write recommendations. Omit inactive servers and unavailable tools. Do not recommend whole-server write wildcards, PR merge allows, or unrelated writes. These rules are not restricted by tool arguments, repository, or Project: they cover the server credential's accessible resources. Tool permissions remove prompts, not workflow content, submission, or shipping approval gates. Existing permissions are not revoked.
 
 Before offering new rules, call `inspect_permissions` with `{ "rules": ["mcp(<server>, hint: readOnly)", "mcp(<server>, issue_write)"] }`, using only the selected providers' candidates. This read-only tool uses live advertised metadata and the permission engine's global/project/local loading and matcher; it makes no provider call and changes no files. Required workflow read tools lacking true annotations remain uncovered: inspect their exact selectors as needed to report that limitation, without automatically granting those diagnostic selectors.
 

@@ -1,5 +1,22 @@
 # Upgrading
 
+## Shipping terminology and evidence inputs
+
+Deliverable merge, Done, and cleanup is now called **shipping**, matching incoming-PR shipping. Names for an activity use nouns ("shipping", "cancellation"). There are no aliases; update custom permission selectors and scripts that use the old names.
+
+| Old name | New name |
+| --- | --- |
+| `prepare_integration_finish` | `prepare_integration_shipping` |
+| result field `roles.forge.finish` | `roles.forge.shipping` |
+| `plan_incoming_pr_ship` | `plan_incoming_pr_shipping` |
+| `plan_incoming_pr_cancel` | `plan_incoming_pr_cancellation` |
+| incoming Project `action` values `"ship"` and `"cancel"` | `"shipping"` and `"cancellation"` |
+
+- `cleanup_github_delivery_branch` takes the merged PR's exact `pull_request_read` get as `evidence` instead of pre-extracted `merge` facts.
+- A Deliverable may have several commits within its accepted scope. Forge PR intent is saved before staging the last commit and committed with the work.
+
+No `.project` artifact migration is needed.
+
 ## Workflow tool discovery and names
 
 Workflow operations now use concrete, operation-specific tools discovered through the existing permission-aware Codemode. Keep Codemode enabled for workflows; explicit tool allowlists and exclusions remain authoritative. See the [current operation catalog](workflows/references/tools.md). Ordinary coding tools remain direct.

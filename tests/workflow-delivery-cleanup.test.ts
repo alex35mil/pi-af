@@ -8,7 +8,8 @@ import { describe, it } from "node:test"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 import { runDeliveryCleanup } from "../workflows/extensions/deliverable/cleanup.ts"
-import registerDeliverable from "../workflows/extensions/deliverable/index.ts"
+import registerDeliverable, { githubMergeProof } from "../workflows/extensions/deliverable/index.ts"
+import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
@@ -123,6 +124,7 @@ describe("Deliverable branch cleanup", () => {
         const tools: string[] = []
         registerDeliverable({
             on() {},
+            events: { on: () => () => {} },
             registerTool: (tool: { name: string }) => tools.push(tool.name),
         } as unknown as ExtensionAPI)
         assert.deepEqual(tools, ["cleanup_ancestry_delivery_branch", "cleanup_github_delivery_branch"])
@@ -196,6 +198,82 @@ describe("Deliverable branch cleanup", () => {
             assert.equal(git(root, ["ls-remote", "--heads", "origin", gig.branch]).includes(gig.branch), true)
             assert.equal(fs.readFileSync(path.join(root, "outside-git-notes.txt"), "utf-8"), "keep me\n")
             assert.match(fs.readFileSync(path.join(root, "README.md"), "utf-8"), /working-tree note/)
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+
+    it("derives GitHub cleanup proof from exact PR-get evidence for the recorded PR", () => {
+        const { parent, root } = repository()
+        try {
+            const gig = createDoneGig(root, true)
+            commitBranch(root, gig.branch)
+            const sha = git(root, ["rev-parse", gig.branch])
+            const catalog = workflowMcpCatalog("github")
+            const args = { method: "get", owner: "example", repo: "project", pullNumber: 7 }
+            const pr = {
+                number: 7,
+                html_url: "https://github.com/example/project/pull/7",
+                state: "closed",
+                draft: false,
+                merged: true,
+                merged_at: "2026-01-02T04:00:00Z",
+                base: { ref: gig.target, repo: { full_name: "example/project" } },
+                head: { ref: gig.branch, sha, repo: { full_name: "example/project" } },
+            }
+            const evidence = (response: unknown, overrides: Record<string, unknown> = {}) => ({
+                entityDir: gig.directory,
+                evidence: {
+                    tool: fixtureToolName("github", "pull_request_read"),
+                    arguments: { ...args, ...overrides },
+                    response,
+                },
+            })
+            assert.deepEqual(githubMergeProof(root, evidence(pr), catalog), {
+                kind: "github-pr",
+                source: "pull_request_read:get",
+                repository: { owner: "example", repo: "project" },
+                pullRequestNumber: 7,
+                merged: true,
+                mergedAt: "2026-01-02T04:00:00Z",
+                head: gig.branch,
+                headCommitSha: sha,
+                base: gig.target,
+            })
+            assert.throws(
+                () => githubMergeProof(root, evidence({ ...pr, merged: false, state: "open" }), catalog),
+                /does not show a merged PR/,
+            )
+            assert.throws(
+                () =>
+                    githubMergeProof(
+                        root,
+                        evidence(
+                            { ...pr, number: 8, html_url: "https://github.com/example/project/pull/8" },
+                            {
+                                pullNumber: 8,
+                            },
+                        ),
+                        catalog,
+                    ),
+                /locally recorded PR/,
+            )
+            assert.throws(
+                () => githubMergeProof(root, evidence({ ...pr, head: { ...pr.head, sha: "0".repeat(40) } }), catalog),
+                /expected head/,
+            )
+            assert.throws(
+                () =>
+                    githubMergeProof(
+                        root,
+                        {
+                            ...evidence(pr),
+                            evidence: { ...evidence(pr).evidence, tool: "mcp__other__pull_request_read" },
+                        },
+                        catalog,
+                    ),
+                /merge evidence rejected/,
+            )
         } finally {
             fs.rmSync(parent, { recursive: true, force: true })
         }
@@ -323,7 +401,7 @@ describe("Deliverable branch cleanup", () => {
         }
     })
 
-    it("finishes an Epic-target Task on the synchronized Epic branch and leaves main untouched", () => {
+    it("cleans up a shipped Epic-target Task on the synchronized Epic branch and leaves main untouched", () => {
         const { parent, root } = repository()
         try {
             const mainCommit = git(root, ["rev-parse", "main"])

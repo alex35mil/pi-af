@@ -6,6 +6,22 @@ Also registers the separate native deferred checkout tools listed in [Workflow t
 
 `git.ts` supplies one validated-identity SSH URL builder for all GitHub fetch, remote-tip observation and push operations: `git@github.com:<owner>/<repo>.git`. Existing trusted SSH authentication is inherited; the tool configures no HTTPS credentials and changes no parent/global Git configuration. Saved completed-but-unpublished records contain no transport URL, so approved `publish_incoming_pr_rebase` recovery uses SSH with the same result and original lease without recreating the checkout, rerunning rebase or migrating state.
 
-The [Project procedure](../../references/pr/project.md) keeps maintainer-controlled Backlog/Todo -> In Review until confirmed Done/Canceled; fork-only [setup automation](../../references/pr/automation.md) adds membership without field resets. [Shipping](../../references/pr/shipping.md) uses the one shared repository merge operation and includes safe local cleanup in the exact ship/merge set, preserving parent state, contributor branches and private evidence.
+The [Project procedure](../../references/pr/project.md) keeps maintainer-controlled Backlog/Todo -> In Review until confirmed Done/Canceled; fork-only [setup automation](../../references/pr/automation.md) adds membership without field resets. [Shipping](../../references/pr/shipping.md) uses the one shared repository merge operation and includes safe local cleanup in the exact shipping and merge set, preserving parent state, contributor branches and private evidence.
 
 The [PR skill](../../skills/pr/SKILL.md) and [incoming PR procedure](../../references/pr/incoming.md) own private inspection, exact-revision approval, contributor access, and execution/merge boundaries. Configuration and identity belong to `integrations/forge/github/incoming-pr-context.ts`; independent review belongs to `review/pull-request.ts`. This is not Epic/Task/Gig initialization or submission.
+
+## Private evidence layout
+
+Everything lives under `.project/.local/pull-requests/<number>/` and stays outside Git.
+
+- `checkout/`: an approved independent nested Git repository with its own `.git`, HEAD and index. Only the named checkout tools operate on it.
+- `checkout.json`: original evidence and revision, merge-base, separately observed target/source tips, native rebase progress, pinned lease, publication outcome, and current working baseline.
+- `checkout-inspection.json`: observed state and phase validation.
+- `checkout-contribution.diff`, `checkout-rebase.diff`, `checkout-conflicts.diff`, `checkout-fixes.diff`, `checkout-untracked.json`: complete mutable inspection inputs for later immutable reviewer snapshots.
+- Safety assessments and notes stay at the PR root, outside `checkout/`.
+- `reviews/<base-sha>-<head-sha>/review-NNN/`:
+  - `inputs/`: that pass's write-once source, diff, and dependency files, including successive uncommitted drafts at the same head;
+  - `revision.json`, provider `evidence.json`, dossier `evidence.md`, and `source-files.json` mapping original paths to immutable snapshots;
+  - the shared request, report, review, response, transcript, agent, and outcome files.
+
+Existing review records are never moved or rewritten automatically; current-round lookup uses the `reviews/` namespace only. Full repository identities stay in the revision metadata; the PR number and commit SHAs identify local evidence.

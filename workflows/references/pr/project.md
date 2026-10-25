@@ -6,7 +6,7 @@ Track the selected PR itself on the configured GitHub Project. Use the Project/s
 
 Use actual configured PR-get evidence and fresh scoped Project reads. The context returns the complete repository/PR lookup arguments. Finish membership pagination before claiming absence; use the actual verified item ID when present. Read the configured single-select Status field and its option catalog through that Project's server, then read the item with that Status in `field_names`.
 
-Call `plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_ship`, or `plan_incoming_pr_cancel` matching the explicit approved intent, with:
+Call `plan_incoming_pr_intake`, `plan_incoming_pr_review`, `plan_incoming_pr_shipping`, or `plan_incoming_pr_cancellation` matching the explicit approved intent, with:
 
 - `reference` and actual exact PR-get `evidence`;
 - `fieldEvidence`: actual `projects_get:get_project_field` evidence in the configured Project;
@@ -24,11 +24,11 @@ The local planner validates consistency and returns required native MCP argument
 | Explicit review start/continuation                                   | Set In Review, or skip an already-applied assignment. Do not reopen terminal work implicitly.                             |
 | Feedback, contributor updates, draft changes, rebase, fixes or tests | Stay In Review; do not infer contributor activity or set In Progress/Phase.                                               |
 | Confirmed merge                                                      | Done. CI, approval, commit or push alone is not Done.                                                                     |
-| Explicit cancel                                                      | Close the exact PR, confirm closed/unmerged, then Canceled. An already-merged PR is Done instead.                         |
+| Explicit cancellation                                                | Close the exact PR, confirm closed/unmerged, then Canceled. An already-merged PR is Done instead.                         |
 
 For a missing item, execute only the planned `add_project_item` with `item_type: pull_request` and `pull_request_number`. Reuse its clear-success ID, obtain the exact scoped item read, and continue with `membership.state: added` plus the actual creation evidence. Complete the already-chosen initial Status without another arbitrary queue choice; existing In Review/terminal progress is preserved. The planner updates only configured Status, never labels, Priority, Phase, Internal ID, linked issues or unrelated items.
 
-Use native calls returned by the planner on their exact configured servers. An open-PR cancel plan first returns the scoped close call, not a premature Canceled update. After closure, obtain actual outcome evidence and plan again. Confirmed merged evidence is checked through the same shared forge merge operation before Done.
+Use native calls returned by the planner on their exact configured servers. An open-PR cancellation plan first returns the scoped close call, not a premature Canceled update. After closure, obtain actual outcome evidence and plan again. Confirmed merged evidence is checked through the same shared forge merge operation before Done.
 
 ## Recovery and reporting
 

@@ -13,7 +13,7 @@ Project Setup can render `.github/workflows/incoming-pr-project.yml` for automat
 
 The Project's native Status default initializes newly added items to the configured Backlog option. `addProjectV2ItemById` returns an existing item ID on repeat, and this workflow has no field-update mutation. Rerunning or reopening therefore does not reset an existing In Review, Done or Canceled card.
 
-Existing PRs are not bulk-backfilled. Explicit `/pr` intake handles other or missing PRs under its own approval and membership checks; ordinary resume preserves existing progress. Review/ship/cancel state remains maintainer-controlled, not inferred from contributor activity.
+Existing PRs are not bulk-backfilled. Explicit `/pr` intake handles other or missing PRs under its own approval and membership checks; ordinary resume preserves existing progress. Review, shipping, and cancellation state remains maintainer-controlled, not inferred from contributor activity.
 
 ## Setup and activation
 

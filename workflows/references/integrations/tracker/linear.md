@@ -1,6 +1,6 @@
 # Linear tracker
 
-First follow `../shared.md`.
+This procedure extends [integration roles](../shared.md).
 
 Linear mapping is exact:
 
@@ -10,17 +10,17 @@ Linear mapping is exact:
 | Task            | issue         | `project` equals parent Epic Project; never `parentId` | static format, or exact issue `gitBranchName` for `tracker`                     |
 | Gig             | issue         | no Epic Project                                        | static format, or exact issue `gitBranchName` for `tracker`                     |
 
-Kind remains workflow-only. Project and issue labels project native Phase in both artifact modes through the configured mutually exclusive groups; follow `../../phase.md`. Entity/kind labels are not applied.
+Kind remains workflow-only. Project and issue labels project native Phase in both artifact modes through the configured mutually exclusive groups; when reconciling Phase, read [Phase](../../phase.md). Entity/kind labels are not applied.
 
 ## Setup discovery
 
-During `/project-setup`, use `inspect_linear_workspace` to read workspace identity, authenticated viewer Full Name/Username, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. This operation is read-only and never substitutes for MCP tracker operations. Select exact team/status names without inferring semantics. Follow `../../setup.md` for exact branch-template matching. With `tracker`, Epic initialization repeats only the read-only viewer/workspace branch query so the branch uses current Linear settings.
+During `/project-setup`, use `inspect_linear_workspace` to read workspace identity, authenticated viewer Full Name/Username, accessible teams, team issue statuses, Project statuses, and workspace branch template through Linear's public GraphQL API. This operation is read-only and never substitutes for MCP tracker operations. Select exact team/status names without inferring semantics. For exact branch-template matching, read [setup](../../setup.md#linear-tracker). With `tracker`, Epic initialization repeats only the read-only viewer/workspace branch query so the branch uses current Linear settings.
 
 Read the selected Project/issue label catalog through registered `list_project_labels`/`list_issue_labels`, including groups and required pagination. Require the exact configured group scope and its active Planning, Execution, and Self-Review children. Issue groups require single-select; Project groups are mutually exclusive by Linear's documented contract. Setup stays read-only: ask the user to configure missing or incompatible groups before saving configuration.
 
 ## Provider calls
 
-Read the selected role's local configuration through the applicable named context tool under `../shared.md`. The agent calls registered Linear tools directly: Project writes for Epic and issue writes for Task/Gig. Named team/state inputs resolve inside the provider. Do not rediscover workspace, teams or all statuses during ordinary work. A denied/unavailable provider call stops that operation without changing the other role.
+Read the selected role's local configuration through the named context tools. The agent calls registered Linear tools directly: Project writes for Epic and issue writes for Task/Gig. Named team/state inputs resolve inside the provider. Do not rediscover workspace, teams or all statuses during ordinary work. A denied/unavailable provider call stops that operation without changing the other role.
 
 Native priority mapping is fixed: `Urgent=1`, `High=2`, `Medium=3`, `Low=4`, `not set=0`.
 
@@ -36,7 +36,7 @@ For explicit adoption, read the selected object:
 
 Before initialization, follow the shared discussion-reading requirement: call registered `list_comments` with the selected Project UUID as `projectId` for an Epic or the selected issue UUID as `issueId` for a Task/Gig. Read all discussion pages, following returned cursors until `hasNextPage: false`, including the returned discussion threads and inline comments. Reconcile material maintainer clarifications before adopting the request; contributor comments do not authorize scope changes.
 
-Call `inspect_adoption` with the selected entity, then initialize through `adopt_linear_epic`, `adopt_linear_task`, or `adopt_linear_gig` matching that entity. Follow the explicit-selection approval in `../../artifacts.md`: reuse the selected object's title or name and description, copied Priority, and verified relationship without another intake confirmation. Ask only for missing or conflicting information; Task/Gig Kind remains workflow-only and requires a user choice when not already supplied. Deployed responses expose immutable identity as `uuid`; issue `id` is the identifier. Pass Project UUID/URL for Epic; issue UUID/identifier/URL and Task parent Project UUID for issues. With tracker naming only, reuse the returned exact `gitBranchName`, or fetch that exact issue when this required name is absent. Generated naming never requests or stores an unused provider branch.
+Call `inspect_adoption` with the selected entity, then initialize through `adopt_linear_epic`, `adopt_linear_task`, or `adopt_linear_gig` matching that entity. Follow the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs): reuse the selected object's title or name and description, copied Priority, and verified relationship without another intake confirmation. Ask only for missing or conflicting information; Task/Gig Kind remains workflow-only and requires a user choice when not already supplied. Deployed responses expose immutable identity as `uuid`; issue `id` is the identifier. Pass Project UUID/URL for Epic; issue UUID/identifier/URL and Task parent Project UUID for issues. With tracker naming only, reuse the returned exact `gitBranchName`, or fetch that exact issue when this required name is absent. Generated naming never requests or stores an unused provider branch.
 
 ## Initialize
 
@@ -58,11 +58,11 @@ Approved Backlog/Todo objects skip creation, keep their UUID/relationship, and a
 
 ## Initialized-create uncertainty
 
-After an uncertain create, read Linear. In both artifact modes, search exact approved title/name, configured team, and exact Task Project or Gig projectless relationship. Continue when one exact object is confirmed, retry only after confirmed absence, and report ambiguous or inconsistent state. Never project a temporary marker.
+When a create result is uncertain, read [recovery](../recovery.md#uncertain-tracker-creation).
 
 ## Add to Backlog or Todo
 
-Follow `../../queue.md`. Require the entity type and selected Backlog or Todo destination first; require a bound parent Epic for Task.
+Queue intake follows [queue](../../queue.md). Require the entity type and selected Backlog or Todo destination first; require a bound parent Epic for Task.
 
 - Epic: `save_project` in selected configured Project Backlog or Todo state with team and priority.
 - Task: `save_issue` in selected configured issue Backlog or Todo status with team/priority and `project` equal to parent Epic Project.
@@ -74,12 +74,12 @@ Recover uncertain provider results only through read-back as defined in the shar
 
 Read fresh lifecycle/Priority and the complete applied label set on resume by the durable UUID. Use `prepare_tracker_mutation` for the selected lifecycle or Priority assignment and follow shared absolute-value outcome/recovery rules, with `save_project` for Epic and `save_issue` for Task/Gig. Planning, Execution, and Self-Review all remain In Progress. In Review starts only after external submission; confirmed delivery uses Done and canceled work uses the configured Canceled status. Kind transitions do not project labels or type.
 
-Reconcile Phase through `../../phase.md`: use Project-label metadata for Epic and issue-label metadata for Task/Gig. Supply complete fresh catalog/applied-label facts to the applicable operation there. Apply its entire returned label-ID set through `save_project`/`save_issue` only when changed. Remove only managed Phase-group labels, preserve every unrelated label, and clear managed Phase outside In Progress. Never send just the desired Phase child as a replacement for the full set. Required missing outcome facts and uncertain writes use the existing read-back recovery boundary; no lifecycle or label snapshots become durable cache state.
+Reconcile Phase as described in [Phase](../../phase.md): use Project-label metadata for Epic and issue-label metadata for Task/Gig. Supply complete fresh catalog/applied-label facts to the applicable operation there. Apply its entire returned label-ID set through `save_project`/`save_issue` only when changed. Remove only managed Phase-group labels, preserve every unrelated label, and clear managed Phase outside In Progress. Never send just the desired Phase child as a replacement for the full set. Required missing outcome facts and uncertain writes use the existing read-back recovery boundary; no lifecycle or label snapshots become durable cache state.
 
 ## Artifact projection
 
 After accepted `epic.md`/`plan.md` changes, call tracker-only `prepare_integration_projection` and `prepare_tracker_publication` with the complete approved source. Preserve the original issue/Project title/name and description. The first publication creates one document titled Plan, attached by exact Project UUID for an Epic or exact issue UUID for a Task/Gig. Use only the returned registered `save_document` call and record clear-success creation evidence. Pending creation requires recovery, never another create. Published documents require the returned exact `get_document` and parent reads, followed by `prepare_tracker_publication_update` with complete source and actual `document`/`parent` evidence. The native parent reference may use a display identifier; the exact parent read must prove its mapping to the stored UUID. Execute the resulting complete-content update by saved document ID only; omit title and parent arguments so publication never renames or reparents the document. Missing, moved, archived or conflicting documents stop for maintainer direction.
 
-Follow `../shared.md` for recovery: supply exact parent evidence, complete cursor-paginated `list_documents` evidence, and full `get_document` evidence for every matching-parent candidate requested by the tool. List/create content is truncated; it is not proof that the marker is absent. An issue has no native listing filter: complete the accessible document scan rather than inventing an issue filter or substituting its parent Project. After successful updates, trust clear success without routine confirmation reads. Uncertain updates require the exact full saved-document read and reconciliation before retrying confirmed non-application.
+When creation is pending or an update is uncertain, read [recovery](../recovery.md#linear-document). An issue has no native listing filter, so recovery scans the complete accessible document listing. After successful updates, trust clear success without routine confirmation reads.
 
 The [public API documentation](https://linear.app/developers/graphql#adding-collapsible-sections-in-markdown) explicitly supports native collapsible sections in documents. Live document UI rendering must be verified separately; local Markdown tests do not prove it. The native document title supplies Plan; content keeps the overview prose, Highlights and collapsed Full plan. Local source artifacts remain unchanged and authoritative.

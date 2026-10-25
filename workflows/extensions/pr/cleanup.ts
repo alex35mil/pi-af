@@ -76,7 +76,7 @@ function completion(
                 evidence,
                 fieldEvidence: done.fieldEvidence,
                 membership: { state: "present", evidence: done.itemEvidence },
-                action: "ship",
+                action: "shipping",
             },
             tools,
         )

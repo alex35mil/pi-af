@@ -8,6 +8,11 @@ allowed-tools:
 
 # Todo
 
-Read and follow `../../references/queue.md` with exact destination `todo`. Ordinary intake uses `target: "current"`; an explicit request such as “Report this workflow issue” uses `target: "workflow"` and the shared report preparation/privacy rules. A reporting suggestion alone does not authorize publication.
+Use destination `todo`. Ordinary intake uses `target: "current"`; an explicit request such as “Report this workflow issue” uses `target: "workflow"` and the shared report preparation/privacy rules. A reporting suggestion alone does not authorize publication.
+
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Queue](../../references/queue.md)
 
 Todo means work we have committed to doing and can pick up next. It remains uninitialized until the user starts it through `/epic`, `/task`, or `/gig`.

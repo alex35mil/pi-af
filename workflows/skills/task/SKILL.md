@@ -28,7 +28,7 @@ allowed-tools:
     - "resume_integration"
     - "prepare_integration_projection"
     - "prepare_integration_pull_request"
-    - "prepare_integration_finish"
+    - "prepare_integration_shipping"
     - "prepare_integration_merge"
     - "prepare_tracker_mutation"
     - "prepare_github_phase_mutation"
@@ -51,7 +51,13 @@ allowed-tools:
 
 A Task is a Deliverable belonging to exactly one Epic.
 
-First read and follow `../../references/deliverable.md` relative to this skill directory. That file owns the shared lifecycle. This file owns Task parent selection, initialization, and parent synchronization.
+## Read first
+
+- [Core rules](../../references/core.md)
+- [Deliverable lifecycle](../../references/deliverable.md)
+- [Artifacts](../../references/artifacts.md)
+
+The Deliverable lifecycle owns the shared flow. This file owns Task parent selection, initialization, and parent synchronization.
 
 ## Resume
 
@@ -63,9 +69,11 @@ Use the shared Deliverable preparation, entity-selection, and artifact-read flow
 
 ## Initialize
 
-Follow the approved intake in `../../references/artifacts.md`. A Task additionally requires the user to identify one initialized parent Epic under `.project/epics/` and one prospective Task by its exact bold title in the accepted `epic.md` ordered plan. Read that parent before initialization; do not infer the selection or initialize prospective work automatically. Adoption uses the selected provider's Task preflight, including exact parent Linear Project validation.
+When adopting Backlog or Todo work, first read the selected tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies), and complete its preflight before calling the adoption tool.
 
-Before initializing the Task, read the parent's user-approved Task delivery strategy and rationale in accepted `epic.md`, and check its current `taskTarget`. Do not treat the initial Epic pointer as approval. When the strategy is absent or conflicts with the intended target, resolve it with the user through the Epic's planning/acceptance and routing-selection procedure before initialization. The approved routing intent is recorded before committing Epic planning; selecting default does not establish delivery. Follow `../../references/epic.md` for the shared delivery checks and evidence inputs; an earlier target switch does not establish current delivery.
+Follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs). A Task additionally requires the user to identify one initialized parent Epic under `.project/epics/` and one prospective Task by its exact bold title in the accepted `epic.md` ordered plan. Read that parent before initialization; do not infer the selection or initialize prospective work automatically. Adoption uses the selected provider's Task preflight, including exact parent Linear Project validation.
+
+Before initializing the Task, read the parent's user-approved Task delivery strategy and rationale in accepted `epic.md`, and check its current `taskTarget`. Do not treat the initial Epic pointer as approval. When the strategy is absent or conflicts with the intended target, resolve it with the user through the Epic's planning/acceptance and routing-selection procedure before initialization. The approved routing intent is recorded before committing Epic planning; selecting default does not establish delivery. When the target is default, read [Epic delivery](../../references/epic.md) for the shared delivery checks and evidence inputs; an earlier target switch does not establish current delivery.
 
 After these gates, call `init_task`, `adopt_github_task`, or `adopt_linear_task` as appropriate, with the exact repo-relative `parentEpicDir`, the selected `epicItemTitle`, approved metadata, the approved Request summary as `request`, slug, and verified adoption `source` facts when applicable. The Task's approved `title` may differ from the Epic item's title. The tool requires exactly one ordered Task entry with `epicItemTitle`, generates the Task ID, tags that entry as `[TASK-<raw-id>]`, and thereafter identity—not title or ordering—is the relation. It also creates the timestamp/ID directory and renders the project-wide configured branch. `tracker` format uses the exact Linear issue branch.
 

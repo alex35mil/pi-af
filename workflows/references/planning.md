@@ -1,6 +1,6 @@
 # Shared planning protocol
 
-Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define plan content and any explicit inquiry-to-investigation branch. Follow `./review.md` for finding adjudication in every review phase and `./phase.md` for the shared workflow Phase contract.
+Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define plan content and any explicit inquiry-to-investigation branch. Review rounds use [review](./review.md); Phase changes use [Phase](./phase.md).
 
 ## Research and inquiry
 
@@ -17,7 +17,7 @@ Use this protocol for Epic, Task, and Gig planning. Entity/kind skills define pl
 | Epic     | `.local/draft.md`   | `epic.md`                       |
 | Task/Gig | `.local/draft.md`   | `plan.md`                       |
 
-Write the smallest self-contained draft that carries every settled decision needed for that entity. Follow the reviewed document shape in `./artifacts.md`: begin with `## Overview`, explaining the brief and why the work matters, then a few accepted-scope and behavior bullets under `### Plan highlights`. Keep all supporting contract sections below Overview. The overview is reviewed and accepted with those details, not generated at publication time; keep the highlights synchronized with plan changes. Entity skills define its content and review criteria.
+Write the smallest self-contained draft that carries every settled decision needed for that entity. Use the [reviewed document shape](./artifacts.md#reviewed-document-shape): begin with `## Overview`, explaining the brief and why the work matters, then a few accepted-scope and behavior bullets under `### Plan highlights`. Keep all supporting contract sections below Overview. The overview is reviewed and accepted with those details, not generated at publication time; keep the highlights synchronized with plan changes. Entity skills define its content and review criteria.
 
 ## Material replanning
 
@@ -33,7 +33,7 @@ Editorial changes that do not alter behavior, strategy, scope, or decomposition 
 ## Planning review and acceptance
 
 1. Use the authority/provider-specific Phase tool for Planning and reconcile through `./phase.md`, retaining lifecycle `inProgress`. Then call `review_epic`, `review_task`, or `review_gig` matching the selected entity, with `entityDir` and `phase: "plan"`. The tool owns the immutable candidate snapshot and numbered review artifacts.
-2. Follow `./review.md`: adjudicate every finding through `record_review_response`, present its exact returned Markdown in chat, and continue until review is approved with no unresolved user decision.
+2. Using [review](./review.md), adjudicate every finding through `record_review_response`, present its exact returned Markdown in chat, and continue until review is approved with no unresolved user decision.
 3. When review approves, remain in Planning while calling `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` matching the same entity, with `entityDir` and waiting for user diff approval. The tool selects a validated approved snapshot and returns its source and target paths. Read the snapshot and write that exact content to the authoritative target through the configured write/edit user-diff gate; the write tool presents the approval diff. Do not print the candidate first.
 4. A rejection or unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
 5. Compare any user-modified authoritative artifact with the reviewed snapshot. Editorial changes may proceed; a material change to behavior, strategy, or decomposition must become the mutable draft and pass a new review before implementation.
