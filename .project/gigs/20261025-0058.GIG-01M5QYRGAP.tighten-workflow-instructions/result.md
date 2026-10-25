@@ -99,7 +99,7 @@ B's rule map, `.local/scratch/rule-map-B.md`: 496 normative sentences in B's cha
   - no `Read first` heading outside skills, at any heading level and whatever list style follows;
   - every bulleted or numbered `Read first` item is counted, including blank-separated ones;
   - size budgets.
-- Finish check: `grep -rniE '\bfinish'` over `workflows/`, `tests/`, `README.md`, and `UPGRADING.md` returns only the retained meanings: the "finish it" trigger, "finish tracker binding" and "finish parent binding", pagination, stream `finish` events, finished or unfinished lifecycle wording, contributor review, and metadata ordering. It also returns the upgrade note naming old names, and the gitignored transition file `workflows/transition/finish-legacy-work.md`, which is outside Git and refers to legacy work, not shipping.
+- Finish check: `grep -rniE '\bfinish'` over `workflows/`, `tests/`, `README.md`, and `UPGRADING.md` returns only the retained meanings: the "finish it" trigger, "finish tracker binding" and "finish parent binding", pagination, stream `finish` events, finished or unfinished lifecycle wording, contributor review, metadata ordering, and generic completion wording ("must finish first" in the project-setup skill, "finish configured Project membership" in `extensions/integrations/creation.ts`). It also returns the upgrade note naming old names, and the gitignored transition file `workflows/transition/finish-legacy-work.md`, which is outside Git and refers to legacy work, not shipping.
 - Identifier check: `prepare_integration_ship`, `ship(Read|Merge|ReadDecision)`, and `forge.ship`, the intermediate names that were never released, appear nowhere. `plan_incoming_pr_ship`, `plan_incoming_pr_cancel`, and the `"ship"` / `"cancel"` action values appear only in the `UPGRADING.md` mapping table.
 - Prose check: `grep -rniE '\b(ship|ships|shipped|cancel|shipment)\b'` over every file type in `workflows/` (Markdown and the extension code, which holds tool descriptions), `README.md`, and `UPGRADING.md` returns only verb uses that mean shipping a Task, Gig, or PR. "Shipment" was replaced with "shipping", and Epic delivery says "delivered", never "ship". Reviewed list, matching the current output:
   - `deliverable/shipping.md`: the "Ship a Deliverable" title, "asks to ship" with the "ship it" and "ship this" triggers, "request to ship" twice, and "fully shipped";
@@ -112,7 +112,7 @@ B's rule map, `.local/scratch/rule-map-B.md`: 496 normative sentences in B's cha
   - `forge/merge.md`, `workflows/README.md`: "request to ship";
   - `UPGRADING.md`: the released `"ship"` / `"cancel"` action values in the mapping table.
 
-  In `tests/`, the only matches are fixture request text ("Ship Tasks independently", "Ship first"), which also uses the verb.
+  In `tests/`, the only matches are fixture request text ("Ship Tasks independently", "Ship first") and the cleanup test name "cleans up a shipped Epic-target Task", all of which use the verb.
 - The tool inventory test confirms `prepare_integration_shipping`, `plan_incoming_pr_shipping`, and `plan_incoming_pr_cancellation` are registered and the old names aren't.
 - Cleanup tests cover the new `evidence` input: valid merged PR, unmerged PR, wrong PR number, head SHA mismatch, and wrong tool.
 - Rule map: `.local/scratch/rule-map-A.md`. All 138 changed normative sentences are accounted for: 116 are confirmed automatically, and 22 are mapped by hand to their new homes.

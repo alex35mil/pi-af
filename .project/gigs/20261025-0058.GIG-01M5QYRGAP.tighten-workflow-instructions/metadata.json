@@ -30,6 +30,17 @@
         "id": 6394389663,
         "url": "https://github.com/alex35mil/pi-af/issues/84#issuecomment-6394389663"
       }
+    },
+    {
+      "role": "forge",
+      "provider": "github",
+      "repository": {
+        "owner": "alex35mil",
+        "repo": "pi-af"
+      },
+      "head": "gig-01m5qyrgap-tighten-workflow-instructions",
+      "target": "main",
+      "state": "intent"
     }
   ],
   "authority": {
