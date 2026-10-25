@@ -78,7 +78,13 @@ function skillGrants(skill: string): string[] {
     return [...frontmatter.matchAll(/^ +- +"([^"]+)"$/gm)].map((match) => match[1])
 }
 
-const guidanceFiles = ["README.md", "UPGRADING.md", ...markdownFiles("workflows")]
+const guidanceFiles = [
+    "README.md",
+    "UPGRADING.md",
+    ...markdownFiles("workflows"),
+    ...markdownFiles("extensions"),
+    ...markdownFiles("skills"),
+]
 
 describe("workflow guidance structure", () => {
     it("resolves every concrete Markdown dependency from its owning directory", () => {
@@ -189,7 +195,7 @@ describe("workflow guidance structure", () => {
             task: 40_900,
             epic: 42_300,
             pr: 45_500,
-            "project-setup": 88_600,
+            "project-setup": 48_200,
         }
         assert.deepEqual(Object.keys(budgets).sort(), fs.readdirSync("workflows/skills").sort())
         for (const [skill, budget] of Object.entries(budgets)) {

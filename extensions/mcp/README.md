@@ -30,7 +30,7 @@ Example for any tier:
 
 Pi validates native per-server settings and resolves credentials. Stdio entries use `command`, `args`, `env`, and `cwd`. HTTP entries use `url`, `headers`, and native OAuth settings. Server names contain letters, digits, `_`, and `-`. The top-level `autoEnableCodemode` follows the same tier precedence and defaults to native behavior.
 
-Use `/reload` after configuration changes in a compatible harness. See the [breaking settings migration](../../README.md#pi-130-migration) before activating this version.
+Use `/reload` after configuration changes in a compatible harness. See the [breaking settings migration](../../UPGRADING.md#pi-130) before activating this version.
 
 ## Native behavior
 

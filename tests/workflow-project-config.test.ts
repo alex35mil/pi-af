@@ -151,7 +151,10 @@ describe("workflow project configuration", () => {
 
     it("loads operational Markdown dependencies from workflow references", () => {
         const skill = fs.readFileSync("workflows/skills/project-setup/SKILL.md", "utf-8")
-        const markdownDependencies = [...skill.matchAll(/`(\.\.\/\.\.\/[^`\n]+\.md)`/g)].map((match) => match[1])
+        const markdownDependencies = [
+            ...[...skill.matchAll(/`(\.\.\/\.\.\/[^`\n]+\.md)`/g)].map((match) => match[1]),
+            ...[...skill.matchAll(/\]\((\.\.\/\.\.\/[^)#\s]+\.md)(?:#[^)]*)?\)/g)].map((match) => match[1]),
+        ]
 
         assert.ok(markdownDependencies.length > 0)
         assert.ok(markdownDependencies.every((dependency) => dependency.startsWith("../../references/")))

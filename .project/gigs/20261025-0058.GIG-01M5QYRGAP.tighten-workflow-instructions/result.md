@@ -30,7 +30,13 @@
   - Slash lists and repeated rules were removed; shared rules now link to `core.md`.
   - Per-tool input-shape prose left `tools.md`, which is now a lean catalog; tool schemas own those shapes.
   - Behavior is unchanged except for one addition: the guidance-only mitigation for #87. Run the mutation returned by `prepare_tracker_publication` in the same step, and never call it again just to look at the output. It is stated in `core.md`, `integrations/shared.md`, and `integrations/recovery.md`.
-- **Limitation:** commits C (setup) and D (incoming PR) haven't started. The ≥35% total reduction target applies after D.
+- **Commit C, setup rewrite:**
+  - `setup.md` keeps the configuration-file contract.
+  - Rare provisioning detail moved to step files under `references/setup/`: `github-project.md` (presentation, Board creation over REST, diagnostics, recovery, and the manual UI steps), `incoming-pr-intake.md`, and `permissions.md`.
+  - The `project-setup` skill is reorganized around its eight-step decision order and links to those files instead of restating them.
+  - Setup now loads about 44 KB up front instead of about 81 KB.
+  - Broken links outside `workflows/` are fixed: the permissions README's link to the moved permissions section, and an older `extensions/mcp/README.md` link to the Pi 1.3.0 migration that had been wrong since `7d1d5dc`.
+- **Limitation:** commit D (incoming PR) hasn't started. The ≥35% total reduction target applies after D.
 
 ## Measurements
 
@@ -42,15 +48,29 @@ Up front means the skill file plus files listed under its `## Read first`.
 | task | 254 KB (21) | 42.7 KB | 37.2 KB | 40.9 KB |
 | epic | 239 KB (20) | 46.0 KB | 38.4 KB | 42.3 KB |
 | pr | 218 KB (18) | 41.3 KB | 41.6 KB | 45.5 KB |
-| project-setup | 256 KB (19) | 80.6 KB | 80.8 KB | 88.6 KB |
+| project-setup | 256 KB (19) | 80.6 KB | 80.8 KB (after C: 43.9 KB) | 48.2 KB |
 | backlog | 141 KB (12) | 12.1 KB | 11.7 KB | 12.8 KB |
 | todo | 142 KB (12) | 12.4 KB | 12.0 KB | 13.2 KB |
 
-pr and project-setup are unchanged until commits D and C rewrite them.
+pr is unchanged until commit D rewrites it.
 
 \* The literal closure is the old measurement: every Markdown link in any sentence mentioning "read" or "follow". It over-counts now that links say "When …, read …", which is why epic and project-setup still show high values. The convention-based Read first size is what the budget test enforces.
 
 Total guidance (references, skills, `workflows/README.md`, `MIGRATIONS.md`): about 336 KB before, 327 KB after A, 309 KB after B.
+
+C's rule map, `.local/scratch/rule-map-C.md`: 244 normative sentences in pre-C `setup.md` and the `project-setup` skill.
+
+- The automatic pass flagged 2.
+- Interim reviews 012–014 found 4 more whose meaning had been dropped while their words survived elsewhere. They're restored:
+  - no automatic field deletion;
+  - Project discovery without preferring organization metadata;
+  - semantic Status, Priority, and Phase field references;
+  - no Git or shell discovery during setup.
+- A proximity pass then checked every restrictive old sentence for its key words appearing close together. It flagged 46: 45 are present reworded, and 1 was restored (the `configure_mcp` guarantees).
+- In total, 237 are confirmed automatically and 7 are mapped by hand.
+- A second, stricter pass over every "never", "do not", "no automatic", and "without" clause flagged 21. Each was checked by hand and is present, reworded.
+
+Key-word coverage can't prove a rule kept its meaning; the hand checks and interim reviews are the real evidence.
 
 B's rule map, `.local/scratch/rule-map-B.md`: 496 normative sentences in B's changed files. 485 are confirmed automatically by at least 80% key-word coverage; 11 are mapped by hand to their new homes.
 
@@ -59,7 +79,7 @@ B's rule map, `.local/scratch/rule-map-B.md`: 496 normative sentences in B's cha
 - `npm test`: 670 pass, 0 fail.
 - `npm run typecheck`: passes.
 - Structural tests pass:
-  - links and heading anchors;
+  - links and heading anchors, now across `workflows/`, `extensions/`, `skills/`, and the root docs;
   - reachability, including core, recovery, merge, and the three Deliverable step files from Task and Gig;
   - core and migrations reachable from every skill;
   - no `Read first` heading outside skills, at any heading level and whatever list style follows;
