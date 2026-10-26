@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from "node:util"
-
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
@@ -11,7 +9,6 @@ import { linearPriorityNumber } from "./records.js"
 
 const Name = Type.String({ minLength: 1 })
 const NumberId = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })
-const Unversioned = Type.Object({ mode: Type.Literal("unversioned") }, { additionalProperties: false })
 
 // Observed, normalized outcomes, using the same trust boundary as native Phase facts.
 export const TrackerInitializationFactsSchema = Type.Union([
@@ -29,24 +26,6 @@ export const TrackerInitializationFactsSchema = Type.Union([
             lifecycle: LifecycleStateSchema,
             priority: Name,
             phase: NativePhaseFactsSchema,
-            systemMetadata: Type.Union([
-                Unversioned,
-                Type.Object(
-                    {
-                        mode: Type.Literal("versioned"),
-                        labels: Type.Array(Name, { uniqueItems: true }),
-                        internalId: Type.Object(
-                            {
-                                scope: Type.Enum(["project", "issue"], { type: "string" }),
-                                field: Name,
-                                value: Name,
-                            },
-                            { additionalProperties: false },
-                        ),
-                    },
-                    { additionalProperties: false },
-                ),
-            ]),
         },
         { additionalProperties: false },
     ),
@@ -60,10 +39,6 @@ export const TrackerInitializationFactsSchema = Type.Union([
             lifecycle: LifecycleStateSchema,
             priority: Type.Integer({ minimum: 0, maximum: 4 }),
             phase: NativePhaseFactsSchema,
-            systemMetadata: Type.Union([
-                Unversioned,
-                Type.Object({ mode: Type.Literal("versioned") }, { additionalProperties: false }),
-            ]),
         },
         { additionalProperties: false },
     ),
@@ -75,28 +50,17 @@ export const ConfirmTrackerInitializationSchema = Type.Object(
 )
 
 const [githubFacts, linearFacts] = TrackerInitializationFactsSchema.anyOf
-const githubInputProperties = {
-    ...Type.Omit(githubFacts, ["provider", "phase", "systemMetadata", "parentIssueNumber"]).properties,
-    parentIssueNumber: Type.Optional(NumberId),
-    phase: GitHubPhaseInputSchema,
-}
-export const VersionedGitHubInitializationInputSchema = Type.Object(
+export const GitHubInitializationInputSchema = Type.Object(
     {
         entityDir: Name,
         facts: Type.Object(
             {
-                ...githubInputProperties,
-                systemMetadata: Type.Omit(githubFacts.properties.systemMetadata.anyOf[1], ["mode"]),
+                ...Type.Omit(githubFacts, ["provider", "phase", "parentIssueNumber"]).properties,
+                parentIssueNumber: Type.Optional(NumberId),
+                phase: GitHubPhaseInputSchema,
             },
             { additionalProperties: false },
         ),
-    },
-    { additionalProperties: false },
-)
-export const UnversionedGitHubInitializationInputSchema = Type.Object(
-    {
-        entityDir: Name,
-        facts: Type.Object(githubInputProperties, { additionalProperties: false }),
     },
     { additionalProperties: false },
 )
@@ -105,13 +69,9 @@ export const LinearInitializationInputSchema = Type.Object(
         entityDir: Name,
         facts: Type.Object(
             {
-                ...Type.Omit(linearFacts, ["provider", "phase", "projectId", "systemMetadata"]).properties,
+                ...Type.Omit(linearFacts, ["provider", "phase", "projectId"]).properties,
                 projectId: Type.Optional(Name),
                 phase: LinearPhaseInputSchema,
-                systemMetadata: Type.Object(
-                    { mode: Type.Enum(["versioned", "unversioned"], { type: "string" }) },
-                    { additionalProperties: false },
-                ),
             },
             { additionalProperties: false },
         ),
@@ -139,8 +99,6 @@ export function confirmTrackerInitialization(
     const desired = status.authority.desired
     if (status.phase !== "planning" || desired.lifecycle !== "inProgress" || facts.lifecycle !== "inProgress")
         throw new Error("initialization confirmation requires Planning and native In Progress")
-    if (facts.systemMetadata.mode !== environment.artifacts.kind)
-        throw new Error("initialization facts have the wrong artifact mode")
     if (status.entity === "task" ? parent?.entity !== "epic" : parent !== null)
         throw new Error("initialization confirmation requires the exact Task parent context")
 
@@ -167,26 +125,6 @@ export function confirmTrackerInitialization(
             )
                 throw new Error("initialization facts do not match the Task parent issue")
         } else if (facts.parentIssueNumber !== null) throw new Error("standalone GitHub work cannot have a Task parent")
-        if (facts.systemMetadata.mode === "versioned") {
-            const expectedKind =
-                status.entity === "epic"
-                    ? configured.labels.kind.epic
-                    : configured.labels.kind.deliverableKinds[status.kind]
-            const managed = new Set([
-                configured.labels.kind.epic,
-                ...Object.values(configured.labels.kind.deliverableKinds),
-            ])
-            const actual = facts.systemMetadata.labels.filter((label) => managed.has(label))
-            if (actual.length !== 1 || actual[0] !== expectedKind)
-                throw new Error("initialization Kind label does not match")
-            if (
-                !isDeepStrictEqual(facts.systemMetadata.internalId, {
-                    ...configured.fields.internalId,
-                    value: status.id,
-                })
-            )
-                throw new Error("initialization Internal ID does not match its configured field/scope")
-        }
     } else if (tracker.kind === "linear" && record.provider === "linear" && facts.provider === "linear") {
         const id = record.resource === "project" ? record.external.projectId : record.external.issueId
         const projectId = record.resource === "task-issue" ? record.external.projectId : null

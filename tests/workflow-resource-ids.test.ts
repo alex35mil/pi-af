@@ -200,34 +200,28 @@ describe("local resource IDs storage", () => {
         }
     })
 
-    it("keeps immutable metadata and Git status unchanged in both artifact modes", async () => {
-        for (const mode of ["versioned", "unversioned"]) {
-            const { directory: root, cleanup } = fixture()
-            try {
-                const git = (args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf-8" }).trim()
-                git(["init", "-q"])
-                const directory = path.join(root, ".project/gigs/work")
-                fs.mkdirSync(directory, { recursive: true })
-                const metadata = path.join(directory, "metadata.json")
-                fs.writeFileSync(metadata, "immutable work identity\n")
-                if (mode === "versioned") {
-                    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
-                    git(["add", ".gitignore", ".project"])
-                } else {
-                    fs.appendFileSync(path.join(root, ".git/info/exclude"), "\n/.project/\n")
-                }
-                const status = git(["status", "--short"])
-                const bytes = fs.readFileSync(metadata)
-                await recordResourceIds(directory, [issue, projectItem, pullRequest])
-                assert.equal(git(["status", "--short"]), status)
-                assert.deepEqual(fs.readFileSync(metadata), bytes)
-                assert.equal(
-                    git(["check-ignore", "--", path.relative(root, path.join(directory, RESOURCE_IDS_CACHE_FILE))]),
-                    ".project/gigs/work/.local/metadata.json",
-                )
-            } finally {
-                cleanup()
-            }
+    it("keeps immutable metadata and Git status unchanged", async () => {
+        const { directory: root, cleanup } = fixture()
+        try {
+            const git = (args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf-8" }).trim()
+            git(["init", "-q"])
+            const directory = path.join(root, ".project/.local/gigs/work")
+            fs.mkdirSync(directory, { recursive: true })
+            const metadata = path.join(directory, "metadata.json")
+            fs.writeFileSync(metadata, "immutable work identity\n")
+            fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
+            git(["add", ".gitignore"])
+            const status = git(["status", "--short"])
+            const bytes = fs.readFileSync(metadata)
+            await recordResourceIds(directory, [issue, projectItem, pullRequest])
+            assert.equal(git(["status", "--short"]), status)
+            assert.deepEqual(fs.readFileSync(metadata), bytes)
+            assert.equal(
+                git(["check-ignore", "--", path.relative(root, path.join(directory, RESOURCE_IDS_CACHE_FILE))]),
+                ".project/.local/gigs/work/resource-ids.json",
+            )
+        } finally {
+            cleanup()
         }
     })
 

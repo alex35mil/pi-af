@@ -27,7 +27,7 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 | Gig | `init_gig` | `adopt_github_gig` | `adopt_linear_gig` |
 
 - Adoption tools take the verified provider IDs and addressing in `source`.
-- `set_epic_task_target` records approved routing intent before committing Epic planning; it takes no delivery evidence and proves no delivery.
+- `set_epic_task_target` records approved routing intent at Epic plan acceptance; it stays local, takes no delivery evidence, and proves no delivery.
 - Only the three Task tools take `epicDelivery`, for default-target Tasks ([Epic delivery](./epic.md)).
 - `finalize_linear_branch` completes a pending Linear branch.
 
@@ -45,7 +45,7 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 | Prepare a label, lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
 | Calculate native Phase without changing metadata | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
 | Set metadata Phase and calculate native Phase | `set_local_workflow_phase`, `set_github_workflow_phase`, `set_linear_workflow_phase` |
-| Confirm a pending tracker binding | `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, `confirm_linear_tracker` |
+| Confirm a pending tracker binding | `confirm_github_tracker`, `confirm_linear_tracker` |
 
 Context tools return configuration, addressing, evidence requirements, or native call arguments. They never call providers or grant approval.
 

@@ -2,8 +2,10 @@ import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
 export const PROJECT_ROOT = ".project"
-export const EPIC_ROOT = `${PROJECT_ROOT}/epics`
-export const GIG_ROOT = `${PROJECT_ROOT}/gigs`
+// Everything under the local root is machine-local and never committed.
+export const PROJECT_LOCAL_ROOT = `${PROJECT_ROOT}/.local`
+export const EPIC_ROOT = `${PROJECT_LOCAL_ROOT}/epics`
+export const GIG_ROOT = `${PROJECT_LOCAL_ROOT}/gigs`
 
 export const EntityTypeSchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
 export type EntityType = Static<typeof EntityTypeSchema>

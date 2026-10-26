@@ -5,7 +5,7 @@ Registers permission-controlled entity initialization tools:
 - `init_epic`, `init_task`, and `init_gig` create approved new work;
 - `adopt_github_epic`, `adopt_github_task`, and `adopt_github_gig` initialize explicitly selected GitHub work;
 - `adopt_linear_epic`, `adopt_linear_task`, and `adopt_linear_gig` initialize explicitly selected Linear work;
-- `set_epic_task_target` records approved routing intent for future Tasks before committing Epic planning. It accepts no delivery evidence; the plan and routing metadata are delivered together. Existing Task targets remain immutable.
+- `set_epic_task_target` records approved routing intent for future Tasks at Epic plan acceptance; the metadata stays local. It accepts no delivery evidence. Existing Task targets remain immutable.
 
 GitHub tracker records start with `planComment: { state: "unpublished" }`; Linear records start with `planDocument: { state: "unpublished" }`, for new and adopted work alike. Tracker creation uses the approved title/Request; accepted plans later publish through the shared operation as a GitHub comment or attached Linear document, preserving request content. Linear initialization does not embed a workflow ID into descriptions.
 

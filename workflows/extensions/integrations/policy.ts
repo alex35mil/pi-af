@@ -1,8 +1,6 @@
 import type { EntityStatus } from "../__lib/entity.js"
-import type { ProjectConfig } from "../__lib/project-config.js"
 import type { IntegrationConfig, GitHubForge, GitHubTracker, LinearTracker } from "./config.js"
 
-export type ArtifactPersistence = { kind: "versioned" } | { kind: "unversioned" }
 export type TrackerRole =
     | { kind: "none" }
     | { kind: "github"; config: GitHubTracker }
@@ -10,7 +8,6 @@ export type TrackerRole =
 export type ForgeRole = { kind: "none" } | { kind: "github"; config: GitHubForge }
 
 export interface WorkflowEnvironment {
-    artifacts: ArtifactPersistence
     tracker: TrackerRole
     forge: ForgeRole
 }
@@ -20,47 +17,26 @@ const WORKFLOW_AUTHORITY = {
     priorityAuthority: "workflow",
     localStatus: "required",
     projection: "none",
-    systemMetadataProjection: false,
 } as const
 const TRACKER_AUTHORITY = {
     lifecycleAuthority: "tracker",
     priorityAuthority: "tracker",
     localStatus: "forbidden",
 } as const
-const FULL_PROJECTION = { ...TRACKER_AUTHORITY, projection: "full", systemMetadataProjection: true } as const
-const LINEAR_FULL_PROJECTION = { ...TRACKER_AUTHORITY, projection: "full", systemMetadataProjection: false } as const
+// Artifacts are always local now. Until tracker-only projection replaces this policy,
+// every tracker uses the former unversioned (restricted) projection.
 const RESTRICTED_PROJECTION = {
     ...TRACKER_AUTHORITY,
     projection: "restricted",
-    systemMetadataProjection: false,
 } as const
 
 export type WorkflowPolicy =
-    | ({ case: "versioned/no-tracker" | "unversioned/no-tracker" } & typeof WORKFLOW_AUTHORITY)
-    | ({ case: "versioned/github" } & typeof FULL_PROJECTION)
-    | ({ case: "versioned/linear" } & typeof LINEAR_FULL_PROJECTION)
-    | ({ case: "unversioned/github" | "unversioned/linear" } & typeof RESTRICTED_PROJECTION)
+    | ({ case: "no-tracker" } & typeof WORKFLOW_AUTHORITY)
+    | ({ case: "github" | "linear" } & typeof RESTRICTED_PROJECTION)
 
-export type ForgePolicy =
-    | { case: "versioned/no-forge"; pullRequests: false }
-    | { case: "versioned/github"; pullRequests: true }
-    | { case: "unversioned/no-forge"; pullRequests: false }
-    | { case: "unversioned/github"; pullRequests: true }
+export type ForgePolicy = { case: "no-forge"; pullRequests: false } | { case: "github"; pullRequests: true }
 
-export function resolveWorkflowEnvironment(
-    projectConfig: ProjectConfig,
-    integrationConfig?: IntegrationConfig,
-): WorkflowEnvironment {
-    const artifacts: ArtifactPersistence = (() => {
-        switch (projectConfig.artifacts) {
-            case "versioned":
-                return { kind: "versioned" }
-            case "unversioned":
-                return { kind: "unversioned" }
-            default:
-                return projectConfig.artifacts satisfies never
-        }
-    })()
+export function resolveWorkflowEnvironment(integrationConfig?: IntegrationConfig): WorkflowEnvironment {
     const tracker: TrackerRole = (() => {
         const configured = integrationConfig?.tracker
         if (!configured) return { kind: "none" }
@@ -76,7 +52,7 @@ export function resolveWorkflowEnvironment(
     const forge: ForgeRole = integrationConfig?.forge
         ? { kind: "github", config: integrationConfig.forge }
         : { kind: "none" }
-    return { artifacts, tracker, forge }
+    return { tracker, forge }
 }
 
 export function assertEntityEnvironment(status: EntityStatus, environment: WorkflowEnvironment): void {
@@ -132,54 +108,24 @@ export function assertEntityEnvironment(status: EntityStatus, environment: Workf
 }
 
 export function resolveWorkflowPolicy(environment: WorkflowEnvironment): WorkflowPolicy {
-    switch (environment.artifacts.kind) {
-        case "versioned":
-            switch (environment.tracker.kind) {
-                case "none":
-                    return { case: "versioned/no-tracker", ...WORKFLOW_AUTHORITY }
-                case "github":
-                    return { case: "versioned/github", ...FULL_PROJECTION }
-                case "linear":
-                    return { case: "versioned/linear", ...LINEAR_FULL_PROJECTION }
-                default:
-                    return environment.tracker satisfies never
-            }
-        case "unversioned":
-            switch (environment.tracker.kind) {
-                case "none":
-                    return { case: "unversioned/no-tracker", ...WORKFLOW_AUTHORITY }
-                case "github":
-                case "linear":
-                    return { case: `unversioned/${environment.tracker.kind}`, ...RESTRICTED_PROJECTION }
-                default:
-                    return environment.tracker satisfies never
-            }
+    switch (environment.tracker.kind) {
+        case "none":
+            return { case: "no-tracker", ...WORKFLOW_AUTHORITY }
+        case "github":
+        case "linear":
+            return { case: environment.tracker.kind, ...RESTRICTED_PROJECTION }
         default:
-            return environment.artifacts satisfies never
+            return environment.tracker satisfies never
     }
 }
 
 export function resolveForgePolicy(environment: WorkflowEnvironment): ForgePolicy {
-    switch (environment.artifacts.kind) {
-        case "versioned":
-            switch (environment.forge.kind) {
-                case "none":
-                    return { case: "versioned/no-forge", pullRequests: false }
-                case "github":
-                    return { case: "versioned/github", pullRequests: true }
-                default:
-                    return environment.forge satisfies never
-            }
-        case "unversioned":
-            switch (environment.forge.kind) {
-                case "none":
-                    return { case: "unversioned/no-forge", pullRequests: false }
-                case "github":
-                    return { case: "unversioned/github", pullRequests: true }
-                default:
-                    return environment.forge satisfies never
-            }
+    switch (environment.forge.kind) {
+        case "none":
+            return { case: "no-forge", pullRequests: false }
+        case "github":
+            return { case: "github", pullRequests: true }
         default:
-            return environment.artifacts satisfies never
+            return environment.forge satisfies never
     }
 }

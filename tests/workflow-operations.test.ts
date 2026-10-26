@@ -71,12 +71,8 @@ const linear = Value.Parse(LinearTrackerSchema, {
     statuses: { projects: statuses, issues: statuses },
 })
 
-function environment(
-    provider: "none" | "github" | "linear",
-    mode: "versioned" | "unversioned" = "versioned",
-): WorkflowEnvironment {
+function environment(provider: "none" | "github" | "linear"): WorkflowEnvironment {
     return {
-        artifacts: { kind: mode },
         tracker:
             provider === "none"
                 ? { kind: "none" }
@@ -158,12 +154,7 @@ function native(provider: "github" | "linear"): NativePhaseFacts {
         applied: ["unrelated", "planning"],
     }
 }
-function facts(
-    provider: "github" | "linear",
-    kind: "epic" | "task" | "gig",
-    mode: "versioned" | "unversioned",
-): TrackerInitializationFacts {
-    const id = `${kind.toUpperCase()}-01KDVDNA00`
+function facts(provider: "github" | "linear", kind: "epic" | "task" | "gig"): TrackerInitializationFacts {
     return Value.Parse(
         TrackerInitializationFactsSchema,
         provider === "github"
@@ -177,14 +168,6 @@ function facts(
                   lifecycle: "inProgress",
                   priority: "High",
                   phase: native(provider),
-                  systemMetadata:
-                      mode === "unversioned"
-                          ? { mode }
-                          : {
-                                mode,
-                                labels: [kind === "epic" ? "Epic" : "Refactor", "unrelated"],
-                                internalId: { ...github.fields.internalId, value: id },
-                            },
               }
             : {
                   provider,
@@ -195,41 +178,39 @@ function facts(
                   lifecycle: "inProgress",
                   priority: 2,
                   phase: native(provider),
-                  systemMetadata: { mode },
               },
     )
 }
 
 describe("workflow operations", () => {
-    it("updates only Phase across all entities, authorities and persistence modes", () => {
+    it("updates only Phase across all entities and authorities", () => {
         for (const provider of ["none", "github", "linear"] as const)
-            for (const kind of ["epic", "task", "gig"] as const)
-                for (const mode of ["versioned", "unversioned"] as const) {
-                    const original = entity(provider, kind)
-                    const saved = structuredClone(original)
-                    for (const phase of ["planning", "execution", "selfReview"] as const) {
-                        const input =
-                            provider === "none"
-                                ? { entityDir: "example", authority: "workflow" as const, phase }
-                                : {
-                                      entityDir: "example",
-                                      authority: "tracker" as const,
-                                      phase,
-                                      lifecycle: "inProgress" as const,
-                                      native: native(provider),
-                                  }
-                        const result = setWorkflowPhase(original, environment(provider, mode), input)
-                        assert.deepEqual(result.status, { ...saved, phase })
-                        assert.equal(result.changed, phase !== "planning")
-                        if (provider !== "none") {
-                            assert.ok(result.phaseMutation)
-                            assert.equal(result.phaseMutation.changed, phase !== "planning")
-                            if (result.phaseMutation.provider === "linear")
-                                assert.deepEqual(result.phaseMutation.labels, ["unrelated", phase])
-                        }
+            for (const kind of ["epic", "task", "gig"] as const) {
+                const original = entity(provider, kind)
+                const saved = structuredClone(original)
+                for (const phase of ["planning", "execution", "selfReview"] as const) {
+                    const input =
+                        provider === "none"
+                            ? { entityDir: "example", authority: "workflow" as const, phase }
+                            : {
+                                  entityDir: "example",
+                                  authority: "tracker" as const,
+                                  phase,
+                                  lifecycle: "inProgress" as const,
+                                  native: native(provider),
+                              }
+                    const result = setWorkflowPhase(original, environment(provider), input)
+                    assert.deepEqual(result.status, { ...saved, phase })
+                    assert.equal(result.changed, phase !== "planning")
+                    if (provider !== "none") {
+                        assert.ok(result.phaseMutation)
+                        assert.equal(result.phaseMutation.changed, phase !== "planning")
+                        if (result.phaseMutation.provider === "linear")
+                            assert.deepEqual(result.phaseMutation.labels, ["unrelated", phase])
                     }
-                    assert.deepEqual(original, saved)
                 }
+                assert.deepEqual(original, saved)
+            }
     })
 
     it("rejects inactive lifecycle, invalid metadata and wrong authority before returning a change", () => {
@@ -307,32 +288,27 @@ describe("workflow operations", () => {
         )
     })
 
-    it("completes identified binding in both providers/modes without changing anything else", () => {
+    it("completes identified binding in both providers without changing anything else", () => {
         for (const provider of ["github", "linear"] as const)
-            for (const kind of ["epic", "task", "gig"] as const)
-                for (const mode of ["versioned", "unversioned"] as const) {
-                    const original = entity(provider, kind, true)
-                    const before = structuredClone(original)
-                    const parent = kind === "task" ? entity(provider, "epic") : null
-                    const result = confirmTrackerInitialization(
-                        original,
-                        environment(provider, mode),
-                        facts(provider, kind, mode),
-                        parent,
-                    )
-                    assert.equal(result.changed, true)
-                    assert.deepEqual(result.status, entity(provider, kind))
-                    assert.deepEqual(original, before)
-                    assert.equal(
-                        confirmTrackerInitialization(
-                            result.status,
-                            environment(provider, mode),
-                            facts(provider, kind, mode),
-                            parent,
-                        ).changed,
-                        false,
-                    )
-                }
+            for (const kind of ["epic", "task", "gig"] as const) {
+                const original = entity(provider, kind, true)
+                const before = structuredClone(original)
+                const parent = kind === "task" ? entity(provider, "epic") : null
+                const result = confirmTrackerInitialization(
+                    original,
+                    environment(provider),
+                    facts(provider, kind),
+                    parent,
+                )
+                assert.equal(result.changed, true)
+                assert.deepEqual(result.status, entity(provider, kind))
+                assert.deepEqual(original, before)
+                assert.equal(
+                    confirmTrackerInitialization(result.status, environment(provider), facts(provider, kind), parent)
+                        .changed,
+                    false,
+                )
+            }
     })
 
     it("preserves Linear branch provisioning and identified creation checkpoints", () => {
@@ -349,12 +325,7 @@ describe("workflow operations", () => {
             },
         ]) {
             const original = Value.Parse(EntityStatusSchema, { ...entity("linear", "gig", true), branch })
-            const result = confirmTrackerInitialization(
-                original,
-                environment("linear"),
-                facts("linear", "gig", "versioned"),
-                null,
-            )
+            const result = confirmTrackerInitialization(original, environment("linear"), facts("linear", "gig"), null)
             assert.deepEqual(result.status.branch, branch)
         }
         const original = entity("github", "gig", true)
@@ -363,8 +334,7 @@ describe("workflow operations", () => {
             integrations: original.integrations.map((entry) => ({ ...entry, state: "issue-bound-pending" })),
         })
         assert.equal(
-            confirmTrackerInitialization(checkpoint, environment("github"), facts("github", "gig", "versioned"), null)
-                .changed,
+            confirmTrackerInitialization(checkpoint, environment("github"), facts("github", "gig"), null).changed,
             true,
         )
     })
@@ -373,10 +343,9 @@ describe("workflow operations", () => {
         for (const provider of ["github", "linear"] as const) {
             const original = entity(provider, "task", true)
             const before = structuredClone(original)
-            const good = facts(provider, "task", "versioned")
+            const good = facts(provider, "task")
             const bad: TrackerInitializationFacts[] = [
                 { ...good, lifecycle: "todo" },
-                { ...good, systemMetadata: { mode: "unversioned" } },
                 { ...good, priority: provider === "github" ? "Low" : 4 } as TrackerInitializationFacts,
                 { ...good, phase: native(provider === "github" ? "linear" : "github") },
             ]
@@ -385,17 +354,6 @@ describe("workflow operations", () => {
                     { ...good, issueNumber: 999 },
                     { ...good, project: { ...good.project, number: 99 } },
                     { ...good, parentIssueNumber: null },
-                )
-                if (good.systemMetadata.mode !== "versioned") assert.fail()
-                bad.push(
-                    { ...good, systemMetadata: { ...good.systemMetadata, labels: ["Bugfix"] } },
-                    {
-                        ...good,
-                        systemMetadata: {
-                            ...good.systemMetadata,
-                            internalId: { ...good.systemMetadata.internalId, scope: "issue" },
-                        },
-                    },
                 )
             } else bad.push({ ...good, id: "wrong" }, { ...good, team: "other" }, { ...good, projectId: null })
             for (const input of bad)
@@ -435,36 +393,20 @@ describe("workflow operations", () => {
         }
         assert.throws(
             () =>
-                confirmTrackerInitialization(
-                    entity("none"),
-                    environment("none"),
-                    facts("github", "gig", "versioned"),
-                    null,
-                ),
+                confirmTrackerInitialization(entity("none"), environment("none"), facts("github", "gig"), null),
             /tracker authority/,
         )
     })
 
-    it("supports unset Priority and both GitHub Internal ID scopes", () => {
+    it("supports unset Priority", () => {
         for (const provider of ["github", "linear"] as const) {
             const original = entity(provider, "gig", true)
             if (original.authority.kind !== "tracker" || !("desired" in original.authority)) assert.fail()
             original.authority.desired.priority = "not set"
-            const observed = facts(provider, "gig", "versioned")
+            const observed = facts(provider, "gig")
             if (observed.provider === "github") observed.priority = "not set"
             else observed.priority = 0
-            for (const scope of ["project", "issue"] as const) {
-                const configured = environment(provider)
-                if (
-                    configured.tracker.kind === "github" &&
-                    observed.provider === "github" &&
-                    observed.systemMetadata.mode === "versioned"
-                ) {
-                    configured.tracker.config.fields.internalId.scope = scope
-                    observed.systemMetadata.internalId.scope = scope
-                }
-                assert.equal(confirmTrackerInitialization(original, configured, observed, null).changed, true)
-            }
+            assert.equal(confirmTrackerInitialization(original, environment(provider), observed, null).changed, true)
         }
     })
 
@@ -505,15 +447,15 @@ describe("workflow operations", () => {
         try {
             git("init", "-q")
             fs.mkdirSync(path.join(root, ".project"))
-            fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+            fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
             fs.writeFileSync(
                 path.join(root, ".project/config.json"),
-                JSON.stringify({ artifacts: "versioned", branches: { format: "identifier" } }),
+                JSON.stringify({ branches: { format: "identifier" } }),
             )
             fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ tracker: github }))
             prepareArtifactPersistence(root)
-            const directory = path.join(root, ".project/gigs/20260101-0000.GIG-01KDVDNA00.example")
-            fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
+            const directory = path.join(root, ".project/.local/gigs/20260101-0000.GIG-01KDVDNA00.example")
+            fs.mkdirSync(directory, { recursive: true })
             writeEntityStatus(directory, entity("github", "gig", true))
             const file = path.join(directory, "metadata.json")
             const before = fs.readFileSync(file, "utf8")
@@ -531,10 +473,6 @@ describe("workflow operations", () => {
                     lifecycle: "inProgress",
                     priority: "High",
                     phase: nativeInput,
-                    systemMetadata: {
-                        labels: ["Refactor", "unrelated"],
-                        internalId: { ...github.fields.internalId, value: "GIG-01KDVDNA00" },
-                    },
                 },
             }
             const phaseTool = tools.get("set_github_workflow_phase")!
@@ -554,7 +492,7 @@ describe("workflow operations", () => {
                 /In Progress/,
             )
             assert.equal(fs.readFileSync(file, "utf8"), before)
-            const binding = tools.get("confirm_versioned_github_tracker")!
+            const binding = tools.get("confirm_github_tracker")!
             await binding.execute("confirm", bindingInput, undefined, undefined, ctx)
             assert.deepEqual(readEntityStatus(directory), entity("github"))
             const after = fs.statSync(file, { bigint: true }).mtimeNs
@@ -578,11 +516,11 @@ describe("workflow operations", () => {
                 changed: true,
                 phaseMutation: { provider: "github", field: "Phase", value: "Execution", changed: true },
             })
-            assert.equal(fs.existsSync(path.join(directory, ".local/status.md")), false)
-            assert.equal(fs.existsSync(path.join(directory, ".local/metadata.json")), false)
+            assert.equal(fs.existsSync(path.join(directory, "status.md")), false)
+            assert.equal(fs.existsSync(path.join(directory, "resource-ids.json")), false)
             fs.rmSync(path.join(root, ".project/integrations.json"))
             writeEntityStatus(directory, entity("none"))
-            const lifecycleFile = path.join(directory, ".local/status.md")
+            const lifecycleFile = path.join(directory, "status.md")
             const lifecycleBefore = fs.readFileSync(lifecycleFile, "utf8")
             const lifecycleModified = fs.statSync(lifecycleFile, { bigint: true }).mtimeNs
             const localPhaseTool = tools.get("set_local_workflow_phase")!

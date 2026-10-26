@@ -18,12 +18,11 @@ import {
 } from "../workflows/extensions/project-setup/permissions.ts"
 import {
     assertArtifactPersistencePrepared,
-    ENTITY_LOCAL_IGNORE,
     loadProjectConfig,
     LOCAL_PROJECT_CONFIG_EXCLUDE,
     prepareArtifactPersistence,
+    PROJECT_LOCAL_IGNORE,
     resolveWorkflowProject,
-    UNVERSIONED_PROJECT_EXCLUDE,
 } from "../workflows/extensions/__lib/project-config.ts"
 import { resolveLinearTrackerBranchRendererForInitialization } from "../workflows/extensions/integrations/tracker/linear.ts"
 import registerProjectSetup, { inspectProjectSetup } from "../workflows/extensions/project-setup/index.ts"
@@ -49,8 +48,8 @@ function writeWorkflowSettings(filePath: string, username: string): void {
     fs.writeFileSync(filePath, JSON.stringify({ branches: { username } }))
 }
 
-function config(artifacts: "versioned" | "unversioned", branches: unknown = { format: "identifier-title" }) {
-    return { artifacts, branches }
+function config(branches: unknown = { format: "identifier-title" }) {
+    return { branches }
 }
 
 function git(root: string, args: string[]): string {
@@ -64,7 +63,7 @@ describe("workflow project configuration", () => {
         const localSettingsPath = path.join(root, ".project/config.local.json")
         const options = { globalSettingsPath }
         try {
-            writeConfig(root, config("versioned", { format: "username/identifier" }))
+            writeConfig(root, config({ format: "username/identifier" }))
             assert.throws(
                 () => resolveWorkflowProject(root, options),
                 (error: Error) =>
@@ -202,8 +201,8 @@ describe("workflow project configuration", () => {
             assert.ok(tools.includes("inspect_github_project_setup"))
             assert.ok(tools.includes("preview_github_project_setup"))
             assert.ok(tools.includes("apply_github_project_setup"))
-            await setup.handler("Use unversioned artifact mode", { cwd: root, isProjectTrusted: () => true })
-            assert.match(sent, /Use unversioned artifact mode/)
+            await setup.handler("Configure workflows", { cwd: root, isProjectTrusted: () => true })
+            assert.match(sent, /Configure workflows/)
             assert.match(sent, /Use the project-setup skill/)
             assert.match(sent, /"repositoryRoot":/)
             assert.match(sent, /"path": "\.project\/config\.json"/)
@@ -258,7 +257,7 @@ describe("workflow project configuration", () => {
 
     for (const scenario of [
         { name: "missing", project: undefined, integrations: undefined },
-        { name: "existing", project: JSON.stringify(config("versioned")), integrations: undefined },
+        { name: "existing", project: JSON.stringify(config()), integrations: undefined },
         { name: "incompatible", project: '{"unsupported":true}', integrations: '{"tracker":{"provider":"github"}}' },
         { name: "malformed", project: "{ not JSON", integrations: "{ broken" },
     ]) {
@@ -321,9 +320,9 @@ describe("workflow project configuration", () => {
                 if (scenario.integrations !== undefined)
                     fs.writeFileSync(path.join(root, ".project/integrations.json"), scenario.integrations)
                 if (scenario.name === "existing") {
-                    fs.mkdirSync(path.join(root, ".project/gigs/example"), { recursive: true })
+                    fs.mkdirSync(path.join(root, ".project/.local/gigs/example"), { recursive: true })
                     fs.writeFileSync(
-                        path.join(root, ".project/gigs/example/metadata.json"),
+                        path.join(root, ".project/.local/gigs/example/metadata.json"),
                         JSON.stringify({
                             id: "GIG-01KDVDNA00",
                             integrations: [
@@ -450,8 +449,8 @@ describe("workflow project configuration", () => {
     it("resolves Linear tracker Epic branches from current API viewer and template data", async () => {
         const root = repository()
         try {
-            fs.writeFileSync(path.join(root, ".gitignore"), `${ENTITY_LOCAL_IGNORE}\n`)
-            writeConfig(root, config("versioned", { format: "tracker" }))
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            writeConfig(root, config({ format: "tracker" }))
             fs.writeFileSync(
                 path.join(root, ".project", "integrations.json"),
                 JSON.stringify({
@@ -694,18 +693,20 @@ describe("workflow project configuration", () => {
                 () => loadProjectConfig(root, { globalSettingsPath }),
                 /missing required \.project\/config\.json/,
             )
-            writeConfig(root, { ...config("versioned"), extra: true })
+            writeConfig(root, { ...config(), extra: true })
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
-            writeConfig(root, config("versioned", { format: "feature/identifier" }))
+            writeConfig(root, { ...config(), artifacts: "versioned" })
+            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /"artifacts" was removed.*UPGRADING\.md/)
+            writeConfig(root, config({ format: "feature/identifier" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
-            writeConfig(root, config("versioned", { format: "identifier", username: "alex" }))
+            writeConfig(root, config({ format: "identifier", username: "alex" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
-            writeConfig(root, config("versioned", { format: { epic: "identifier", deliverable: "tracker" } }))
+            writeConfig(root, config({ format: { epic: "identifier", deliverable: "tracker" } }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
 
-            writeConfig(root, config("versioned"))
+            writeConfig(root, config())
             assert.equal(loadProjectConfig(root, { globalSettingsPath }).reviews, undefined)
-            writeConfig(root, { ...config("versioned"), reviews: { userConfirmationAfter: 3 } })
+            writeConfig(root, { ...config(), reviews: { userConfirmationAfter: 3 } })
             assert.deepEqual(loadProjectConfig(root, { globalSettingsPath }).reviews, { userConfirmationAfter: 3 })
             for (const reviews of [
                 {},
@@ -714,7 +715,7 @@ describe("workflow project configuration", () => {
                 { userConfirmationAfter: 1.5 },
                 { userConfirmationAfter: 3, extra: true },
             ]) {
-                writeConfig(root, { ...config("versioned"), reviews })
+                writeConfig(root, { ...config(), reviews })
                 assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
             }
         } finally {
@@ -727,12 +728,12 @@ describe("workflow project configuration", () => {
         const globalSettingsPath = path.join(root, "global-workflows.json")
         const localSettingsPath = path.join(root, ".project", "config.local.json")
         try {
-            writeConfig(root, config("versioned", { format: "tracker" }))
+            writeConfig(root, config({ format: "tracker" }))
             fs.writeFileSync(localSettingsPath, "not json")
             assert.equal(loadProjectConfig(root, { globalSettingsPath }).branches.username, undefined)
             fs.rmSync(localSettingsPath)
 
-            writeConfig(root, config("versioned", { format: "username/identifier" }))
+            writeConfig(root, config({ format: "username/identifier" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /username is required/)
 
             writeWorkflowSettings(globalSettingsPath, "global-user")
@@ -743,7 +744,7 @@ describe("workflow project configuration", () => {
             assert.equal(configured.branches.format, "username/identifier")
             assert.equal(configured.branches.username, "alex")
 
-            fs.writeFileSync(path.join(root, ".gitignore"), `${ENTITY_LOCAL_IGNORE}\n`)
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
             prepareArtifactPersistence(root)
             assert.ok(
                 fs
@@ -784,116 +785,87 @@ describe("workflow project configuration", () => {
         }
     })
 
-    it("requires the versioned local-state gitignore rule without changing the index", () => {
+    it("requires the project-local gitignore rule without changing the index", () => {
         const root = repository()
         try {
-            writeConfig(root, config("versioned"))
+            writeConfig(root, config())
             const indexBefore = git(root, ["ls-files", "--stage"])
-            assert.throws(() => prepareArtifactPersistence(root), /versioned artifacts require .*\.local.*\.gitignore/)
-            assert.throws(
-                () => assertArtifactPersistencePrepared(root),
-                /versioned artifacts require .*\.local.*\.gitignore/,
-            )
+            assert.throws(() => prepareArtifactPersistence(root), /\/\.project\/\.local\/ in \.gitignore/)
+            assert.throws(() => assertArtifactPersistencePrepared(root), /\/\.project\/\.local\/ in \.gitignore/)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
 
-            fs.writeFileSync(path.join(root, ".gitignore"), `${ENTITY_LOCAL_IGNORE}\n`)
-            assert.equal(prepareArtifactPersistence(root).mode, "versioned")
-            assert.equal(assertArtifactPersistencePrepared(root).artifacts, "versioned")
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            assert.equal(prepareArtifactPersistence(root).state, "ready")
+            assertArtifactPersistencePrepared(root)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
     })
 
-    it("asserts missing exclusions without writing and prepares the same inspected requirements", () => {
-        for (const mode of ["versioned", "unversioned"] as const) {
-            const root = repository()
-            try {
-                writeConfig(root, config(mode))
-                if (mode === "versioned") {
-                    fs.writeFileSync(path.join(root, ".gitignore"), `${ENTITY_LOCAL_IGNORE}\n`)
-                    writeWorkflowSettings(path.join(root, ".project", "config.local.json"), "alex")
-                }
-                const exclude = path.join(root, ".git", "info", "exclude")
-                const before = fs.readFileSync(exclude, "utf-8")
-                assert.throws(() => assertArtifactPersistencePrepared(root), /not prepared/)
-                assert.equal(fs.readFileSync(exclude, "utf-8"), before)
-                assert.equal(prepareArtifactPersistence(root).mode, mode)
-                assert.equal(assertArtifactPersistencePrepared(root).artifacts, mode)
-            } finally {
-                fs.rmSync(root, { recursive: true, force: true })
-            }
+    it("commits project configuration while ignoring every entity artifact", () => {
+        const root = repository()
+        try {
+            writeConfig(root, config())
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            const gig = path.join(root, ".project", ".local", "gigs", "example")
+            fs.mkdirSync(gig, { recursive: true })
+            fs.writeFileSync(path.join(gig, "metadata.json"), "{}\n")
+            prepareArtifactPersistence(root)
+            git(root, ["add", ".gitignore", ".project"])
+            assert.deepEqual(git(root, ["diff", "--cached", "--name-only"]).split("\n"), [
+                ".gitignore",
+                ".project/config.json",
+            ])
+            assertArtifactPersistencePrepared(root)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
         }
     })
 
-    it("prepares the unversioned exclusion once without changing the index", () => {
+    it("asserts a missing local-settings exclusion without writing and prepares it once", () => {
         const root = repository()
         try {
-            writeConfig(root, config("unversioned"))
-            const indexBefore = git(root, ["ls-files", "--stage"])
+            writeConfig(root, config({ format: "username/identifier" }))
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            writeWorkflowSettings(path.join(root, ".project", "config.local.json"), "alex")
+            const exclude = path.join(root, ".git", "info", "exclude")
+            const before = fs.readFileSync(exclude, "utf-8")
+            assert.throws(() => assertArtifactPersistencePrepared(root), /not prepared/)
+            assert.equal(fs.readFileSync(exclude, "utf-8"), before)
             prepareArtifactPersistence(root)
             prepareArtifactPersistence(root)
-            assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
-            assert.equal(git(root, ["status", "--porcelain"]), "")
             assert.equal(
                 fs
-                    .readFileSync(path.join(root, ".git", "info", "exclude"), "utf-8")
+                    .readFileSync(exclude, "utf-8")
                     .split(/\r?\n/)
-                    .filter((line) => line === UNVERSIONED_PROJECT_EXCLUDE).length,
+                    .filter((line) => line === LOCAL_PROJECT_CONFIG_EXCLUDE).length,
                 1,
             )
-            assert.equal(assertArtifactPersistencePrepared(root).artifacts, "unversioned")
+            assert.equal(assertArtifactPersistencePrepared(root).branches.username, "alex")
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
     })
 
-    it("rejects unversioned artifacts in Git and requires manual versioned-mode reversal", () => {
+    it("rejects project-local artifacts in Git, including staged deletions, without changing the index", () => {
         const root = repository()
         try {
-            writeConfig(root, config("unversioned"))
-            git(root, ["add", ".project/config.json"])
+            writeConfig(root, config())
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            const gig = path.join(root, ".project", ".local", "gigs", "example")
+            fs.mkdirSync(gig, { recursive: true })
+            fs.writeFileSync(path.join(gig, "status.md"), "# Status\n")
+            git(root, ["add", "-f", ".project/.local/gigs/example/status.md"])
             const indexBefore = git(root, ["ls-files", "--stage"])
-            assert.throws(() => prepareArtifactPersistence(root), /in Git or staged/)
+            assert.throws(() => prepareArtifactPersistence(root), /\.project\/\.local\/ must remain outside Git/)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
 
-            git(root, ["reset", "--", ".project/config.json"])
-            fs.appendFileSync(path.join(root, ".git", "info", "exclude"), `\n${UNVERSIONED_PROJECT_EXCLUDE}\n`)
-            writeConfig(root, config("versioned"))
-            assert.throws(() => prepareArtifactPersistence(root), /remove it manually/)
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true })
-        }
-    })
-
-    it("rejects entity-local state in Git", () => {
-        const root = repository()
-        try {
-            writeConfig(root, config("versioned"))
-            fs.writeFileSync(path.join(root, ".gitignore"), `${ENTITY_LOCAL_IGNORE}\n`)
-            const localDir = path.join(root, ".project", "gigs", "example", ".local")
-            fs.mkdirSync(localDir, { recursive: true })
-            fs.writeFileSync(path.join(localDir, "status.md"), "# Status\n")
-            git(root, ["add", "-f", ".project/gigs/example/.local/status.md"])
-            assert.throws(() => prepareArtifactPersistence(root), /entity \.local directories must remain outside Git/)
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true })
-        }
-    })
-
-    it("rejects a staged deletion without changing the index", () => {
-        const root = repository()
-        try {
-            writeConfig(root, config("versioned"))
-            git(root, ["add", ".project/config.json"])
-            git(root, ["commit", "-m", "add project config to Git"])
-            writeConfig(root, config("unversioned"))
-            git(root, ["rm", "--cached", ".project/config.json"])
-            const indexBefore = git(root, ["diff", "--cached", "--raw"])
-
-            assert.throws(() => prepareArtifactPersistence(root), /in Git or staged/)
-            assert.equal(git(root, ["diff", "--cached", "--raw"]), indexBefore)
-            assert.equal(fs.existsSync(path.join(root, ".project", "config.json")), true)
+            git(root, ["commit", "-m", "tracked local artifact"])
+            git(root, ["rm", "--cached", ".project/.local/gigs/example/status.md"])
+            const stagedBefore = git(root, ["diff", "--cached", "--raw"])
+            assert.throws(() => prepareArtifactPersistence(root), /must remain outside Git/)
+            assert.equal(git(root, ["diff", "--cached", "--raw"]), stagedBefore)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

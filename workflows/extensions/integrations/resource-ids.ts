@@ -8,7 +8,7 @@ import { Value } from "typebox/value"
 
 import { writeTextAtomically } from "../__lib/files.js"
 
-export const RESOURCE_IDS_CACHE_FILE = ".local/metadata.json"
+export const RESOURCE_IDS_CACHE_FILE = "resource-ids.json"
 
 const OneLine = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 const PositiveInteger = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })

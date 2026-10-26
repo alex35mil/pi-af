@@ -52,12 +52,11 @@ It works before configuration exists or while it's invalid, and touches no files
 
 ```json
 {
-    "artifacts": "versioned",
     "branches": { "format": "identifier-title" }
 }
 ```
 
-- `artifacts` is exactly `versioned` or `unversioned`. [Artifacts](./artifacts.md#terminology) defines artifact policy, Git membership, and local files.
+- Workflow work is always local; [artifacts](./artifacts.md#terminology) defines Git membership and local files.
 - `branches.format` is one format string for every Epic, Task, and Gig. Allowed formats:
   - `tracker`
   - `username/identifier-title`
@@ -67,7 +66,7 @@ It works before configuration exists or while it's invalid, and touches no files
   - `identifier-title`
   - `title-identifier`
   - `identifier`
-- `tracker` is allowed only with a Linear tracker. Task and Gig then use the exact issue branch names, and Epic reconstructs the current Linear workspace template from read-only API data. GitHub and trackerless projects need a static format.
+- `tracker` is allowed only with a Linear tracker. Task and Gig then use the exact issue branch names, and Epic reconstructs the current Linear workspace template from read-only API data. GitHub-tracked projects need a static format.
 
 ### Username
 
@@ -229,7 +228,7 @@ Never hand-build GitHub tracker configuration. Use the exact `trackerConfig` ret
 
 - All Project-scoped field names are distinct, and Kind label names are distinct case-insensitively.
 - Status and Phase are always Project-scoped.
-- Phase projects In Progress activity in both artifact modes. Kind classifies versioned GitHub issues through exactly one managed label after initialization.
+- Phase projects In Progress activity. Workflows don't apply the Kind labels.
 - Native GitHub issue Type stays independent and unmanaged. Never substitute other labels, Custom Properties, or another field scope.
 
 Example returned configuration for a Project-contained tracker (use the actual output, not these sample identities):
@@ -296,11 +295,11 @@ Example returned configuration for a Project-contained tracker (use the actual o
 }
 ```
 
-When both tracker and forge are configured, put both role objects in the same integration object. Their servers and repositories follow the user's choices.
+Put both the tracker and forge role objects in the same integration object. Their servers and repositories follow the user's choices.
 
 ## Artifact persistence
 
-The persistence and authority contract is in [artifacts](./artifacts.md#persistence-and-authority), including the ignore and exclude rules, Git-membership checks, and both mode transitions. For manual setup, create the configuration above, apply that contract's setup rule, then call `prepare_artifacts`. Call it again after configuration changes.
+The persistence and authority contract is in [artifacts](./artifacts.md#persistence-and-authority), including the ignore and exclude rules and Git-membership checks. For manual setup, create the configuration above, apply that contract's setup rule, then call `prepare_artifacts`. Call it again after configuration changes.
 
 ## MCP registrations
 

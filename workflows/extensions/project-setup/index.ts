@@ -9,6 +9,7 @@ import { workflowTools } from "../__lib/tools.js"
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
 import { EXTENSION as PERMISSIONS_EXTENSION } from "../../../extensions/permissions/index.js"
+import { EPIC_ROOT, GIG_ROOT } from "../__lib/domain.js"
 import * as Git from "../__lib/git.js"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
@@ -65,7 +66,7 @@ export default function (pi: ExtensionAPI): void {
         name: "prepare_artifacts",
         label: "prepare_artifacts",
         description:
-            "Validate configured versioned artifact rules or prepare unversioned artifact exclusion for .project without changing the Git index.",
+            "Validate that .project/.local/ is ignored and untracked, and prepare the local settings exclusion, without changing the Git index.",
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             Value.Parse(EmptySchema, params)
@@ -74,10 +75,7 @@ export default function (pi: ExtensionAPI): void {
                 content: [
                     {
                         type: "text" as const,
-                        text:
-                            prepared.mode === "unversioned"
-                                ? `Prepared unversioned artifact mode using ${prepared.excludePath}.`
-                                : "Versioned artifact persistence is ready.",
+                        text: "Workflow artifact persistence is ready.",
                     },
                 ],
                 details: prepared,
@@ -308,7 +306,8 @@ function inspectBoundEntityTrackers(root: string) {
         for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
             const absolute = path.join(directory, entry.name)
             if (entry.isDirectory()) {
-                if (entry.name !== ".local") visit(absolute)
+                // Review rounds and scratch hold copies and probes, never entity metadata.
+                if (entry.name !== "reviews" && entry.name !== "scratch") visit(absolute)
                 continue
             }
             if (entry.name !== "metadata.json") continue
@@ -342,7 +341,7 @@ function inspectBoundEntityTrackers(root: string) {
             }
         }
     }
-    visit(path.join(root, ".project", "epics"))
-    visit(path.join(root, ".project", "gigs"))
+    visit(path.join(root, EPIC_ROOT))
+    visit(path.join(root, GIG_ROOT))
     return results.sort((left, right) => left.path.localeCompare(right.path))
 }

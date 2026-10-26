@@ -391,7 +391,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     let projectConfig = entityDir ? assertArtifactPersistencePrepared(cwd) : undefined
     if (loaded.state === "enabled") projectConfig ??= assertArtifactPersistencePrepared(cwd)
     const environment = projectConfig
-        ? resolveWorkflowEnvironment(projectConfig, loaded.state === "enabled" ? loaded.config : undefined)
+        ? resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
         : undefined
     const entity = entityDir ? readWorkflowEntity(cwd, entityDir) : undefined
     if (entity) {
@@ -479,7 +479,6 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
         operation,
         workflowPolicy,
         forgePolicy,
-        artifactMode: environment.artifacts.kind,
         ...(entity && tracker && operation !== "artifactProjection"
             ? { phaseProjection: phaseProjectionContract(entity.status.phase, tracker.config, entity.status.entity) }
             : {}),
@@ -512,7 +511,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                       attribution:
                           "AI-assisted text is signed by workflow publication code using current runtime identity. Automatically select local __pi_authorship: user-verbatim for complete unchanged user-written messages, without special user opt-out wording; generated or reworded content remains ai-assisted. Code strips the local mode before sending. Use complete text, not patches or template-only content.",
                       changedCandidateGate:
-                          "deterministic renderer output needs no second approval; code-owned communication attribution also needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; unversioned disclosure approval covers the complete source before rendering",
+                          "deterministic renderer output needs no second approval; code-owned communication attribution also needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval; disclosure approval covers the complete source before rendering",
                       authority: "local accepted artifact" as const,
                       outcomeProof:
                           "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
@@ -557,12 +556,9 @@ export function renderEntityProviderBody(
     ctx: ExtensionContext,
     input: { entityDir: string; destination: "tracker" | "pullRequest"; source: string },
 ): string {
-    const projectConfig = assertArtifactPersistencePrepared(ctx.cwd)
+    assertArtifactPersistencePrepared(ctx.cwd)
     const loaded = loadIntegrationConfig(ctx.cwd)
-    const environment = resolveWorkflowEnvironment(
-        projectConfig,
-        loaded.state === "enabled" ? loaded.config : undefined,
-    )
+    const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
     const entity = readWorkflowEntity(ctx.cwd, input.entityDir)
     assertEntityEnvironment(entity.status, environment)
 

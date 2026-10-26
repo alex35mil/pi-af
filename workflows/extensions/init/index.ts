@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI): void {
         name: "set_epic_task_target",
         label: "set_epic_task_target",
         description:
-            "Record the approved routing intent for future Tasks before committing Epic planning. This does not prove delivery; every default-target Task initialization verifies delivery independently. Existing Tasks keep their targets.",
+            "Record the approved routing intent for future Tasks at Epic plan acceptance; it stays local. This does not prove delivery; every default-target Task initialization verifies delivery independently. Existing Tasks keep their targets.",
         parameters: SetEpicTaskTargetSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(SetEpicTaskTargetSchema, params)

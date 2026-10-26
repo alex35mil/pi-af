@@ -5,7 +5,7 @@ There are two optional integration roles:
 - **tracker:** external work items, Backlog and Todo queues, lifecycle, Priority, hierarchy, and publication of accepted plans;
 - **forge:** pull requests.
 
-Either may be absent. The `.project/` artifacts stay authoritative in both artifact modes.
+Either may be absent. The local entity artifacts stay authoritative.
 
 - An enabled role means it's configured, not that its provider tools have been probed. For each enabled role, follow its provider reference.
 - Tracker lifecycle and Priority never fall back to workflow authority.
@@ -43,14 +43,14 @@ These tools read local configuration, authority, and entity state. They never ca
 
 ### Resource IDs
 
-`.local/metadata.json` is strict and local in both artifact modes. Its root is `{ entityId, resourceIds }`, and each entry stores IDs and URLs under an exact scope: entity, server, repository, Project, team, object, or head and target. Lifecycle, Priority, labels, bodies, branch names, and merge state are never cached; they're live or authoritative facts.
+`resource-ids.json` is strict and local. Its root is `{ entityId, resourceIds }`, and each entry stores IDs and URLs under an exact scope: entity, server, repository, Project, team, object, or head and target. Lifecycle, Priority, labels, bodies, branch names, and merge state are never cached; they're live or authoritative facts.
 
 | Object | Durable identity and progress | Local Resource IDs |
 | --- | --- | --- |
 | GitHub tracker issue | repository and issue number; pending creation or initialization work; plan-comment state | numeric issue ID and URL; the configured Project-item ID |
 | Linear Project | Project UUID; pending work; plan-document state | URL |
 | Linear issue | issue UUID; a Task's parent Project UUID; branch contract; plan-document state | identifier and URL |
-| GitHub PR | immutable versioned repository, head, and target intent | current PR number and URL |
+| GitHub PR | immutable repository, head, and target intent | current PR number and URL |
 
 - **`resolve_resource_ids`** reads the operation memo or scoped cache and reports missing IDs without calling providers.
 - **`record_resource_ids`** validates a required read, or a clear-success mutation, before caching.
@@ -61,30 +61,29 @@ These tools read local configuration, authority, and entity state. They never ca
 ### Creation checkpoints
 
 - **Tracker initialization:** `begin_resource_creation` records the attempted create under its approval.
-- **PRs:** `begin_resource_creation` saves only the immutable repository, head, and target intent, before staging the last Deliverable commit; commit that change with the work. Then make one native create, and pass clear-success evidence to `record_resource_creation`, which saves the number and URL in the local IDs file. When choosing an existing PR, `select_pull_request_resource` records the user's choice in the same file.
-- Recording never changes versioned metadata. Existing intent or an uncertain outcome needs investigation, never a blind replacement.
+- **PRs:** `begin_resource_creation` saves only the immutable repository, head, and target intent in `metadata.json`. Then make one native create, and pass clear-success evidence to `record_resource_creation`, which saves the number and URL in the local IDs file. When choosing an existing PR, `select_pull_request_resource` records the user's choice in the same file.
+- Recording never changes `metadata.json`. Existing intent or an uncertain outcome needs investigation, never a blind replacement.
 - Adoption and mutations seed IDs they already have. Queued work keeps IDs only during its own operation.
 
 Saved-data rejections follow [core migrations](../core.md#saved-data-migrations).
 
 ## Confirm initialized tracker outcomes
 
-After the provider's initialization steps succeed, call the confirmation tool for the configured provider and artifact mode: `confirm_versioned_github_tracker`, `confirm_unversioned_github_tracker`, or `confirm_linear_tracker`.
+After the provider's initialization steps succeed, call the confirmation tool for the configured provider: `confirm_github_tracker` or `confirm_linear_tracker`.
 
 - Pass `entityDir` and `facts` from this operation's reads or clear-success mutations. Reuse proof you already have; don't add routine confirmation reads.
 - The tool checks the facts against the pending approved intent and completes the binding. It calls no providers, doesn't verify freshness on its own, records no Resource IDs, and provisions no branches.
 - Missing or conflicting facts leave the binding pending; investigate through the configured MCP tools.
 - It returns `changed`. An already-bound object is a local no-op. Branch naming and finalization, and creation and Resource ID recording, stay at their own steps.
 
-Every confirmation needs native `lifecycle`, `priority`, and `phase` facts ([Phase](../phase.md#fresh-native-facts)). The rest depends on provider and mode:
+Every confirmation needs native `lifecycle`, `priority`, and `phase` facts ([Phase](../phase.md#fresh-native-facts)). The rest depends on the provider:
 
-| | Required facts | Priority | System metadata |
-| --- | --- | --- | --- |
-| Versioned GitHub | `repository`, `issueNumber`, configured `project` (`owner`, `ownerType`, `number`), observed `itemId`, and `parentIssueNumber` for a Task | configured value or `not set` | `{ labels, internalId: { scope, field, value } }` with the complete observed labels and the Internal ID outcome |
-| Unversioned GitHub | same as versioned | same | none |
-| Linear | `resource: project \| task-issue \| gig-issue`, the object UUID as `id`, configured `team`, and `projectId` for a Task | native 0–4 | `{ mode: versioned \| unversioned }` matching configuration; no embedded workflow ID |
+| | Required facts | Priority |
+| --- | --- | --- |
+| GitHub | `repository`, `issueNumber`, configured `project` (`owner`, `ownerType`, `number`), observed `itemId`, and `parentIssueNumber` for a Task | configured value or `not set` |
+| Linear | `resource: project \| task-issue \| gig-issue`, the object UUID as `id`, configured `team`, and `projectId` for a Task | native 0–4 |
 
-Omit `parentIssueNumber` or `projectId` only when the relationship was observed to be absent. A binding completes only for a pending, identified object with matching In Progress and Planning, copied Priority, relationships, and applicable system metadata. For Linear, the UUID and relationships are the binding identity.
+Omit `parentIssueNumber` or `projectId` only when the relationship was observed to be absent. A binding completes only for a pending, identified object with matching In Progress and Planning, copied Priority, and relationships. For Linear, the UUID and relationships are the binding identity.
 
 ## Provider bodies
 
@@ -111,7 +110,7 @@ Omit `parentIssueNumber` or `projectId` only when the relationship was observed 
 ### Publishing
 
 1. **Start from the full approved source** in the [reviewed document shape](../artifacts.md#reviewed-document-shape). Never summarize or condense during publication.
-2. **Unversioned mode:** first remove or minimally rewrite only the forbidden content (below), in both visible and folded parts. Show the full sanitized candidate or exact diff, explain each change, and get approval before rendering. Folding is not a privacy boundary.
+2. **Disclosure:** first remove or minimally rewrite only the forbidden content (below), in both visible and folded parts. Show the full sanitized candidate or exact diff, explain each change, and get approval before rendering. Folding is not a privacy boundary.
 3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full approved source.
    - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output. A second call returns `recovery-required`, and when nothing was posted, recovery can't proceed without the maintainer (#87).
    - Record a first creation with `record_tracker_publication`, passing the actual call as `evidence`.
@@ -137,7 +136,7 @@ The same contract applies when an open PR's synchronized `result.md` or `report.
 - Markers and signatures stay out of source artifacts.
 - New issues use the approved title and Request; later publication leaves those fields alone. Resume reuses saved state and never republishes on its own.
 
-### Unversioned disclosure
+### Disclosure
 
 **May be projected:**
 
@@ -171,9 +170,9 @@ Ordinary repository implementation paths aren't private. The same attribution fo
 
 For initialized entities, update workflow kind, `phase`, and artifacts first.
 
-- Workflow authority keeps Priority in `metadata.authority` and lifecycle in `.local/status.md`. Tracker authority uses native Status and Priority, with no `.local/status.md`.
+- Workflow authority keeps Priority in `metadata.authority` and lifecycle in `status.md`. Tracker authority uses native Status and Priority, with no `status.md`.
 - For a bound tracker object, read the required fresh values, then set only the intended absolute lifecycle, Priority, or changed labels. Verify required outcome facts that a clear-success response didn't include. Reconcile uncertain or partial results before retrying.
-- Versioned GitHub reconciles the managed Kind label from workflow metadata. Unversioned GitHub and Linear keep Kind in workflow artifacts only.
+- Kind stays in workflow artifacts only.
 - A provider failure never rolls back workflow artifacts.
 
 Adding work to Backlog or Todo creates no workflow artifact or saved recovery state. Recover uncertain results by reading provider state.

@@ -295,7 +295,7 @@ describe("workflow model-facing contracts", () => {
             assert.equal(outcome.isError, true)
             assert.equal(outcome.details.calls[0].name, "init_gig")
             assert.equal(outcome.details.calls[0].status, "cancelled")
-            assert.equal(fs.existsSync(path.join(h.root, ".project/gigs")), false)
+            assert.equal(fs.existsSync(path.join(h.root, ".project/.local/gigs")), false)
         } finally {
             await h.cleanup()
         }
@@ -348,9 +348,9 @@ describe("workflow model-facing contracts", () => {
                 fs.mkdirSync(path.join(root, ".project"))
                 fs.writeFileSync(
                     path.join(root, ".project/config.json"),
-                    JSON.stringify({ artifacts: "versioned", branches: { format: "identifier-title" } }),
+                    JSON.stringify({ branches: { format: "identifier-title" } }),
                 )
-                fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+                fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
             },
         })
         async function invoke(code: string) {
@@ -364,7 +364,7 @@ describe("workflow model-facing contracts", () => {
             await invoke(
                 'text(await tools.init_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",priority:"High",kind:"refactor"}));',
             )
-            const directory = path.join(".project/gigs", fs.readdirSync(path.join(h.root, ".project/gigs"))[0])
+            const directory = path.join(".project/.local/gigs", fs.readdirSync(path.join(h.root, ".project/.local/gigs"))[0])
             const metadataPath = path.join(h.root, directory, "metadata.json")
             const initial = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
             git(h.root, "switch", initial.branch.name)
@@ -391,7 +391,7 @@ describe("workflow model-facing contracts", () => {
                 assert.ok(m.tools.every((t) => !names.has(t.name as (typeof expectedWorkflowTools)[number])))
             }
             assert.equal(JSON.parse(fs.readFileSync(metadataPath, "utf8")).id, initial.id)
-            assert.equal(fs.existsSync(path.join(h.root, directory, ".local/status.md")), true)
+            assert.equal(fs.existsSync(path.join(h.root, directory, "status.md")), true)
         } finally {
             await h.cleanup()
         }

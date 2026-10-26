@@ -1,6 +1,6 @@
 # Phase
 
-Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Tracker Status and Priority stay with the provider. Without a tracker, lifecycle stays in `.local/status.md` and Phase only in metadata.
+Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Tracker Status and Priority stay with the provider. Without a tracker, lifecycle stays in `status.md` and Phase only in metadata.
 
 ## Transitions
 
@@ -33,7 +33,7 @@ Provider automation can change native Status; for example, GitHub can move pushe
 
 ## Native projection
 
-During In Progress, native Phase equals the metadata Phase. Outside In Progress, clear it. Queued work has no Phase. This applies in both artifact modes; native Phase is explicitly allowed in unversioned projects, and the other disclosure limits still apply.
+During In Progress, native Phase equals the metadata Phase. Outside In Progress, clear it. Queued work has no Phase. Native Phase is explicitly allowed; the other [disclosure](./integrations/shared.md#disclosure) limits still apply.
 
 - **GitHub:** the configured Project single-select Phase field.
 - **Linear:** the configured label group, a Project-label group for Epics and an issue-label group for Tasks and Gigs. The groups are mutually exclusive; apply only their children and keep every unrelated label.

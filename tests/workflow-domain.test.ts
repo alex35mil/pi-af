@@ -37,13 +37,13 @@ function temporaryRepository(): string {
     git(directory, ["config", "user.email", "test@example.com"])
     git(directory, ["config", "user.name", "Test"])
     fs.writeFileSync(path.join(directory, "README.md"), "test\n")
-    fs.writeFileSync(path.join(directory, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(directory, ".gitignore"), "/.project/.local/\n")
     git(directory, ["add", "README.md", ".gitignore"])
     git(directory, ["commit", "-m", "initial"])
     fs.mkdirSync(path.join(directory, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(directory, ".project", "config.json"),
-        JSON.stringify({ artifacts: "versioned", branches: { format: "identifier-title" } }),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
     )
     return directory
 }
@@ -64,7 +64,7 @@ function readyBranch(status: EntityStatus): ReadyBranchContract {
 }
 
 function writeStatus(repository: string, directory: string, status: EntityStatus): void {
-    const statusPath = path.join(repository, directory, ".local", "status.md")
+    const statusPath = path.join(repository, directory, "status.md")
     if (status.authority.kind === "workflow" && "state" in status) {
         const { state, ...metadata } = status
         fs.writeFileSync(path.join(repository, directory, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
@@ -75,18 +75,11 @@ function writeStatus(repository: string, directory: string, status: EntityStatus
     fs.rmSync(statusPath, { force: true })
 }
 
-function enableLinearIntegration(
-    repository: string,
-    forge = false,
-    artifactMode: "versioned" | "unversioned" = "versioned",
-): void {
+function enableLinearIntegration(repository: string, forge = false): void {
     fs.mkdirSync(path.join(repository, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(repository, ".project", "config.json"),
-        JSON.stringify({
-            artifacts: artifactMode,
-            branches: { format: "tracker" },
-        }),
+        JSON.stringify({ branches: { format: "tracker" } }),
     )
     fs.writeFileSync(
         path.join(repository, ".project", "integrations.json"),
@@ -263,7 +256,7 @@ describe("workflow domain", () => {
                 ...common,
                 entity: "gig",
                 kind: "feature",
-                parentEpicDir: ".project/epics/example",
+                parentEpicDir: ".project/.local/epics/example",
             }),
             false,
         )
@@ -341,7 +334,7 @@ describe("workflow domain", () => {
         try {
             fs.writeFileSync(
                 path.join(repository, ".project", "config.json"),
-                JSON.stringify({ artifacts: "versioned", branches: { format: "tracker" } }),
+                JSON.stringify({ branches: { format: "tracker" } }),
             )
             assert.throws(
                 () =>
@@ -452,21 +445,20 @@ describe("workflow domain", () => {
             assert.deepEqual(epic.status.integrations, [])
             const epicBranch = readyBranch(epic.status)
             assert.equal(git(repository, ["rev-parse", epicBranch.name]), git(repository, ["rev-parse", "main"]))
-            assert.ok(fs.existsSync(path.join(repository, epic.directory, ".local")))
-            assert.ok(fs.existsSync(path.join(repository, epic.directory, ".local", "reviews")))
-            assert.ok(fs.existsSync(path.join(repository, epic.directory, ".local", "scratch")))
+            assert.ok(fs.existsSync(path.join(repository, epic.directory, "reviews")))
+            assert.ok(fs.existsSync(path.join(repository, epic.directory, "scratch")))
             assert.equal(
-                fs.readFileSync(path.join(repository, epic.directory, ".local", "notes.md"), "utf-8"),
+                fs.readFileSync(path.join(repository, epic.directory, "notes.md"), "utf-8"),
                 "# Notes\n",
             )
-            assert.equal(fs.existsSync(path.join(repository, epic.directory, ".local", "pending.md")), false)
+            assert.equal(fs.existsSync(path.join(repository, epic.directory, "pending.md")), false)
             assert.equal(
                 fs.readFileSync(path.join(repository, epic.directory, "brief.md"), "utf-8"),
                 "# Brief\n\nPlan the project\n",
             )
             assert.ok(fs.existsSync(path.join(repository, epic.directory, "tasks")))
             const metadataPath = path.join(repository, epic.directory, "metadata.json")
-            const localStatusPath = path.join(repository, epic.directory, ".local", "status.md")
+            const localStatusPath = path.join(repository, epic.directory, "status.md")
             const epicMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
             if (!("state" in epic.status)) assert.fail("expected workflow Epic authority")
             assert.deepEqual({ ...epicMetadata, state: epic.status.state }, epic.status)
@@ -474,7 +466,7 @@ describe("workflow domain", () => {
             assert.match(fs.readFileSync(localStatusPath, "utf-8"), /"state": "inProgress"/)
             assert.equal(
                 git(repository, ["check-ignore", path.relative(repository, localStatusPath)]),
-                epic.directory + "/.local/status.md",
+                epic.directory + "/status.md",
             )
 
             const planDisplay = "**Implement shared workflow** — build the core."
@@ -535,17 +527,16 @@ describe("workflow domain", () => {
                 git(repository, ["rev-parse", epicBranch.name]),
             )
             assert.deepEqual(readEntityStatus(path.join(repository, task.directory)), task.status)
-            assert.ok(fs.existsSync(path.join(repository, task.directory, ".local", "scratch")))
-            assert.ok(fs.existsSync(path.join(repository, task.directory, ".local", "designs")))
-            assert.equal(fs.existsSync(path.join(repository, task.directory, "designs")), false)
+            assert.ok(fs.existsSync(path.join(repository, task.directory, "scratch")))
+            assert.ok(fs.existsSync(path.join(repository, task.directory, "designs")))
             const taskBrief = fs.readFileSync(path.join(repository, task.directory, "brief.md"), "utf-8")
             assert.equal(taskBrief, "# Brief\n\nBuild it\n")
             assert.equal(
-                fs.readFileSync(path.join(repository, task.directory, ".local", "notes.md"), "utf-8"),
+                fs.readFileSync(path.join(repository, task.directory, "notes.md"), "utf-8"),
                 "# Notes\n",
             )
             assert.equal(
-                fs.readFileSync(path.join(repository, task.directory, ".local", "pending.md"), "utf-8"),
+                fs.readFileSync(path.join(repository, task.directory, "pending.md"), "utf-8"),
                 "# Pending\n",
             )
             assert.match(fs.readFileSync(epicPath, "utf-8"), new RegExp(`1\\. \\[${task.status.id}\\]`))
@@ -636,21 +627,20 @@ describe("workflow domain", () => {
                 provider: "github",
                 desired: { lifecycle: "inProgress", priority: "High" },
             })
-            assert.ok(fs.existsSync(path.join(repository, gig.directory, ".local", "designs")))
-            assert.equal(fs.existsSync(path.join(repository, gig.directory, "designs")), false)
+            assert.ok(fs.existsSync(path.join(repository, gig.directory, "designs")))
             assert.equal(
                 fs.readFileSync(path.join(repository, gig.directory, "brief.md"), "utf-8"),
                 "# Brief\n\nStart selected future work\n",
             )
             assert.equal(
-                fs.readFileSync(path.join(repository, gig.directory, ".local", "notes.md"), "utf-8"),
+                fs.readFileSync(path.join(repository, gig.directory, "notes.md"), "utf-8"),
                 "# Notes\n",
             )
             assert.equal(
-                fs.readFileSync(path.join(repository, gig.directory, ".local", "pending.md"), "utf-8"),
+                fs.readFileSync(path.join(repository, gig.directory, "pending.md"), "utf-8"),
                 "# Pending\n",
             )
-            const trackerStatusPath = path.join(repository, gig.directory, ".local", "status.md")
+            const trackerStatusPath = path.join(repository, gig.directory, "status.md")
             assert.equal(fs.existsSync(trackerStatusPath), false)
             fs.writeFileSync(trackerStatusPath, '# Status\n\n```json\n{ "state": "inProgress" }\n```\n')
             assert.throws(
@@ -659,7 +649,6 @@ describe("workflow domain", () => {
             )
             fs.rmSync(trackerStatusPath)
             assert.deepEqual(tracker.operations, [
-                "apply configured Kind label and Internal ID",
                 "move Project Status to In Progress",
                 "project Planning Phase",
             ])
@@ -713,7 +702,7 @@ describe("workflow domain", () => {
                     entity: "gig",
                     title: "Tracker only",
                     slug: "tracker-only",
-                    request: "Create versioned work without PR management",
+                    request: "Create work without PR management",
                     priority: "High",
                     kind: "chore",
                     source: { mode: "new" },
@@ -970,17 +959,10 @@ describe("workflow domain", () => {
         }
     })
 
-    it("omits workflow-system projection metadata in unversioned artifact mode", () => {
+    it("omits workflow-system projection metadata", () => {
         const githubRepository = temporaryRepository()
         const linearRepository = temporaryRepository()
         try {
-            fs.writeFileSync(
-                path.join(githubRepository, ".project", "config.json"),
-                JSON.stringify({
-                    artifacts: "unversioned",
-                    branches: { format: "identifier-title" },
-                }),
-            )
             prepareArtifactPersistence(githubRepository)
             enableGitHubIntegration(githubRepository)
             const github = initializeEntity(
@@ -1012,9 +994,9 @@ describe("workflow domain", () => {
                 assert.fail("expected pending GitHub tracker projection")
             }
             assert.deepEqual(githubTracker.operations, ["move Project Status to In Progress", "project Planning Phase"])
-            assert.equal(fs.existsSync(path.join(githubRepository, github.directory, ".local", "status.md")), false)
+            assert.equal(fs.existsSync(path.join(githubRepository, github.directory, "status.md")), false)
 
-            enableLinearIntegration(linearRepository, false, "unversioned")
+            enableLinearIntegration(linearRepository)
             prepareArtifactPersistence(linearRepository)
             const linear = initializeEntity(
                 {
@@ -1046,7 +1028,7 @@ describe("workflow domain", () => {
                 assert.fail("expected pending Linear tracker projection")
             }
             assert.deepEqual(linearTracker.operations, ["move Linear issue to In Progress", "project Planning Phase"])
-            assert.equal(fs.existsSync(path.join(linearRepository, linear.directory, ".local", "status.md")), false)
+            assert.equal(fs.existsSync(path.join(linearRepository, linear.directory, "status.md")), false)
         } finally {
             fs.rmSync(githubRepository, { recursive: true, force: true })
             fs.rmSync(linearRepository, { recursive: true, force: true })
@@ -1438,7 +1420,7 @@ describe("workflow domain", () => {
             if (transitioned.entity !== "gig") assert.fail("expected Gig status")
             assert.equal(transitioned.kind, "audit")
             writeStatus(repository, gig.directory, gig.status)
-            fs.rmSync(path.join(directory, ".local", "status.md"))
+            fs.rmSync(path.join(directory, "status.md"))
             assert.throws(() => readEntityStatus(directory), /missing authoritative local status/)
             writeStatus(repository, gig.directory, gig.status)
 
@@ -1449,7 +1431,7 @@ describe("workflow domain", () => {
             writeStatus(repository, gig.directory, gig.status)
 
             fs.writeFileSync(
-                path.join(directory, ".local", "status.md"),
+                path.join(directory, "status.md"),
                 '# Status\n\n```json\n{\n  "state": "planning",\n  "extra": true\n}\n```\n',
             )
             assert.throws(() => readEntityStatus(directory), /invalid local status/)
@@ -1589,6 +1571,7 @@ describe("workflow domain", () => {
             const legacyDirectory = path.join(
                 repository,
                 ".project",
+                ".local",
                 "gigs",
                 "20260101-0000.GIG-01MTEST0000.legacy-format",
             )

@@ -1,6 +1,6 @@
 ---
 name: gig
-description: "Use for standalone Deliverable work under <repo>/.project/gigs/. Initializes or resumes a Gig, then follows the shared Deliverable lifecycle."
+description: "Use for standalone Deliverable work under <repo>/.project/.local/gigs/. Initializes or resumes a Gig, then follows the shared Deliverable lifecycle."
 allowed-tools:
     - "init_gig"
     - "adopt_github_gig"
@@ -11,8 +11,7 @@ allowed-tools:
     - "set_local_workflow_phase"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
-    - "confirm_versioned_github_tracker"
-    - "confirm_unversioned_github_tracker"
+    - "confirm_github_tracker"
     - "confirm_linear_tracker"
     - "render_provider_body"
     - "prepare_tracker_publication"
@@ -59,7 +58,7 @@ The Deliverable lifecycle owns planning, root cause, review, implementation, ver
 
 ## Resume
 
-Follow the Deliverable resume steps for a Gig under `.project/gigs/`. Verify `entity: "gig"` and that it isn't inside an Epic, then continue the lifecycle.
+Follow the Deliverable resume steps for a Gig under `.project/.local/gigs/`. Verify `entity: "gig"` and that it isn't inside an Epic, then continue the lifecycle.
 
 ## Initialize
 

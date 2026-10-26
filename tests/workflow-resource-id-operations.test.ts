@@ -61,15 +61,15 @@ const evidence = {
     response: pr,
 }
 
-function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
+function fixture() {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workflow-resource-ids-")))
     const git = (args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim()
     git(["init", "-q"])
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.mkdirSync(path.join(root, ".project"))
     fs.writeFileSync(
         path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts, branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "identifier" } }),
     )
     const statuses = {
         backlog: "Backlog",
@@ -111,7 +111,7 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
         }),
     )
     prepareArtifactPersistence(root)
-    const directory = path.join(root, ".project/gigs/20260930-1452.GIG-01M3S2H283.example")
+    const directory = path.join(root, ".project/.local/gigs/20260930-1452.GIG-01M3S2H283.example")
     fs.mkdirSync(directory, { recursive: true })
     const metadata = {
         id: common.entityId,
@@ -383,7 +383,7 @@ describe("resource ID operations", () => {
                 readResourceIdsCache(f.directory)!.resourceIds.map((x) => x.scope.kind),
                 ["github-project-item"],
             )
-            assert.deepEqual(fs.readdirSync(path.join(f.directory, ".local")), ["metadata.json"])
+            assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json"])
         } finally {
             f.cleanup()
         }
@@ -502,10 +502,9 @@ describe("resource ID operations", () => {
         }
     })
 
-    for (const artifacts of ["versioned", "unversioned"] as const) {
-        for (const format of ["payload", "mcpText", "mcpStructured"] as const) {
-            it(`records creation and selection locally after one submission commit (${artifacts}, ${format})`, async () => {
-                const f = fixture(artifacts)
+    for (const format of ["payload", "mcpText", "mcpStructured"] as const) {
+            it(`records creation and selection locally after one submission commit (${format})`, async () => {
+                const f = fixture()
                 try {
                     f.metadata.integrations = f.metadata.integrations.filter((x) => x.role !== "forge")
                     fs.writeFileSync(f.file, JSON.stringify(f.metadata))
@@ -556,14 +555,13 @@ describe("resource ID operations", () => {
                     assert.deepEqual(readResourceIdsCache(f.directory), recorded)
                     await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
                     assert.equal(fs.readFileSync(f.file, "utf8"), committed)
-                    assert.deepEqual(fs.readdirSync(path.join(f.directory, ".local")), ["metadata.json"])
+                    assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json"])
                     assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
                     assert.equal(f.git(["status", "--porcelain"]), "")
-                    assert.equal(f.git(["ls-files", "--", path.relative(f.root, path.join(f.directory, ".local"))]), "")
+                    assert.equal(f.git(["ls-files", "--", ".project/.local"]), "")
                 } finally {
                     f.cleanup()
                 }
             })
-        }
     }
 })

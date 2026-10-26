@@ -39,18 +39,18 @@ The initialization tool records Planning and In Progress intent, with `awaiting`
 
 **New work:**
 
-1. **Build one issue create** with the approved title and Request and, in versioned mode, the Kind label.
+1. **Build one issue create** with the approved title and Request.
    - Include the Task parent issue number.
-   - Include issue-scoped Priority and Internal ID together. A Task parent and issue fields can't share the create call, so for Tasks set those fields afterward.
+   - Include issue-scoped Priority. A Task parent and issue fields can't share the create call, so for Tasks set Priority afterward.
 2. **Create.** Call `begin_resource_creation` with role `tracker`, then call the registered issue create under approval. No duplicate, label, or option preflight.
 3. **Record.** On clear success, call `record_resource_creation` with the actual call as `evidence`. It saves the repository and issue number before dependent work and caches the ID and URL. A minimal ID-and-URL success isn't automatically uncertain.
 4. **Project membership.** Add the issue to the configured Project and record the returned IDs with `record_resource_ids`.
-   - Set In Progress, Priority, and (versioned) Internal ID with Project writes addressed by the issue.
-   - Set Planning in the Phase field, in both artifact modes.
+   - Set In Progress and Priority with Project writes addressed by the issue.
+   - Set Planning in the Phase field.
    - Combine supported issue-field writes. Don't refetch just to fill the cache.
    - A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes.
 5. **Labels and hierarchy.** Reuse labels and parent assignment proven at creation. For an adopted issue or an unproven correction, read current labels or hierarchy, keep unrelated labels, and change only differences. Call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed. The numeric child issue ID can come from Project evidence.
-6. **Confirm.** Call the GitHub confirmation tool for the artifact mode, as described in [confirmation](../shared.md#confirm-initialized-tracker-outcomes). Missing evidence keeps initialization pending. Never complete it by editing metadata by hand or storing provider snapshots.
+6. **Confirm.** Call `confirm_github_tracker`, as described in [confirmation](../shared.md#confirm-initialized-tracker-outcomes). Missing evidence keeps initialization pending. Never complete it by editing metadata by hand or storing provider snapshots.
 
 Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority. A proven Project addition and parent relationship aren't repeated.
 
@@ -58,14 +58,14 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 ## Resume and mutations
 
-1. Call `resume_integration` with `entityDir`, then read fresh Status, Priority, Phase, and, for versioned Kind, the complete issue labels.
+1. Call `resume_integration` with `entityDir`, then read fresh Status, Priority, and Phase.
 2. Reconcile Phase against the Project field definition and current selection. A cached Project-item ID reaches the current fields directly; that response must confirm the issue and Project.
 3. Investigate missing or confirmed-stale Resource IDs through the configured tools, and record the actual response afterward. Network or permission errors don't prove absence. Ordinary resume never discovers PRs.
 
 **What's projected:**
 
-- Native Phase exists only during In Progress and equals the metadata Phase, in both artifact modes.
-- Versioned Kind equals the workflow Kind; unversioned mode projects no Kind.
+- Native Phase exists only during In Progress and equals the metadata Phase.
+- No Kind is projected.
 - Keep unrelated labels. Reuse this operation's reads and write only when the intended set differs. Confirm labels when a mutation's success doesn't show the full applied set; no full label-catalog preflight is needed.
 
 **Changing values:**
@@ -77,7 +77,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 ## Queue and plan publication
 
-**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with only the approved versioned Kind (omit for `not set`), no Phase or Internal ID, and set the selected Status and Priority.
+**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with no Kind label or Phase, and set the selected Status and Priority.
 
 **Plan publication:**
 

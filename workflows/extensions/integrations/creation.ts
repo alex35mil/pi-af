@@ -21,7 +21,7 @@ function environmentFor(cwd: string, entityDir: string) {
     return {
         directory: resolveEntityDirectory(root, cwd, entityDir),
         config,
-        environment: resolveWorkflowEnvironment(config, loaded.state === "enabled" ? loaded.config : undefined),
+        environment: resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined),
     }
 }
 

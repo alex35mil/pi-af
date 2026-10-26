@@ -51,15 +51,16 @@ export function resolveEntityDirectory(root: string, cwd: string, raw: string): 
     return resolved
 }
 
+// Entity directories live under the never-committed local root, so their files are flat:
+// no inner .local/ directory.
 export const ENTITY_METADATA_FILE = "metadata.json"
-export const ENTITY_LOCAL_DIR = ".local"
-export const LOCAL_STATUS_FILE = path.join(ENTITY_LOCAL_DIR, "status.md")
-export const LOCAL_DRAFT_FILE = path.join(ENTITY_LOCAL_DIR, "draft.md")
-export const LOCAL_NOTES_FILE = path.join(ENTITY_LOCAL_DIR, "notes.md")
-export const LOCAL_PENDING_FILE = path.join(ENTITY_LOCAL_DIR, "pending.md")
-export const LOCAL_REVIEWS_DIR = path.join(ENTITY_LOCAL_DIR, "reviews")
-export const LOCAL_SCRATCH_DIR = path.join(ENTITY_LOCAL_DIR, "scratch")
-export const LOCAL_DESIGNS_DIR = path.join(ENTITY_LOCAL_DIR, "designs")
+export const LOCAL_STATUS_FILE = "status.md"
+export const LOCAL_DRAFT_FILE = "draft.md"
+export const LOCAL_NOTES_FILE = "notes.md"
+export const LOCAL_PENDING_FILE = "pending.md"
+export const LOCAL_REVIEWS_DIR = "reviews"
+export const LOCAL_SCRATCH_DIR = "scratch"
+export const LOCAL_DESIGNS_DIR = "designs"
 
 export interface PendingEntry {
     line: number
@@ -257,10 +258,10 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
             ? (() => {
                   const tasksDirectory = path.dirname(path.resolve(entityDirectory))
                   const actualParentDirectory = path.dirname(tasksDirectory)
+                  const epicsDirectory = path.dirname(actualParentDirectory)
                   if (
                       path.basename(tasksDirectory) !== "tasks" ||
-                      path.basename(path.dirname(actualParentDirectory)) !== "epics" ||
-                      path.basename(path.dirname(path.dirname(actualParentDirectory))) !== PROJECT_ROOT
+                      !epicsDirectory.endsWith(`${path.sep}${path.join(...EPIC_ROOT.split("/"))}`)
                   ) {
                       fail(`Task is not contained under ${EPIC_ROOT}/<epic>/tasks`)
                   }

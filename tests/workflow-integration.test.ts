@@ -101,24 +101,24 @@ function temporaryProject(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), "workflow-integration-"))
 }
 
-function prepareWorkflowProject(root: string, artifactMode: "versioned" | "unversioned" = "versioned"): void {
+function prepareWorkflowProject(root: string): void {
     cp.execFileSync("git", ["init", "-b", "main"], { cwd: root })
     cp.execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root })
     cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: root })
     fs.writeFileSync(path.join(root, "README.md"), "test\n")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     cp.execFileSync("git", ["add", "README.md", ".gitignore"], { cwd: root })
     cp.execFileSync("git", ["commit", "-m", "initial"], { cwd: root })
     fs.mkdirSync(path.join(root, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(root, ".project", "config.json"),
-        JSON.stringify({ artifacts: artifactMode, branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "identifier" } }),
     )
 }
 
 function writeTrackerlessGigEntity(cwd: string): string {
     const rawId = "01KDVDNA01"
-    const directory = path.join(".project", "gigs", `20260102-0305.GIG-${rawId}.forge-only`)
+    const directory = path.join(".project", ".local", "gigs", `20260102-0305.GIG-${rawId}.forge-only`)
     const absolute = path.join(cwd, directory)
     fs.mkdirSync(absolute, { recursive: true })
     const metadata = {
@@ -135,9 +135,8 @@ function writeTrackerlessGigEntity(cwd: string): string {
         integrations: [],
     }
     fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
-    fs.mkdirSync(path.join(absolute, ".local"), { recursive: true })
     fs.writeFileSync(
-        path.join(absolute, ".local", "status.md"),
+        path.join(absolute, "status.md"),
         '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
     )
     return directory
@@ -145,7 +144,7 @@ function writeTrackerlessGigEntity(cwd: string): string {
 
 function writeGitHubGigEntity(cwd: string): string {
     const rawId = "01KDVDNA02"
-    const directory = path.join(".project", "gigs", `20260102-0306.GIG-${rawId}.github-provider`)
+    const directory = path.join(".project", ".local", "gigs", `20260102-0306.GIG-${rawId}.github-provider`)
     const absolute = path.join(cwd, directory)
     fs.mkdirSync(absolute, { recursive: true })
     const metadata = {
@@ -182,7 +181,7 @@ function writeGitHubGigEntity(cwd: string): string {
 
 function writeLinearGigEntity(cwd: string): string {
     const rawId = "01KDVDNA00"
-    const directory = path.join(".project", "gigs", `20260102-0304.GIG-${rawId}.mixed-provider`)
+    const directory = path.join(".project", ".local", "gigs", `20260102-0304.GIG-${rawId}.mixed-provider`)
     const absolute = path.join(cwd, directory)
     fs.mkdirSync(absolute, { recursive: true })
     const metadata = {
@@ -262,71 +261,68 @@ describe("workflow-source queue context", () => {
         assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target: "other" }), false)
     })
 
-    for (const mode of ["versioned", "unversioned"] as const) {
-        for (const provider of ["github", "linear"] as const) {
-            for (const consumingSetup of ["missing", "different", "malformed"] as const) {
-                it(`uses ${mode} ${provider} source configuration with ${consumingSetup} consuming setup`, (t) => {
-                    const f = workflowFixture(t)
-                    prepareWorkflowProject(f.source, mode)
-                    prepareArtifactPersistence(f.source)
-                    const tracker =
-                        provider === "github"
-                            ? {
-                                  ...config(),
-                                  mcpServer: "workflow-github",
-                                  repository: { owner: "maintainer", repo: "workflows" },
-                              }
-                            : { ...linearConfig(), mcpServer: "workflow-linear", team: "Workflow Team" }
-                    const sourceIntegrations = path.join(f.source, ".project/integrations.json")
-                    fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker }))
-                    if (consumingSetup !== "missing") {
-                        prepareWorkflowProject(f.consumer)
-                        fs.writeFileSync(
-                            path.join(f.consumer, ".project/integrations.json"),
-                            consumingSetup === "malformed" ? "broken JSON" : JSON.stringify({ tracker: config() }),
-                        )
-                        if (consumingSetup === "malformed")
-                            fs.writeFileSync(path.join(f.consumer, ".project/config.json"), "broken JSON")
-                    }
-                    const before = fileSnapshot(f.root)
-                    const inspected = buildIntegrationContext(
+    for (const provider of ["github", "linear"] as const) {
+        for (const consumingSetup of ["missing", "different", "malformed"] as const) {
+            it(`uses ${provider} source configuration with ${consumingSetup} consuming setup`, (t) => {
+                const f = workflowFixture(t)
+                prepareWorkflowProject(f.source)
+                prepareArtifactPersistence(f.source)
+                const tracker =
+                    provider === "github"
+                        ? {
+                              ...config(),
+                              mcpServer: "workflow-github",
+                              repository: { owner: "maintainer", repo: "workflows" },
+                          }
+                        : { ...linearConfig(), mcpServer: "workflow-linear", team: "Workflow Team" }
+                const sourceIntegrations = path.join(f.source, ".project/integrations.json")
+                fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker }))
+                if (consumingSetup !== "missing") {
+                    prepareWorkflowProject(f.consumer)
+                    fs.writeFileSync(
+                        path.join(f.consumer, ".project/integrations.json"),
+                        consumingSetup === "malformed" ? "broken JSON" : JSON.stringify({ tracker: config() }),
+                    )
+                    if (consumingSetup === "malformed")
+                        fs.writeFileSync(path.join(f.consumer, ".project/config.json"), "broken JSON")
+                }
+                const before = fileSnapshot(f.root)
+                const inspected = buildIntegrationContext(
+                    f.ctx,
+                    { operation: "inspect", target: "workflow" },
+                    mcpTools,
+                )
+                const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
+                for (const context of [inspected, intake]) {
+                    if (context.state !== "enabled") assert.fail("expected source context")
+                    assert.equal(context.target, "workflow")
+                    assert.equal(context.projectRoot, f.source)
+                    assert.deepEqual(context.roles.tracker, { state: "enabled", provider, config: tracker })
+                }
+                assert.equal(fileSnapshot(f.root).length, before.length)
+                assert.deepEqual(fileSnapshot(f.root), before, "context must not modify either project or settings")
+                if (consumingSetup === "different") {
+                    const current = buildIntegrationContext(
                         f.ctx,
-                        { operation: "inspect", target: "workflow" },
+                        { ...queueSelection, target: "current" },
                         mcpTools,
                     )
-                    const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
-                    for (const context of [inspected, intake]) {
-                        if (context.state !== "enabled") assert.fail("expected source context")
-                        assert.equal(context.target, "workflow")
-                        assert.equal(context.projectRoot, f.source)
-                        assert.equal(context.artifactMode, mode)
-                        assert.deepEqual(context.roles.tracker, { state: "enabled", provider, config: tracker })
-                    }
-                    assert.equal(fileSnapshot(f.root).length, before.length)
-                    assert.deepEqual(fileSnapshot(f.root), before, "context must not modify either project or settings")
-                    if (consumingSetup === "different") {
-                        const current = buildIntegrationContext(
-                            f.ctx,
-                            { ...queueSelection, target: "current" },
-                            mcpTools,
-                        )
-                        if (current.state !== "enabled") assert.fail("expected consuming context")
-                        assert.deepEqual(current.roles.tracker, {
-                            state: "enabled",
-                            provider: "github",
-                            config: config(),
-                        })
-                    }
-                    const updated =
-                        provider === "github"
-                            ? { ...tracker, repository: { owner: "maintainer", repo: "new-inbox" } }
-                            : { ...tracker, team: "New Workflow Team" }
-                    fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated }))
-                    const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
-                    if (reread.state !== "enabled") assert.fail("expected refreshed context")
-                    assert.deepEqual(reread.roles.tracker?.config, updated)
-                })
-            }
+                    if (current.state !== "enabled") assert.fail("expected consuming context")
+                    assert.deepEqual(current.roles.tracker, {
+                        state: "enabled",
+                        provider: "github",
+                        config: config(),
+                    })
+                }
+                const updated =
+                    provider === "github"
+                        ? { ...tracker, repository: { owner: "maintainer", repo: "new-inbox" } }
+                        : { ...tracker, team: "New Workflow Team" }
+                fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated }))
+                const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
+                if (reread.state !== "enabled") assert.fail("expected refreshed context")
+                assert.deepEqual(reread.roles.tracker?.config, updated)
+            })
         }
     }
 
@@ -346,7 +342,7 @@ describe("workflow-source queue context", () => {
 
     it("names source config errors without falling back or preparing artifacts", (t) => {
         const f = workflowFixture(t)
-        prepareWorkflowProject(f.source, "unversioned")
+        prepareWorkflowProject(f.source)
         const integrations = path.join(f.source, ".project/integrations.json")
         for (const content of [undefined, JSON.stringify({ forge: forgeConfig() }), "broken JSON"]) {
             if (content !== undefined) fs.writeFileSync(integrations, content)
@@ -358,6 +354,10 @@ describe("workflow-source queue context", () => {
             assert.deepEqual(fileSnapshot(f.root), before)
         }
         fs.writeFileSync(integrations, JSON.stringify({ tracker: config() }))
+        fs.writeFileSync(
+            path.join(f.source, ".project/config.local.json"),
+            JSON.stringify({ branches: { username: "alex" } }),
+        )
         const unprepared = fileSnapshot(f.root)
         assert.throws(
             () => buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools),
@@ -420,17 +420,13 @@ describe("workflow integration configuration", () => {
         )
     })
 
-    it("defines every artifact, tracker, and forge policy case exhaustively", () => {
+    it("defines every tracker and forge policy case exhaustively", () => {
         const trackerRoles: WorkflowEnvironment["tracker"][] = [
             { kind: "none" },
             { kind: "github", config: config("project") },
             { kind: "linear", config: linearConfig() },
         ]
-        const workflowCases = (["versioned", "unversioned"] as const).flatMap((artifactKind) =>
-            trackerRoles.map((tracker) =>
-                resolveWorkflowPolicy({ artifacts: { kind: artifactKind }, tracker, forge: { kind: "none" } }),
-            ),
-        )
+        const workflowCases = trackerRoles.map((tracker) => resolveWorkflowPolicy({ tracker, forge: { kind: "none" } }))
         assert.deepEqual(
             workflowCases.map((policy) => [
                 policy.case,
@@ -438,37 +434,23 @@ describe("workflow integration configuration", () => {
                 policy.priorityAuthority,
                 policy.localStatus,
                 policy.projection,
-                policy.systemMetadataProjection,
             ]),
             [
-                ["versioned/no-tracker", "workflow", "workflow", "required", "none", false],
-                ["versioned/github", "tracker", "tracker", "forbidden", "full", true],
-                ["versioned/linear", "tracker", "tracker", "forbidden", "full", false],
-                ["unversioned/no-tracker", "workflow", "workflow", "required", "none", false],
-                ["unversioned/github", "tracker", "tracker", "forbidden", "restricted", false],
-                ["unversioned/linear", "tracker", "tracker", "forbidden", "restricted", false],
+                ["no-tracker", "workflow", "workflow", "required", "none"],
+                ["github", "tracker", "tracker", "forbidden", "restricted"],
+                ["linear", "tracker", "tracker", "forbidden", "restricted"],
             ],
         )
 
-        const forgeCases = (["versioned", "unversioned"] as const).flatMap((artifactKind) => [
-            resolveForgePolicy({
-                artifacts: { kind: artifactKind },
-                tracker: { kind: "none" },
-                forge: { kind: "none" },
-            }),
-            resolveForgePolicy({
-                artifacts: { kind: artifactKind },
-                tracker: { kind: "none" },
-                forge: { kind: "github", config: forgeConfig() },
-            }),
-        ])
+        const forgeCases = [
+            resolveForgePolicy({ tracker: { kind: "none" }, forge: { kind: "none" } }),
+            resolveForgePolicy({ tracker: { kind: "none" }, forge: { kind: "github", config: forgeConfig() } }),
+        ]
         assert.deepEqual(
             forgeCases.map((policy) => [policy.case, policy.pullRequests]),
             [
-                ["versioned/no-forge", false],
-                ["versioned/github", true],
-                ["unversioned/no-forge", false],
-                ["unversioned/github", true],
+                ["no-forge", false],
+                ["github", true],
             ],
         )
     })
@@ -793,64 +775,62 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("renders Epic and Gig trackers losslessly in both artifact modes without local mutations", () => {
-        for (const artifacts of ["versioned", "unversioned"] as const) {
-            for (const provider of ["github", "linear"] as const) {
-                for (const entity of ["epic", "gig"] as const) {
-                    const cwd = temporaryProject()
-                    try {
-                        prepareWorkflowProject(cwd, artifacts)
-                        fs.writeFileSync(
-                            path.join(cwd, ".project", "integrations.json"),
-                            JSON.stringify({ tracker: provider === "github" ? config() : linearConfig() }),
+    it("renders Epic and Gig trackers losslessly without local mutations", () => {
+        for (const provider of ["github", "linear"] as const) {
+            for (const entity of ["epic", "gig"] as const) {
+                const cwd = temporaryProject()
+                try {
+                    prepareWorkflowProject(cwd)
+                    fs.writeFileSync(
+                        path.join(cwd, ".project", "integrations.json"),
+                        JSON.stringify({ tracker: provider === "github" ? config() : linearConfig() }),
+                    )
+                    prepareArtifactPersistence(cwd)
+                    let entityDir = provider === "github" ? writeGitHubGigEntity(cwd) : writeLinearGigEntity(cwd)
+                    if (entity === "epic") {
+                        const original = path.join(cwd, entityDir)
+                        const { kind, ...metadata } = JSON.parse(
+                            fs.readFileSync(path.join(original, "metadata.json"), "utf-8"),
                         )
-                        prepareArtifactPersistence(cwd)
-                        let entityDir = provider === "github" ? writeGitHubGigEntity(cwd) : writeLinearGigEntity(cwd)
-                        if (entity === "epic") {
-                            const original = path.join(cwd, entityDir)
-                            const { kind, ...metadata } = JSON.parse(
-                                fs.readFileSync(path.join(original, "metadata.json"), "utf-8"),
-                            )
-                            entityDir = entityDir.replace("gigs", "epics").replace(".GIG-", ".EPIC-")
-                            metadata.id = `EPIC-${metadata.rawId}`
-                            metadata.entity = "epic"
-                            metadata.taskTarget = "epic"
-                            if (provider === "linear") {
-                                metadata.integrations[0].resource = "project"
-                                metadata.integrations[0].external = { projectId: "linear-project-uuid" }
-                            }
-                            fs.mkdirSync(path.join(cwd, entityDir), { recursive: true })
-                            fs.writeFileSync(path.join(cwd, entityDir, "metadata.json"), JSON.stringify(metadata))
+                        entityDir = entityDir.replace("gigs", "epics").replace(".GIG-", ".EPIC-")
+                        metadata.id = `EPIC-${metadata.rawId}`
+                        metadata.entity = "epic"
+                        metadata.taskTarget = "epic"
+                        if (provider === "linear") {
+                            metadata.integrations[0].resource = "project"
+                            metadata.integrations[0].external = { projectId: "linear-project-uuid" }
                         }
-                        const before = fileSnapshot(cwd)
-                        const overview =
-                            "## Overview\n\nExplain the work.\n\n### Plan highlights\n\n- Preserve the contract."
-                        const details = "## Scope\n\nKeep every detail and `src/example.ts`."
-                        const fold =
-                            provider === "github"
-                                ? `<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
-                                : `+++ Full plan\n\n${details}\n\n+++`
-                        assert.equal(
+                        fs.mkdirSync(path.join(cwd, entityDir), { recursive: true })
+                        fs.writeFileSync(path.join(cwd, entityDir, "metadata.json"), JSON.stringify(metadata))
+                    }
+                    const before = fileSnapshot(cwd)
+                    const overview =
+                        "## Overview\n\nExplain the work.\n\n### Plan highlights\n\n- Preserve the contract."
+                    const details = "## Scope\n\nKeep every detail and `src/example.ts`."
+                    const fold =
+                        provider === "github"
+                            ? `<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
+                            : `+++ Full plan\n\n${details}\n\n+++`
+                    assert.equal(
+                        renderEntityProviderBody({ cwd } as ExtensionContext, {
+                            entityDir,
+                            destination: "tracker",
+                            source: `# Work\n\n${overview}\n\n${details}\n`,
+                        }),
+                        `${provider === "github" ? "# Plan\n\nExplain the work.\n\n## Highlights\n\n- Preserve the contract." : "Explain the work.\n\n## Highlights\n\n- Preserve the contract."}\n\n${fold}`,
+                    )
+                    assert.deepEqual(fileSnapshot(cwd), before)
+                    assert.throws(
+                        () =>
                             renderEntityProviderBody({ cwd } as ExtensionContext, {
                                 entityDir,
-                                destination: "tracker",
+                                destination: "pullRequest",
                                 source: `# Work\n\n${overview}\n\n${details}\n`,
                             }),
-                            `${provider === "github" ? "# Plan\n\nExplain the work.\n\n## Highlights\n\n- Preserve the contract." : "Explain the work.\n\n## Highlights\n\n- Preserve the contract."}\n\n${fold}`,
-                        )
-                        assert.deepEqual(fileSnapshot(cwd), before)
-                        assert.throws(
-                            () =>
-                                renderEntityProviderBody({ cwd } as ExtensionContext, {
-                                    entityDir,
-                                    destination: "pullRequest",
-                                    source: `# Work\n\n${overview}\n\n${details}\n`,
-                                }),
-                            /requires a configured forge/,
-                        )
-                    } finally {
-                        fs.rmSync(cwd, { recursive: true, force: true })
-                    }
+                        /requires a configured forge/,
+                    )
+                } finally {
+                    fs.rmSync(cwd, { recursive: true, force: true })
                 }
             }
         }
@@ -878,10 +858,10 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("reads unversioned GitHub configuration and projection policy", () => {
+    it("reads GitHub configuration and restricted projection policy", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd, "unversioned")
+            prepareWorkflowProject(cwd)
             prepareArtifactPersistence(cwd)
             fs.writeFileSync(
                 path.join(cwd, ".project", "integrations.json"),
@@ -897,7 +877,6 @@ describe("workflow integration configuration", () => {
                 mcpTools,
             )
             if (context.state !== "enabled") assert.fail("expected enabled integrations")
-            assert.equal(context.artifactMode, "unversioned")
             assert.equal(context.projection?.mode, "restricted")
             const tracker = context.roles.tracker
             if (!tracker || tracker.state !== "enabled" || tracker.provider !== "github") {
@@ -909,10 +888,10 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("keeps restricted unversioned tracker projection independent from the forge", () => {
+    it("keeps restricted tracker projection independent from the forge", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd, "unversioned")
+            prepareWorkflowProject(cwd)
             prepareArtifactPersistence(cwd)
             fs.writeFileSync(
                 path.join(cwd, ".project", "integrations.json"),
@@ -929,7 +908,6 @@ describe("workflow integration configuration", () => {
                 mcpTools,
             )
             if (projection.state !== "enabled") assert.fail("expected enabled tracker projection")
-            assert.equal(projection.artifactMode, "unversioned")
             assert.ok(projection.projection)
             if (projection.projection.mode !== "restricted") assert.fail("expected restricted tracker projection")
             assert.equal(projection.projection.source, "exact accepted epic.md or plan.md")
@@ -987,104 +965,100 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("validates native Phase through runtime context in both artifact modes", () => {
-        for (const mode of ["versioned", "unversioned"] as const) {
-            const cwd = temporaryProject()
-            try {
-                prepareWorkflowProject(cwd, mode)
-                fs.writeFileSync(path.join(cwd, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
-                prepareArtifactPersistence(cwd)
-                const entityDir = writeGitHubGigEntity(cwd)
-                const context = buildIntegrationContext(
-                    { cwd } as ExtensionContext,
-                    {
-                        operation: "trackerMutation",
-                        entityDir,
-                        change: "phase",
-                        lifecycle: "inProgress",
-                        native: {
-                            provider: "github",
-                            current: "Planning",
-                            field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
-                        },
+    it("validates native Phase through runtime context", () => {
+        const cwd = temporaryProject()
+        try {
+            prepareWorkflowProject(cwd)
+            fs.writeFileSync(path.join(cwd, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+            prepareArtifactPersistence(cwd)
+            const entityDir = writeGitHubGigEntity(cwd)
+            const context = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "trackerMutation",
+                    entityDir,
+                    change: "phase",
+                    lifecycle: "inProgress",
+                    native: {
+                        provider: "github",
+                        current: "Planning",
+                        field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
                     },
-                    mcpTools,
-                )
-                if (context.state !== "enabled") assert.fail("expected context")
-                assert.deepEqual(context.phaseMutation, {
-                    provider: "github",
-                    field: "Phase",
-                    value: "Execution",
-                    changed: true,
-                })
-                assert.equal(context.phaseProjection?.inProgress, "execution")
-                if (context.projection?.mode === "restricted") {
-                    assert.ok(context.projection.allowed)
-                    assert.ok(context.projection.forbidden)
-                    assert.ok(context.projection.allowed.includes("native Phase metadata"))
-                    assert.ok(context.projection.forbidden.includes("entity or kind labels/types"))
-                }
-                const bodyOnly = buildIntegrationContext(
-                    { cwd } as ExtensionContext,
-                    {
-                        operation: "artifactProjection",
-                        entityDir,
-                    },
-                    mcpTools,
-                )
-                if (bodyOnly.state !== "enabled") assert.fail("expected context")
-                assert.equal(bodyOnly.phaseProjection, undefined)
-            } finally {
-                fs.rmSync(cwd, { recursive: true, force: true })
+                },
+                mcpTools,
+            )
+            if (context.state !== "enabled") assert.fail("expected context")
+            assert.deepEqual(context.phaseMutation, {
+                provider: "github",
+                field: "Phase",
+                value: "Execution",
+                changed: true,
+            })
+            assert.equal(context.phaseProjection?.inProgress, "execution")
+            if (context.projection?.mode === "restricted") {
+                assert.ok(context.projection.allowed)
+                assert.ok(context.projection.forbidden)
+                assert.ok(context.projection.allowed.includes("native Phase metadata"))
+                assert.ok(context.projection.forbidden.includes("entity or kind labels/types"))
             }
+            const bodyOnly = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "artifactProjection",
+                    entityDir,
+                },
+                mcpTools,
+            )
+            if (bodyOnly.state !== "enabled") assert.fail("expected context")
+            assert.equal(bodyOnly.phaseProjection, undefined)
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 
-    it("calculates Linear whole-label updates through runtime context in both artifact modes", () => {
-        for (const mode of ["versioned", "unversioned"] as const) {
-            const cwd = temporaryProject()
-            try {
-                prepareWorkflowProject(cwd, mode)
-                fs.writeFileSync(
-                    path.join(cwd, ".project/integrations.json"),
-                    JSON.stringify({ tracker: linearConfig() }),
-                )
-                prepareArtifactPersistence(cwd)
-                const entityDir = writeLinearGigEntity(cwd)
-                const base = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
-                const context = buildIntegrationContext(
-                    { cwd } as ExtensionContext,
-                    {
-                        operation: "trackerMutation",
-                        entityDir,
-                        change: "phase",
-                        lifecycle: "inProgress",
-                        native: {
-                            provider: "linear",
-                            applied: ["customer", "execution"],
-                            catalog: [
-                                { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
-                                ...Object.entries(phaseValues).map(([id, name]) => ({
-                                    ...base,
-                                    id,
-                                    name,
-                                    parentId: "group",
-                                })),
-                            ],
-                        },
+    it("calculates Linear whole-label updates through runtime context", () => {
+        const cwd = temporaryProject()
+        try {
+            prepareWorkflowProject(cwd)
+            fs.writeFileSync(
+                path.join(cwd, ".project/integrations.json"),
+                JSON.stringify({ tracker: linearConfig() }),
+            )
+            prepareArtifactPersistence(cwd)
+            const entityDir = writeLinearGigEntity(cwd)
+            const base = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
+            const context = buildIntegrationContext(
+                { cwd } as ExtensionContext,
+                {
+                    operation: "trackerMutation",
+                    entityDir,
+                    change: "phase",
+                    lifecycle: "inProgress",
+                    native: {
+                        provider: "linear",
+                        applied: ["customer", "execution"],
+                        catalog: [
+                            { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
+                            ...Object.entries(phaseValues).map(([id, name]) => ({
+                                ...base,
+                                id,
+                                name,
+                                parentId: "group",
+                            })),
+                        ],
                     },
-                    mcpTools,
-                )
-                if (context.state !== "enabled") assert.fail("expected context")
-                assert.deepEqual(context.phaseMutation, {
-                    provider: "linear",
-                    labels: ["customer", "planning"],
-                    changed: true,
-                })
-                assert.equal(context.phaseProjection?.inProgress, "planning")
-            } finally {
-                fs.rmSync(cwd, { recursive: true, force: true })
-            }
+                },
+                mcpTools,
+            )
+            if (context.state !== "enabled") assert.fail("expected context")
+            assert.deepEqual(context.phaseMutation, {
+                provider: "linear",
+                labels: ["customer", "planning"],
+                changed: true,
+            })
+            assert.equal(context.phaseProjection?.inProgress, "planning")
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 

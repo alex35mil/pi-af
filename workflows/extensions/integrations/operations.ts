@@ -18,8 +18,7 @@ import { loadIntegrationConfig } from "./config.js"
 import {
     ConfirmTrackerInitializationSchema,
     confirmTrackerInitialization,
-    VersionedGitHubInitializationInputSchema,
-    UnversionedGitHubInitializationInputSchema,
+    GitHubInitializationInputSchema,
     LinearInitializationInputSchema,
 } from "./initialization.js"
 import {
@@ -40,9 +39,9 @@ async function updateEntity<T extends { status: EntityStatus; changed: boolean }
     const root = project.resolveRootDir(cwd)
     const directory = resolveEntityDirectory(root, cwd, raw.replace(/^@/, ""))
     return withFileMutationQueue(path.join(directory, ENTITY_METADATA_FILE), async () => {
-        const config = assertArtifactPersistencePrepared(root)
+        assertArtifactPersistencePrepared(root)
         const loaded = loadIntegrationConfig(root)
-        const environment = resolveWorkflowEnvironment(config, loaded.state === "enabled" ? loaded.config : undefined)
+        const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
         const result = operation(readEntityStatus(directory), environment, directory)
         if (result.changed) writeEntityStatus(directory, result.status)
         const { status, ...outcome } = result
@@ -93,8 +92,7 @@ export function registerWorkflowOperations(pi: ExtensionAPI): void {
         })
     }
     const confirmations = [
-        ["confirm_versioned_github_tracker", VersionedGitHubInitializationInputSchema],
-        ["confirm_unversioned_github_tracker", UnversionedGitHubInitializationInputSchema],
+        ["confirm_github_tracker", GitHubInitializationInputSchema],
         ["confirm_linear_tracker", LinearInitializationInputSchema],
     ] as const
     for (const [name, parameters] of confirmations) {
@@ -118,22 +116,12 @@ export function registerWorkflowOperations(pi: ExtensionAPI): void {
                               }
                           })()
                         : (() => {
-                              const versioned = name === "confirm_versioned_github_tracker"
-                              const value = versioned
-                                  ? Value.Parse(VersionedGitHubInitializationInputSchema, supplied).facts
-                                  : Value.Parse(UnversionedGitHubInitializationInputSchema, supplied).facts
+                              const value = Value.Parse(GitHubInitializationInputSchema, supplied).facts
                               return {
                                   ...value,
                                   provider: "github",
                                   parentIssueNumber: value.parentIssueNumber ?? null,
                                   phase: githubPhaseFacts(value.phase),
-                                  systemMetadata: versioned
-                                      ? {
-                                            ...Value.Parse(VersionedGitHubInitializationInputSchema, supplied).facts
-                                                .systemMetadata,
-                                            mode: "versioned",
-                                        }
-                                      : { mode: "unversioned" },
                               }
                           })()
                 const input = Value.Parse(ConfirmTrackerInitializationSchema, { entityDir: supplied.entityDir, facts })

@@ -28,7 +28,6 @@ import {
 import {
     assertEntityBranchReady,
     type BranchContract,
-    ENTITY_LOCAL_DIR,
     ENTITY_METADATA_FILE,
     LOCAL_DESIGNS_DIR,
     LOCAL_NOTES_FILE,
@@ -168,7 +167,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
     const priority = normalizePriority(input.priority)
     const loadedIntegration = loadIntegrationConfig(root)
     const integrationConfig = loadedIntegration.state === "enabled" ? loadedIntegration.config : undefined
-    const environment = resolveWorkflowEnvironment(projectConfig, integrationConfig)
+    const environment = resolveWorkflowEnvironment(integrationConfig)
     const policy = resolveWorkflowPolicy(environment)
     const tracker = environment.tracker.kind === "none" ? undefined : environment.tracker.config
     if (input.source.mode === "external" && (!tracker || tracker.provider !== input.source.provider)) {
@@ -178,7 +177,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
 
     const parent =
         input.entity === "task"
-            ? readParentEpic(root, input, projectConfig, integrationConfig?.forge, options.tools ?? new Map())
+            ? readParentEpic(root, input, integrationConfig?.forge, options.tools ?? new Map())
             : undefined
     assertTaskSourceProject(input, parent?.trackerProjectId)
     const startBranch = input.entity === "task" ? parent!.branch : resolveDefaultBranch(root)
@@ -225,7 +224,6 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
             contract,
             timestamp,
             environment,
-            policy.systemMetadataProjection,
             parent,
         )
         if (input.entity === "task") {
@@ -256,15 +254,9 @@ function createEntityArtifacts(
     contract: BranchContract,
     timestamp: Date,
     environment: WorkflowEnvironment,
-    exposesSystemTraces: boolean,
     parent?: ParentEpic,
 ): void {
-    const integrations = createInitialIntegrationRecords(
-        input,
-        environment,
-        exposesSystemTraces,
-        parent?.trackerProjectId,
-    )
+    const integrations = createInitialIntegrationRecords(input, environment, parent?.trackerProjectId)
     const authority =
         environment.tracker.kind === "none"
             ? ({ kind: "workflow", priority } as const)
@@ -295,8 +287,8 @@ function createEntityArtifacts(
 
     const directories =
         input.entity === "epic"
-            ? [ENTITY_LOCAL_DIR, LOCAL_REVIEWS_DIR, LOCAL_SCRATCH_DIR, "tasks"]
-            : [ENTITY_LOCAL_DIR, LOCAL_REVIEWS_DIR, LOCAL_SCRATCH_DIR, LOCAL_DESIGNS_DIR]
+            ? [LOCAL_REVIEWS_DIR, LOCAL_SCRATCH_DIR, "tasks"]
+            : [LOCAL_REVIEWS_DIR, LOCAL_SCRATCH_DIR, LOCAL_DESIGNS_DIR]
     fs.mkdirSync(path.dirname(absoluteDirectory), { recursive: true })
     fs.mkdirSync(absoluteDirectory, { recursive: false })
     for (const directory of directories) fs.mkdirSync(path.join(absoluteDirectory, directory))
@@ -346,7 +338,6 @@ interface ParentEpic {
 function readParentEpic(
     root: string,
     input: TaskInitialization,
-    projectConfig: ProjectConfig,
     forge: GitHubForge | undefined,
     tools: McpToolCatalog,
 ): ParentEpic {
@@ -367,7 +358,6 @@ function readParentEpic(
     const taskBranch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
     if (status.taskTarget === "default") {
         assertEpicDelivered(root, status.branch, epicDelivery ?? { kind: "git-ancestry" }, forge, tools)
-        if (projectConfig.artifacts === "versioned") assertFileReachableFromBranch(root, epicPath, taskBranch)
     } else if (epicDelivery) {
         throw new Error("Epic delivery evidence is only valid for default-target Tasks")
     }
@@ -393,15 +383,6 @@ function readParentEpic(
         epicPath,
         epicContent,
         epicItemLine: selected.line,
-    }
-}
-
-function assertFileReachableFromBranch(root: string, filePath: string, branch: string): void {
-    const relativePath = path.relative(root, filePath).split(path.sep).join("/")
-    const branchBlob = Git.tryRun(root, ["rev-parse", `${branch}:${relativePath}`])
-    const workingBlob = Git.run(root, ["hash-object", "--", filePath])
-    if (!branchBlob || branchBlob !== workingBlob) {
-        throw new Error(`accepted parent Epic artifacts are not reachable from default branch ${branch}`)
     }
 }
 

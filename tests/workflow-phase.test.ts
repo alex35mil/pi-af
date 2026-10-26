@@ -196,7 +196,7 @@ describe("shared workflow Phase", () => {
 
     it("requires the category-specific Phase and active local lifecycle for every entity", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-review-"))
-        const epicDir = path.join(root, ".project/epics/20260101-0000.EPIC-01KDVDNA00.example")
+        const epicDir = path.join(root, ".project/.local/epics/20260101-0000.EPIC-01KDVDNA00.example")
         const common = {
             rawId: "01KDVDNA00",
             title: "Example",
@@ -216,7 +216,7 @@ describe("shared workflow Phase", () => {
                               entity === "task" ? path.join(epicDir, "tasks") : root,
                               `20260101-0000.${id}.example`,
                           )
-                fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
+                fs.mkdirSync(directory, { recursive: true })
                 const metadata = {
                     ...common,
                     id,
@@ -232,7 +232,7 @@ describe("shared workflow Phase", () => {
                     fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
                     for (const state of ["inProgress", "inReview", "done", "canceled"]) {
                         fs.writeFileSync(
-                            path.join(directory, ".local/status.md"),
+                            path.join(directory, "status.md"),
                             `# Status\n\n\`\`\`json\n${JSON.stringify({ state })}\n\`\`\`\n`,
                         )
                         for (const category of entity === "epic"
@@ -250,7 +250,7 @@ describe("shared workflow Phase", () => {
                     JSON.stringify({ ...metadata, phase: "planning" }),
                 )
                 fs.writeFileSync(
-                    path.join(directory, ".local/status.md"),
+                    path.join(directory, "status.md"),
                     '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
                 )
             }
@@ -316,7 +316,7 @@ describe("shared workflow Phase", () => {
                     }
                 }
             }
-            assert.equal(fs.existsSync(path.join(directory, ".local/status.md")), false)
+            assert.equal(fs.existsSync(path.join(directory, "status.md")), false)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

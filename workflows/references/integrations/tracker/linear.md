@@ -9,7 +9,7 @@ This procedure extends [integration roles](../shared.md).
 | Gig | issue | no Epic Project | static format, or the issue's exact `gitBranchName` for `tracker` |
 
 - Kind is workflow-only; Linear gets no entity or kind labels.
-- Project and issue labels carry native Phase in both artifact modes, through the configured mutually exclusive groups. When reconciling Phase, read [Phase](../../phase.md).
+- Project and issue labels carry native Phase through the configured mutually exclusive groups. When reconciling Phase, read [Phase](../../phase.md).
 - Native Priority is fixed: `Urgent=1`, `High=2`, `Medium=3`, `Low=4`, `not set=0`.
 
 ## Setup discovery

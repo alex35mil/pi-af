@@ -24,7 +24,7 @@ function repository(withOrigin = true) {
     git(root, ["config", "user.email", "test@example.com"])
     git(root, ["config", "user.name", "Test"])
     fs.writeFileSync(path.join(root, "README.md"), "base\n")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     git(root, ["add", "README.md", ".gitignore"])
     git(root, ["commit", "-m", "initial"])
     if (withOrigin) {
@@ -34,7 +34,7 @@ function repository(withOrigin = true) {
     fs.mkdirSync(path.join(root, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(root, ".project", "config.json"),
-        JSON.stringify({ artifacts: "versioned", branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "identifier" } }),
     )
     prepareArtifactPersistence(root)
     return { parent, root, origin }
@@ -76,7 +76,7 @@ function createDoneGig(root: string, withPullRequest: boolean) {
             }),
         )
         fs.writeFileSync(
-            path.join(root, gig.directory, ".local/metadata.json"),
+            path.join(root, gig.directory, "resource-ids.json"),
             JSON.stringify({
                 entityId: status.id,
                 resourceIds: [
@@ -97,7 +97,7 @@ function createDoneGig(root: string, withPullRequest: boolean) {
     }
     fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`)
     fs.writeFileSync(
-        path.join(root, gig.directory, ".local", "status.md"),
+        path.join(root, gig.directory, "status.md"),
         '# Status\n\n```json\n{\n  "state": "done"\n}\n```\n',
     )
     return { directory: gig.directory, branch: status.branch.name, target: status.branch.target }
@@ -191,7 +191,7 @@ describe("Deliverable branch cleanup", () => {
             const applied = runDeliveryCleanup(input, { cwd: root })
 
             assert.equal(applied.targetCommit, git(root, ["rev-parse", "FETCH_HEAD"]))
-            assert.equal(fs.existsSync(path.join(root, gig.directory, ".local/metadata.json")), true)
+            assert.equal(fs.existsSync(path.join(root, gig.directory, "resource-ids.json")), true)
             assert.equal(applied.deletedBranch, gig.branch)
             assert.equal(git(root, ["branch", "--show-current"]), gig.target)
             assert.equal(cloneBranchExists(root, gig.branch), false)
@@ -444,7 +444,7 @@ describe("Deliverable branch cleanup", () => {
             metadata.phase = "selfReview"
             fs.writeFileSync(metadataPath, JSON.stringify(metadata))
             fs.writeFileSync(
-                path.join(root, task.directory, ".local/status.md"),
+                path.join(root, task.directory, "status.md"),
                 '# Status\n\n```json\n{"state":"done"}\n```\n',
             )
             commitBranch(root, taskBranch)
@@ -519,7 +519,7 @@ describe("Deliverable branch cleanup", () => {
         const { parent, root } = repository()
         try {
             const gig = createDoneGig(root, false)
-            const statusPath = path.join(root, gig.directory, ".local", "status.md")
+            const statusPath = path.join(root, gig.directory, "status.md")
             fs.writeFileSync(statusPath, '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n')
             assert.throws(
                 () =>

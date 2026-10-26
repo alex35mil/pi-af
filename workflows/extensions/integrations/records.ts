@@ -314,7 +314,6 @@ export function assertTaskSourceProject(input: IntegrationInitialization, parent
 export function createInitialIntegrationRecords(
     input: IntegrationInitialization,
     environment: WorkflowEnvironment,
-    exposesSystemTraces: boolean,
     parentLinearProjectId?: string,
 ): IntegrationRecord[] {
     switch (environment.tracker.kind) {
@@ -331,7 +330,6 @@ export function createInitialIntegrationRecords(
                           external: { issueNumber: input.source.issueNumber },
                           planComment: { state: "unpublished" },
                           operations: [
-                              ...(exposesSystemTraces ? ["apply configured Kind label and Internal ID"] : []),
                               "move Project Status to In Progress",
                               "project Planning Phase",
                               ...(input.entity === "task" ? ["attach Task issue to parent Epic issue"] : []),

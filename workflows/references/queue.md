@@ -21,15 +21,11 @@ Both hold work that hasn't started. Adding work creates no workflow ID, `.projec
 1. **Read configuration.** Call `inspect_integrations` with the `target`. Stop and report a missing or invalid tracker.
 2. **Read the guides.** Read [communication](./communication.md) and the provider guide: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md). When it refers to shared rules, read [integration roles](./integrations/shared.md).
 3. **Draft the intake:** the title, the description, the tracker destination, Backlog or Todo, and a configured Priority or `not set`.
-4. **Kind** (versioned GitHub only):
-   - Reuse the Kind the request states (Epic, Feature, Bugfix, Research, Refactor, Audit, or Chore); otherwise recommend the best fit.
-   - Present the Kind, or `not set`, with the other fields. `not set` adds no Kind label.
-   - Unversioned GitHub doesn't ask for Kind, because queue intake has nowhere private to keep it.
-5. **Entity type.** Require `epic`, `task`, or `gig` before checking mutation capability.
+4. **Entity type.** Require `epic`, `task`, or `gig` before checking mutation capability.
    - A Task needs its initialized parent Epic and the provider relationship in the selected project, not another checkout.
    - Recommend a standalone Gig for independent workflow reports.
-6. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
-   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, and `kind` (`not set` when unused). Reconcile any difference from the approved destination; changed content or destination needs approval again.
+5. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
+   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, and `kind: "not set"`. Reconcile any difference from the approved destination; changed content or destination needs approval again.
    - Use only its selected registered tools, under normal permissions. Let native mutations validate their own inputs; don't preflight labels, options, workspaces, or statuses.
    - Never load the source project's credentials or run its MCP settings.
 
@@ -38,11 +34,11 @@ Both hold work that hasn't started. Adding work creates no workflow ID, `.projec
 **Creating:**
 
 - An approved intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
-- **GitHub:** create an ordinary issue with only the approved versioned Kind (omit for `not set`) and, for a Task, the parent. Add it to the configured Project and set Status and Priority with named writes. The Task parent and issue-scoped fields are separate calls.
+- **GitHub:** create an ordinary issue with, for a Task, the parent. Add it to the configured Project and set Status and Priority with named writes. The Task parent and issue-scoped fields are separate calls.
 - **Linear:** create only the selected Project, Task issue with parent Project, or projectless Gig, with team, state, and Priority together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
-Apart from that GitHub Kind label, adding work assigns no workflow ID, native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.
+Adding work assigns no workflow ID, Kind label, native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.
 
 ## Prepare a workflow report
 
@@ -90,5 +86,4 @@ When the user starts a Backlog or Todo object through `/epic`, `/task`, or `/gig
 - Reuse that object and its Priority, create the workflow entity and branch contract, and move straight to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress.
 - Both providers keep the request's title or name and description.
 - The first accepted plan publishes as one managed GitHub comment or one Linear document attached to the issue or Project, and later updates reuse it. This is the same for workflow-created and externally submitted items; no ownership question is needed. Queue intake itself publishes no plan.
-- **Phase** ([Phase](./phase.md)): GitHub uses the Project Phase field, Linear the configured label group, in both artifact modes. Without a tracker, Phase stays in metadata.
-- **Versioned mode** also reconciles the GitHub Kind label and may set the Internal ID at initialization. Other system metadata stays private in unversioned mode.
+- **Phase** ([Phase](./phase.md)): GitHub uses the Project Phase field, Linear the configured label group. Without a tracker, Phase stays in metadata. Other system metadata stays private.

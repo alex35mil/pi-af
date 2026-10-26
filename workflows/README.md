@@ -39,7 +39,6 @@ See [incoming PR handling](references/pr/incoming.md).
 
 Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help set up project workflows. Guided setup previews changes and asks for approval; it never stages files. It supports:
 
-- `versioned` or `unversioned` artifacts;
 - one branch format for every entity;
 - independent tracker/forge roles and official MCP registration;
 - read-only Linear workspace discovery;
@@ -88,7 +87,7 @@ Canceled:    terminal unsuccessful status for queued or initialized work
 
 - Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Interim and final reviews, and your review of delivered work, use Self-Review.
 - Status stays In Progress through all of these local loops.
-- Phase shows as a GitHub Project field or a Linear label group in both artifact modes; without a tracker it stays in workflow metadata. See [Phase](references/phase.md).
+- Phase shows as a GitHub Project field or a Linear label group; without a tracker it stays in workflow metadata. See [Phase](references/phase.md).
 
 **Submitting and shipping:**
 
@@ -102,9 +101,9 @@ See [Deliverable guidance](references/deliverable.md) for the full flow and [Epi
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
-- Record the approved routing intent before committing Epic planning, and deliver the plan and metadata together.
+- Record the approved routing intent at Epic plan acceptance; it stays local.
 - Selecting default doesn't prove delivery: every new or adopted default-target Task requires the planning work to be delivered first.
-- Delivery is checked by local ancestry or a verified merged GitHub PR, which also covers squash merges, along with repository, branch, revision, and versioned-plan checks.
+- Delivery is checked by local ancestry or a verified merged GitHub PR, which also covers squash merges, along with repository, branch, and revision checks.
 - Changing the strategy affects future Tasks only.
 
  See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
@@ -128,7 +127,7 @@ Accepted plans and completion artifacts start with a concise `## Overview`, foll
 
 GitHub folds use `<details>`; Linear uses native `+++` sections. Nothing is summarized or dropped.
 
-- Unversioned disclosure approval covers visible and folded content alike.
+- Disclosure approval covers visible and folded content alike.
 - Older documents are brought into this shape through normal review before publication; reads never rewrite completed artifacts.
 - Local tests check the generated Markdown, not live Linear rendering.
 

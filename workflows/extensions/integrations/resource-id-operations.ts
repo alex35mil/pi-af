@@ -32,9 +32,9 @@ export interface ResourceIdsContext {
 
 export function resolveResourceIdsContext(cwd: string, entityDir: string, resource: ResourceKind): ResourceIdsContext {
     const root = project.resolveRootDir(cwd)
-    const config = assertArtifactPersistencePrepared(root)
+    assertArtifactPersistencePrepared(root)
     const loaded = loadIntegrationConfig(root)
-    const environment = resolveWorkflowEnvironment(config, loaded.state === "enabled" ? loaded.config : undefined)
+    const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
     const directory = resolveEntityDirectory(root, cwd, entityDir)
     const status = readEntityStatus(directory)
     const tracker = status.integrations.find((entry) => entry.role === "tracker")

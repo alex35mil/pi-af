@@ -10,7 +10,9 @@ import {
     prepareArtifactPersistence,
 } from "../workflows/extensions/__lib/project-config.ts"
 
-function fixture(mode: "versioned" | "unversioned" = "versioned") {
+const GIG_NOTES = ".project/.local/gigs/example/notes.md"
+
+function fixture() {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workflow-persistence-")))
     const previousTrace = process.env.GIT_TRACE
     const previousIndex = process.env.GIT_INDEX_FILE
@@ -20,12 +22,12 @@ function fixture(mode: "versioned" | "unversioned" = "versioned") {
     git("init", "-b", "main")
     git("config", "user.email", "test@example.com")
     git("config", "user.name", "Test")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     git("add", ".gitignore")
     git("commit", "-m", "initial")
     fs.mkdirSync(path.join(root, ".project"))
     const config = path.join(root, ".project/config.json")
-    fs.writeFileSync(config, JSON.stringify({ artifacts: mode, branches: { format: "identifier" } }))
+    fs.writeFileSync(config, JSON.stringify({ branches: { format: "identifier" } }))
     const trace = path.join(root, "git.trace")
     process.env.GIT_TRACE = trace
     prepareArtifactPersistence(root)
@@ -35,6 +37,10 @@ function fixture(mode: "versioned" | "unversioned" = "versioned") {
         config,
         exclude: path.join(root, ".git/info/exclude"),
         scans: () => (fs.readFileSync(trace, "utf8").match(/built-in: git ls-files/g) ?? []).length,
+        writeNotes: (base = root) => {
+            fs.mkdirSync(path.dirname(path.join(base, GIG_NOTES)), { recursive: true })
+            fs.writeFileSync(path.join(base, GIG_NOTES), "private")
+        },
         cleanup: () => {
             if (previousTrace === undefined) delete process.env.GIT_TRACE
             else process.env.GIT_TRACE = previousTrace
@@ -47,22 +53,19 @@ function fixture(mode: "versioned" | "unversioned" = "versioned") {
 
 describe("artifact persistence revalidation", () => {
     it("skips membership scans for unchanged inputs and always scans explicit preparation", () => {
-        for (const mode of ["versioned", "unversioned"] as const) {
-            const f = fixture(mode)
-            try {
-                const before = f.scans()
-                assertArtifactPersistencePrepared(f.root)
-                assertArtifactPersistencePrepared(f.root)
-                assert.equal(f.scans(), before)
-                fs.mkdirSync(path.join(f.root, ".project/gigs/example/.local"), { recursive: true })
-                fs.writeFileSync(path.join(f.root, ".project/gigs/example/.local/notes.md"), "notes")
-                assertArtifactPersistencePrepared(f.root)
-                assert.equal(f.scans(), before)
-                prepareArtifactPersistence(f.root)
-                assert.ok(f.scans() > before)
-            } finally {
-                f.cleanup()
-            }
+        const f = fixture()
+        try {
+            const before = f.scans()
+            assertArtifactPersistencePrepared(f.root)
+            assertArtifactPersistencePrepared(f.root)
+            assert.equal(f.scans(), before)
+            f.writeNotes()
+            assertArtifactPersistencePrepared(f.root)
+            assert.equal(f.scans(), before)
+            prepareArtifactPersistence(f.root)
+            assert.ok(f.scans() > before)
+        } finally {
+            f.cleanup()
         }
     })
 
@@ -71,17 +74,15 @@ describe("artifact persistence revalidation", () => {
         try {
             const index = path.join(f.root, ".git/index")
             const original = fs.readFileSync(index)
-            const local = path.join(f.root, ".project/gigs/example/.local")
-            fs.mkdirSync(local, { recursive: true })
-            fs.writeFileSync(path.join(local, "notes.md"), "private")
-            f.git("add", "-f", ".project/gigs/example/.local/notes.md")
+            f.writeNotes()
+            f.git("add", "-f", GIG_NOTES)
             const unsafe = fs.readFileSync(index)
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /entity \.local/)
+            assert.throws(() => assertArtifactPersistencePrepared(f.root), /must remain outside Git/)
             assert.deepEqual(fs.readFileSync(index), unsafe)
-            f.git("reset", "--", ".project/gigs/example/.local/notes.md")
+            f.git("reset", "--", GIG_NOTES)
             assertArtifactPersistencePrepared(f.root)
             fs.writeFileSync(index, unsafe)
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /entity \.local/)
+            assert.throws(() => assertArtifactPersistencePrepared(f.root), /must remain outside Git/)
             fs.writeFileSync(index, original)
             assertArtifactPersistencePrepared(f.root)
         } finally {
@@ -90,15 +91,16 @@ describe("artifact persistence revalidation", () => {
     })
 
     it("includes HEAD when an unchanged index now represents a staged deletion", () => {
-        const f = fixture("unversioned")
+        const f = fixture()
         try {
             const index = path.join(f.root, ".git/index")
             const before = fs.readFileSync(index)
-            f.git("add", "-f", ".project/config.json")
-            f.git("commit", "-m", "tracked workflow config")
+            f.writeNotes()
+            f.git("add", "-f", GIG_NOTES)
+            f.git("commit", "-m", "tracked local artifact")
             fs.writeFileSync(index, before)
             assert.deepEqual(fs.readFileSync(index), before)
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /in Git or staged/)
+            assert.throws(() => assertArtifactPersistencePrepared(f.root), /must remain outside Git/)
             assert.deepEqual(fs.readFileSync(index), before)
         } finally {
             f.cleanup()
@@ -109,12 +111,9 @@ describe("artifact persistence revalidation", () => {
         const f = fixture()
         try {
             fs.writeFileSync(path.join(f.root, ".gitignore"), "")
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /versioned artifacts require/)
-            fs.writeFileSync(path.join(f.root, ".gitignore"), ".project/**/.local/\n")
+            assert.throws(() => assertArtifactPersistencePrepared(f.root), /\/\.project\/\.local\/ in \.gitignore/)
+            fs.writeFileSync(path.join(f.root, ".gitignore"), "/.project/.local/\n")
             assertArtifactPersistencePrepared(f.root)
-            fs.appendFileSync(f.exclude, "\n/.project/\n")
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /remove it manually/)
-            fs.writeFileSync(f.exclude, "")
             fs.writeFileSync(
                 path.join(f.root, ".project/config.local.json"),
                 JSON.stringify({ branches: { username: "alex" } }),
@@ -125,10 +124,7 @@ describe("artifact persistence revalidation", () => {
             assert.throws(() => assertArtifactPersistencePrepared(f.root), /not prepared/)
             prepareArtifactPersistence(f.root)
             const before = f.scans()
-            fs.writeFileSync(
-                f.config,
-                JSON.stringify({ artifacts: "versioned", branches: { format: "username/identifier" } }),
-            )
+            fs.writeFileSync(f.config, JSON.stringify({ branches: { format: "username/identifier" } }))
             assert.equal(assertArtifactPersistencePrepared(f.root).branches.username, "alex")
             assert.ok(f.scans() > before)
             fs.writeFileSync(
@@ -167,14 +163,9 @@ describe("artifact persistence revalidation", () => {
             f.git("commit", "-m", "workflow configuration")
             f.git("worktree", "add", "-b", "worker", worker)
             prepareArtifactPersistence(worker)
-            const local = path.join(worker, ".project/gigs/example/.local")
-            fs.mkdirSync(local, { recursive: true })
-            fs.writeFileSync(path.join(local, "notes.md"), "private")
-            cp.execFileSync("git", ["add", "-f", ".project/gigs/example/.local/notes.md"], {
-                cwd: worker,
-                stdio: "pipe",
-            })
-            assert.throws(() => assertArtifactPersistencePrepared(worker), /entity \.local/)
+            f.writeNotes(worker)
+            cp.execFileSync("git", ["add", "-f", GIG_NOTES], { cwd: worker, stdio: "pipe" })
+            assert.throws(() => assertArtifactPersistencePrepared(worker), /must remain outside Git/)
             assertArtifactPersistencePrepared(f.root)
         } finally {
             fs.rmSync(worker, { recursive: true, force: true })

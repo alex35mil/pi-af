@@ -102,7 +102,7 @@ describe("workflow tool discovery", () => {
         )
         const task = tools.find((tool) => tool.name === "init_task")!.parameters
         assert.ok(!accepts(task, input))
-        assert.ok(accepts(task, { ...input, parentEpicDir: ".project/epics/example", epicItemTitle: "Example" }))
+        assert.ok(accepts(task, { ...input, parentEpicDir: ".project/.local/epics/example", epicItemTitle: "Example" }))
     })
 
     it("discovers initialization through native Codemode without declaring or inlining the catalog", async () => {

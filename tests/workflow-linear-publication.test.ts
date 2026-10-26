@@ -27,7 +27,6 @@ const url = "https://linear.app/example/document/plan-slug"
 
 function fixture(
     kind: "epic" | "task" | "gig" = "gig",
-    mode: "versioned" | "unversioned" = "versioned",
     adopted = false,
 ) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "linear-publication-"))
@@ -35,7 +34,7 @@ function fixture(
     git("init", "-b", "main")
     git("config", "user.email", "test@example.com")
     git("config", "user.name", "Test")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     git("add", ".gitignore")
     git("commit", "-m", "initial")
     fs.mkdirSync(path.join(root, ".project"))
@@ -49,7 +48,7 @@ function fixture(
     }
     fs.writeFileSync(
         path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts: mode, branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "identifier" } }),
     )
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
@@ -254,60 +253,59 @@ describe("managed Linear plan documents", () => {
             assert.equal(Value.Check(PlanDocumentSchema, state), false)
     })
     for (const kind of ["epic", "task", "gig"] as const)
-        for (const mode of ["versioned", "unversioned"] as const)
-            for (const adopted of [false, true])
-                it(`publishes and updates ${kind}/${mode}/${adopted ? "adopted" : "new"}`, async () => {
-                    const f = fixture(kind, mode, adopted)
-                    try {
-                        const brief = fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8")
-                        const prepared = await f.prepare()
-                        assert.ok(prepared.state === "mutation-needed")
-                        const args = prepared.mutation.arguments
-                        assert.equal(prepared.mutation.tool, "mcp__linear__save_document")
-                        assert.equal(args.title, "Plan")
-                        assert.ok(typeof args.content === "string")
-                        assert.match(args.content, /^Keep the original request\.\n\n## Highlights/)
-                        assert.match(args.content, /\+\+\+ Full plan/)
-                        assert.doesNotMatch(args.content, /GIG-|TASK-|EPIC-|\.project\//)
-                        assert.equal(
-                            args[kind === "epic" ? "project" : "issue"],
-                            kind === "epic" ? "project-uuid" : "issue-uuid",
-                        )
-                        assert.equal("description" in args, false)
-                        const pending = f.saved().integrations[0].planDocument
-                        assert.equal(pending.state, "pending")
-                        assert.ok(args.content.endsWith(planPublicationMarker(pending.token)))
-                        await f.record({
-                            ...prepared.mutation,
-                            response: { id: documentId, url, content: "truncated native create preview" },
-                        })
-                        assert.equal(f.saved().integrations[0].planDocument.state, "published")
-                        const verify = await f.prepare()
-                        assert.equal(verify.state, "verification-required")
-                        const updated = await f.update(f.read(args.content))
-                        assert.ok(updated.state === "mutation-needed")
-                        assert.deepEqual(Object.keys(updated.mutation.arguments).sort(), ["content", "id"])
-                        assert.equal(updated.mutation.arguments.id, documentId)
-                        assert.deepEqual(f.saved().integrations[0].planDocument, {
-                            state: "published",
-                            token: pending.token,
-                            id: documentId,
-                            url,
-                        })
-                        assert.equal(fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8"), brief)
-                        const context = buildIntegrationContext(
-                            { cwd: f.root } as ExtensionContext,
-                            { operation: "artifactProjection", entityDir: f.directory },
-                            tools,
-                        )
-                        assert.equal(context.state, "enabled")
-                        if (context.state !== "enabled" || context.projection.mode === "none") assert.fail()
-                        assert.match(context.projection.rendering, /tracker_publication/)
-                        readEntityStatus(path.join(f.root, f.directory))
-                    } finally {
-                        f.dispose()
-                    }
-                })
+        for (const adopted of [false, true])
+            it(`publishes and updates ${kind}/${adopted ? "adopted" : "new"}`, async () => {
+                const f = fixture(kind, adopted)
+                try {
+                    const brief = fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8")
+                    const prepared = await f.prepare()
+                    assert.ok(prepared.state === "mutation-needed")
+                    const args = prepared.mutation.arguments
+                    assert.equal(prepared.mutation.tool, "mcp__linear__save_document")
+                    assert.equal(args.title, "Plan")
+                    assert.ok(typeof args.content === "string")
+                    assert.match(args.content, /^Keep the original request\.\n\n## Highlights/)
+                    assert.match(args.content, /\+\+\+ Full plan/)
+                    assert.doesNotMatch(args.content, /GIG-|TASK-|EPIC-|\.project\//)
+                    assert.equal(
+                        args[kind === "epic" ? "project" : "issue"],
+                        kind === "epic" ? "project-uuid" : "issue-uuid",
+                    )
+                    assert.equal("description" in args, false)
+                    const pending = f.saved().integrations[0].planDocument
+                    assert.equal(pending.state, "pending")
+                    assert.ok(args.content.endsWith(planPublicationMarker(pending.token)))
+                    await f.record({
+                        ...prepared.mutation,
+                        response: { id: documentId, url, content: "truncated native create preview" },
+                    })
+                    assert.equal(f.saved().integrations[0].planDocument.state, "published")
+                    const verify = await f.prepare()
+                    assert.equal(verify.state, "verification-required")
+                    const updated = await f.update(f.read(args.content))
+                    assert.ok(updated.state === "mutation-needed")
+                    assert.deepEqual(Object.keys(updated.mutation.arguments).sort(), ["content", "id"])
+                    assert.equal(updated.mutation.arguments.id, documentId)
+                    assert.deepEqual(f.saved().integrations[0].planDocument, {
+                        state: "published",
+                        token: pending.token,
+                        id: documentId,
+                        url,
+                    })
+                    assert.equal(fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8"), brief)
+                    const context = buildIntegrationContext(
+                        { cwd: f.root } as ExtensionContext,
+                        { operation: "artifactProjection", entityDir: f.directory },
+                        tools,
+                    )
+                    assert.equal(context.state, "enabled")
+                    if (context.state !== "enabled" || context.projection.mode === "none") assert.fail()
+                    assert.match(context.projection.rendering, /tracker_publication/)
+                    readEntityStatus(path.join(f.root, f.directory))
+                } finally {
+                    f.dispose()
+                }
+            })
 
     it("validates tools and layout before consuming creation, and serializes concurrent preparation", async () => {
         const f = fixture()

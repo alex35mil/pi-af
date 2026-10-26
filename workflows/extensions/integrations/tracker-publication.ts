@@ -104,9 +104,9 @@ export async function trackerPublication(cwd: string, raw: TrackerPublicationInp
     const root = project.resolveRootDir(cwd)
     const directory = resolveEntityDirectory(root, cwd, input.entityDir)
     return withFileMutationQueue(path.join(directory, ENTITY_METADATA_FILE), async () => {
-        const config = assertArtifactPersistencePrepared(root)
+        assertArtifactPersistencePrepared(root)
         const loaded = loadIntegrationConfig(root)
-        const environment = resolveWorkflowEnvironment(config, loaded.state === "enabled" ? loaded.config : undefined)
+        const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
         const status = readEntityStatus(directory)
         assertEntityEnvironment(status, environment)
         assertEntityBranchReady(status)
