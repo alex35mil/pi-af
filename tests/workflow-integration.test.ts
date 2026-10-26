@@ -124,7 +124,7 @@ function prepareWorkflowProject(root: string, tracker: unknown = config()): void
     fs.mkdirSync(path.join(root, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(root, ".project", "config.json"),
-        JSON.stringify({ branches: { format: "number-title" } }),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
     )
     fs.writeFileSync(
         path.join(root, ".project", "integrations.json"),

@@ -54,7 +54,10 @@ function fixture(diverged = false) {
     git(root, "add", ".")
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),

@@ -112,7 +112,7 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(repository, ".gitignore"), "/.project/.local/\n")
             fs.writeFileSync(
                 path.join(repository, ".project/config.json"),
-                JSON.stringify({ branches: { format: "number-title" } }),
+                JSON.stringify({ branches: { format: "identifier-title" } }),
             )
             prepareArtifactPersistence(repository)
             const metadata = {

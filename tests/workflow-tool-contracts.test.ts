@@ -347,7 +347,7 @@ describe("workflow model-facing contracts", () => {
                 fs.mkdirSync(path.join(root, ".project"))
                 fs.writeFileSync(
                     path.join(root, ".project/config.json"),
-                    JSON.stringify({ branches: { format: "number-title" } }),
+                    JSON.stringify({ branches: { format: "identifier-title" } }),
                 )
                 const repository = { owner: "fixture", repo: "app" }
                 const statuses = {

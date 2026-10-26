@@ -49,7 +49,10 @@ function fixture(kind: Kind = "clean") {
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
         JSON.stringify({ tracker: minimalTracker(), forge }),

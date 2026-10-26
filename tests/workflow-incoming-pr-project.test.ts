@@ -122,7 +122,10 @@ function fixture() {
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     const config = {
         forge: { provider: "github", mcpServer: "forge", repository },
         tracker: {

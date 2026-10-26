@@ -49,7 +49,10 @@ function fixture(tracker: "github" | "linear" = "github", delivered = true) {
     fs.writeFileSync(path.join(root, "README.md"), "base\n")
     fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     const states = {
         backlog: "Backlog",
         todo: "Todo",

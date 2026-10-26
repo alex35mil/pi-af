@@ -36,7 +36,10 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
     git("add", ".gitignore")
     git("commit", "-m", "initial")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     const kinds = Object.fromEntries(
         ["feature", "bugfix", "research", "refactor", "audit", "chore"].map((k) => [k, `Kind: ${k}`]),
     )
