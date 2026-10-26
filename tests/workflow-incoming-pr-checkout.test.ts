@@ -13,6 +13,7 @@ import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.t
 import { IncomingCheckoutSchema, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 function fixture(diverged = false) {
@@ -53,12 +54,12 @@ function fixture(diverged = false) {
     git(root, "add", ".")
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
-    fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ forge }))
+    fs.writeFileSync(
+        path.join(root, ".project/integrations.json"),
+        JSON.stringify({ tracker: minimalTracker(), forge }),
+    )
     prepareArtifactPersistence(root)
     fs.writeFileSync(path.join(root, "README.md"), "parent staged\n")
     git(root, "add", "README.md")
@@ -266,10 +267,7 @@ describe("registered incoming PR checkout tool", () => {
                     fs.appendFileSync(path.join(f.checkout, "src/example.lua"), "unexpected\n")
                     if (change === "staged") f.git(f.checkout, "add", "src/example.lua")
                 }
-                const extra = path.join(
-                    f.checkout,
-                    change === "ignored" ? "ignored/unexpected.txt" : "unexpected.txt",
-                )
+                const extra = path.join(f.checkout, change === "ignored" ? "ignored/unexpected.txt" : "unexpected.txt")
                 if (change === "untracked" || change === "ignored") fs.writeFileSync(extra, "preserve me\n")
                 if (change === "head") f.git(f.checkout, "reset", "--soft", f.head)
                 if (change === "revision") selected.response.base.sha = f.common

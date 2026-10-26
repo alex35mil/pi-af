@@ -18,7 +18,6 @@ export const GLOBAL_WORKFLOW_SETTINGS_NAME = "workflows"
 export const LOCAL_PROJECT_CONFIG_EXCLUDE = `/${LOCAL_PROJECT_CONFIG_PATH}`
 // The single repository rule that keeps every workflow entity and private evidence out of Git.
 export const PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}/`
-const UPGRADE_POINTER = "see UPGRADING.md"
 
 const BranchConfigurationSchema = Type.Object({ format: BranchFormatSchema }, { additionalProperties: false })
 const ReviewConfigurationSchema = Type.Object(
@@ -65,11 +64,6 @@ export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: s
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`invalid ${PROJECT_CONFIG_PATH}: ${message}`)
-    }
-    if (input && typeof input === "object" && "artifacts" in input) {
-        throw new Error(
-            `invalid ${PROJECT_CONFIG_PATH}: "artifacts" was removed; workflow artifacts are always local; ${UPGRADE_POINTER}`,
-        )
     }
     if (!Value.Check(ProjectConfigSchema, input)) {
         const details = [...Value.Errors(ProjectConfigSchema, input)]
@@ -243,7 +237,7 @@ function formatUsesUsername(format: BranchFormat): boolean {
 function assertProjectLocalIgnored(root: string): void {
     if (!hasExcludeEntry(path.join(root, ".gitignore"), PROJECT_LOCAL_IGNORE)) {
         throw new Error(
-            `workflow artifacts require ${PROJECT_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing; ${UPGRADE_POINTER}`,
+            `workflow artifacts require ${PROJECT_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing`,
         )
     }
 }

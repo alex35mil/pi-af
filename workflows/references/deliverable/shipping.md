@@ -13,7 +13,7 @@ commit approved work → push the stored branch → create or update the PR → 
 - Accepting the final completion artifact authorizes submission, not shipping. An ordinary resume or an externally changed tracker status is not a request to ship.
 - Shipping never authorizes merging an Epic, choosing a different target or merge method, or deleting remote or Epic branches.
 
-## With a GitHub forge
+## Merge and clean up
 
 Follow the [repository merge contract](../integrations/forge/merge.md).
 
@@ -23,12 +23,10 @@ Follow the [repository merge contract](../integrations/forge/merge.md).
    - `merged`: reuse `roles.forge.shipping.merge` as delivery proof.
    - `blocked`: report `roles.forge.shipping.reason` and stop.
 3. Before setting Done, confirm with a fresh PR get that the PR is merged, with the expected repository, head, base, head SHA, and `merged_at`. After a new merge, read only the missing facts.
-4. Set Done through the existing authority. Clear native Phase and keep the last metadata Phase. The lifecycle update never creates a commit.
-5. Call `cleanup_github_delivery_branch` once with `completionAuthority` (the authority whose Done you confirmed) and the merged PR read as `evidence`.
+4. Set native Status to Done. Clear native Phase and keep the last metadata Phase. The lifecycle update never creates a commit.
+5. Call `cleanup_delivery_branch` once with the merged PR read as `evidence`.
 
-## Without a forge
-
-Confirm delivery by Git ancestry. Never merge locally or merge an Epic. After Done is confirmed, call `cleanup_ancestry_delivery_branch` once with `completionAuthority`.
+Never merge locally or merge an Epic.
 
 ## What cleanup does
 
@@ -36,7 +34,7 @@ The cleanup tool:
 
 - checks out only the stored target;
 - fast-forwards it to freshly fetched origin;
-- requires exact equality with origin and safe lifecycle, head, and worktree state;
+- requires exact equality with origin, the recorded PR and head, and safe worktree state. It doesn't check lifecycle; setting Done comes first;
 - deletes only the local Deliverable branch.
 
 An Epic-target Task stays on the Epic branch and leaves main untouched.

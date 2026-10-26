@@ -69,14 +69,10 @@ function normalizeRepository(repository: Repository): Repository {
 export function incomingPullRequestContext(cwd: string, reference: string, tools: McpToolCatalog) {
     const root = project.resolveRootDir(cwd)
     assertArtifactPersistencePrepared(root)
-    const loaded = loadIntegrationConfig(root)
-    if (loaded.state !== "enabled" || !loaded.config.forge)
-        throw new Error("Incoming PR handling requires a configured GitHub forge")
-    const forge = loaded.config.forge
+    const { forge, tracker } = loadIntegrationConfig(root)
     const selected = parseIncomingReference(reference, forge.repository)
-    const tracker = loaded.config.tracker
     const board =
-        tracker?.provider === "github"
+        tracker.provider === "github"
             ? {
                   state: "enabled" as const,
                   mcpServer: tracker.mcpServer,
@@ -96,7 +92,7 @@ export function incomingPullRequestContext(cwd: string, reference: string, tools
               }
             : {
                   state: "disabled" as const,
-                  reason: "No GitHub Project is configured; forge-only inspection remains available.",
+                  reason: "The tracker isn't a GitHub Project; forge-only inspection remains available.",
               }
     return {
         state: "enabled" as const,

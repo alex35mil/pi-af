@@ -9,6 +9,7 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import type { IncomingProjectContextInput } from "../workflows/extensions/integrations/forge/github/incoming-pr-project.ts"
 
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("forge", "board")
@@ -121,10 +122,7 @@ function fixture() {
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const config = {
         forge: { provider: "github", mcpServer: "forge", repository },
         tracker: {
@@ -152,7 +150,6 @@ function fixture() {
                     values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                 },
                 priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
-                internalId: { scope: "project", field: "Internal ID" },
             },
         },
     }
@@ -503,7 +500,10 @@ describe("maintainer-controlled incoming PR Project", () => {
             f.plan()
             assert.equal(f.git("status", "--porcelain"), before)
             assert.deepEqual(fs.readFileSync(path.join(f.root, ".git/index")), index)
-            fs.writeFileSync(path.join(f.root, ".project/integrations.json"), JSON.stringify({ forge: f.config.forge }))
+            fs.writeFileSync(
+                path.join(f.root, ".project/integrations.json"),
+                JSON.stringify({ tracker: minimalTracker(), forge: f.config.forge }),
+            )
             assert.equal(f.plan().state, "blocked")
             const context = buildIntegrationContext(
                 { cwd: f.root } as never,

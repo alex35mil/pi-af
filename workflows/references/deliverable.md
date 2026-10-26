@@ -19,18 +19,15 @@ Related files, read when the step is reached:
    - `<repo>/.project/policies.md` when present. Apply it throughout.
 
    Create missing notes or pending files when continuing local work.
-3. Lifecycle authority:
-   - workflow authority: read `status.md`;
-   - tracker authority: that file must be absent; read lifecycle and Priority fresh from the provider.
-4. Branch: require `metadata.branch.state: ready`. Switch to its `name` and verify its stored `start` and `target`. For a pending Linear branch, finish tracker binding and call `finalize_linear_branch` first. A ready branch contract is immutable. Never invent a branch name or base.
+3. Read lifecycle and Priority fresh from the tracker.
+4. Branch: switch to the stored branch `name` and verify its stored `start` and `target`. The branch contract is immutable. Never invent a branch name or base.
 
 ## Integration boundary
 
-After initialization, call `initialize_integration` with the Deliverable `entityDir`. On resume, reuse the `resume_integration` result from the artifact gate.
+Initialization starts from the tracker object ([integration roles](./integrations/shared.md#initialize-from-the-tracker-object)), then `initialize_integration` sets up the board. On resume, reuse the `resume_integration` result from the artifact gate.
 
-- `disabled`: continue silently.
-- `enabled`: read [integration roles](./integrations/shared.md), then the provider reference for each enabled role: [GitHub tracker](./integrations/tracker/github.md), [Linear tracker](./integrations/tracker/linear.md), or [GitHub forge](./integrations/forge/github.md). Report an unavailable role without blocking the other.
-- Unavailable role, permission denial, invalid configuration, or provider failure: follow the [MCP boundary](./core.md#mcp-boundary). Never substitute workflow authority for an unavailable tracker.
+- Read [integration roles](./integrations/shared.md), then the provider reference for each role: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md), and [GitHub forge](./integrations/forge/github.md). Report an unavailable role without blocking the other.
+- Permission denial, invalid configuration, or provider failure: follow the [MCP boundary](./core.md#mcp-boundary). Nothing local replaces an unavailable tracker.
 
 After every accepted `plan.md` change, publish the plan as described in [provider bodies](./integrations/shared.md#provider-bodies).
 
@@ -78,7 +75,7 @@ Every plan, interim, and final review follows [review](./review.md).
 
 ## Implementation and verification
 
-1. When implementation begins, set Execution through the Phase tool for the current authority. Lifecycle stays `inProgress`.
+1. When implementation begins, set Execution through the Phase tool for the configured tracker. Lifecycle stays `inProgress`.
 2. Implement the complete approved change at its owning abstraction. Leave unrelated working-tree changes untouched.
 3. Run focused checks while developing. Run all plan and Project Policy verification before final review.
 4. A Task runs its skill's parent synchronization. A Gig has none.

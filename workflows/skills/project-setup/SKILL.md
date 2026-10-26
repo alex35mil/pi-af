@@ -81,7 +81,7 @@ For example:
 1. Tracker and forge roles, and their providers.
 2. Reuse or add MCP registrations; restart and resume when new ones are added.
 3. For Linear, the read-only workspace inspection.
-4. Branch naming, filtered by tracker and informed by Linear inspection.
+4. Branch naming, filtered by tracker.
 5. Provider configuration for the selected roles. Once GitHub forge and Project are both known, offer fork-only incoming PR intake.
 6. Blocked-review confirmation.
 7. Project Policies, then convenience permissions and artifact diff gates.
@@ -151,18 +151,16 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 
 **Static formats:**
 
-- Offer `identifier-title` as the neutral default, and show all seven static formats from the [setup contract](../../references/setup.md#project-configuration) as numbered choices. Save the choice once as `branches.format`.
+- Offer `number-title` as the default, with `username/number-title` as the alternative ([setup contract](../../references/setup.md#project-configuration)). Save the choice once as `branches.format`.
 - For Linear, first ask: 1. Use Linear branch naming (`tracker`), or 2. Use one static workflow format (`static`).
 
 **`tracker`:**
 
-- Requires the Linear inspection to report a supported template, and the Linear MCP registration to expose a recognized credential reference, since every Epic initialization re-reads branch settings.
 - Save exactly `"branches": { "format": "tracker" }`.
-- Explain that Task and Gig use the issue's `gitBranchName`, and Epic rebuilds the template with the current `viewer.username`, the lowercase Epic ID, and the slug.
+- Explain that a Task or Gig uses the issue's `gitBranchName`, and an Epic uses `<YYYYMMDD>-<slug>`, dated by the Linear Project's creation.
 - Don't ask for or read username settings.
-- For an unsupported template or missing credential reference, the user picks a static format, fixes Linear or MCP, or reruns inspection. Never approximate the template.
 
-**Username (static formats starting with `username`):**
+**Username (`username/number-title`):**
 
 - Use `.project/config.local.json` when it has one, otherwise the global `workflows.json`.
 - When neither has one, ask and propose `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`.
@@ -189,10 +187,11 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
    - Before removing an existing association, the user checks the default repository in Settings first.
 5. **Existing or `resume-created` Project.** Call `inspect_github_project`, show its views, and require selection of one exact view ID.
 6. **Field scope.**
-   - Personal repositories: explain that organization Issue Fields are unavailable, and use Project-contained Priority and Internal ID without asking.
+   - Personal repositories: explain that organization Issue Fields are unavailable, and use Project-contained Priority without asking.
    - Organization repositories: ask one of: 1. Project-contained, 2. Organization-native, 3. Custom (each field separately).
    - For organization-native or custom scope, ask whether missing Issue Fields should be created (this needs an organization repository and admin token permissions) or switched to Project scope.
-7. **Defaults.** Offer the editable `defaults`: six Status options, the Phase field and its options, the Kind labels, Priority options, and the Internal ID field.
+7. **Defaults.** Offer the editable `defaults`: six Status options, the Phase field and its options, and Priority options.
+   - Ask whether to use Kind labels: 1. Yes (`labels`), 2. No. With yes, offer the default Epic and six Deliverable Kind labels and include them in the specification; with no, omit `labels`.
    - Label names, colors, and descriptions are exact inputs; only names are saved.
    - Kind label names stay distinct case-insensitively, and all Project field names, Phase included, stay distinct.
    - Option colors, descriptions, visual order, and extra options aren't runtime inputs; configured names are.
@@ -205,9 +204,8 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 **Field rules:**
 
 - Status and Phase are always Project fields. Phase has Planning, Execution, and Self-Review and projects In Progress activity.
-- Setup owns the Epic and six Deliverable Kind labels. Workflows don't apply or validate them yet.
+- Kind labels are optional. When configured, setup owns the Epic and six Deliverable Kind labels, and initialization and queue intake apply exactly one.
 - Native issue Type stays unmanaged. Never use labels for lifecycle or Priority, or Custom Properties for anything.
-- Internal ID and the managed label catalog are still configured, though workflows don't project them.
 - A personal Project may use organization issue metadata when its repository belongs to that organization, but availability never selects the scope. Project-contained configuration ignores organization metadata.
 
 **Preview, apply, and confirm:**
@@ -235,7 +233,7 @@ When initialized entities are already bound to another GitHub Project, stop. Rep
 
 #### GitHub forge
 
-Reuse the known repository and selected server. For forge-only setup, use the same candidate rules and ask only for missing or ambiguous identity. When tracker and forge share a repository and server, say so rather than asking twice.
+Reuse the known repository and selected server; the forge is always configured alongside the tracker. Use the same candidate rules and ask only for missing or ambiguous identity. When tracker and forge share a repository and server, say so rather than asking twice.
 
 #### Fork-only incoming PR intake
 

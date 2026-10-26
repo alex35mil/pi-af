@@ -1,6 +1,6 @@
 # Phase
 
-Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Tracker Status and Priority stay with the provider. Without a tracker, lifecycle stays in `status.md` and Phase only in metadata.
+Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Status and Priority stay with the tracker.
 
 ## Transitions
 
@@ -33,22 +33,21 @@ Provider automation can change native Status; for example, GitHub can move pushe
 
 ## Native projection
 
-During In Progress, native Phase equals the metadata Phase. Outside In Progress, clear it. Queued work has no Phase. Native Phase is explicitly allowed; the other [disclosure](./integrations/shared.md#disclosure) limits still apply.
+During In Progress, native Phase equals the metadata Phase. Outside In Progress, clear it. Queued work has no Phase.
 
 - **GitHub:** the configured Project single-select Phase field.
 - **Linear:** the configured label group, a Project-label group for Epics and an issue-label group for Tasks and Gigs. The groups are mutually exclusive; apply only their children and keep every unrelated label.
 
 ## Reconciling
 
-1. **Lifecycle first.** For a required lifecycle change, use its authority and confirm the outcome. Never cache tracker lifecycle in metadata or substitute local authority.
-2. **Setting Phase during In Progress on a ready branch:** call `set_local_workflow_phase`, `set_github_workflow_phase`, or `set_linear_workflow_phase` with `entityDir` and the target `phase`.
-   - Tracker authority also needs fresh `lifecycle` and `native` facts (below); reuse reads from this operation. Workflow authority takes no tracker facts.
+1. **Lifecycle first.** For a required lifecycle change, update native Status and confirm the outcome. Never cache lifecycle in metadata.
+2. **Setting Phase during In Progress:** call `set_github_workflow_phase` or `set_linear_workflow_phase` with `entityDir`, the target `phase`, and fresh `lifecycle` and `native` facts (below); reuse reads from this operation.
    - The tool validates before changing metadata and returns any native assignment. A matching Phase is a metadata no-op, not a reason to skip native reconciliation.
-3. **Projection only:** before branch readiness, or when clearing native Phase outside In Progress, keep metadata Phase. Call `prepare_github_phase_mutation` or `prepare_linear_phase_mutation` with `entityDir`, fresh `lifecycle`, and `native` facts.
+3. **Projection only:** when clearing native Phase outside In Progress, keep metadata Phase. Call `prepare_github_phase_mutation` or `prepare_linear_phase_mutation` with `entityDir`, fresh `lifecycle`, and `native` facts.
 4. **Apply a changed `phaseMutation`** through the configured MCP tool. On GitHub, write its `value`. On Linear, write its entire `labels` set; never replace the full set with only the Phase label. Skip unchanged assignments.
 5. Neither local tool calls providers or grants approval. Outcomes follow [core outcome rules](./core.md#outcomes-and-recovery). A provider failure keeps metadata Phase and creates no local lifecycle substitute.
 
-**First creation:** use the saved `authority.desired.lifecycle` intent and an empty applied-label set, with freshly validated label metadata, and include Planning in the create request. Once the object exists, use fresh native facts instead of the initialization intent. GitHub Phase is assigned after Project membership exists.
+**New work:** the tracker object exists before the local entity. Board setup after initialization moves it to In Progress and applies Planning from fresh native facts. A Linear create may already carry the Planning label; GitHub Phase is assigned after Project membership exists.
 
 ### Fresh native facts
 

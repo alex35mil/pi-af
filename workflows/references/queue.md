@@ -5,14 +5,14 @@ Backlog and Todo save work in the configured tracker without starting an Epic, T
 - `backlog`: work we may do later but haven't committed to;
 - `todo`: work we've committed to and can pick up next.
 
-Both hold work that hasn't started. Adding work creates no workflow ID, `.project` entity, artifact, branch, or saved recovery state.
+Both hold work that hasn't started. Adding work creates no `.project` entity, artifact, branch, or saved recovery state.
 
 ## Choose the project
 
 - `/backlog`, `/todo`, and natural-language queue requests use `target: "current"`.
 - An explicit request to report a workflow defect or recurring friction ("Report this workflow issue" is enough) uses the Todo skill, destination `todo`, and `target: "workflow"`.
-- The workflow target reads the global `workflowProject` source reference, plus that project's tracker configuration and artifact policy ([setup](./setup.md#workflow-reporting-source)).
-  - Use only the returned tracker, MCP server, and policy, never the consuming project's tracker.
+- The workflow target reads the global `workflowProject` source reference, plus that project's tracker configuration ([setup](./setup.md#workflow-reporting-source)).
+  - Use only the returned tracker and MCP server, never the consuming project's tracker.
   - The returned `projectRoot` is local context, not report content.
 - Missing or invalid configuration ends the attempt with the tool's short corrective error. Don't start setup or repair configuration.
 
@@ -24,8 +24,9 @@ Both hold work that hasn't started. Adding work creates no workflow ID, `.projec
 4. **Entity type.** Require `epic`, `task`, or `gig` before checking mutation capability.
    - A Task needs its initialized parent Epic and the provider relationship in the selected project, not another checkout.
    - Recommend a standalone Gig for independent workflow reports.
-5. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
-   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, and `kind: "not set"`. Reconcile any difference from the approved destination; changed content or destination needs approval again.
+5. **Kind** (GitHub with configured Kind labels only): `inspect_integrations` shows `labels.kind`. Reuse the Kind the request states (Epic, or a Deliverable kind); otherwise recommend the best fit and present it, or `not set`, with the other fields.
+6. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
+   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, and `kind` (`not set` when Kind labels aren't configured). Apply the returned `kindLabel` when it isn't null. Reconcile any difference from the approved destination; changed content or destination needs approval again.
    - Use only its selected registered tools, under normal permissions. Let native mutations validate their own inputs; don't preflight labels, options, workspaces, or statuses.
    - Never load the source project's credentials or run its MCP settings.
 
@@ -38,7 +39,7 @@ Both hold work that hasn't started. Adding work creates no workflow ID, `.projec
 - **Linear:** create only the selected Project, Task issue with parent Project, or projectless Gig, with team, state, and Priority together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
-Adding work assigns no workflow ID, Kind label, native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.
+Apart from that optional Kind label, adding work assigns no native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.
 
 ## Prepare a workflow report
 
@@ -86,4 +87,4 @@ When the user starts a Backlog or Todo object through `/epic`, `/task`, or `/gig
 - Reuse that object and its Priority, create the workflow entity and branch contract, and move straight to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress.
 - Both providers keep the request's title or name and description.
 - The first accepted plan publishes as one managed GitHub comment or one Linear document attached to the issue or Project, and later updates reuse it. This is the same for workflow-created and externally submitted items; no ownership question is needed. Queue intake itself publishes no plan.
-- **Phase** ([Phase](./phase.md)): GitHub uses the Project Phase field, Linear the configured label group. Without a tracker, Phase stays in metadata. Other system metadata stays private.
+- **Phase** ([Phase](./phase.md)): GitHub uses the Project Phase field, Linear the configured label group. Other system metadata stays private.

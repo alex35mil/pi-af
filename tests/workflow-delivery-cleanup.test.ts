@@ -7,12 +7,26 @@ import { describe, it } from "node:test"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
+import { phaseValues } from "./workflow-phase-fixtures.ts"
 import { runDeliveryCleanup } from "../workflows/extensions/deliverable/cleanup.ts"
 import registerDeliverable, { githubMergeProof } from "../workflows/extensions/deliverable/index.ts"
 import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
-import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
+
+const repo = { owner: "example", repo: "project" }
+const statuses = {
+    backlog: "Backlog",
+    todo: "Todo",
+    inProgress: "In Progress",
+    inReview: "In Review",
+    done: "Done",
+    canceled: "Canceled",
+}
+
+function git(cwd: string, args: string[]): string {
+    return cp.execFileSync("git", args, { cwd, encoding: "utf-8" }).trim()
+}
 
 function repository(withOrigin = true) {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-cleanup-"))
@@ -34,73 +48,86 @@ function repository(withOrigin = true) {
     fs.mkdirSync(path.join(root, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(root, ".project", "config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "number-title" } }),
+    )
+    fs.writeFileSync(
+        path.join(root, ".project", "integrations.json"),
+        JSON.stringify({
+            tracker: {
+                provider: "github",
+                mcpServer: "github",
+                repository: repo,
+                project: { owner: "example", ownerType: "user", number: 3 },
+                fields: {
+                    status: { field: "Status", values: statuses },
+                    phase: { field: "Phase", values: phaseValues },
+                    priority: { scope: "project", field: "Priority", values: ["High"] },
+                },
+            },
+            forge: { provider: "github", mcpServer: "github", repository: repo },
+        }),
     )
     prepareArtifactPersistence(root)
     return { parent, root, origin }
 }
 
-function createDoneGig(root: string, withPullRequest: boolean) {
+function issue(number: number) {
+    return {
+        issueId: 1000 + number,
+        issueNumber: number,
+        issueUrl: `https://github.com/example/project/issues/${number}`,
+    }
+}
+
+// Records PR intent and the created PR #7 the way submission does.
+function recordPullRequest(root: string, directory: string) {
+    const metadataPath = path.join(root, directory, "metadata.json")
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
+    metadata.phase = "selfReview"
+    metadata.forge = {
+        provider: "github",
+        repository: repo,
+        head: metadata.branch.name,
+        target: metadata.branch.target,
+    }
+    fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`)
+    const entity = path.basename(directory)
+    fs.writeFileSync(
+        path.join(root, directory, "resource-ids.json"),
+        JSON.stringify({
+            entity,
+            resourceIds: [
+                {
+                    scope: {
+                        entity,
+                        kind: "github-pull-request",
+                        mcpServer: "github",
+                        repository: repo,
+                        head: metadata.branch.name,
+                        target: metadata.branch.target,
+                    },
+                    value: { number: 7, url: "https://github.com/example/project/pull/7" },
+                },
+            ],
+        }),
+    )
+    return { directory, branch: metadata.branch.name as string, target: metadata.branch.target as string }
+}
+
+function submittedGig(root: string, withPullRequest = true) {
     const gig = initializeEntity(
         {
             entity: "gig",
             title: "Cleanup",
             slug: "cleanup",
             request: "Clean the merged branch",
-            priority: "not set",
-            source: { mode: "new" },
             kind: "chore",
+            object: issue(5),
         },
-        { cwd: root, now: new Date("2026-01-02T03:04:00.000Z") },
+        { cwd: root },
     )
-    const status = readEntityStatus(path.join(root, gig.directory))
-    if (status.branch.state !== "ready") assert.fail("expected ready branch")
-    const metadataPath = path.join(root, gig.directory, "metadata.json")
-    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
-    metadata.phase = "selfReview"
-    if (withPullRequest) {
-        metadata.integrations = [
-            {
-                role: "forge",
-                provider: "github",
-                repository: { owner: "example", repo: "project" },
-                head: status.branch.name,
-                target: status.branch.target,
-                state: "intent",
-            },
-        ]
-        fs.writeFileSync(
-            path.join(root, ".project/integrations.json"),
-            JSON.stringify({
-                forge: { provider: "github", mcpServer: "github", repository: { owner: "example", repo: "project" } },
-            }),
-        )
-        fs.writeFileSync(
-            path.join(root, gig.directory, "resource-ids.json"),
-            JSON.stringify({
-                entityId: status.id,
-                resourceIds: [
-                    {
-                        scope: {
-                            entityId: status.id,
-                            kind: "github-pull-request",
-                            mcpServer: "github",
-                            repository: { owner: "example", repo: "project" },
-                            head: status.branch.name,
-                            target: status.branch.target,
-                        },
-                        value: { number: 7, url: "https://github.com/example/project/pull/7" },
-                    },
-                ],
-            }),
-        )
-    }
-    fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`)
-    fs.writeFileSync(
-        path.join(root, gig.directory, "status.md"),
-        '# Status\n\n```json\n{\n  "state": "done"\n}\n```\n',
-    )
-    return { directory: gig.directory, branch: status.branch.name, target: status.branch.target }
+    if (withPullRequest) return recordPullRequest(root, gig.directory)
+    return { directory: gig.directory, branch: gig.status.branch.name, target: gig.status.branch.target }
 }
 
 function commitBranch(root: string, branch: string, push = true) {
@@ -111,8 +138,28 @@ function commitBranch(root: string, branch: string, push = true) {
     if (push) git(root, ["push", "-u", "origin", branch])
 }
 
-function git(cwd: string, args: string[]): string {
-    return cp.execFileSync("git", args, { cwd, encoding: "utf-8" }).trim()
+function mergeProof(gig: { branch: string; target: string }, headCommitSha: string) {
+    return {
+        kind: "github-pr" as const,
+        source: "pull_request_read:get" as const,
+        repository: repo,
+        pullRequestNumber: 7,
+        merged: true as const,
+        mergedAt: "2026-01-02T04:00:00Z",
+        head: gig.branch,
+        headCommitSha,
+        base: gig.target,
+    }
+}
+
+function squashMerge(root: string, gig: { branch: string; target: string }): string {
+    const headCommitSha = git(root, ["rev-parse", gig.branch])
+    git(root, ["switch", gig.target])
+    git(root, ["merge", "--squash", gig.branch])
+    git(root, ["commit", "--allow-empty", "-m", "squash reviewed result"])
+    git(root, ["push", "origin", gig.target])
+    git(root, ["switch", gig.branch])
+    return headCommitSha
 }
 
 function cloneBranchExists(root: string, branch: string): boolean {
@@ -120,82 +167,52 @@ function cloneBranchExists(root: string, branch: string): boolean {
 }
 
 describe("Deliverable branch cleanup", () => {
-    it("registers cleanup under the Deliverable extension", () => {
+    it("registers one cleanup tool under the Deliverable extension", () => {
         const tools: string[] = []
         registerDeliverable({
             on() {},
             events: { on: () => () => {} },
             registerTool: (tool: { name: string }) => tools.push(tool.name),
         } as unknown as ExtensionAPI)
-        assert.deepEqual(tools, ["cleanup_ancestry_delivery_branch", "cleanup_github_delivery_branch"])
+        assert.deepEqual(tools, ["cleanup_delivery_branch"])
     })
 
-    it("cleans a squash-merged branch in the current clone from verified GitHub PR evidence", () => {
+    it("cleans a squash-merged branch in the current clone from verified PR evidence", () => {
         const { parent, root } = repository()
         try {
-            const gig = createDoneGig(root, true)
+            const gig = submittedGig(root)
             commitBranch(root, gig.branch)
-            const headCommitSha = git(root, ["rev-parse", gig.branch])
-            git(root, ["switch", gig.target])
-            git(root, ["merge", "--squash", gig.branch])
-            git(root, ["commit", "-m", "squash reviewed result"])
-            git(root, ["push", "origin", gig.target])
-            git(root, ["switch", gig.branch])
+            const headCommitSha = squashMerge(root, gig)
             fs.writeFileSync(path.join(root, "outside-git-notes.txt"), "keep me\n")
             fs.appendFileSync(path.join(root, "README.md"), "working-tree note\n")
 
-            const input = {
-                entityDir: gig.directory,
-                completion: { kind: "workflow" as const },
-                merge: {
-                    kind: "github-pr" as const,
-                    source: "pull_request_read:get" as const,
-                    repository: { owner: "example", repo: "project" },
-                    pullRequestNumber: 7,
-                    merged: true as const,
-                    mergedAt: "2026-01-02T04:00:00Z",
-                    head: gig.branch,
-                    headCommitSha,
-                    base: gig.target,
-                },
-            }
-            assert.throws(
-                () =>
-                    runDeliveryCleanup(
-                        { ...input, merge: { ...input.merge, headCommitSha: "0".repeat(40) } },
-                        { cwd: root },
-                    ),
-                /head commit does not match/,
-            )
-            assert.throws(
-                () =>
-                    runDeliveryCleanup(
-                        { ...input, merge: { ...input.merge, repository: { owner: "other", repo: "project" } } },
-                        { cwd: root },
-                    ),
-                /repository does not match/,
-            )
-            assert.throws(
-                () => runDeliveryCleanup({ ...input, merge: { ...input.merge, base: "other" } }, { cwd: root }),
-                /head\/base does not match/,
-            )
-            assert.throws(
-                () => runDeliveryCleanup({ ...input, merge: { ...input.merge, head: "other" } }, { cwd: root }),
-                /head\/base does not match/,
-            )
-            assert.throws(
-                () => runDeliveryCleanup({ ...input, merge: { ...input.merge, pullRequestNumber: 8 } }, { cwd: root }),
-                /locally recorded PR/,
-            )
+            const input = { entityDir: gig.directory, merge: mergeProof(gig, headCommitSha) }
+            const wrong: Array<[Record<string, unknown>, RegExp]> = [
+                [{ headCommitSha: "0".repeat(40) }, /head commit does not match/],
+                [{ repository: { owner: "other", repo: "project" } }, /repository does not match/],
+                [{ base: "other" }, /head\/base does not match/],
+                [{ head: "other" }, /head\/base does not match/],
+                [{ pullRequestNumber: 8 }, /locally recorded PR/],
+            ]
+            for (const [overrides, error] of wrong)
+                assert.throws(
+                    () =>
+                        runDeliveryCleanup(
+                            { ...input, merge: { ...input.merge, ...overrides } as never },
+                            { cwd: root },
+                        ),
+                    error,
+                )
             assert.equal(cloneBranchExists(root, gig.branch), true)
             const applied = runDeliveryCleanup(input, { cwd: root })
 
+            assert.equal(applied.entity, "5-cleanup")
             assert.equal(applied.targetCommit, git(root, ["rev-parse", "FETCH_HEAD"]))
-            assert.equal(fs.existsSync(path.join(root, gig.directory, "resource-ids.json")), true)
             assert.equal(applied.deletedBranch, gig.branch)
             assert.equal(git(root, ["branch", "--show-current"]), gig.target)
             assert.equal(cloneBranchExists(root, gig.branch), false)
             assert.equal(git(root, ["ls-remote", "--heads", "origin", gig.branch]).includes(gig.branch), true)
+            assert.equal(fs.existsSync(path.join(root, gig.directory, "resource-ids.json")), true)
             assert.equal(fs.readFileSync(path.join(root, "outside-git-notes.txt"), "utf-8"), "keep me\n")
             assert.match(fs.readFileSync(path.join(root, "README.md"), "utf-8"), /working-tree note/)
         } finally {
@@ -203,10 +220,45 @@ describe("Deliverable branch cleanup", () => {
         }
     })
 
-    it("derives GitHub cleanup proof from exact PR-get evidence for the recorded PR", () => {
+    it("cleans a Deliverable whose only commit is empty after its squash merge", () => {
         const { parent, root } = repository()
         try {
-            const gig = createDoneGig(root, true)
+            const gig = submittedGig(root)
+            git(root, ["switch", gig.branch])
+            git(root, ["commit", "--allow-empty", "-m", "report-only delivery"])
+            git(root, ["push", "-u", "origin", gig.branch])
+            const headCommitSha = squashMerge(root, gig)
+            const applied = runDeliveryCleanup(
+                { entityDir: gig.directory, merge: mergeProof(gig, headCommitSha) },
+                { cwd: root },
+            )
+            assert.equal(applied.deletedBranch, gig.branch)
+            assert.equal(cloneBranchExists(root, gig.branch), false)
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+
+    it("requires recorded PR intent and IDs before cleanup", () => {
+        const { parent, root } = repository()
+        try {
+            const gig = submittedGig(root, false)
+            commitBranch(root, gig.branch)
+            const sha = git(root, ["rev-parse", gig.branch])
+            assert.throws(
+                () => runDeliveryCleanup({ entityDir: gig.directory, merge: mergeProof(gig, sha) }, { cwd: root }),
+                /stored PR intent/,
+            )
+            assert.equal(cloneBranchExists(root, gig.branch), true)
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+
+    it("derives cleanup proof from exact PR-get evidence for the recorded PR", () => {
+        const { parent, root } = repository()
+        try {
+            const gig = submittedGig(root)
             commitBranch(root, gig.branch)
             const sha = git(root, ["rev-parse", gig.branch])
             const catalog = workflowMcpCatalog("github")
@@ -229,17 +281,7 @@ describe("Deliverable branch cleanup", () => {
                     response,
                 },
             })
-            assert.deepEqual(githubMergeProof(root, evidence(pr), catalog), {
-                kind: "github-pr",
-                source: "pull_request_read:get",
-                repository: { owner: "example", repo: "project" },
-                pullRequestNumber: 7,
-                merged: true,
-                mergedAt: "2026-01-02T04:00:00Z",
-                head: gig.branch,
-                headCommitSha: sha,
-                base: gig.target,
-            })
+            assert.deepEqual(githubMergeProof(root, evidence(pr), catalog), mergeProof(gig, sha))
             assert.throws(
                 () => githubMergeProof(root, evidence({ ...pr, merged: false, state: "open" }), catalog),
                 /does not show a merged PR/,
@@ -250,9 +292,7 @@ describe("Deliverable branch cleanup", () => {
                         root,
                         evidence(
                             { ...pr, number: 8, html_url: "https://github.com/example/project/pull/8" },
-                            {
-                                pullNumber: 8,
-                            },
+                            { pullNumber: 8 },
                         ),
                         catalog,
                     ),
@@ -282,71 +322,39 @@ describe("Deliverable branch cleanup", () => {
     it("preserves a merged branch when origin is unavailable", () => {
         const { parent, root } = repository(false)
         try {
-            const gig = createDoneGig(root, false)
+            const gig = submittedGig(root)
             commitBranch(root, gig.branch, false)
-            git(root, ["switch", gig.target])
-            git(root, ["merge", "--ff-only", gig.branch])
-            git(root, ["switch", gig.branch])
-            assert.equal(git(root, ["remote"]), "")
-
-            const input = {
-                entityDir: gig.directory,
-                completion: { kind: "workflow" as const },
-                merge: { kind: "git-ancestry" as const },
-            }
-            assert.throws(() => runDeliveryCleanup(input, { cwd: root }), /git fetch.*origin/)
+            const sha = git(root, ["rev-parse", gig.branch])
+            assert.throws(
+                () => runDeliveryCleanup({ entityDir: gig.directory, merge: mergeProof(gig, sha) }, { cwd: root }),
+                /origin/,
+            )
             assert.equal(git(root, ["branch", "--show-current"]), gig.branch)
             assert.equal(cloneBranchExists(root, gig.branch), true)
-            assert.equal(git(root, ["remote"]), "")
         } finally {
             fs.rmSync(parent, { recursive: true, force: true })
         }
     })
 
-    it("uses ancestry without a stored PR and preserves a branch that changed after merge", () => {
+    it("keeps Epic branches permanent", () => {
         const { parent, root } = repository()
         try {
-            const gig = createDoneGig(root, false)
-            commitBranch(root, gig.branch)
-            git(root, ["switch", gig.target])
-            git(root, ["merge", "--ff-only", gig.branch])
-            git(root, ["push", "origin", gig.target])
-            git(root, ["switch", gig.branch])
-
-            const input = {
-                entityDir: gig.directory,
-                completion: { kind: "workflow" as const },
-                merge: { kind: "git-ancestry" as const },
-            }
-            const branchCommit = git(root, ["rev-parse", gig.branch])
-            fs.writeFileSync(path.join(root, "after-merge.txt"), "new commit in current clone\n")
-            git(root, ["add", "after-merge.txt"])
-            git(root, ["commit", "-m", "move branch after merge"])
-            assert.throws(() => runDeliveryCleanup(input, { cwd: root }), /not merged into target/)
-            assert.equal(cloneBranchExists(root, gig.branch), true)
-            git(root, ["switch", gig.branch])
-            git(root, ["reset", "--hard", branchCommit])
-            runDeliveryCleanup(input, { cwd: root })
-            assert.equal(cloneBranchExists(root, gig.branch), false)
-
             const epic = initializeEntity(
                 {
                     entity: "epic",
                     title: "Permanent branch",
                     slug: "permanent-branch",
-                    request: "Keep the Epic branch",
-                    priority: "not set",
-                    source: { mode: "new" },
+                    request: "Keep it",
+                    object: issue(9),
                 },
-                { cwd: root, now: new Date("2026-01-02T04:00:00.000Z") },
+                { cwd: root },
             )
             assert.throws(
                 () =>
                     runDeliveryCleanup(
                         {
                             entityDir: epic.directory,
-                            completion: { kind: "workflow" },
-                            merge: { kind: "git-ancestry" },
+                            merge: mergeProof({ branch: epic.status.branch.name, target: "main" }, "0".repeat(40)),
                         },
                         { cwd: root },
                     ),
@@ -357,15 +365,14 @@ describe("Deliverable branch cleanup", () => {
         }
     })
 
-    it("preserves source and confirmed Done when the local target is ahead or diverged", () => {
+    it("preserves the branch when the local target is ahead or diverged", () => {
         for (const diverged of [false, true]) {
             const { parent, root } = repository()
             try {
-                const gig = createDoneGig(root, false)
+                const gig = submittedGig(root)
                 commitBranch(root, gig.branch)
+                const sha = squashMerge(root, gig)
                 git(root, ["switch", gig.target])
-                git(root, ["merge", "--ff-only", gig.branch])
-                git(root, ["push", "origin", gig.target])
                 fs.writeFileSync(path.join(root, "unpublished.txt"), "local work\n")
                 git(root, ["add", "unpublished.txt"])
                 git(root, ["commit", "-m", "unpublished target work"])
@@ -380,43 +387,25 @@ describe("Deliverable branch cleanup", () => {
                 }
                 git(root, ["switch", gig.branch])
                 assert.throws(
-                    () =>
-                        runDeliveryCleanup(
-                            {
-                                entityDir: gig.directory,
-                                completion: { kind: "workflow" },
-                                merge: { kind: "git-ancestry" },
-                            },
-                            { cwd: root },
-                        ),
+                    () => runDeliveryCleanup({ entityDir: gig.directory, merge: mergeProof(gig, sha) }, { cwd: root }),
                     diverged ? /git merge.*failed/ : /does not match freshly fetched origin/,
                 )
                 assert.equal(cloneBranchExists(root, gig.branch), true)
                 assert.equal(git(root, ["rev-parse", gig.target]), localTarget)
-                const status = readEntityStatus(path.join(root, gig.directory))
-                assert.equal("state" in status && status.state, "done")
             } finally {
                 fs.rmSync(parent, { recursive: true, force: true })
             }
         }
     })
 
-    it("cleans up a shipped Epic-target Task on the synchronized Epic branch and leaves main untouched", () => {
+    it("cleans up an Epic-target Task on the synchronized Epic branch and leaves main untouched", () => {
         const { parent, root } = repository()
         try {
             const mainCommit = git(root, ["rev-parse", "main"])
             const epic = initializeEntity(
-                {
-                    entity: "epic",
-                    title: "Umbrella",
-                    slug: "umbrella",
-                    request: "Deliver Tasks",
-                    priority: "not set",
-                    source: { mode: "new" },
-                },
-                { cwd: root, now: new Date("2026-01-02T05:00:00Z") },
+                { entity: "epic", title: "Umbrella", slug: "umbrella", request: "Deliver Tasks", object: issue(10) },
+                { cwd: root },
             )
-            if (epic.status.branch.state !== "ready") assert.fail("ready Epic required")
             const epicBranch = epic.status.branch.name
             fs.writeFileSync(
                 path.join(root, epic.directory, "epic.md"),
@@ -429,40 +418,25 @@ describe("Deliverable branch cleanup", () => {
                     title: "Child",
                     slug: "child",
                     request: "Deliver the child",
-                    priority: "not set",
-                    source: { mode: "new" },
                     kind: "feature",
                     parentEpicDir: epic.directory,
                     epicItemTitle: "Child",
+                    object: issue(11),
                 },
-                { cwd: root, now: new Date("2026-01-02T05:01:00Z") },
+                { cwd: root },
             )
-            if (task.status.branch.state !== "ready") assert.fail("ready Task required")
-            const taskBranch = task.status.branch.name
-            const metadataPath = path.join(root, task.directory, "metadata.json")
-            const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
-            metadata.phase = "selfReview"
-            fs.writeFileSync(metadataPath, JSON.stringify(metadata))
-            fs.writeFileSync(
-                path.join(root, task.directory, "status.md"),
-                '# Status\n\n```json\n{"state":"done"}\n```\n',
-            )
-            commitBranch(root, taskBranch)
-            git(root, ["switch", epicBranch])
-            git(root, ["merge", "--ff-only", taskBranch])
-            git(root, ["push", "origin", epicBranch])
-            git(root, ["switch", taskBranch])
+            const recorded = recordPullRequest(root, task.directory)
+            commitBranch(root, recorded.branch)
+            const sha = squashMerge(root, recorded)
             const result = runDeliveryCleanup(
-                { entityDir: task.directory, completion: { kind: "workflow" }, merge: { kind: "git-ancestry" } },
+                { entityDir: task.directory, merge: mergeProof(recorded, sha) },
                 { cwd: root },
             )
             assert.equal(result.target, epicBranch)
             assert.equal(git(root, ["branch", "--show-current"]), epicBranch)
-            assert.equal(result.targetCommit, git(root, ["rev-parse", "FETCH_HEAD"]))
             assert.equal(git(root, ["rev-parse", "main"]), mainCommit)
             assert.equal(cloneBranchExists(root, epicBranch), true)
-            assert.equal(cloneBranchExists(root, taskBranch), false)
-            assert.match(git(root, ["ls-remote", "--heads", "origin", taskBranch]), new RegExp(taskBranch))
+            assert.equal(cloneBranchExists(root, recorded.branch), false)
         } finally {
             fs.rmSync(parent, { recursive: true, force: true })
         }
@@ -471,31 +445,16 @@ describe("Deliverable branch cleanup", () => {
     it("accepts rebase delivery evidence without requiring source-commit ancestry", () => {
         const { parent, root } = repository()
         try {
-            const gig = createDoneGig(root, true)
+            const gig = submittedGig(root)
             commitBranch(root, gig.branch)
             const headCommitSha = git(root, ["rev-parse", gig.branch])
             git(root, ["switch", gig.target])
             git(root, ["commit", "--allow-empty", "-m", "advance target before rebase"])
             git(root, ["cherry-pick", headCommitSha])
-            const rebasedCommitSha = git(root, ["rev-parse", "HEAD"])
-            assert.notEqual(rebasedCommitSha, headCommitSha)
+            assert.notEqual(git(root, ["rev-parse", "HEAD"]), headCommitSha)
             git(root, ["push", "origin", gig.target])
             git(root, ["switch", gig.branch])
-            const input = {
-                entityDir: gig.directory,
-                completion: { kind: "workflow" },
-                merge: {
-                    kind: "github-pr",
-                    source: "pull_request_read:get",
-                    repository: { owner: "example", repo: "project" },
-                    pullRequestNumber: 7,
-                    merged: true,
-                    mergedAt: "2026-01-02T06:00:00Z",
-                    head: gig.branch,
-                    headCommitSha,
-                    base: gig.target,
-                },
-            }
+            const input = { entityDir: gig.directory, merge: mergeProof(gig, headCommitSha) }
             for (const missingFacts of [
                 { merged: false },
                 { merged: undefined },
@@ -503,7 +462,10 @@ describe("Deliverable branch cleanup", () => {
                 { mergedAt: undefined },
             ]) {
                 assert.throws(() =>
-                    runDeliveryCleanup({ ...input, merge: { ...input.merge, ...missingFacts } }, { cwd: root }),
+                    runDeliveryCleanup(
+                        { ...input, merge: { ...input.merge, ...missingFacts } as never },
+                        { cwd: root },
+                    ),
                 )
                 assert.equal(cloneBranchExists(root, gig.branch), true)
             }
@@ -515,46 +477,26 @@ describe("Deliverable branch cleanup", () => {
         }
     })
 
-    it("preserves the branch and outside-Git file when switching would overwrite it", () => {
+    it("preserves the branch and an outside-Git file when switching would overwrite it", () => {
         const { parent, root } = repository()
         try {
-            const gig = createDoneGig(root, false)
-            const statusPath = path.join(root, gig.directory, "status.md")
-            fs.writeFileSync(statusPath, '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n')
-            assert.throws(
-                () =>
-                    runDeliveryCleanup(
-                        {
-                            entityDir: gig.directory,
-                            completion: { kind: "workflow" },
-                            merge: { kind: "git-ancestry" },
-                        },
-                        { cwd: root },
-                    ),
-                /lifecycle done/,
-            )
-            fs.writeFileSync(statusPath, '# Status\n\n```json\n{\n  "state": "done"\n}\n```\n')
+            const gig = submittedGig(root)
             commitBranch(root, gig.branch)
+            const sha = squashMerge(root, gig)
             git(root, ["switch", gig.target])
-            git(root, ["merge", "--ff-only", gig.branch])
             fs.writeFileSync(path.join(root, "target-only.txt"), "remote target\n")
             git(root, ["add", "target-only.txt"])
             git(root, ["commit", "-m", "target update"])
             git(root, ["push", "origin", gig.target])
+            git(root, ["reset", "--hard", "HEAD~1"])
             git(root, ["switch", gig.branch])
             fs.writeFileSync(path.join(root, "target-only.txt"), "outside Git\n")
-
-            const input = {
-                entityDir: gig.directory,
-                completion: { kind: "workflow" as const },
-                merge: { kind: "git-ancestry" as const },
-            }
-            assert.throws(() => runDeliveryCleanup(input, { cwd: root }), /git switch main failed/)
+            assert.throws(
+                () => runDeliveryCleanup({ entityDir: gig.directory, merge: mergeProof(gig, sha) }, { cwd: root }),
+                /git (switch|merge)/,
+            )
             assert.equal(cloneBranchExists(root, gig.branch), true)
             assert.equal(fs.readFileSync(path.join(root, "target-only.txt"), "utf-8"), "outside Git\n")
-            const status = readEntityStatus(path.join(root, gig.directory))
-            if (!("state" in status)) assert.fail("expected workflow lifecycle")
-            assert.equal(status.state, "done")
         } finally {
             fs.rmSync(parent, { recursive: true, force: true })
         }

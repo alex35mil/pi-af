@@ -11,10 +11,9 @@ import { workflowTools } from "../__lib/tools.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { EPIC_ROOT, GIG_ROOT, PROJECT_ROOT, type DeliverableKind } from "../__lib/domain.js"
 import {
-    assertEntityBranchReady,
+    entityLabel,
     LOCAL_DRAFT_FILE,
     LOCAL_REVIEWS_DIR,
-    LOCAL_STATUS_FILE,
     readEntityStatus,
     readPendingEntries,
     resolveEntityPath,
@@ -236,7 +235,7 @@ export default function (pi: ExtensionAPI) {
             const input: RecordReviewResponseParams = Value.Parse(RecordReviewResponseSchema, params)
             assertArtifactPersistencePrepared(ctx.cwd)
             const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
-            assertEntityBranchReady(readEntityStatus(entityDir))
+            readEntityStatus(entityDir)
 
             const roundName = `${input.phase}-${input.round.toString().padStart(3, "0")}`
             const roundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, roundName)
@@ -303,11 +302,10 @@ function resolveEntityDir(cwd: string, raw: string): string {
 
 export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
     const status = readEntityStatus(directory)
-    assertEntityBranchReady(status)
     const requiredPhase = phase === "plan" ? "planning" : "selfReview"
-    if (status.phase !== requiredPhase || ("state" in status && status.state !== "inProgress")) {
+    if (status.phase !== requiredPhase) {
         throw new Error(
-            `${status.id} ${phase} review requires In Progress and Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
+            `${entityLabel(status)} ${phase} review requires Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
         )
     }
 }
@@ -540,7 +538,6 @@ export async function buildDeliverableReviewPrompt(
     const plan = await readOptional(planPath)
     const brief = await readOptional(path.join(gigDir, "brief.md"))
     const metadata = await readOptional(path.join(gigDir, "metadata.json"))
-    const localStatus = await readOptional(path.join(gigDir, LOCAL_STATUS_FILE))
     const entityStatus = readEntityStatus(gigDir)
     if (entityStatus.entity === "epic") throw new Error(`expected Deliverable status in ${gigDir}`)
     const report = await readOptional(path.join(gigDir, "report.md"))
@@ -549,7 +546,7 @@ export async function buildDeliverableReviewPrompt(
         const pendingEntries = readPendingEntries(gigDir)
         if (pendingEntries.length > 0) {
             throw new Error(
-                `${entityStatus.id} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
+                `${entityLabel(entityStatus)} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
             )
         }
         if (deliverableKindRequiresReport(entityStatus.kind)) {
@@ -614,11 +611,6 @@ export async function buildDeliverableReviewPrompt(
         "",
         fence(truncate(metadata || "(missing)", MAX_EMBEDDED_FILE_BYTES), "json"),
         "",
-        localStatus
-            ? ["# status.md", "", fence(truncate(localStatus, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join(
-                  "\n",
-              )
-            : "",
         report ? ["# report.md", "", fence(truncate(report, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
         result ? ["# result.md", "", fence(truncate(result, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
         parentEpic?.content ?? "",

@@ -4,10 +4,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import {
-    AncestryDeliveryCleanupInputSchema,
-    GitHubDeliveryCleanupInputSchema,
-} from "../workflows/extensions/deliverable/cleanup.ts"
+import { DeliveryCleanupInputSchema } from "../workflows/extensions/deliverable/cleanup.ts"
 
 // Structural checks for workflow guidance. These tests deliberately avoid asserting
 // specific wording in Markdown: guidance prose is reviewed, not regex-pinned.
@@ -137,9 +134,16 @@ describe("workflow guidance structure", () => {
         for (const skill of ["backlog", "todo", "project-setup", "pr"]) {
             const graph = guidanceGraph(`workflows/skills/${skill}/SKILL.md`)
             assert.ok(graph.has("workflows/references/core.md"), `${skill} must reach core.md`)
-            assert.ok(graph.has("workflows/MIGRATIONS.md"), `${skill} must reach MIGRATIONS.md`)
             if (skill === "pr") {
-                for (const reference of ["incoming", "checkout", "fixes", "publishing", "project", "shipping", "automation"])
+                for (const reference of [
+                    "incoming",
+                    "checkout",
+                    "fixes",
+                    "publishing",
+                    "project",
+                    "shipping",
+                    "automation",
+                ])
                     assert.ok(graph.has(`workflows/references/pr/${reference}.md`), `pr must reach pr/${reference}.md`)
                 assert.ok(graph.has("workflows/references/integrations/forge/merge.md"), "pr must reach forge/merge.md")
                 continue
@@ -200,13 +204,13 @@ describe("workflow guidance structure", () => {
         // Measured after the #84 restructure plus ~10% headroom. Lower these as text
         // shrinks; raising one is a deliberate change that needs a stated reason.
         const budgets: Record<string, number> = {
-            backlog: 12_800,
-            todo: 13_200,
-            gig: 36_300,
-            task: 40_900,
-            epic: 42_300,
-            pr: 30_000,
-            "project-setup": 48_200,
+            backlog: 12_200,
+            todo: 12_500,
+            gig: 33_400,
+            task: 38_000,
+            epic: 39_300,
+            pr: 29_700,
+            "project-setup": 46_400,
         }
         assert.deepEqual(Object.keys(budgets).sort(), fs.readdirSync("workflows/skills").sort())
         for (const [skill, budget] of Object.entries(budgets)) {
@@ -241,15 +245,7 @@ describe("workflow guidance structure", () => {
     })
 
     it("keeps Deliverable cleanup inputs to the one-shot tool schema", () => {
-        assert.deepEqual(Object.keys(AncestryDeliveryCleanupInputSchema.properties).sort(), [
-            "completionAuthority",
-            "entityDir",
-        ])
-        assert.deepEqual(Object.keys(GitHubDeliveryCleanupInputSchema.properties).sort(), [
-            "completionAuthority",
-            "entityDir",
-            "evidence",
-        ])
+        assert.deepEqual(Object.keys(DeliveryCleanupInputSchema.properties).sort(), ["entityDir", "evidence"])
     })
 
     it("keeps publication policy separate from the Pi wrapper and MCP attachment", () => {

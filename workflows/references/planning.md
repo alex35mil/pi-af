@@ -30,7 +30,7 @@ The shared planning protocol for Epic, Task, and Gig. Entity and kind skills def
 
 Lifecycle stays `inProgress` and Phase stays Planning throughout: drafting, review, corrections, presentation, and waiting for approval.
 
-1. Set Planning with the Phase tool for the current authority. Then call `review_epic`, `review_task`, or `review_gig` with `entityDir` and `phase: "plan"`. The tool snapshots the draft and numbers the round.
+1. Set Planning with the Phase tool for the configured tracker. Then call `review_epic`, `review_task`, or `review_gig` with `entityDir` and `phase: "plan"`. The tool snapshots the draft and numbers the round.
 2. Adjudicate every finding as described in [review](./review.md). Repeat until review approves with no unresolved user decision.
 3. When review approves, call `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` with `entityDir`. It returns the approved snapshot path and the target path. Read the snapshot and write its exact content to the target with the write tool, which shows the user the approval diff. Don't print the candidate first.
 4. A rejection or an unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
@@ -45,7 +45,7 @@ Review criteria and what happens after acceptance are entity-specific. Round num
 When accepted behavior, strategy, scope, or decomposition must change after execution began:
 
 1. Refuse when lifecycle is `done`; separately initialized work owns later changes.
-2. When lifecycle is `inReview`, restore `inProgress`: update `status.md` for workflow authority, or update and re-read native Status for tracker authority.
+2. When lifecycle is `inReview`, restore `inProgress`: update and re-read native Status.
 3. Set Planning with the Phase tool and apply any returned native assignment.
 4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance.
 

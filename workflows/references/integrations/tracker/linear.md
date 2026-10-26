@@ -4,7 +4,7 @@ This procedure extends [integration roles](../shared.md).
 
 | Workflow entity | Linear object | Relationship | Branch |
 | --- | --- | --- | --- |
-| Epic | Project | configured team | static format, or the current workspace template reconstructed for `tracker` |
+| Epic | Project | configured team | static format; with `tracker`, the Epic's dated name |
 | Task | issue | `project` equals the parent Epic's Project; never `parentId` | static format, or the issue's exact `gitBranchName` for `tracker` |
 | Gig | issue | no Epic Project | static format, or the issue's exact `gitBranchName` for `tracker` |
 
@@ -16,9 +16,8 @@ This procedure extends [integration roles](../shared.md).
 
 **Workspace:**
 
-- During `/project-setup`, `inspect_linear_workspace` reads the workspace identity, the viewer's name and username, teams, issue and Project statuses, and the branch template through Linear's public GraphQL API. It's read-only and never replaces MCP tracker operations.
-- Select exact team and status names; don't infer meaning from them. For branch-template matching, read [setup](../../setup.md#linear-tracker).
-- With the `tracker` format, Epic initialization repeats only the read-only viewer and branch-template query, so the branch uses current settings.
+- During `/project-setup`, `inspect_linear_workspace` reads the workspace identity, the viewer's name and username, teams, and issue and Project statuses through Linear's public GraphQL API. It's read-only and never replaces MCP tracker operations.
+- Select exact team and status names; don't infer meaning from them. For branch naming, read [setup](../../setup.md#linear-tracker).
 
 **Phase labels:**
 
@@ -45,39 +44,29 @@ New queue work needs the approved entity type and destination (`backlog` or `tod
 | Gig | the issue | configured team, a configured issue queue status, Priority, no Epic Project |
 
 1. **Read the discussion.** Call registered `list_comments` with the Project UUID as `projectId` for an Epic, or the issue UUID as `issueId` for a Task or Gig. Follow cursors until `hasNextPage: false`, including threads and inline comments. Reconcile material maintainer clarifications before adopting; contributor comments don't authorize scope changes.
-2. **Adopt.** Call `inspect_adoption`, then `adopt_linear_epic`, `adopt_linear_task`, or `adopt_linear_gig`.
+2. **Adopt.** Call `inspect_adoption`, then `init_linear_epic`, `init_linear_task`, or `init_linear_gig`.
    - Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title or name, description, Priority, and relationship without another confirmation.
    - Ask only for missing or conflicting information. Task and Gig Kind is workflow-only and needs a user choice when it isn't supplied.
-3. **Identity.** Responses expose the immutable identity as `uuid`; an issue's `id` is its display identifier.
-   - Pass the Project UUID and URL for an Epic.
-   - Pass the issue UUID, identifier, URL, and, for a Task, the parent Project UUID.
-4. **Branch name.** Only with tracker naming, reuse the returned `gitBranchName`, or fetch that issue when it's missing. Generated naming never requests or stores a provider branch.
+3. **Identity.** Responses expose the immutable identity as `uuid`; an issue's `id` is its display identifier. Pass as `object`:
+   - for an Epic, the Project UUID, URL, and creation time, which dates the Epic's name;
+   - for a Task or Gig, the issue UUID, identifier, URL, and, for a Task, the parent Project UUID.
+4. **Branch name.** Only with tracker naming, include the issue's `gitBranchName`, fetching the issue when it's missing.
 
 ## Initialize
 
-Initialization records `phase: planning` with intended lifecycle In Progress.
+Follow [initialize from the tracker object](../shared.md#initialize-from-the-tracker-object). A Linear Epic's name depends on the Project's creation date, so initialization, not preflight, catches its rare name collision.
 
-| Entity | Tracker resource | Branch |
-| --- | --- | --- |
-| Epic | `project`: new starts `awaiting`, adopted starts `bound-pending` | static formats create the branch. With `tracker`, read `organization.gitBranchFormat` and `viewer.displayName`, rebuild the template with the lowercase Epic ID and slug, and save a ready branch before any Project mutation. |
-| Task | `task-issue` | generated formats are ready immediately. Tracker naming stays `tracker-pending` until a name arrives; an adopted returned name is saved as `tracker-named` before the local branch exists. |
-| Gig | `gig-issue` | same as Task, without a Project relationship. |
+**Create new work** (after preflight): one registered `save_project` (Epic) or `save_issue` (Task, Gig). Don't search or discover first. Include:
 
-**New work:**
+- the approved title and Request;
+- native In Progress and Priority, the configured team, and the Task's parent Epic Project;
+- the Planning label from the configured Phase group.
 
-1. **Bind.** Call `initialize_integration`. A Task needs its parent Epic's Project; otherwise keep the operation awaiting and bind the parent first. A Gig stays projectless.
-2. **Prepare the create:**
-   - the approved title and Request, without adding a workflow ID to the description;
-   - native In Progress and Priority, the configured team, and the Task's Project when it applies;
-   - the Planning label from the configured Phase group. For an existing object, read and keep its full applied label set, replacing only managed Phase labels.
-3. **Create.** Call `begin_resource_creation` with role `tracker`, then the first registered `save_project` or `save_issue`. Don't search or discover first.
-4. **Record.** On clear success, call `record_resource_creation` with the actual call as `evidence`.
-   - It saves the UUID and the Task's parent relationship before dependent work. URL and identifier go into the local cache.
-   - Reuse state, Priority, and relationship proof from the response; read only missing required facts.
-5. **Branch.** Only with tracker naming, save the returned name as `tracker-named`, fetching the issue only when the name is missing. Never duplicate it in tracker records or the cache. `finalize_linear_branch` records the start commit and keeps collision and interruption checks through provisioning to ready.
-6. **Confirm.** Call `confirm_linear_tracker` as described in [confirmation](../shared.md#confirm-initialized-tracker-outcomes). Missing evidence keeps initialization pending. Generated names need no provider branch step.
+Pass the returned UUID, identifier, URL, and, with tracker naming, `gitBranchName` to `init_linear_<entity>` as `object`. For an Epic, pass the Project UUID, URL, and `createdAt`; when the create response lacks `createdAt`, read the Project.
 
-Adopted Backlog or Todo objects skip creation, keep their UUID and relationship, and apply only the remaining changes straight to In Progress. Adoption seeds Resource IDs locally. Provider records hold semantic identity and pending operations, never branch copies or cached lifecycle or Priority.
+**Board setup** (after initialization): for adopted objects, move to In Progress and apply Planning, reading and keeping the full applied label set and replacing only managed Phase labels. Reuse state, Priority, and relationship proof from the create response; read only missing required facts.
+
+Tracker records hold the object's identity, never branch copies or cached lifecycle or Priority.
 
 When a create result is uncertain, read [recovery](../recovery.md#uncertain-tracker-creation).
 

@@ -33,7 +33,3 @@ Call providers only through the configured registered MCP tools, under normal pe
 - An approval covers exactly the operation or set of operations it names. Commit, push, PR creation, merge, branch deletion, and worktree operations each need approval unless an approved set already includes them.
 - Discovering a tool, preparing arguments, or a passing review grants no approval.
 - Current explicit user instructions override `.project/policies.md`, which overrides these reusable workflow files.
-
-## Saved-data migrations
-
-When an operational read rejects the saved data of the entity you are actively working on, read [migrations](../MIGRATIONS.md). Convert only that entity, report the conversion in one line, and investigate with the user when no entry matches. Never convert done entities.

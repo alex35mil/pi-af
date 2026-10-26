@@ -53,7 +53,7 @@ export async function buildEpicReviewPrompt(
         "- units that are too broad, too granular, or implementation-level",
         "- hidden initiative/domain decisions that must be resolved before the epic is usable",
         acceptedEpic
-            ? "- removal or alteration of any existing [TASK-…] marker; initialized Task identity must survive title or ordering changes"
+            ? "- removal or alteration of any existing Task marker ([#N] or [ENG-N]); initialized Task identity must survive title or ordering changes"
             : "",
         instructions ? `\nExtra instructions:\n${instructions}` : "",
         "",

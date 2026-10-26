@@ -7,19 +7,13 @@ import { workflowTools } from "../__lib/tools.js"
 
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
-import {
-    assertEntityBranchReady,
-    ENTITY_METADATA_FILE,
-    readEntityStatus,
-    resolveEntityDirectory,
-    writeEntityStatus,
-} from "../__lib/entity.js"
+import { ENTITY_METADATA_FILE, readEntityStatus, resolveEntityDirectory, writeEntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
 import { planPublicationMarker, type PublicationAdapter } from "./plan-publication.js"
 import { renderProviderBody } from "./projection.js"
-import type { IntegrationRecord } from "./records.js"
+import type { TrackerRecord } from "./records.js"
 import { EvidenceSchema } from "./resource-id-tool.js"
 import { githubPublication } from "./tracker-publication-github.js"
 import { linearPublication } from "./tracker-publication-linear.js"
@@ -105,20 +99,12 @@ export async function trackerPublication(cwd: string, raw: TrackerPublicationInp
     const directory = resolveEntityDirectory(root, cwd, input.entityDir)
     return withFileMutationQueue(path.join(directory, ENTITY_METADATA_FILE), async () => {
         assertArtifactPersistencePrepared(root)
-        const loaded = loadIntegrationConfig(root)
-        const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
+        const environment = resolveWorkflowEnvironment(loadIntegrationConfig(root))
         const status = readEntityStatus(directory)
         assertEntityEnvironment(status, environment)
-        assertEntityBranchReady(status)
-        const tracker = status.integrations.find((entry) => entry.role === "tracker")
-        if (environment.tracker.kind === "none" || !tracker || tracker.state !== "bound")
-            throw new Error("plan publication requires a confirmed tracker binding")
-        const server = environment.tracker.config.mcpServer
-        const save = (record: IntegrationRecord) =>
-            writeEntityStatus(directory, {
-                ...status,
-                integrations: status.integrations.map((entry) => (entry === tracker ? record : entry)),
-            })
+        const tracker = status.tracker
+        const server = environment.tracker.mcpServer
+        const save = (record: TrackerRecord) => writeEntityStatus(directory, { ...status, tracker: record })
         if (tracker.provider === "github")
             return runPublication(
                 input,

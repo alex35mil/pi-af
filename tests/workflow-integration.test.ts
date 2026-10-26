@@ -16,12 +16,6 @@ import {
     PriorityFieldSchema,
 } from "../workflows/extensions/integrations/config.ts"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-
-import {
-    resolveForgePolicy,
-    resolveWorkflowPolicy,
-    type WorkflowEnvironment,
-} from "../workflows/extensions/integrations/policy.ts"
 import registerIntegrations, {
     buildIntegrationContext,
     IntegrationContextSchema,
@@ -52,18 +46,34 @@ const deliverableKinds = {
     chore: "Kind: Chore",
 }
 
-function config(scope: "project" | "issue" = "project") {
+function config(scope: "project" | "issue" = "project", kindLabels = true) {
     return {
         provider: "github" as const,
         mcpServer: "github",
         repository: { owner: "alex", repo: "example" },
-        project: { owner: "alex", ownerType: scope === "project" ? ("user" as const) : ("org" as const), number: 3 },
-        labels: { kind: { epic: "Kind: Epic", deliverableKinds: { ...deliverableKinds } } },
+        project: {
+            owner: "alex",
+            ownerType: scope === "project" ? ("user" as const) : ("org" as const),
+            number: 3,
+        },
+        ...(kindLabels
+            ? {
+                  labels: {
+                      kind: {
+                          epic: "Kind: Epic",
+                          deliverableKinds: { ...deliverableKinds },
+                      },
+                  },
+              }
+            : {}),
         fields: {
             status: { field: "Status", values: { ...statuses } },
             phase: { field: "Phase", values: { ...phaseValues } },
-            priority: { scope, field: "Priority", values: ["Urgent", "High", "Medium", "Low"] },
-            internalId: { scope, field: "Internal ID" },
+            priority: {
+                scope,
+                field: "Priority",
+                values: ["Urgent", "High", "Medium", "Low"],
+            },
         },
     }
 }
@@ -94,16 +104,18 @@ const queueSelection = {
     target: "current" as const,
     entity: "gig" as const,
     priority: "High",
-    kind: "refactor",
+    kind: "refactor" as const,
 }
 
 function temporaryProject(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), "workflow-integration-"))
 }
 
-function prepareWorkflowProject(root: string): void {
+function prepareWorkflowProject(root: string, tracker: unknown = config()): void {
     cp.execFileSync("git", ["init", "-b", "main"], { cwd: root })
-    cp.execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root })
+    cp.execFileSync("git", ["config", "user.email", "test@example.com"], {
+        cwd: root,
+    })
     cp.execFileSync("git", ["config", "user.name", "Test"], { cwd: root })
     fs.writeFileSync(path.join(root, "README.md"), "test\n")
     fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
@@ -112,108 +124,65 @@ function prepareWorkflowProject(root: string): void {
     fs.mkdirSync(path.join(root, ".project"), { recursive: true })
     fs.writeFileSync(
         path.join(root, ".project", "config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
+        JSON.stringify({ branches: { format: "number-title" } }),
     )
-}
-
-function writeTrackerlessGigEntity(cwd: string): string {
-    const rawId = "01KDVDNA01"
-    const directory = path.join(".project", ".local", "gigs", `20260102-0305.GIG-${rawId}.forge-only`)
-    const absolute = path.join(cwd, directory)
-    fs.mkdirSync(absolute, { recursive: true })
-    const metadata = {
-        id: `GIG-${rawId}`,
-        rawId,
-        slug: "forge-only",
-        title: "Forge only",
-        entity: "gig",
-        kind: "chore",
-        authority: { kind: "workflow", priority: "not set" },
-        createdAt: "2026-01-02T03:05:00.000Z",
-        phase: "planning",
-        branch: { state: "ready", name: "gig-forge-only", start: "main", target: "main", source: "generated" },
-        integrations: [],
-    }
-    fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
     fs.writeFileSync(
-        path.join(absolute, "status.md"),
-        '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
+        path.join(root, ".project", "integrations.json"),
+        JSON.stringify({ tracker, forge: forgeConfig() }),
     )
-    return directory
 }
 
-function writeGitHubGigEntity(cwd: string): string {
-    const rawId = "01KDVDNA02"
-    const directory = path.join(".project", ".local", "gigs", `20260102-0306.GIG-${rawId}.github-provider`)
-    const absolute = path.join(cwd, directory)
-    fs.mkdirSync(absolute, { recursive: true })
+function writeEntity(cwd: string, entity: "epic" | "gig", name: string, tracker: unknown, slug: string): string {
+    const directory = path.join(".project", ".local", entity === "epic" ? "epics" : "gigs", name)
+    fs.mkdirSync(path.join(cwd, directory), { recursive: true })
     const metadata = {
-        id: `GIG-${rawId}`,
-        rawId,
-        slug: "github-provider",
-        title: "GitHub provider",
-        entity: "gig",
-        kind: "feature",
-        authority: { kind: "tracker", provider: "github" },
+        slug,
+        title: slug,
+        entity,
+        ...(entity === "epic" ? { taskTarget: "epic" } : { kind: "feature" }),
         createdAt: "2026-01-02T03:06:00.000Z",
         phase: "execution",
         branch: {
             state: "ready",
-            name: "gig-github-provider",
+            name: name.toLowerCase(),
             start: "main",
             target: "main",
             source: "generated",
         },
-        integrations: [
-            {
-                role: "tracker",
-                provider: "github",
-                planComment: { state: "unpublished" },
-                repository: { owner: "alex", repo: "example" },
-                state: "bound",
-                external: { issueNumber: 42 },
-            },
-        ],
+        tracker,
     }
-    fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
+    fs.writeFileSync(path.join(cwd, directory, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
     return directory
 }
 
-function writeLinearGigEntity(cwd: string): string {
-    const rawId = "01KDVDNA00"
-    const directory = path.join(".project", ".local", "gigs", `20260102-0304.GIG-${rawId}.mixed-provider`)
-    const absolute = path.join(cwd, directory)
-    fs.mkdirSync(absolute, { recursive: true })
-    const metadata = {
-        id: `GIG-${rawId}`,
-        rawId,
-        slug: "mixed-provider",
-        title: "Mixed provider",
-        entity: "gig",
-        kind: "chore",
-        authority: { kind: "tracker", provider: "linear" },
-        createdAt: "2026-01-02T03:04:00.000Z",
-        phase: "planning",
-        branch: {
-            state: "ready",
-            name: "alex/eng-123-mixed-provider",
-            start: "main",
-            target: "main",
-            source: "tracker",
+function writeGitHubGigEntity(cwd: string): string {
+    return writeEntity(
+        cwd,
+        "gig",
+        "42-github-provider",
+        {
+            provider: "github",
+            repository: { owner: "alex", repo: "example" },
+            external: { issueNumber: 42 },
+            planComment: { state: "unpublished" },
         },
-        integrations: [
-            {
-                role: "tracker",
-                provider: "linear",
-                planDocument: { state: "unpublished" },
-                resource: "gig-issue",
-                state: "bound",
-                external: { issueId: "linear-uuid" },
-            },
-        ],
-    }
-    fs.writeFileSync(path.join(absolute, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`)
-    return directory
+        "github-provider",
+    )
+}
+
+function writeLinearGigEntity(cwd: string): string {
+    return writeEntity(
+        cwd,
+        "gig",
+        "ENG-123-mixed-provider",
+        {
+            provider: "linear",
+            resource: "gig-issue",
+            external: { issueId: "linear-uuid", identifier: "ENG-123" },
+            planDocument: { state: "unpublished" },
+        },
+        "mixed-provider",
+    )
 }
 
 function workflowFixture(t: TestContext) {
@@ -231,7 +200,13 @@ function workflowFixture(t: TestContext) {
     })
     const settingsPath = getWorkflowSettingsPaths(consumer).global
     fs.writeFileSync(settingsPath, JSON.stringify({ workflowProject: source }))
-    return { root, source, consumer, settingsPath, ctx: { cwd: consumer } as ExtensionContext }
+    return {
+        root,
+        source,
+        consumer,
+        settingsPath,
+        ctx: { cwd: consumer } as ExtensionContext,
+    }
 }
 
 function fileSnapshot(root: string): [string, string][] {
@@ -250,23 +225,45 @@ describe("workflow-source queue context", () => {
             assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect", target }), true)
             assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target }), true)
             assert.equal(
-                Value.Check(IntegrationContextSchema, { operation: "resume", entityDir: "gig", target }),
+                Value.Check(IntegrationContextSchema, {
+                    operation: "resume",
+                    entityDir: "gig",
+                    target,
+                }),
                 false,
             )
-            assert.equal(Value.Check(IntegrationContextSchema, { operation: "adopt", entity: "gig", target }), false)
+            assert.equal(
+                Value.Check(IntegrationContextSchema, {
+                    operation: "adopt",
+                    entity: "gig",
+                    target,
+                }),
+                false,
+            )
         }
         assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect" }), false)
         const { target, ...withoutTarget } = queueSelection
         assert.equal(Value.Check(IntegrationContextSchema, withoutTarget), false)
-        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target: "other" }), false)
+        assert.equal(
+            Value.Check(IntegrationContextSchema, {
+                ...queueSelection,
+                target: "other",
+            }),
+            false,
+        )
+        assert.equal(
+            Value.Check(IntegrationContextSchema, {
+                ...queueSelection,
+                kind: "review",
+            }),
+            false,
+        )
     })
 
     for (const provider of ["github", "linear"] as const) {
         for (const consumingSetup of ["missing", "different", "malformed"] as const) {
             it(`uses ${provider} source configuration with ${consumingSetup} consuming setup`, (t) => {
                 const f = workflowFixture(t)
-                prepareWorkflowProject(f.source)
-                prepareArtifactPersistence(f.source)
                 const tracker =
                     provider === "github"
                         ? {
@@ -274,40 +271,37 @@ describe("workflow-source queue context", () => {
                               mcpServer: "workflow-github",
                               repository: { owner: "maintainer", repo: "workflows" },
                           }
-                        : { ...linearConfig(), mcpServer: "workflow-linear", team: "Workflow Team" }
+                        : {
+                              ...linearConfig(),
+                              mcpServer: "workflow-linear",
+                              team: "Workflow Team",
+                          }
+                prepareWorkflowProject(f.source, tracker)
+                prepareArtifactPersistence(f.source)
                 const sourceIntegrations = path.join(f.source, ".project/integrations.json")
-                fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker }))
                 if (consumingSetup !== "missing") {
                     prepareWorkflowProject(f.consumer)
-                    fs.writeFileSync(
-                        path.join(f.consumer, ".project/integrations.json"),
-                        consumingSetup === "malformed" ? "broken JSON" : JSON.stringify({ tracker: config() }),
-                    )
-                    if (consumingSetup === "malformed")
+                    if (consumingSetup === "malformed") {
+                        fs.writeFileSync(path.join(f.consumer, ".project/integrations.json"), "broken JSON")
                         fs.writeFileSync(path.join(f.consumer, ".project/config.json"), "broken JSON")
+                    }
                 }
                 const before = fileSnapshot(f.root)
-                const inspected = buildIntegrationContext(
-                    f.ctx,
-                    { operation: "inspect", target: "workflow" },
-                    mcpTools,
-                )
+                const inspected = buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools)
                 const intake = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
                 for (const context of [inspected, intake]) {
-                    if (context.state !== "enabled") assert.fail("expected source context")
                     assert.equal(context.target, "workflow")
                     assert.equal(context.projectRoot, f.source)
-                    assert.deepEqual(context.roles.tracker, { state: "enabled", provider, config: tracker })
+                    assert.deepEqual(context.roles.tracker, {
+                        state: "enabled",
+                        provider,
+                        config: tracker,
+                    })
                 }
-                assert.equal(fileSnapshot(f.root).length, before.length)
                 assert.deepEqual(fileSnapshot(f.root), before, "context must not modify either project or settings")
                 if (consumingSetup === "different") {
-                    const current = buildIntegrationContext(
-                        f.ctx,
-                        { ...queueSelection, target: "current" },
-                        mcpTools,
-                    )
-                    if (current.state !== "enabled") assert.fail("expected consuming context")
+                    prepareArtifactPersistence(f.consumer)
+                    const current = buildIntegrationContext(f.ctx, { ...queueSelection, target: "current" }, mcpTools)
                     assert.deepEqual(current.roles.tracker, {
                         state: "enabled",
                         provider: "github",
@@ -316,11 +310,13 @@ describe("workflow-source queue context", () => {
                 }
                 const updated =
                     provider === "github"
-                        ? { ...tracker, repository: { owner: "maintainer", repo: "new-inbox" } }
+                        ? {
+                              ...tracker,
+                              repository: { owner: "maintainer", repo: "new-inbox" },
+                          }
                         : { ...tracker, team: "New Workflow Team" }
-                fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated }))
+                fs.writeFileSync(sourceIntegrations, JSON.stringify({ tracker: updated, forge: forgeConfig() }))
                 const reread = buildIntegrationContext(f.ctx, { ...queueSelection, target: "workflow" }, mcpTools)
-                if (reread.state !== "enabled") assert.fail("expected refreshed context")
                 assert.deepEqual(reread.roles.tracker?.config, updated)
             })
         }
@@ -329,7 +325,7 @@ describe("workflow-source queue context", () => {
     it("errors on a missing source reference without requiring it for current intake", (t) => {
         const f = workflowFixture(t)
         prepareWorkflowProject(f.consumer)
-        fs.writeFileSync(path.join(f.consumer, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+        prepareArtifactPersistence(f.consumer)
         fs.rmSync(f.settingsPath)
         const before = fileSnapshot(f.root)
         assert.throws(
@@ -344,8 +340,14 @@ describe("workflow-source queue context", () => {
         const f = workflowFixture(t)
         prepareWorkflowProject(f.source)
         const integrations = path.join(f.source, ".project/integrations.json")
-        for (const content of [undefined, JSON.stringify({ forge: forgeConfig() }), "broken JSON"]) {
-            if (content !== undefined) fs.writeFileSync(integrations, content)
+        for (const content of [
+            undefined,
+            JSON.stringify({ forge: forgeConfig() }),
+            JSON.stringify({ tracker: config() }),
+            "broken JSON",
+        ]) {
+            if (content === undefined) fs.rmSync(integrations)
+            else fs.writeFileSync(integrations, content)
             const before = fileSnapshot(f.root)
             assert.throws(
                 () => buildIntegrationContext(f.ctx, { operation: "inspect", target: "workflow" }, mcpTools),
@@ -353,7 +355,7 @@ describe("workflow-source queue context", () => {
             )
             assert.deepEqual(fileSnapshot(f.root), before)
         }
-        fs.writeFileSync(integrations, JSON.stringify({ tracker: config() }))
+        fs.writeFileSync(integrations, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
         fs.writeFileSync(
             path.join(f.source, ".project/config.local.json"),
             JSON.stringify({ branches: { username: "alex" } }),
@@ -381,7 +383,7 @@ describe("workflow-source queue context", () => {
     it("exposes source selection through the existing registered context tool without remote calls", async (t) => {
         const f = workflowFixture(t)
         prepareWorkflowProject(f.source)
-        fs.writeFileSync(path.join(f.source, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
+        prepareArtifactPersistence(f.source)
         type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
         const tools = new Map<string, Tool>()
         registerIntegrations({
@@ -420,46 +422,14 @@ describe("workflow integration configuration", () => {
         )
     })
 
-    it("defines every tracker and forge policy case exhaustively", () => {
-        const trackerRoles: WorkflowEnvironment["tracker"][] = [
-            { kind: "none" },
-            { kind: "github", config: config("project") },
-            { kind: "linear", config: linearConfig() },
-        ]
-        const workflowCases = trackerRoles.map((tracker) => resolveWorkflowPolicy({ tracker, forge: { kind: "none" } }))
-        assert.deepEqual(
-            workflowCases.map((policy) => [
-                policy.case,
-                policy.lifecycleAuthority,
-                policy.priorityAuthority,
-                policy.localStatus,
-                policy.projection,
-            ]),
-            [
-                ["no-tracker", "workflow", "workflow", "required", "none"],
-                ["github", "tracker", "tracker", "forbidden", "restricted"],
-                ["linear", "tracker", "tracker", "forbidden", "restricted"],
-            ],
-        )
-
-        const forgeCases = [
-            resolveForgePolicy({ tracker: { kind: "none" }, forge: { kind: "none" } }),
-            resolveForgePolicy({ tracker: { kind: "none" }, forge: { kind: "github", config: forgeConfig() } }),
-        ]
-        assert.deepEqual(
-            forgeCases.map((policy) => [policy.case, policy.pullRequests]),
-            [
-                ["no-forge", false],
-                ["github", true],
-            ],
-        )
-    })
-
     it("keeps Backlog and Todo command intake external-only", async () => {
         const cwd = temporaryProject()
         let sent = ""
         const notices: string[] = []
-        type Command = { description: string; handler: (args: string, ctx: unknown) => Promise<void> }
+        type Command = {
+            description: string
+            handler: (args: string, ctx: unknown) => Promise<void>
+        }
         const commands = new Map<string, Command>()
         const tools: string[] = []
         const pi = {
@@ -475,14 +445,15 @@ describe("workflow integration configuration", () => {
             registerIntegrations(pi)
             assert.ok(commands.has("backlog"))
             assert.ok(commands.has("todo"))
-            assert.ok(tools.includes("verify_artifact_projection"))
-            assert.ok(tools.includes("render_provider_body"))
-            assert.ok(tools.includes("prepare_tracker_publication"))
-            assert.ok(tools.includes("record_tracker_publication"))
-            assert.ok(tools.includes("recover_tracker_publication"))
-            assert.equal(tools.includes("render_artifact_links"), false)
-            assert.ok(tools.includes("finalize_linear_branch"))
-            assert.equal(tools.includes("reconcile_linear_backlog"), false)
+            for (const tool of [
+                "verify_artifact_projection",
+                "render_provider_body",
+                "prepare_tracker_publication",
+                "record_tracker_publication",
+                "recover_tracker_publication",
+            ])
+                assert.ok(tools.includes(tool), tool)
+            assert.equal(tools.includes("finalize_linear_branch"), false)
             assert.equal(
                 commands.get("backlog")!.description,
                 "Add potential work to the configured external Backlog without initializing workflow work",
@@ -491,7 +462,10 @@ describe("workflow integration configuration", () => {
                 commands.get("todo")!.description,
                 "Add queued work to the configured external Todo queue without initializing workflow work",
             )
-            const context = { cwd, ui: { notify: (message: string) => notices.push(message) } }
+            const context = {
+                cwd,
+                ui: { notify: (message: string) => notices.push(message) },
+            }
             await commands.get("backlog")!.handler("", context)
             await commands.get("todo")!.handler("", context)
             assert.deepEqual(notices, ["Usage: /backlog <potential work>", "Usage: /todo <queued work>"])
@@ -505,52 +479,70 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("is silently disabled when the config file is absent", () => {
+    it("requires both a tracker and a forge", () => {
         const cwd = temporaryProject()
         try {
-            assert.deepEqual(loadIntegrationConfig(cwd).state, "disabled")
-            const ctx = { cwd } as ExtensionContext
-            assert.deepEqual(buildIntegrationContext(ctx, { operation: "inspect", target: "current" }, mcpTools), {
-                state: "disabled",
-                target: "current",
-                projectRoot: cwd,
+            assert.throws(() => loadIntegrationConfig(cwd), /missing required \.project\/integrations\.json/)
+            fs.mkdirSync(path.join(cwd, ".project"))
+            const file = path.join(cwd, ".project/integrations.json")
+            for (const content of [{ forge: forgeConfig() }, { tracker: config() }]) {
+                fs.writeFileSync(file, JSON.stringify(content))
+                assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+            }
+            fs.writeFileSync(file, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
+            assert.deepEqual(loadIntegrationConfig(cwd), {
+                tracker: config(),
+                forge: forgeConfig(),
             })
-            assert.throws(() => buildIntegrationContext(ctx, queueSelection, mcpTools), /requires a configured tracker/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 
-    it("validates entity authority when integration configuration is absent", () => {
+    it("rejects an entity bound to another tracker provider", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
             prepareArtifactPersistence(cwd)
-            const trackerEntity = writeLinearGigEntity(cwd)
+            const entityDir = writeLinearGigEntity(cwd)
             assert.throws(
                 () =>
-                    buildIntegrationContext(
-                        { cwd } as ExtensionContext,
-                        {
-                            operation: "resume",
-                            entityDir: trackerEntity,
-                        },
-                        mcpTools,
-                    ),
-                /requires tracker migration/,
+                    buildIntegrationContext({ cwd } as ExtensionContext, { operation: "resume", entityDir }, mcpTools),
+                /bound to linear, not the configured tracker/,
             )
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
 
-            const workflowEntity = writeTrackerlessGigEntity(cwd)
-            assert.deepEqual(
-                buildIntegrationContext(
-                    { cwd } as ExtensionContext,
-                    {
-                        operation: "resume",
-                        entityDir: workflowEntity,
-                    },
-                    mcpTools,
-                ),
-                { state: "disabled" },
+    it("applies the configured Kind label in queue intake only when Kind labels are on", () => {
+        const cwd = temporaryProject()
+        try {
+            prepareWorkflowProject(cwd)
+            prepareArtifactPersistence(cwd)
+            const ctx = { cwd } as ExtensionContext
+            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, "Kind: Refactor")
+            assert.equal(
+                buildIntegrationContext(ctx, { ...queueSelection, entity: "epic", kind: "epic" }, mcpTools).kindLabel,
+                "Kind: Epic",
+            )
+            assert.equal(buildIntegrationContext(ctx, { ...queueSelection, kind: "not set" }, mcpTools).kindLabel, null)
+            fs.writeFileSync(
+                path.join(cwd, ".project/integrations.json"),
+                JSON.stringify({
+                    tracker: config("project", false),
+                    forge: forgeConfig(),
+                }),
+            )
+            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
+            fs.writeFileSync(
+                path.join(cwd, ".project/integrations.json"),
+                JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
+            )
+            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
+            assert.equal(
+                buildIntegrationContext(ctx, { operation: "inspect", target: "current" }, mcpTools).kindLabel,
+                undefined,
             )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -586,31 +578,27 @@ describe("workflow integration configuration", () => {
         try {
             fs.mkdirSync(path.join(cwd, ".project"))
             const integrationPath = path.join(cwd, ".project", "integrations.json")
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }))
-            const loaded = loadIntegrationConfig(cwd)
-            assert.equal(loaded.state, "enabled")
-            if (loaded.state !== "enabled") assert.fail("expected enabled integration")
-            assert.equal(loaded.config.tracker?.provider, "linear")
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(integrationPath, JSON.stringify({ tracker, forge: forgeConfig() }))
+            write(linearConfig())
+            assert.equal(loadIntegrationConfig(cwd).tracker.provider, "linear")
 
             const duplicateStatuses = linearConfig()
             duplicateStatuses.statuses.issues.todo = duplicateStatuses.statuses.issues.backlog
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: duplicateStatuses }))
+            write(duplicateStatuses)
             assert.throws(() => loadIntegrationConfig(cwd), /Linear issue Status mappings must use distinct options/)
 
             const missingIssueCanceled = linearConfig()
             delete (missingIssueCanceled.statuses.issues as Partial<typeof statuses>).canceled
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: missingIssueCanceled }))
+            write(missingIssueCanceled)
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
 
             const missingProjectCanceled = linearConfig()
             delete (missingProjectCanceled.statuses.projects as Partial<typeof statuses>).canceled
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: missingProjectCanceled }))
+            write(missingProjectCanceled)
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
 
-            fs.writeFileSync(
-                integrationPath,
-                JSON.stringify({ tracker: { ...linearConfig(), repository: { owner: "x", repo: "y" } } }),
-            )
+            write({ ...linearConfig(), repository: { owner: "x", repo: "y" } })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -621,8 +609,11 @@ describe("workflow integration configuration", () => {
         const cwd = temporaryProject()
         try {
             fs.mkdirSync(path.join(cwd, ".project"))
-            const writeConfig = (tracker: ReturnType<typeof config>) =>
-                fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ tracker }))
+            const writeConfig = (tracker: unknown) =>
+                fs.writeFileSync(
+                    path.join(cwd, ".project", "integrations.json"),
+                    JSON.stringify({ tracker, forge: forgeConfig() }),
+                )
 
             const duplicateStatus = config("project")
             duplicateStatus.fields.status.values.todo = duplicateStatus.fields.status.values.backlog
@@ -640,8 +631,8 @@ describe("workflow integration configuration", () => {
             assert.throws(() => loadIntegrationConfig(cwd), /Project field names must be distinct/)
 
             const duplicateKindLabel = config("project")
-            duplicateKindLabel.labels.kind.deliverableKinds.bugfix =
-                duplicateKindLabel.labels.kind.deliverableKinds.feature.toUpperCase()
+            duplicateKindLabel.labels!.kind.deliverableKinds.bugfix =
+                duplicateKindLabel.labels!.kind.deliverableKinds.feature.toUpperCase()
             writeConfig(duplicateKindLabel)
             assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
 
@@ -658,34 +649,35 @@ describe("workflow integration configuration", () => {
             const separateScope = config("issue")
             separateScope.fields.priority.field = separateScope.fields.status.field
             writeConfig(separateScope)
-            assert.equal(loadIntegrationConfig(cwd).state, "enabled")
+            assert.equal(loadIntegrationConfig(cwd).tracker.provider, "github")
+
+            writeConfig(config("project", false))
+            assert.equal(loadIntegrationConfig(cwd).tracker.provider, "github")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 
-    it("reads tracker and forge configuration independently without provider preflight", () => {
+    it("reads tracker and forge configuration without provider preflight", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
-            const file = path.join(cwd, ".project/integrations.json")
-            fs.writeFileSync(file, JSON.stringify({ forge: forgeConfig() }))
-            assert.throws(
-                () => buildIntegrationContext({ cwd } as ExtensionContext, queueSelection, mcpTools),
-                /tracker/,
-            )
-            fs.writeFileSync(file, JSON.stringify({ tracker: config(), forge: forgeConfig() }))
+            prepareArtifactPersistence(cwd)
             const result = buildIntegrationContext(
                 { cwd } as ExtensionContext,
-                {
-                    operation: "inspect",
-                    target: "current",
-                },
+                { operation: "inspect", target: "current" },
                 mcpTools,
             )
-            if (result.state !== "enabled") assert.fail("enabled configuration expected")
-            assert.deepEqual(result.roles.tracker, { state: "enabled", provider: "github", config: config() })
-            assert.deepEqual(result.roles.forge, { state: "enabled", provider: "github", config: forgeConfig() })
+            assert.deepEqual(result.roles.tracker, {
+                state: "enabled",
+                provider: "github",
+                config: config(),
+            })
+            assert.deepEqual(result.roles.forge, {
+                state: "enabled",
+                provider: "github",
+                config: forgeConfig(),
+            })
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -695,8 +687,6 @@ describe("workflow integration configuration", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
-            const integrationPath = path.join(cwd, ".project", "integrations.json")
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: config("project"), forge: forgeConfig() }))
             prepareArtifactPersistence(cwd)
             const entityDir = writeGitHubGigEntity(cwd)
             const ctx = { cwd } as ExtensionContext
@@ -706,20 +696,41 @@ describe("workflow integration configuration", () => {
             const prBody =
                 "## Overview\n\nDelivered.\n\n<hr />\n\n<details>\n<summary>Verification</summary>\n\nTests passed.\n\n</details>"
 
-            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }), trackerBody)
             assert.equal(
-                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
+                renderEntityProviderBody(ctx, {
+                    entityDir,
+                    destination: "tracker",
+                    source,
+                }),
+                trackerBody,
+            )
+            assert.equal(
+                renderEntityProviderBody(ctx, {
+                    entityDir,
+                    destination: "pullRequest",
+                    source,
+                }),
                 `${prBody}\n\n---\n\nCloses #42`,
             )
 
             fs.writeFileSync(
-                integrationPath,
+                path.join(cwd, ".project", "integrations.json"),
                 JSON.stringify({
                     tracker: config("project"),
-                    forge: { ...forgeConfig(), repository: { owner: "alex", repo: "other" } },
+                    forge: {
+                        ...forgeConfig(),
+                        repository: { owner: "alex", repo: "other" },
+                    },
                 }),
             )
-            assert.equal(renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }), prBody)
+            assert.equal(
+                renderEntityProviderBody(ctx, {
+                    entityDir,
+                    destination: "pullRequest",
+                    source,
+                }),
+                prBody,
+            )
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -728,42 +739,22 @@ describe("workflow integration configuration", () => {
     it("keeps Linear tracker and GitHub forge contexts independent", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd)
-            fs.writeFileSync(
-                path.join(cwd, ".project", "integrations.json"),
-                JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
-            )
+            prepareWorkflowProject(cwd, linearConfig())
+            prepareArtifactPersistence(cwd)
             const entityDir = writeLinearGigEntity(cwd)
+            const ctx = { cwd } as ExtensionContext
 
-            const trackerSide = buildIntegrationContext({ cwd } as ExtensionContext, queueSelection, mcpTools)
-            if (trackerSide.state !== "enabled") assert.fail("expected enabled integrations")
+            const trackerSide = buildIntegrationContext(ctx, queueSelection, mcpTools)
             assert.equal(trackerSide.roles.tracker?.state, "enabled")
             assert.equal(trackerSide.roles.forge, undefined)
-            const initializeSide = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                {
-                    operation: "initialize",
-                    entityDir,
-                },
-                mcpTools,
-            )
-            if (initializeSide.state !== "enabled") assert.fail("expected enabled integrations")
-            assert.equal(initializeSide.roles.tracker?.state, "enabled")
-            assert.equal(initializeSide.roles.forge?.state, "enabled")
-
-            const forgeSide = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                {
-                    operation: "pullRequest",
-                    entityDir,
-                },
-                mcpTools,
-            )
-            if (forgeSide.state !== "enabled") assert.fail("expected enabled integrations")
+            const resumeSide = buildIntegrationContext(ctx, { operation: "resume", entityDir }, mcpTools)
+            assert.equal(resumeSide.roles.tracker?.state, "enabled")
+            assert.equal(resumeSide.roles.forge?.state, "enabled")
+            const forgeSide = buildIntegrationContext(ctx, { operation: "pullRequest", entityDir }, mcpTools)
             assert.equal(forgeSide.roles.tracker, undefined)
             assert.equal(forgeSide.roles.forge?.state, "enabled")
             assert.equal(
-                renderEntityProviderBody({ cwd } as ExtensionContext, {
+                renderEntityProviderBody(ctx, {
                     entityDir,
                     destination: "pullRequest",
                     source: "# Result\n\n## Overview\n\nDelivered.\n\n## Verification\n\nTests passed.\n",
@@ -776,33 +767,35 @@ describe("workflow integration configuration", () => {
     })
 
     it("renders Epic and Gig trackers losslessly without local mutations", () => {
+        const githubEpic = {
+            provider: "github",
+            repository: { owner: "alex", repo: "example" },
+            external: { issueNumber: 7 },
+            planComment: { state: "unpublished" },
+        }
+        const linearEpic = {
+            provider: "linear",
+            resource: "project",
+            external: {
+                projectId: "linear-project-uuid",
+                createdAt: "2026-10-01T09:00:00.000Z",
+            },
+            planDocument: { state: "unpublished" },
+        }
         for (const provider of ["github", "linear"] as const) {
             for (const entity of ["epic", "gig"] as const) {
                 const cwd = temporaryProject()
                 try {
-                    prepareWorkflowProject(cwd)
-                    fs.writeFileSync(
-                        path.join(cwd, ".project", "integrations.json"),
-                        JSON.stringify({ tracker: provider === "github" ? config() : linearConfig() }),
-                    )
+                    prepareWorkflowProject(cwd, provider === "github" ? config() : linearConfig())
                     prepareArtifactPersistence(cwd)
-                    let entityDir = provider === "github" ? writeGitHubGigEntity(cwd) : writeLinearGigEntity(cwd)
-                    if (entity === "epic") {
-                        const original = path.join(cwd, entityDir)
-                        const { kind, ...metadata } = JSON.parse(
-                            fs.readFileSync(path.join(original, "metadata.json"), "utf-8"),
-                        )
-                        entityDir = entityDir.replace("gigs", "epics").replace(".GIG-", ".EPIC-")
-                        metadata.id = `EPIC-${metadata.rawId}`
-                        metadata.entity = "epic"
-                        metadata.taskTarget = "epic"
-                        if (provider === "linear") {
-                            metadata.integrations[0].resource = "project"
-                            metadata.integrations[0].external = { projectId: "linear-project-uuid" }
-                        }
-                        fs.mkdirSync(path.join(cwd, entityDir), { recursive: true })
-                        fs.writeFileSync(path.join(cwd, entityDir, "metadata.json"), JSON.stringify(metadata))
-                    }
+                    const entityDir =
+                        entity === "gig"
+                            ? provider === "github"
+                                ? writeGitHubGigEntity(cwd)
+                                : writeLinearGigEntity(cwd)
+                            : provider === "github"
+                              ? writeEntity(cwd, "epic", "7-rollout", githubEpic, "rollout")
+                              : writeEntity(cwd, "epic", "20261001-rollout", linearEpic, "rollout")
                     const before = fileSnapshot(cwd)
                     const overview =
                         "## Overview\n\nExplain the work.\n\n### Plan highlights\n\n- Preserve the contract."
@@ -820,15 +813,6 @@ describe("workflow integration configuration", () => {
                         `${provider === "github" ? "# Plan\n\nExplain the work.\n\n## Highlights\n\n- Preserve the contract." : "Explain the work.\n\n## Highlights\n\n- Preserve the contract."}\n\n${fold}`,
                     )
                     assert.deepEqual(fileSnapshot(cwd), before)
-                    assert.throws(
-                        () =>
-                            renderEntityProviderBody({ cwd } as ExtensionContext, {
-                                entityDir,
-                                destination: "pullRequest",
-                                source: `# Work\n\n${overview}\n\n${details}\n`,
-                            }),
-                        /requires a configured forge/,
-                    )
                 } finally {
                     fs.rmSync(cwd, { recursive: true, force: true })
                 }
@@ -836,80 +820,17 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("renders forge-only PRs and requires a configured role for each destination", () => {
+    it("returns the lossless projection contract with the saved plan publication state", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd)
-            fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
+            prepareWorkflowProject(cwd, linearConfig())
             prepareArtifactPersistence(cwd)
-            const entityDir = writeTrackerlessGigEntity(cwd)
-            const ctx = { cwd } as ExtensionContext
-            const source = "# Report\n\n## Overview\n\nConclusion and uncertainty.\n\n## Evidence\n\nAll findings.\n"
-            assert.equal(
-                renderEntityProviderBody(ctx, { entityDir, destination: "pullRequest", source }),
-                "## Overview\n\nConclusion and uncertainty.\n\n<hr />\n\n<details>\n<summary>Evidence</summary>\n\nAll findings.\n\n</details>",
-            )
-            assert.throws(
-                () => renderEntityProviderBody(ctx, { entityDir, destination: "tracker", source }),
-                /requires a configured tracker/,
-            )
-        } finally {
-            fs.rmSync(cwd, { recursive: true, force: true })
-        }
-    })
-
-    it("reads GitHub configuration and restricted projection policy", () => {
-        const cwd = temporaryProject()
-        try {
-            prepareWorkflowProject(cwd)
-            prepareArtifactPersistence(cwd)
-            fs.writeFileSync(
-                path.join(cwd, ".project", "integrations.json"),
-                JSON.stringify({ tracker: config("issue") }),
-            )
-
-            const context = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                {
-                    operation: "inspect",
-                    target: "current",
-                },
-                mcpTools,
-            )
-            if (context.state !== "enabled") assert.fail("expected enabled integrations")
-            assert.equal(context.projection?.mode, "restricted")
-            const tracker = context.roles.tracker
-            if (!tracker || tracker.state !== "enabled" || tracker.provider !== "github") {
-                assert.fail("expected enabled GitHub tracker")
-            }
-            assert.equal(tracker.config.fields.internalId.scope, "issue")
-        } finally {
-            fs.rmSync(cwd, { recursive: true, force: true })
-        }
-    })
-
-    it("keeps restricted tracker projection independent from the forge", () => {
-        const cwd = temporaryProject()
-        try {
-            prepareWorkflowProject(cwd)
-            prepareArtifactPersistence(cwd)
-            fs.writeFileSync(
-                path.join(cwd, ".project", "integrations.json"),
-                JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
-            )
             const entityDir = writeLinearGigEntity(cwd)
-
             const projection = buildIntegrationContext(
                 { cwd } as ExtensionContext,
-                {
-                    operation: "artifactProjection",
-                    entityDir,
-                },
+                { operation: "artifactProjection", entityDir },
                 mcpTools,
             )
-            if (projection.state !== "enabled") assert.fail("expected enabled tracker projection")
-            assert.ok(projection.projection)
-            if (projection.projection.mode !== "restricted") assert.fail("expected restricted tracker projection")
             assert.equal(projection.projection.source, "exact accepted epic.md or plan.md")
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
             assert.match(
@@ -918,32 +839,16 @@ describe("workflow integration configuration", () => {
             )
             assert.match(
                 projection.projection.changedCandidateGate,
-                /deterministic renderer output.*no second approval.*substantive omission.*exact diff.*explicit user approval.*complete source/,
+                /deterministic renderer output.*no second approval.*substantive omission.*exact diff.*explicit user approval/,
             )
             assert.equal(projection.projection.authority, "local accepted artifact")
-            assert.match(projection.projection.outcomeProof, /complete rendered approved body.*clear provider success/)
-            assert.match(projection.projection.recovery, /uncertain or partial.*reconcile before retrying/)
-            assert.match(projection.projection.discussion, /comments.*accepted source artifact/)
-            assert.ok(projection.projection.allowed)
-            assert.ok(projection.projection.forbidden)
-            assert.ok(projection.projection.allowed.includes("ordinary repository paths"))
-            assert.ok(projection.projection.forbidden.some((item) => item.startsWith(".project paths")))
+            assert.ok("planDocument" in projection.projection)
+            assert.deepEqual(projection.projection.planDocument, {
+                state: "unpublished",
+            })
             assert.equal(projection.roles.tracker?.state, "enabled")
             assert.equal(projection.roles.forge, undefined)
-
-            fs.writeFileSync(path.join(cwd, ".project", "integrations.json"), JSON.stringify({ forge: forgeConfig() }))
-            assert.throws(
-                () =>
-                    buildIntegrationContext(
-                        { cwd } as ExtensionContext,
-                        {
-                            operation: "artifactProjection",
-                            entityDir,
-                        },
-                        mcpTools,
-                    ),
-                /requires tracker migration/,
-            )
+            assert.equal(projection.phaseProjection, undefined)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -956,10 +861,14 @@ describe("workflow integration configuration", () => {
             fs.writeFileSync(
                 path.join(cwd, ".project/integrations.json"),
                 JSON.stringify({
-                    tracker: { ...config("issue"), project: { owner: "alex", ownerType: "user", number: 3 } },
+                    tracker: {
+                        ...config("issue"),
+                        project: { owner: "alex", ownerType: "user", number: 3 },
+                    },
+                    forge: forgeConfig(),
                 }),
             )
-            assert.equal(loadIntegrationConfig(cwd).state, "enabled")
+            assert.equal(loadIntegrationConfig(cwd).tracker.provider, "github")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -969,7 +878,6 @@ describe("workflow integration configuration", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
-            fs.writeFileSync(path.join(cwd, ".project/integrations.json"), JSON.stringify({ tracker: config() }))
             prepareArtifactPersistence(cwd)
             const entityDir = writeGitHubGigEntity(cwd)
             const context = buildIntegrationContext(
@@ -982,12 +890,15 @@ describe("workflow integration configuration", () => {
                     native: {
                         provider: "github",
                         current: "Planning",
-                        field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+                        field: {
+                            name: "Phase",
+                            dataType: "SINGLE_SELECT",
+                            options: Object.values(phaseValues),
+                        },
                     },
                 },
                 mcpTools,
             )
-            if (context.state !== "enabled") assert.fail("expected context")
             assert.deepEqual(context.phaseMutation, {
                 provider: "github",
                 field: "Phase",
@@ -995,22 +906,6 @@ describe("workflow integration configuration", () => {
                 changed: true,
             })
             assert.equal(context.phaseProjection?.inProgress, "execution")
-            if (context.projection?.mode === "restricted") {
-                assert.ok(context.projection.allowed)
-                assert.ok(context.projection.forbidden)
-                assert.ok(context.projection.allowed.includes("native Phase metadata"))
-                assert.ok(context.projection.forbidden.includes("entity or kind labels/types"))
-            }
-            const bodyOnly = buildIntegrationContext(
-                { cwd } as ExtensionContext,
-                {
-                    operation: "artifactProjection",
-                    entityDir,
-                },
-                mcpTools,
-            )
-            if (bodyOnly.state !== "enabled") assert.fail("expected context")
-            assert.equal(bodyOnly.phaseProjection, undefined)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -1019,14 +914,16 @@ describe("workflow integration configuration", () => {
     it("calculates Linear whole-label updates through runtime context", () => {
         const cwd = temporaryProject()
         try {
-            prepareWorkflowProject(cwd)
-            fs.writeFileSync(
-                path.join(cwd, ".project/integrations.json"),
-                JSON.stringify({ tracker: linearConfig() }),
-            )
+            prepareWorkflowProject(cwd, linearConfig())
             prepareArtifactPersistence(cwd)
             const entityDir = writeLinearGigEntity(cwd)
-            const base = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
+            const base = {
+                team: null,
+                parentId: null,
+                isGroup: false,
+                groupType: null,
+                retiredAt: null,
+            }
             const context = buildIntegrationContext(
                 { cwd } as ExtensionContext,
                 {
@@ -1036,9 +933,15 @@ describe("workflow integration configuration", () => {
                     lifecycle: "inProgress",
                     native: {
                         provider: "linear",
-                        applied: ["customer", "execution"],
+                        applied: ["customer", "planning"],
                         catalog: [
-                            { ...base, id: "group", name: "Phase", isGroup: true, groupType: "singleSelect" },
+                            {
+                                ...base,
+                                id: "group",
+                                name: "Phase",
+                                isGroup: true,
+                                groupType: "singleSelect",
+                            },
                             ...Object.entries(phaseValues).map(([id, name]) => ({
                                 ...base,
                                 id,
@@ -1050,13 +953,12 @@ describe("workflow integration configuration", () => {
                 },
                 mcpTools,
             )
-            if (context.state !== "enabled") assert.fail("expected context")
             assert.deepEqual(context.phaseMutation, {
                 provider: "linear",
-                labels: ["customer", "planning"],
+                labels: ["customer", "execution"],
                 changed: true,
             })
-            assert.equal(context.phaseProjection?.inProgress, "planning")
+            assert.equal(context.phaseProjection?.inProgress, "execution")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -1068,39 +970,33 @@ describe("workflow integration configuration", () => {
             fs.mkdirSync(path.join(cwd, ".project"))
             const integrationPath = path.join(cwd, ".project", "integrations.json")
             const valid = config("project")
-            const { audit, ...legacyKinds } = valid.labels.kind.deliverableKinds
-            fs.writeFileSync(
-                integrationPath,
-                JSON.stringify({
-                    tracker: {
-                        ...valid,
-                        labels: {
-                            ...valid.labels,
-                            kind: {
-                                ...valid.labels.kind,
-                                deliverableKinds: { ...legacyKinds, review: audit },
-                            },
-                        },
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(integrationPath, JSON.stringify({ tracker, forge: forgeConfig() }))
+            const { audit, ...otherKinds } = valid.labels!.kind.deliverableKinds
+            write({
+                ...valid,
+                labels: {
+                    kind: {
+                        ...valid.labels!.kind,
+                        deliverableKinds: { ...otherKinds, review: audit },
                     },
-                }),
-            )
+                },
+            })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
-
-            fs.writeFileSync(
-                integrationPath,
-                JSON.stringify({
-                    tracker: {
-                        ...valid,
-                        fields: {
-                            ...valid.fields,
-                            type: { scope: "project", field: "Kind", epic: "Epic", deliverableKinds },
-                        },
+            write({
+                ...valid,
+                fields: {
+                    ...valid.fields,
+                    type: {
+                        scope: "project",
+                        field: "Kind",
+                        epic: "Epic",
+                        deliverableKinds,
                     },
-                }),
-            )
+                },
+            })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
-
-            fs.writeFileSync(integrationPath, JSON.stringify({ tracker: { ...valid, fields: { labels: true } } }))
+            write({ ...valid, fields: { labels: true } })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })

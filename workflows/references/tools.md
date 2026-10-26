@@ -20,16 +20,15 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 
 ## Initialization
 
-| Work | New | Adopt GitHub work | Adopt Linear work |
+| Work | Before creating the tracker object | From a GitHub issue | From a Linear object |
 | --- | --- | --- | --- |
-| Epic | `init_epic` | `adopt_github_epic` | `adopt_linear_epic` |
-| Task | `init_task` | `adopt_github_task` | `adopt_linear_task` |
-| Gig | `init_gig` | `adopt_github_gig` | `adopt_linear_gig` |
+| Epic | `preflight_epic` | `init_github_epic` | `init_linear_epic` |
+| Task | `preflight_task` | `init_github_task` | `init_linear_task` |
+| Gig | `preflight_gig` | `init_github_gig` | `init_linear_gig` |
 
-- Adoption tools take the verified provider IDs and addressing in `source`.
+- Preflight runs the local checks and changes nothing. The init tools take the tracker object, newly created or selected for adoption, in `object`.
 - `set_epic_task_target` records approved routing intent at Epic plan acceptance; it stays local, takes no delivery evidence, and proves no delivery.
-- Only the three Task tools take `epicDelivery`, for default-target Tasks ([Epic delivery](./epic.md)).
-- `finalize_linear_branch` completes a pending Linear branch.
+- Only the Task tools take `epicDelivery`, for default-target Tasks ([Epic delivery](./epic.md)).
 
 ## Integration context and state
 
@@ -38,20 +37,19 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 | Inspect configuration (current or workflow source) | `inspect_integrations` |
 | Prepare Backlog or Todo intake | `inspect_queue_intake` |
 | Prepare adoption of selected work | `inspect_adoption` |
-| Start or resume an entity's integrations | `initialize_integration`, `resume_integration` |
+| Set up the board for a new entity, or resume one | `initialize_integration`, `resume_integration` |
 | Prepare plan publication | `prepare_integration_projection` |
 | Prepare PR submission | `prepare_integration_pull_request` |
 | Prepare shipping; validate PR merge evidence | `prepare_integration_shipping`, `prepare_integration_merge` |
 | Prepare a label, lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
 | Calculate native Phase without changing metadata | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
-| Set metadata Phase and calculate native Phase | `set_local_workflow_phase`, `set_github_workflow_phase`, `set_linear_workflow_phase` |
-| Confirm a pending tracker binding | `confirm_github_tracker`, `confirm_linear_tracker` |
+| Set metadata Phase and calculate native Phase | `set_github_workflow_phase`, `set_linear_workflow_phase` |
 
 Context tools return configuration, addressing, evidence requirements, or native call arguments. They never call providers or grant approval.
 
 ## Resource identity and publication
 
-- **Creation checkpoints:** `begin_resource_creation`, then `record_resource_creation` with the create's evidence.
+- **PR creation:** `begin_resource_creation` saves the PR intent, then `record_resource_creation` takes the PR create's evidence.
 - **Resource IDs:** `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and `select_pull_request_resource` for an approved choice of existing PR.
 - **Plans:**
   - `prepare_tracker_publication`, and `prepare_tracker_publication_update` for a published Linear document;
@@ -67,11 +65,7 @@ None of these call providers or turn identity, lifecycle, or merge facts into ca
 - **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
 - **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
 - **Plan presentation:** `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, `prepare_gig_plan_presentation`.
-- **Delivery cleanup:**
-  - `cleanup_github_delivery_branch`, which takes the merged PR read as `evidence`;
-  - `cleanup_ancestry_delivery_branch`, which proves delivery by Git ancestry.
-
-  Both need `completionAuthority`, the authority whose Done was confirmed. Neither establishes Done or authorizes cleanup outside the shipping gates.
+- **Delivery cleanup:** `cleanup_delivery_branch` takes the merged PR read as `evidence`. It doesn't establish Done or authorize cleanup outside the shipping gates.
 
 ## Incoming PRs
 

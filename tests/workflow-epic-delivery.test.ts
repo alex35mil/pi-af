@@ -13,10 +13,10 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import initializeTools from "../workflows/extensions/init/index.ts"
 import {
+    type EntityInitialization,
     initializeEntity,
     setEpicTaskTarget,
     type InitializedEntity,
-    type TaskInitialization,
 } from "../workflows/extensions/init/entity.ts"
 import type { EpicDelivery } from "../workflows/extensions/init/delivery.ts"
 import { planGitHubMerge } from "../workflows/extensions/integrations/forge/github/merge.ts"
@@ -26,28 +26,20 @@ import { linearPhases } from "./workflow-phase-fixtures.ts"
 const repository = { owner: "example", repo: "app" }
 const tools = workflowMcpCatalog("forge")
 const date = (minute: number) => new Date(`2026-01-02T07:${String(minute).padStart(2, "0")}:00.000Z`)
-const githubSource = {
-    mode: "external",
-    provider: "github",
+const githubTask = {
     issueId: 100,
     issueNumber: 9,
     issueUrl: "https://github.com/example/app/issues/9",
     projectItemId: 20,
-} as const
-const linearSource = {
-    mode: "external",
-    provider: "linear",
-    resource: "task-issue",
+}
+const linearTask = {
     issueId: "issue-id",
     identifier: "ENG-9",
     issueUrl: "https://linear.app/example/issue/ENG-9",
     projectId: "project-id",
-} as const
+}
 
-function fixture(
-    tracker: "none" | "github" | "linear" = "none",
-    delivered = true,
-) {
+function fixture(tracker: "github" | "linear" = "github", delivered = true) {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "epic-delivery-")))
     const git = (...args: string[]) =>
         cp.execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim()
@@ -57,10 +49,7 @@ function fixture(
     fs.writeFileSync(path.join(root, "README.md"), "base\n")
     fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier-title" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const states = {
         backlog: "Backlog",
         todo: "Todo",
@@ -71,48 +60,37 @@ function fixture(
     }
     const config = {
         forge: { provider: "github", mcpServer: "forge", repository },
-        ...(tracker === "github"
-            ? {
-                  tracker: {
+        tracker:
+            tracker === "github"
+                ? {
                       provider: "github",
                       mcpServer: "github",
                       repository,
                       project: { owner: "example", ownerType: "user", number: 2 },
-                      labels: {
-                          kind: {
-                              epic: "Kind: Epic",
-                              deliverableKinds: {
-                                  feature: "Kind: Feature",
-                                  bugfix: "Kind: Bugfix",
-                                  research: "Kind: Research",
-                                  refactor: "Kind: Refactor",
-                                  audit: "Kind: Audit",
-                                  chore: "Kind: Chore",
-                              },
-                          },
-                      },
                       fields: {
                           status: { field: "Status", values: states },
                           phase: {
                               field: "Phase",
-                              values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
+                              values: {
+                                  planning: "Planning",
+                                  execution: "Execution",
+                                  selfReview: "Self-Review",
+                              },
                           },
-                          priority: { scope: "project", field: "Priority", values: ["High"] },
-                          internalId: { scope: "project", field: "Internal ID" },
+                          priority: {
+                              scope: "project",
+                              field: "Priority",
+                              values: ["High"],
+                          },
                       },
+                  }
+                : {
+                      provider: "linear",
+                      mcpServer: "linear",
+                      team: "Engineering",
+                      phase: linearPhases(),
+                      statuses: { issues: states, projects: states },
                   },
-              }
-            : tracker === "linear"
-              ? {
-                    tracker: {
-                        provider: "linear",
-                        mcpServer: "linear",
-                        team: "Engineering",
-                        phase: linearPhases(),
-                        statuses: { issues: states, projects: states },
-                    },
-                }
-              : {}),
     }
     fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify(config))
     prepareArtifactPersistence(root)
@@ -124,21 +102,21 @@ function fixture(
             title: "Independent work",
             slug: "independent-work",
             request: "Ship Tasks independently",
-            priority: "not set",
-            source:
+            object:
                 tracker === "linear"
                     ? {
-                          mode: "external",
-                          provider: "linear",
-                          resource: "project",
                           projectId: "project-id",
                           projectUrl: "https://linear.app/example/project/project-id",
+                          createdAt: "2026-10-01T09:00:00.000Z",
                       }
-                    : { mode: "new" },
+                    : {
+                          issueId: 80,
+                          issueNumber: 8,
+                          issueUrl: "https://github.com/example/app/issues/8",
+                      },
         },
         { cwd: root, now: date(0) },
     )
-    if (epic.status.branch.state !== "ready") assert.fail("expected ready Epic")
     const branch = epic.status.branch
     const epicPath = path.join(root, epic.directory, "epic.md")
     fs.writeFileSync(
@@ -170,19 +148,25 @@ function fixture(
             draft: false,
             merged: delivered,
             merged_at: delivered ? "2026-01-02T08:00:00Z" : "",
-            head: { ref: branch.name, sha: headSha, repo: { full_name: "example/app" } },
+            head: {
+                ref: branch.name,
+                sha: headSha,
+                repo: { full_name: "example/app" },
+            },
             base: { ref: "main", sha: baseSha, repo: { full_name: "example/app" } },
         },
     })
-    const delivery = (): EpicDelivery => ({ kind: "github-pr", evidence: evidence() })
-    const task = (epicDelivery?: EpicDelivery): TaskInitialization => ({
+    const delivery = (): EpicDelivery => ({
+        kind: "github-pr",
+        evidence: evidence(),
+    })
+    const task = (epicDelivery?: EpicDelivery): EntityInitialization => ({
         entity: "task",
         title: "First",
         slug: "first",
         request: "Ship first",
-        priority: "not set",
         kind: "feature",
-        source: { mode: "new" },
+        object: tracker === "linear" ? linearTask : githubTask,
         parentEpicDir: epic.directory,
         epicItemTitle: "First",
         ...(epicDelivery ? { epicDelivery } : {}),
@@ -226,34 +210,11 @@ function registeredTools(catalog = tools) {
 }
 
 type Fixture = ReturnType<typeof fixture>
-type TaskVariant = "none" | "github" | "linear"
+type TaskVariant = "github" | "linear"
 
 function taskToolCall(f: Fixture, variant: TaskVariant, delivery?: EpicDelivery, catalog = tools) {
-    const name = variant === "none" ? "init_task" : `adopt_${variant}_task`
-    const tool = registeredTools(catalog).find((tool) => tool.name === name)!
-    const { entity: _entity, source: _source, ...base } = f.task(delivery)
-    const args = {
-        ...base,
-        ...(variant === "github"
-            ? {
-                  source: {
-                      issueId: githubSource.issueId,
-                      issueNumber: githubSource.issueNumber,
-                      issueUrl: githubSource.issueUrl,
-                      projectItemId: githubSource.projectItemId,
-                  },
-              }
-            : variant === "linear"
-              ? {
-                    source: {
-                        issueId: linearSource.issueId,
-                        identifier: linearSource.identifier,
-                        issueUrl: linearSource.issueUrl,
-                        projectId: linearSource.projectId,
-                    },
-                }
-              : {}),
-    }
+    const tool = registeredTools(catalog).find((tool) => tool.name === `init_${variant}_task`)!
+    const { entity: _entity, ...args } = f.task(delivery)
     assert.equal(Value.Check(tool.parameters, args), true)
     return () =>
         tool.execute("task", args, undefined, undefined, {
@@ -267,14 +228,17 @@ function nativeDelivery(read: ReturnType<Fixture["evidence"]>, isError = false):
         kind: "github-pr",
         evidence: {
             ...read,
-            response: { content: [{ type: "text", text: JSON.stringify(read.response) }], isError },
+            response: {
+                content: [{ type: "text", text: JSON.stringify(read.response) }],
+                isError,
+            },
         },
     }
 }
 
 describe("Epic routing intent and per-Task delivery", () => {
     it(`records and commits default routing before delivery`, () => {
-        const f = fixture("none", false)
+        const f = fixture("github", false)
         try {
             const current = readEntityStatus(path.join(f.root, f.epic.directory))
             assert.equal(current.entity, "epic")
@@ -289,7 +253,7 @@ describe("Epic routing intent and per-Task delivery", () => {
         }
     })
 
-    for (const variant of ["none", "github", "linear"] as const) {
+    for (const variant of ["github", "linear"] as const) {
         it(`blocks undelivered routing through the registered ${variant} Task entry point`, async () => {
             const f = fixture(variant, false)
             try {
@@ -316,7 +280,7 @@ describe("Epic routing intent and per-Task delivery", () => {
                 const initialized = result.details as InitializedEntity
                 assert.equal(initialized.status.branch.start, "main")
                 assert.equal(initialized.status.branch.target, "main")
-                assert.equal(fs.readFileSync(f.epicPath, "utf8").match(/\[TASK-/g)?.length, 1)
+                assert.equal(fs.readFileSync(f.epicPath, "utf8").match(/\[(#9|ENG-9)\] /g)?.length, 1)
                 assert.equal(fs.readFileSync(path.join(f.root, metadataPath), "utf8"), metadata)
                 assert.equal(f.git("rev-parse", f.branch.name), f.headSha)
                 assert.equal(f.git("rev-parse", "HEAD"), f.resultSha)
@@ -365,7 +329,7 @@ describe("Epic routing intent and per-Task delivery", () => {
             r.response.merged_at = ""
         },
     }
-    for (const variant of ["none", "github", "linear"] as const) {
+    for (const variant of ["github", "linear"] as const) {
         it(`rejects invalid native evidence without mutation through the ${variant} entry point`, async () => {
             const f = fixture(variant)
             try {
@@ -396,8 +360,7 @@ describe("Epic routing intent and per-Task delivery", () => {
                         const configPath = path.join(f.root, ".project/integrations.json")
                         const config = JSON.parse(fs.readFileSync(configPath, "utf8"))
                         delete config.forge
-                        if (Object.keys(config).length === 0) fs.unlinkSync(configPath)
-                        else fs.writeFileSync(configPath, JSON.stringify(config))
+                        fs.writeFileSync(configPath, JSON.stringify(config))
                     }
                     if (missing === "advanced head") {
                         f.git("switch", f.branch.name)
@@ -429,12 +392,15 @@ describe("Epic routing intent and per-Task delivery", () => {
     }
 
     it("accepts ancestry delivery without PR evidence", () => {
-        const f = fixture("none", false)
+        const f = fixture("github", false)
         try {
             f.git("switch", "main")
             f.git("merge", "--ff-only", f.branch.name)
             assert.equal(f.git("status", "--porcelain"), "")
-            const initialized = initializeEntity(f.task(), { cwd: f.root, now: date(1) })
+            const initialized = initializeEntity(f.task(), {
+                cwd: f.root,
+                now: date(1),
+            })
             assert.equal(initialized.status.branch.target, "main")
         } finally {
             f.close()
@@ -442,7 +408,7 @@ describe("Epic routing intent and per-Task delivery", () => {
     })
 
     it("trusts merged PR proof with a lagging local target", async () => {
-        const f = fixture("none", false)
+        const f = fixture("github", false)
         try {
             f.git("switch", "main")
             f.git("merge", "--ff-only", `${f.branch.name}^`)
@@ -454,7 +420,7 @@ describe("Epic routing intent and per-Task delivery", () => {
             read.response.state = "closed"
             read.response.merged = true
             read.response.merged_at = "2026-01-02T08:00:00Z"
-            const result = await taskToolCall(f, "none", nativeDelivery(read))()
+            const result = await taskToolCall(f, "github", nativeDelivery(read))()
             assert.equal((result.details as InitializedEntity).status.branch.target, "main")
         } finally {
             f.close()
@@ -466,7 +432,11 @@ describe("Epic routing intent and per-Task delivery", () => {
         try {
             f.git("commit", "--allow-empty", "-qm", "later target work")
             assert.equal(
-                initializeEntity(f.task(f.delivery()), { cwd: f.root, now: date(1), tools }).status.branch.target,
+                initializeEntity(f.task(f.delivery()), {
+                    cwd: f.root,
+                    now: date(1),
+                    tools,
+                }).status.branch.target,
                 "main",
             )
         } finally {
@@ -497,13 +467,15 @@ describe("Epic routing intent and per-Task delivery", () => {
     })
 
     it("records routing through the native setter without delivery evidence or a catalog", async () => {
-        const f = fixture("none", false)
+        const f = fixture("github", false)
         try {
             const setter = registeredTools(new Map()).find((tool) => tool.name === "set_epic_task_target")!
             for (const target of ["epic", "default"]) {
                 const args = { entityDir: f.epic.directory, target }
                 assert.equal(Value.Check(setter.parameters, args), true)
-                await setter.execute("routing", args, undefined, undefined, { cwd: f.root } as never)
+                await setter.execute("routing", args, undefined, undefined, {
+                    cwd: f.root,
+                } as never)
             }
             assert.equal(f.git("status", "--porcelain"), "")
             assert.equal(f.git("rev-parse", f.branch.name), f.headSha)
@@ -536,11 +508,19 @@ describe("Epic routing intent and per-Task delivery", () => {
                 if (missing === "not-ready") {
                     const metadataPath = path.join(f.root, f.epic.directory, "metadata.json")
                     const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
-                    metadata.branch = { state: "tracker-pending", start: "main", target: "main" }
+                    metadata.branch = {
+                        state: "tracker-pending",
+                        start: "main",
+                        target: "main",
+                    }
                     fs.writeFileSync(metadataPath, JSON.stringify(metadata))
                 }
                 if (missing === "not-epic")
-                    directory = initializeEntity(f.task(f.delivery()), { cwd: f.root, now: date(1), tools }).directory
+                    directory = initializeEntity(f.task(f.delivery()), {
+                        cwd: f.root,
+                        now: date(1),
+                        tools,
+                    }).directory
                 const before = f.snapshot()
                 assert.throws(() => setEpicTaskTarget(directory, "default", { cwd: f.root }), missing)
                 assert.deepEqual(f.snapshot(), before, missing)

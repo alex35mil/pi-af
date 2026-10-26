@@ -27,12 +27,13 @@ During Epic planning, get the strategy approved and record it in reviewed `epic.
 
 ## Choose delivery evidence
 
-`init_task`, `adopt_github_task`, and `adopt_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
+`preflight_task`, `init_github_task`, and `init_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
 
 ### Local ancestry
 
 Use `epicDelivery: { kind: "git-ancestry" }`, or omit it. Git must confirm that the current local Epic head is an ancestor of the stored local target.
 
+- Epic planning commits nothing, so an Epic branch with no commits ahead of its target passes.
 - Fast-forward and merge-commit delivery keep ancestry.
 - Squash and rebase delivery usually don't, so use the GitHub route for them.
 - Similar content or commit messages are not evidence.

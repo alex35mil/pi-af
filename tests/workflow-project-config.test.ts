@@ -7,9 +7,7 @@ import { describe, it } from "node:test"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
-import { linearPhases } from "./workflow-phase-fixtures.ts"
 
-import { formatBranchName, validateRawId } from "../workflows/extensions/__lib/domain.ts"
 import { inspectProjectMcp, registeredCredentialEnvironment } from "../workflows/extensions/integrations/mcp.ts"
 import { configureProjectMcp, LOCAL_MCP_SETTINGS_EXCLUDE } from "../workflows/extensions/project-setup/mcp.ts"
 import {
@@ -24,7 +22,6 @@ import {
     PROJECT_LOCAL_IGNORE,
     resolveWorkflowProject,
 } from "../workflows/extensions/__lib/project-config.ts"
-import { resolveLinearTrackerBranchRendererForInitialization } from "../workflows/extensions/integrations/tracker/linear.ts"
 import registerProjectSetup, { inspectProjectSetup } from "../workflows/extensions/project-setup/index.ts"
 
 function repository(): string {
@@ -48,7 +45,7 @@ function writeWorkflowSettings(filePath: string, username: string): void {
     fs.writeFileSync(filePath, JSON.stringify({ branches: { username } }))
 }
 
-function config(branches: unknown = { format: "identifier-title" }) {
+function config(branches: unknown = { format: "number-title" }) {
     return { branches }
 }
 
@@ -63,7 +60,7 @@ describe("workflow project configuration", () => {
         const localSettingsPath = path.join(root, ".project/config.local.json")
         const options = { globalSettingsPath }
         try {
-            writeConfig(root, config({ format: "username/identifier" }))
+            writeConfig(root, config({ format: "username/number-title" }))
             assert.throws(
                 () => resolveWorkflowProject(root, options),
                 (error: Error) =>
@@ -324,10 +321,7 @@ describe("workflow project configuration", () => {
                     fs.writeFileSync(
                         path.join(root, ".project/.local/gigs/example/metadata.json"),
                         JSON.stringify({
-                            id: "GIG-01KDVDNA00",
-                            integrations: [
-                                { role: "tracker", provider: "github", state: "bound", external: { issueNumber: 2 } },
-                            ],
+                            tracker: { provider: "github", external: { issueNumber: 2 } },
                         }),
                     )
                     git(root, ["add", ".project/config.json"])
@@ -377,7 +371,14 @@ describe("workflow project configuration", () => {
                 assert.doesNotMatch(text, /literal-setup-secret/)
                 assert.doesNotMatch(JSON.stringify(snapshot), /literal-setup-secret/)
                 if (scenario.name === "existing") {
-                    assert.equal(snapshot.boundEntityTrackers[0].id, "GIG-01KDVDNA00")
+                    assert.deepEqual(snapshot.boundEntityTrackers, [
+                        {
+                            path: ".project/.local/gigs/example/metadata.json",
+                            entity: "example",
+                            provider: "github",
+                            reference: "#2",
+                        },
+                    ])
                     assert.ok(snapshot.projectPathsInGit.includes(".project/config.json"))
                     assert.ok(snapshot.stagedProjectPaths.includes(".project/config.json"))
                 }
@@ -441,93 +442,6 @@ describe("workflow project configuration", () => {
                 () => registeredCredentialEnvironment(root, "custom", "linear", true),
                 /not a recognized linear registration/,
             )
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true })
-        }
-    })
-
-    it("resolves Linear tracker Epic branches from current API viewer and template data", async () => {
-        const root = repository()
-        try {
-            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
-            writeConfig(root, config({ format: "tracker" }))
-            fs.writeFileSync(
-                path.join(root, ".project", "integrations.json"),
-                JSON.stringify({
-                    tracker: {
-                        provider: "linear",
-                        mcpServer: "linear",
-                        team: "Engineering",
-                        phase: linearPhases(),
-                        statuses: {
-                            issues: {
-                                backlog: "Backlog",
-                                todo: "Todo",
-                                inProgress: "In Progress",
-                                inReview: "In Review",
-                                done: "Done",
-                                canceled: "Canceled",
-                            },
-                            projects: {
-                                backlog: "Backlog",
-                                todo: "Todo",
-                                inProgress: "In Progress",
-                                inReview: "In Review",
-                                done: "Completed",
-                                canceled: "Canceled",
-                            },
-                        },
-                    },
-                }),
-            )
-            fs.mkdirSync(path.join(root, ".agents"))
-            fs.writeFileSync(
-                path.join(root, ".agents", "mcp.json"),
-                JSON.stringify({
-                    mcpServers: {
-                        linear: {
-                            url: "https://mcp.linear.app/mcp",
-                            headers: { Authorization: "Bearer ${LINEAR_BRANCH_KEY}" },
-                        },
-                    },
-                }),
-            )
-            const fetch = async () =>
-                new Response(
-                    JSON.stringify({
-                        data: {
-                            viewer: { id: "viewer-1", name: "Alex Example", displayName: "alex" },
-                            organization: {
-                                id: "workspace-1",
-                                name: "Acme",
-                                urlKey: "acme",
-                                gitBranchFormat: "{username}/{issueIdentifier}-{issueTitle}",
-                                projectStatuses: [],
-                            },
-                        },
-                    }),
-                    { status: 200, headers: { "Content-Type": "application/json" } },
-                )
-            const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
-                root,
-                true,
-                {
-                    entity: "epic",
-                    title: "Linear Epic",
-                    slug: "linear-epic",
-                    request: "Plan Linear work",
-                    priority: "High",
-                    source: { mode: "new" },
-                },
-                undefined,
-                { fetch, env: { LINEAR_BRANCH_KEY: "secret" } },
-            )
-            assert.ok(renderTrackerBranch)
-            assert.equal(
-                renderTrackerBranch({ entity: "epic", rawId: "01KDVDNA00", slug: "linear-epic" }),
-                "alex/epic-01kdvdna00-linear-epic",
-            )
-            assert.equal(fs.existsSync(path.join(root, ".project", "config.local.json")), false)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
@@ -695,11 +609,9 @@ describe("workflow project configuration", () => {
             )
             writeConfig(root, { ...config(), extra: true })
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
-            writeConfig(root, { ...config(), artifacts: "versioned" })
-            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /"artifacts" was removed.*UPGRADING\.md/)
             writeConfig(root, config({ format: "feature/identifier" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
-            writeConfig(root, config({ format: "identifier", username: "alex" }))
+            writeConfig(root, config({ format: "number-title", username: "alex" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
             writeConfig(root, config({ format: { epic: "identifier", deliverable: "tracker" } }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
@@ -733,7 +645,7 @@ describe("workflow project configuration", () => {
             assert.equal(loadProjectConfig(root, { globalSettingsPath }).branches.username, undefined)
             fs.rmSync(localSettingsPath)
 
-            writeConfig(root, config({ format: "username/identifier" }))
+            writeConfig(root, config({ format: "username/number-title" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /username is required/)
 
             writeWorkflowSettings(globalSettingsPath, "global-user")
@@ -741,7 +653,7 @@ describe("workflow project configuration", () => {
 
             writeWorkflowSettings(localSettingsPath, "alex")
             const configured = loadProjectConfig(root, { globalSettingsPath })
-            assert.equal(configured.branches.format, "username/identifier")
+            assert.equal(configured.branches.format, "username/number-title")
             assert.equal(configured.branches.username, "alex")
 
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
@@ -758,30 +670,6 @@ describe("workflow project configuration", () => {
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
-        }
-    })
-
-    it("renders every generated branch format exactly", () => {
-        const identity = {
-            entity: "task" as const,
-            rawId: validateRawId("01KDVDNA01"),
-            slug: "first-task",
-        }
-        const identifier = "task-01kdvdna01"
-        const cases = [
-            ["username/identifier-title", `alex/${identifier}-first-task`],
-            ["username/identifier", `alex/${identifier}`],
-            ["username-identifier-title", `alex-${identifier}-first-task`],
-            ["username-identifier", `alex-${identifier}`],
-            ["identifier-title", `${identifier}-first-task`],
-            ["title-identifier", `first-task-${identifier}`],
-            ["identifier", identifier],
-        ] as const
-        for (const [format, expected] of cases) {
-            assert.equal(
-                formatBranchName(identity, format, format.startsWith("username") ? "alex" : undefined),
-                expected,
-            )
         }
     })
 
@@ -826,7 +714,7 @@ describe("workflow project configuration", () => {
     it("asserts a missing local-settings exclusion without writing and prepares it once", () => {
         const root = repository()
         try {
-            writeConfig(root, config({ format: "username/identifier" }))
+            writeConfig(root, config({ format: "username/number-title" }))
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
             writeWorkflowSettings(path.join(root, ".project", "config.local.json"), "alex")
             const exclude = path.join(root, ".git", "info", "exclude")
@@ -855,14 +743,14 @@ describe("workflow project configuration", () => {
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
             const gig = path.join(root, ".project", ".local", "gigs", "example")
             fs.mkdirSync(gig, { recursive: true })
-            fs.writeFileSync(path.join(gig, "status.md"), "# Status\n")
-            git(root, ["add", "-f", ".project/.local/gigs/example/status.md"])
+            fs.writeFileSync(path.join(gig, "notes.md"), "# Notes\n")
+            git(root, ["add", "-f", ".project/.local/gigs/example/notes.md"])
             const indexBefore = git(root, ["ls-files", "--stage"])
             assert.throws(() => prepareArtifactPersistence(root), /\.project\/\.local\/ must remain outside Git/)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
 
             git(root, ["commit", "-m", "tracked local artifact"])
-            git(root, ["rm", "--cached", ".project/.local/gigs/example/status.md"])
+            git(root, ["rm", "--cached", ".project/.local/gigs/example/notes.md"])
             const stagedBefore = git(root, ["diff", "--cached", "--raw"])
             assert.throws(() => prepareArtifactPersistence(root), /must remain outside Git/)
             assert.equal(git(root, ["diff", "--cached", "--raw"]), stagedBefore)

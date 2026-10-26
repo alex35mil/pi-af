@@ -44,7 +44,7 @@ Track the selected PR itself on the configured GitHub Project.
 2. Reuse its clear-success ID, read the exact scoped item, and continue with `membership.state: added` plus the actual creation evidence.
 3. Complete the already-chosen initial Status without asking for another queue choice. Existing In Review or terminal progress is kept.
 
-The planner updates only the configured Status, never labels, Priority, Phase, Internal ID, linked issues, or unrelated items.
+The planner updates only the configured Status, never labels, Priority, Phase, linked issues, or unrelated items.
 
 **Running planned calls:**
 

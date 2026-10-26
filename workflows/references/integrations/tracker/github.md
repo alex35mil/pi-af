@@ -22,50 +22,41 @@ Adoption applies only to an explicitly selected existing issue, before initializ
 
    The Project item can supply a numeric issue ID that the issue read omits.
 5. Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title, description, copied Priority, and any configured Kind without another confirmation. Ask only for missing or conflicting information.
-6. Call `adopt_github_epic`, `adopt_github_task`, or `adopt_github_gig` with the numeric issue ID, number, URL, and Project-item ID as `source`. Repository and issue number become durable; the other values are seeded locally.
+6. Call `init_github_epic`, `init_github_task`, or `init_github_gig` with the numeric issue ID, number, URL, and Project-item ID as `object`.
 
 **Stops adoption:** the wrong repository, Project, or parent, a non-queue Status, ambiguity, denied access, or an unconfigured Priority.
 
-**Kind:**
-
-- A single configured queue Kind becomes the initialized Kind unless the user changes it. Missing or conflicting Kind needs a user choice.
-- After initialization, workflow metadata owns Kind.
-
-Skip creation, membership, and hierarchy work that is already proven.
+**Kind:** a single configured Kind label on the issue becomes the initialized Kind unless the user changes it. Missing or conflicting Kind needs a user choice. After initialization, workflow metadata owns Kind.
 
 ## Initialize
 
-The initialization tool records Planning and In Progress intent, with `awaiting` for new work or `bound-pending` for adopted work. Call `initialize_integration` with the `entityDir`.
+Follow [initialize from the tracker object](../shared.md#initialize-from-the-tracker-object).
 
-**New work:**
+**Create new work** (after preflight):
 
-1. **Build one issue create** with the approved title and Request.
-   - Include the Task parent issue number.
-   - Include issue-scoped Priority. A Task parent and issue fields can't share the create call, so for Tasks set Priority afterward.
-2. **Create.** Call `begin_resource_creation` with role `tracker`, then call the registered issue create under approval. No duplicate, label, or option preflight.
-3. **Record.** On clear success, call `record_resource_creation` with the actual call as `evidence`. It saves the repository and issue number before dependent work and caches the ID and URL. A minimal ID-and-URL success isn't automatically uncertain.
-4. **Project membership.** Add the issue to the configured Project and record the returned IDs with `record_resource_ids`.
-   - Set In Progress and Priority with Project writes addressed by the issue.
-   - Set Planning in the Phase field.
-   - Combine supported issue-field writes. Don't refetch just to fill the cache.
-   - A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes.
-5. **Labels and hierarchy.** Reuse labels and parent assignment proven at creation. For an adopted issue or an unproven correction, read current labels or hierarchy, keep unrelated labels, and change only differences. Call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed. The numeric child issue ID can come from Project evidence.
-6. **Confirm.** Call `confirm_github_tracker`, as described in [confirmation](../shared.md#confirm-initialized-tracker-outcomes). Missing evidence keeps initialization pending. Never complete it by editing metadata by hand or storing provider snapshots.
+- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, and, for a Task, the parent issue number. Include issue-scoped Priority, except for a Task: a parent and issue fields can't share the create call.
+- No duplicate, label, or option preflight. Pass the returned numeric ID, number, and URL to `init_github_<entity>` as `object`. A minimal ID-and-URL success isn't automatically uncertain.
 
-Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority. A proven Project addition and parent relationship aren't repeated.
+**Board setup** (after initialization, for new and adopted work):
+
+1. Add the issue to the configured Project unless that's already proven, and record the returned IDs with `record_resource_ids`.
+2. Set In Progress, Priority, and Planning in the Phase field with Project writes addressed by the issue. Combine supported issue-field writes.
+3. Reuse labels and parent assignment proven at creation. Otherwise read current labels or hierarchy, keep unrelated labels, and call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed.
+
+A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes. Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority.
 
 When a create result is uncertain, read [recovery](../recovery.md#uncertain-tracker-creation).
 
 ## Resume and mutations
 
-1. Call `resume_integration` with `entityDir`, then read fresh Status, Priority, and Phase.
+1. Call `resume_integration` with `entityDir`, then read fresh Project membership, Status, Priority, and Phase. Finish any board setup that's missing; ask the user for Priority when it's unset.
 2. Reconcile Phase against the Project field definition and current selection. A cached Project-item ID reaches the current fields directly; that response must confirm the issue and Project.
 3. Investigate missing or confirmed-stale Resource IDs through the configured tools, and record the actual response afterward. Network or permission errors don't prove absence. Ordinary resume never discovers PRs.
 
 **What's projected:**
 
 - Native Phase exists only during In Progress and equals the metadata Phase.
-- No Kind is projected.
+- With configured Kind labels, exactly one managed Kind label matches the workflow Kind; without them, no Kind is projected.
 - Keep unrelated labels. Reuse this operation's reads and write only when the intended set differs. Confirm labels when a mutation's success doesn't show the full applied set; no full label-catalog preflight is needed.
 
 **Changing values:**
@@ -77,12 +68,12 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 ## Queue and plan publication
 
-**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with no Kind label or Phase, and set the selected Status and Priority.
+**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with no Phase, the `kindLabel` that `inspect_queue_intake` returns (none when it's null), and set the selected Status and Priority.
 
 **Plan publication:**
 
 - The issue keeps its original title and description. New work creates them from the approved Request; adopted work keeps the existing text.
-- For an accepted `epic.md` or `plan.md`, call `prepare_integration_projection`, then `prepare_tracker_publication` with `entityDir` and the full source. Sanitization and approval follow [provider bodies](../shared.md#provider-bodies).
+- For an accepted `epic.md` or `plan.md`, call `prepare_integration_projection`, then `prepare_tracker_publication` with `entityDir` and the full source. Approval follows [provider bodies](../shared.md#provider-bodies).
 - Run the returned comment call, never an issue body or title update.
 - The first publication saves `planComment: pending`, then returns one `add_issue_comment`. Run it immediately, then record it with `record_tracker_publication`.
 - Once published, preparation always returns `update_issue_comment` for that same comment.

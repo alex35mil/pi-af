@@ -27,7 +27,7 @@ function fixture() {
     git("commit", "-m", "initial")
     fs.mkdirSync(path.join(root, ".project"))
     const config = path.join(root, ".project/config.json")
-    fs.writeFileSync(config, JSON.stringify({ branches: { format: "identifier" } }))
+    fs.writeFileSync(config, JSON.stringify({ branches: { format: "number-title" } }))
     const trace = path.join(root, "git.trace")
     process.env.GIT_TRACE = trace
     prepareArtifactPersistence(root)
@@ -124,7 +124,7 @@ describe("artifact persistence revalidation", () => {
             assert.throws(() => assertArtifactPersistencePrepared(f.root), /not prepared/)
             prepareArtifactPersistence(f.root)
             const before = f.scans()
-            fs.writeFileSync(f.config, JSON.stringify({ branches: { format: "username/identifier" } }))
+            fs.writeFileSync(f.config, JSON.stringify({ branches: { format: "username/number-title" } }))
             assert.equal(assertArtifactPersistencePrepared(f.root).branches.username, "alex")
             assert.ok(f.scans() > before)
             fs.writeFileSync(

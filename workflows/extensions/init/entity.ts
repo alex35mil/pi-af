@@ -9,26 +9,19 @@ import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { assertEpicDelivered, EpicDeliverySchema } from "./delivery.js"
 import {
     DeliverableKindSchema,
-    entityDirectoryName,
     EPIC_ROOT,
-    type EntityIdentity,
+    entityName,
+    type EntityType,
     formatBranchName,
-    generateRawId,
     GIG_ROOT,
-    normalizePriority,
-    type Priority,
-    PrioritySchema,
-    PROJECT_ROOT,
-    qualifyId,
-    type RawId,
     readyBranch,
     type ReadyBranchContract,
     slugify,
+    trackerReferenceLabel,
 } from "../__lib/domain.js"
 import {
-    assertEntityBranchReady,
-    type BranchContract,
     ENTITY_METADATA_FILE,
+    entityLabel,
     LOCAL_DESIGNS_DIR,
     LOCAL_NOTES_FILE,
     LOCAL_PENDING_FILE,
@@ -43,32 +36,24 @@ import {
 } from "../__lib/entity.js"
 import { writeTextAtomically } from "../__lib/files.js"
 import type { ResourceIds } from "../integrations/resource-ids.js"
-import { resourceIdsFromAdoption } from "./resource-ids.js"
+import { resourceIdsFromTrackerObject } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared, type ProjectConfig } from "../__lib/project-config.js"
-import { resolveWorkflowEnvironment, resolveWorkflowPolicy, type WorkflowEnvironment } from "../integrations/policy.js"
+import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "../integrations/policy.js"
+import { type GitHubForge, loadIntegrationConfig } from "../integrations/config.js"
 import {
-    assertConfiguredPriority,
-    type GitHubForge,
-    INTEGRATION_CONFIG_PATH,
-    loadIntegrationConfig,
-} from "../integrations/config.js"
-import {
-    assertTaskSourceProject,
-    boundTrackerProjectId,
-    createInitialIntegrationRecords,
-    createTrackerBranchContract,
-    GitHubInitializationSourceSchema,
-    type InitializationSource,
-    LinearGigInitializationSourceSchema,
-    LinearProjectInitializationSourceSchema,
-    LinearTaskInitializationSourceSchema,
-    NewInitializationSourceSchema,
+    GitHubTrackerObjectSchema,
+    LinearGigIssueObjectSchema,
+    LinearProjectObjectSchema,
+    LinearTaskIssueObjectSchema,
+    type TrackerObject,
+    trackerRecordFromObject,
+    trackerReference,
 } from "../integrations/records.js"
 
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 
-const baseInitializationProperties = {
+const baseProperties = {
     title: Type.String({
         minLength: 1,
         pattern: "^[^\\r\\n]+$",
@@ -81,74 +66,115 @@ const baseInitializationProperties = {
         description:
             "User-approved durable Request; preserve meaning while correcting grammar, spelling, capitalization, punctuation, and formatting; use the workflow command argument for new work or the tracker item's title/name and description for adopted work, plus agreed clarifications",
     }),
-    priority: PrioritySchema,
 }
+const taskProperties = {
+    kind: DeliverableKindSchema,
+    parentEpicDir: OneLineSchema,
+    epicItemTitle: OneLineSchema,
+    epicDelivery: Type.Optional(EpicDeliverySchema),
+}
+const gigProperties = { kind: DeliverableKindSchema }
 
-export const EpicInitializationSchema = Type.Object(
-    {
-        ...baseInitializationProperties,
-        entity: Type.Literal("epic"),
-        source: Type.Union([
-            NewInitializationSourceSchema,
-            GitHubInitializationSourceSchema,
-            LinearProjectInitializationSourceSchema,
-        ]),
-    },
+// The read-only checks that run before a tracker object is created.
+export const EpicPreflightSchema = Type.Object(
+    { ...baseProperties, entity: Type.Literal("epic") },
     { additionalProperties: false },
 )
-export type EpicInitialization = Static<typeof EpicInitializationSchema>
-
-export const TaskInitializationSchema = Type.Object(
-    {
-        ...baseInitializationProperties,
-        entity: Type.Literal("task"),
-        source: Type.Union([
-            NewInitializationSourceSchema,
-            GitHubInitializationSourceSchema,
-            LinearTaskInitializationSourceSchema,
-        ]),
-        kind: DeliverableKindSchema,
-        parentEpicDir: OneLineSchema,
-        epicItemTitle: OneLineSchema,
-        epicDelivery: Type.Optional(EpicDeliverySchema),
-    },
+export const TaskPreflightSchema = Type.Object(
+    { ...baseProperties, ...taskProperties, entity: Type.Literal("task") },
     { additionalProperties: false },
 )
-export type TaskInitialization = Static<typeof TaskInitializationSchema>
-
-export const GigInitializationSchema = Type.Object(
-    {
-        ...baseInitializationProperties,
-        entity: Type.Literal("gig"),
-        source: Type.Union([
-            NewInitializationSourceSchema,
-            GitHubInitializationSourceSchema,
-            LinearGigInitializationSourceSchema,
-        ]),
-        kind: DeliverableKindSchema,
-    },
+export const GigPreflightSchema = Type.Object(
+    { ...baseProperties, ...gigProperties, entity: Type.Literal("gig") },
     { additionalProperties: false },
 )
-export type GigInitialization = Static<typeof GigInitializationSchema>
+export const PreflightSchema = Type.Union([EpicPreflightSchema, TaskPreflightSchema, GigPreflightSchema])
+export type PreflightInput = Static<typeof PreflightSchema>
 
+// Initialization records an existing tracker object, created or adopted, as the entity.
 export const EntityInitializationSchema = Type.Union([
-    EpicInitializationSchema,
-    TaskInitializationSchema,
-    GigInitializationSchema,
+    Type.Object(
+        {
+            ...EpicPreflightSchema.properties,
+            object: Type.Union([GitHubTrackerObjectSchema, LinearProjectObjectSchema]),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            ...TaskPreflightSchema.properties,
+            object: Type.Union([GitHubTrackerObjectSchema, LinearTaskIssueObjectSchema]),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            ...GigPreflightSchema.properties,
+            object: Type.Union([GitHubTrackerObjectSchema, LinearGigIssueObjectSchema]),
+        },
+        { additionalProperties: false },
+    ),
 ])
 export type EntityInitialization = Static<typeof EntityInitializationSchema>
+type TaskPreflight = Extract<PreflightInput, { entity: "task" }>
 
 export interface InitializeEntityOptions {
     cwd: string
     now?: Date
-    renderTrackerBranch?: (identity: EntityIdentity) => string
     tools?: McpToolCatalog
 }
 
 export interface InitializedEntity {
     directory: string
     status: EntityStatus
-    adoptionResourceIds: ResourceIds[]
+    resourceIds: ResourceIds[]
+}
+
+interface Prepared {
+    root: string
+    projectConfig: ProjectConfig
+    environment: WorkflowEnvironment
+    slug: string
+    start: string
+    parent?: ParentEpic
+}
+
+function prepare(input: PreflightInput, options: InitializeEntityOptions): Prepared {
+    const root = project.resolveRootDir(options.cwd)
+    assertGitRepository(root)
+    const projectConfig = assertArtifactPersistencePrepared(root)
+    const environment = resolveWorkflowEnvironment(loadIntegrationConfig(root))
+    const slug = slugify(input.slug)
+    const parent =
+        input.entity === "task" ? readParentEpic(root, input, environment.forge, options.tools ?? new Map()) : undefined
+    const start = parent ? parent.branch : resolveDefaultBranch(root)
+    assertCloneBranch(root, start)
+    return { root, projectConfig, environment, slug, start, parent }
+}
+
+// Runs every local check that doesn't need the tracker object, so a failure stops
+// before anything is created on the tracker. Changes nothing.
+export function preflightEntity(input: PreflightInput, options: InitializeEntityOptions) {
+    Value.Parse(PreflightSchema, input)
+    const prepared = prepare(input, options)
+    const { environment, projectConfig, slug } = prepared
+    const tracker = environment.tracker
+    if (projectConfig.branches.format === "tracker" && tracker.provider !== "linear")
+        throw new Error("the tracker branch format requires a Linear tracker")
+    return {
+        state: "ready" as const,
+        entity: input.entity,
+        tracker: tracker.provider,
+        resource:
+            tracker.provider === "github"
+                ? ("issue" as const)
+                : input.entity === "epic"
+                  ? ("project" as const)
+                  : ("issue" as const),
+        ...(prepared.parent ? { parentTracker: prepared.parent.tracker } : {}),
+        start: prepared.start,
+        next: "Create only the tracker object with the approved title and Request, then call the matching init tool with its evidence.",
+    }
 }
 
 export function initializeEntity(input: EntityInitialization, options: InitializeEntityOptions): InitializedEntity {
@@ -158,133 +184,115 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
             .join("; ")
         throw new Error(`invalid entity initialization: ${details}`)
     }
+    const prepared = prepare(input, options)
+    const { root, environment, slug, start, parent } = prepared
+    const object = trackerObject(input, environment)
+    if (
+        object.provider === "linear" &&
+        object.resource === "task-issue" &&
+        object.projectId !== parent?.trackerProjectId
+    )
+        throw new Error("Linear Task issue does not belong to the parent Epic Project")
 
-    const root = project.resolveRootDir(options.cwd)
-    assertGitRepository(root)
-    const projectConfig = assertArtifactPersistencePrepared(root)
-    const timestamp = options.now ?? new Date()
-    const slug = slugify(input.slug)
-    const priority = normalizePriority(input.priority)
-    const loadedIntegration = loadIntegrationConfig(root)
-    const integrationConfig = loadedIntegration.state === "enabled" ? loadedIntegration.config : undefined
-    const environment = resolveWorkflowEnvironment(integrationConfig)
-    const policy = resolveWorkflowPolicy(environment)
-    const tracker = environment.tracker.kind === "none" ? undefined : environment.tracker.config
-    if (input.source.mode === "external" && (!tracker || tracker.provider !== input.source.provider)) {
-        throw new Error(`cannot reuse external tracker work without a matching tracker in ${INTEGRATION_CONFIG_PATH}`)
-    }
-    if (tracker) assertConfiguredPriority(tracker, priority)
-
-    const parent =
-        input.entity === "task"
-            ? readParentEpic(root, input, integrationConfig?.forge, options.tools ?? new Map())
-            : undefined
-    assertTaskSourceProject(input, parent?.trackerProjectId)
-    const startBranch = input.entity === "task" ? parent!.branch : resolveDefaultBranch(root)
-    const format = projectConfig.branches.format
-    const rawId = generateRawId(timestamp)
-    if (rawIdExists(path.join(root, PROJECT_ROOT), rawId)) {
-        throw new Error(`workflow ID already exists for this timestamp: ${rawId}`)
-    }
-
-    const identity = { entity: input.entity, rawId, slug } as const
-    const adoptionResourceIds = resourceIdsFromAdoption(input, environment, qualifyId(input.entity, rawId))
-    const contract: BranchContract =
-        format === "tracker"
-            ? createTrackerBranchContract(
-                  input,
-                  identity,
-                  startBranch,
-                  environment.tracker,
-                  options.renderTrackerBranch,
-              )
-            : readyBranch(formatBranchName(identity, format, projectConfig.branches.username), startBranch, "generated")
+    const reference = trackerReference(object)
+    const name = entityName(reference, slug)
     const relativeDirectory =
         input.entity === "task"
-            ? path.join(parent!.directory, "tasks", entityDirectoryName(identity, timestamp))
-            : path.join(input.entity === "epic" ? EPIC_ROOT : GIG_ROOT, entityDirectoryName(identity, timestamp))
+            ? path.join(parent!.directory, "tasks", name)
+            : path.join(input.entity === "epic" ? EPIC_ROOT : GIG_ROOT, name)
     const absoluteDirectory = path.join(root, relativeDirectory)
+    if (fs.existsSync(absoluteDirectory)) throw new Error(`entity directory already exists: ${relativeDirectory}`)
+    const branch = branchFor(prepared, name, object)
+    assertBranchAvailable(root, branch, start)
+    const contract = readyBranch(
+        branch,
+        start,
+        prepared.projectConfig.branches.format === "tracker" ? "tracker" : "generated",
+    )
+    const tracker = trackerRecordFromObject(
+        object,
+        environment.tracker.provider === "github" ? environment.tracker.repository : undefined,
+    )
 
     let createdBranch: string | undefined
     let parentEpicUpdated = false
-    let initializedStatus: EntityStatus | undefined
     try {
-        if (contract.state === "ready") {
-            assertBranchAvailable(root, contract)
-            createBranch(root, contract)
-            createdBranch = contract.name
-        }
-        createEntityArtifacts(
-            absoluteDirectory,
-            relativeDirectory,
-            input,
-            rawId,
+        createBranch(root, contract)
+        createdBranch = contract.name
+        const common = {
             slug,
-            priority,
-            contract,
-            timestamp,
-            environment,
-            parent,
+            title: input.title.trim(),
+            createdAt: (options.now ?? new Date()).toISOString(),
+            phase: "planning" as const,
+            branch: contract,
+            tracker,
+        }
+        const status = Value.Parse(
+            EntityStatusSchema,
+            input.entity === "epic"
+                ? { ...common, entity: "epic", taskTarget: "epic" }
+                : { ...common, entity: input.entity, kind: input.kind },
         )
+        createEntityArtifacts(absoluteDirectory, input, status)
         if (input.entity === "task") {
+            const marker = trackerReferenceLabel(reference)!
             writeTextAtomically(
                 parent!.epicPath,
-                annotateEpicPlanItem(parent!.epicContent, parent!.epicItemLine, qualifyId("task", rawId)),
+                annotateEpicPlanItem(parent!.epicContent, parent!.epicItemLine, marker),
             )
             parentEpicUpdated = true
         }
-        initializedStatus = readEntityStatus(absoluteDirectory)
+        return {
+            directory: relativeDirectory,
+            status: readEntityStatus(absoluteDirectory),
+            resourceIds: resourceIdsFromTrackerObject(object, environment, name),
+        }
     } catch (error) {
         if (parentEpicUpdated) writeTextAtomically(parent!.epicPath, parent!.epicContent)
         fs.rmSync(absoluteDirectory, { recursive: true, force: true })
         if (createdBranch) deleteCreatedBranch(root, createdBranch)
         throw error
     }
-
-    return { directory: relativeDirectory, status: initializedStatus!, adoptionResourceIds }
 }
 
-function createEntityArtifacts(
-    absoluteDirectory: string,
-    relativeDirectory: string,
-    input: EntityInitialization,
-    rawId: RawId,
-    slug: string,
-    priority: Priority,
-    contract: BranchContract,
-    timestamp: Date,
-    environment: WorkflowEnvironment,
-    parent?: ParentEpic,
-): void {
-    const integrations = createInitialIntegrationRecords(input, environment, parent?.trackerProjectId)
-    const authority =
-        environment.tracker.kind === "none"
-            ? ({ kind: "workflow", priority } as const)
-            : ({
-                  kind: "tracker",
-                  provider: environment.tracker.kind,
-                  desired: { lifecycle: "inProgress", priority },
-              } as const)
-    const common = {
-        id: qualifyId(input.entity, rawId),
-        rawId,
-        slug,
-        title: input.title.trim(),
-        createdAt: timestamp.toISOString(),
-        phase: "planning" as const,
-        branch: contract,
-        integrations,
-        authority,
-        ...(authority.kind === "workflow" ? { state: "inProgress" as const } : {}),
+function trackerObject(input: EntityInitialization, environment: WorkflowEnvironment): TrackerObject {
+    const provider = environment.tracker.provider
+    if (provider === "github") {
+        if (!Value.Check(GitHubTrackerObjectSchema, input.object))
+            throw new Error("initialization requires a GitHub issue for the configured GitHub tracker")
+        return { provider, ...input.object }
     }
-    const candidate =
-        input.entity === "epic"
-            ? { ...common, entity: "epic" as const, taskTarget: "epic" as const }
-            : input.entity === "gig"
-              ? { ...common, entity: "gig" as const, kind: input.kind }
-              : { ...common, entity: "task" as const, kind: input.kind }
-    const status = Value.Parse(EntityStatusSchema, candidate)
+    const resource = resourceFor(input.entity)
+    const schema =
+        resource === "project"
+            ? LinearProjectObjectSchema
+            : resource === "task-issue"
+              ? LinearTaskIssueObjectSchema
+              : LinearGigIssueObjectSchema
+    if (!Value.Check(schema, input.object))
+        throw new Error(`initialization requires a Linear ${resource} for the configured Linear tracker`)
+    return { provider, resource, ...input.object } as TrackerObject
+}
 
+function resourceFor(entity: EntityType) {
+    return entity === "epic"
+        ? ("project" as const)
+        : entity === "task"
+          ? ("task-issue" as const)
+          : ("gig-issue" as const)
+}
+
+function branchFor(prepared: Prepared, name: string, object: TrackerObject): string {
+    const format = prepared.projectConfig.branches.format
+    if (format !== "tracker") return formatBranchName(name, format, prepared.projectConfig.branches.username)
+    // Linear names issue branches; a Project has none, so an Epic uses its dated name.
+    if (object.provider === "linear" && object.resource === "project") return name
+    if (object.provider !== "linear" || !object.gitBranchName)
+        throw new Error("the tracker branch format requires the Linear issue's gitBranchName")
+    return object.gitBranchName
+}
+
+function createEntityArtifacts(absoluteDirectory: string, input: EntityInitialization, status: EntityStatus): void {
     const directories =
         input.entity === "epic"
             ? [LOCAL_REVIEWS_DIR, LOCAL_SCRATCH_DIR, "tasks"]
@@ -292,15 +300,10 @@ function createEntityArtifacts(
     fs.mkdirSync(path.dirname(absoluteDirectory), { recursive: true })
     fs.mkdirSync(absoluteDirectory, { recursive: false })
     for (const directory of directories) fs.mkdirSync(path.join(absoluteDirectory, directory))
-
     fs.writeFileSync(path.join(absoluteDirectory, "brief.md"), `# Brief\n\n${input.request.trim()}\n`)
     fs.writeFileSync(path.join(absoluteDirectory, LOCAL_NOTES_FILE), "# Notes\n")
     if (input.entity !== "epic") fs.writeFileSync(path.join(absoluteDirectory, LOCAL_PENDING_FILE), "# Pending\n")
     writeEntityStatus(absoluteDirectory, status)
-
-    if (!Value.Check(EntityStatusSchema, status)) {
-        throw new Error(`generated invalid status for ${relativeDirectory}`)
-    }
 }
 
 type OrderedTaskEntry = ReturnType<typeof readOrderedTaskEntries>[number]
@@ -313,34 +316,29 @@ function orderedTaskTitle(entry: OrderedTaskEntry): string {
     return match[1]
 }
 
-function annotateEpicPlanItem(content: string, planItem: string, taskId: string): string {
+function annotateEpicPlanItem(content: string, planItem: string, marker: string): string {
     const newline = content.includes("\r\n") ? "\r\n" : "\n"
     const lines = content.split(/\r?\n/)
     const matches = lines.flatMap((line, index) => (line.trim() === planItem.trim() ? [index] : []))
     if (matches.length !== 1) throw new Error(`selected Epic plan item changed during Task initialization`)
     const index = matches[0]
     if (!/^\s*\d+\.\s+/.test(lines[index])) throw new Error(`selected Epic plan item is not ordered`)
-    lines[index] = lines[index].replace(/^(\s*\d+\.\s+)/, `$1[${taskId}] `)
+    lines[index] = lines[index].replace(/^(\s*\d+\.\s+)/, `$1[${marker}] `)
     return lines.join(newline)
 }
 
 interface ParentEpic {
-    id: string
-    rawId: RawId
+    label: string
     directory: string
     branch: string
+    tracker: { provider: "github"; issueNumber: number } | { provider: "linear"; projectId: string }
     trackerProjectId?: string
     epicPath: string
     epicContent: string
     epicItemLine: string
 }
 
-function readParentEpic(
-    root: string,
-    input: TaskInitialization,
-    forge: GitHubForge | undefined,
-    tools: McpToolCatalog,
-): ParentEpic {
+function readParentEpic(root: string, input: TaskPreflight, forge: GitHubForge, tools: McpToolCatalog): ParentEpic {
     const { parentEpicDir: rawDirectory, epicItemTitle, epicDelivery } = input
     const epicsRoot = path.join(root, EPIC_ROOT)
     const directory = path.resolve(root, rawDirectory)
@@ -350,8 +348,6 @@ function readParentEpic(
 
     const status = readEntityStatus(directory)
     if (status.entity !== "epic") throw new Error(`parent directory is not an Epic: ${rawDirectory}`)
-    if (status.branch.state !== "ready") throw new Error(`parent Epic branch is not ready: ${rawDirectory}`)
-    const trackerProjectId = boundTrackerProjectId(status)
     const epicPath = path.join(directory, "epic.md")
     if (!fs.existsSync(epicPath)) throw new Error(`parent Epic has no accepted epic.md: ${rawDirectory}`)
     const epicContent = fs.readFileSync(epicPath, "utf-8")
@@ -373,30 +369,31 @@ function readParentEpic(
     if (selected.state === "initialized") {
         throw new Error(`parent Epic item already has an initialized Task: ${JSON.stringify(title)}`)
     }
+    const tracker =
+        status.tracker.provider === "github"
+            ? {
+                  provider: "github" as const,
+                  issueNumber: status.tracker.external.issueNumber,
+              }
+            : status.tracker.resource === "project"
+              ? {
+                    provider: "linear" as const,
+                    projectId: status.tracker.external.projectId,
+                }
+              : (() => {
+                    throw new Error("parent Epic must be bound to a Linear Project")
+                })()
 
     return {
-        id: status.id,
-        rawId: status.rawId,
+        label: entityLabel(status),
         directory: path.relative(root, directory),
         branch: taskBranch,
-        ...(trackerProjectId ? { trackerProjectId } : {}),
+        tracker,
+        ...(tracker.provider === "linear" ? { trackerProjectId: tracker.projectId } : {}),
         epicPath,
         epicContent,
         epicItemLine: selected.line,
     }
-}
-
-function rawIdExists(projectRoot: string, rawId: RawId): boolean {
-    if (!fs.existsSync(projectRoot)) return false
-    const pending = [projectRoot]
-    while (pending.length > 0) {
-        const directory = pending.pop()!
-        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-            if (entry.name.includes(rawId)) return true
-            if (entry.isDirectory()) pending.push(path.join(directory, entry.name))
-        }
-    }
-    return false
 }
 
 function resolveDefaultBranch(root: string): string {
@@ -432,17 +429,13 @@ function resolveDefaultBranch(root: string): string {
 }
 
 interface RecordedBranchFacts {
-    id: string
+    name: string
     start: string
     target: string
 }
 
-// Reads one entity's metadata.json without schema validation and extracts only the
-// branch facts (id, start, target) that default-branch discovery needs. Intentionally
-// format-blind in both directions: a done entity saved before a format change does not
-// block new work, and this scan never signals staleness — that belongs to the entity's
-// own operational read. Corrupt JSON or missing branch fields still throw. Strict
-// operational validation stays in readEntityStatus.
+// Reads only the branch facts default-branch discovery needs, without strict
+// validation; readEntityStatus owns that for the entity being operated on.
 function readRecordedBranchFacts(entityDirectory: string): RecordedBranchFacts | null {
     const metadataPath = path.join(entityDirectory, ENTITY_METADATA_FILE)
     if (!fs.existsSync(metadataPath)) return null
@@ -462,7 +455,7 @@ function readRecordedBranchFacts(entityDirectory: string): RecordedBranchFacts |
         throw new Error(`cannot read recorded branch in ${metadataPath}`)
     }
     return {
-        id: typeof record.id === "string" ? record.id : path.basename(entityDirectory),
+        name: path.basename(entityDirectory),
         start: branch.start,
         target: branch.target,
     }
@@ -478,7 +471,7 @@ function recordedDefaultBranches(root: string): string[] {
             const facts = readRecordedBranchFacts(path.join(entityRoot, entry.name))
             if (!facts) continue
             if (facts.start !== facts.target) {
-                throw new Error(`${facts.id} has inconsistent default-branch start and target`)
+                throw new Error(`${facts.name} has inconsistent default-branch start and target`)
             }
             branches.add(facts.start)
         }
@@ -501,7 +494,6 @@ export function setEpicTaskTarget(
     const entityDirectory = resolveEntityDirectory(root, options.cwd, rawEntityDirectory)
     const status = readEntityStatus(entityDirectory)
     if (status.entity !== "epic") throw new Error("Task target can only be changed for an Epic")
-    assertEntityBranchReady(status)
 
     // Routing intent is recorded with planning; every default-target Task checks delivery separately.
     assertCloneBranch(root, status.branch.name)
@@ -524,11 +516,10 @@ function cloneBranchExists(root: string, branch: string): boolean {
     return Git.succeeds(root, ["show-ref", "--verify", `refs/heads/${branch}`])
 }
 
-function assertBranchAvailable(root: string, contract: ReadyBranchContract): void {
-    assertCloneBranch(root, contract.start)
-    const existing = Git.tryRun(root, ["show-ref", "--verify", `refs/heads/${contract.name}`])
-    if (existing) throw new Error(`workflow branch already exists: ${contract.name}`)
-    Git.run(root, ["check-ref-format", "--branch", contract.name])
+function assertBranchAvailable(root: string, branch: string, start: string): void {
+    assertCloneBranch(root, start)
+    if (cloneBranchExists(root, branch)) throw new Error(`workflow branch already exists: ${branch}`)
+    Git.run(root, ["check-ref-format", "--branch", branch])
 }
 
 function createBranch(root: string, contract: ReadyBranchContract): void {
@@ -539,5 +530,3 @@ function deleteCreatedBranch(root: string, branch: string): void {
     if (!Git.succeeds(root, ["show-ref", "--verify", `refs/heads/${branch}`])) return
     Git.tryRun(root, ["branch", "-D", branch])
 }
-
-export type { InitializationSource }

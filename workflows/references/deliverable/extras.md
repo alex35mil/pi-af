@@ -7,7 +7,7 @@ Read the matching section only when that situation arises.
 When the user requests or approves a kind change, update `kind` in `metadata.json`.
 
 - Any supported kind can change to any other, at any lifecycle, including `done` and `canceled`.
-- Kind stays in workflow metadata only; trackers get no Kind label.
+- With configured GitHub Kind labels, swap the issue's managed Kind label to match, keeping unrelated labels ([GitHub tracker](../integrations/tracker/github.md#resume-and-mutations)). Otherwise Kind stays in metadata only.
 - A kind-only update leaves lifecycle, Phase, identity, branch, Task parent, `brief.md`, and existing artifacts unchanged. Future work follows the new kind's strategy.
 - Actual scope or behavior changes follow the normal planning and approval rules, separately from the kind change.
 

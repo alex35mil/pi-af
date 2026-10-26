@@ -1,3 +1,4 @@
+import * as path from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
 import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -15,7 +16,7 @@ import {
     type ResourceIds,
     type ResourceIdsScope,
 } from "./resource-ids.js"
-import { resolveWorkflowEnvironment } from "./policy.js"
+import { sameRepository } from "./policy.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./forge/github/merge.js"
 
 export type ResourceKind = ResourceIdsScope["kind"]
@@ -33,26 +34,20 @@ export interface ResourceIdsContext {
 export function resolveResourceIdsContext(cwd: string, entityDir: string, resource: ResourceKind): ResourceIdsContext {
     const root = project.resolveRootDir(cwd)
     assertArtifactPersistencePrepared(root)
-    const loaded = loadIntegrationConfig(root)
-    const environment = resolveWorkflowEnvironment(loaded.state === "enabled" ? loaded.config : undefined)
+    const config = loadIntegrationConfig(root)
     const directory = resolveEntityDirectory(root, cwd, entityDir)
     const status = readEntityStatus(directory)
-    const tracker = status.integrations.find((entry) => entry.role === "tracker")
-    const common = { entityId: status.id }
+    const tracker = status.tracker
+    const common = { entity: path.basename(directory) }
     let scope: ResourceIdsScope
     switch (resource) {
         case "github-issue":
         case "github-project-item": {
-            if (
-                environment.tracker.kind !== "github" ||
-                !tracker ||
-                tracker.provider !== "github" ||
-                !("external" in tracker)
-            )
-                throw new Error("resource IDs require an identified GitHub tracker issue")
-            const configured = environment.tracker.config
+            const configured = config.tracker
+            if (configured.provider !== "github" || tracker.provider !== "github")
+                throw new Error("resource IDs require a GitHub tracker issue")
             if (!sameRepository(tracker.repository, configured.repository))
-                throw new Error("tracker repository changed; see workflows/MIGRATIONS.md")
+                throw new Error("tracker repository differs from the configured repository")
             const issue = {
                 ...common,
                 mcpServer: configured.mcpServer,
@@ -66,37 +61,27 @@ export function resolveResourceIdsContext(cwd: string, entityDir: string, resour
             break
         }
         case "linear-project": {
-            if (
-                environment.tracker.kind !== "linear" ||
-                !tracker ||
-                tracker.provider !== "linear" ||
-                tracker.resource !== "project" ||
-                !("external" in tracker)
-            )
-                throw new Error("resource IDs require an identified Linear Project")
+            const configured = config.tracker
+            if (configured.provider !== "linear" || tracker.provider !== "linear" || tracker.resource !== "project")
+                throw new Error("resource IDs require a Linear Project")
             scope = {
                 ...common,
                 kind: resource,
-                mcpServer: environment.tracker.config.mcpServer,
-                team: environment.tracker.config.team,
+                mcpServer: configured.mcpServer,
+                team: configured.team,
                 projectId: tracker.external.projectId,
             }
             break
         }
         case "linear-issue": {
-            if (
-                environment.tracker.kind !== "linear" ||
-                !tracker ||
-                tracker.provider !== "linear" ||
-                tracker.resource === "project" ||
-                !("external" in tracker)
-            )
-                throw new Error("resource IDs require an identified Linear issue")
+            const configured = config.tracker
+            if (configured.provider !== "linear" || tracker.provider !== "linear" || tracker.resource === "project")
+                throw new Error("resource IDs require a Linear issue")
             scope = {
                 ...common,
                 kind: resource,
-                mcpServer: environment.tracker.config.mcpServer,
-                team: environment.tracker.config.team,
+                mcpServer: configured.mcpServer,
+                team: configured.team,
                 issueId: tracker.external.issueId,
                 relationship:
                     tracker.resource === "task-issue"
@@ -106,15 +91,14 @@ export function resolveResourceIdsContext(cwd: string, entityDir: string, resour
             break
         }
         case "github-pull-request": {
-            const forge = status.integrations.find((entry) => entry.role === "forge")
-            if (environment.forge.kind !== "github" || !forge || status.branch.state !== "ready")
-                throw new Error("PR resource IDs require immutable forge intent prepared before submission")
-            if (!sameRepository(forge.repository, environment.forge.config.repository))
-                throw new Error("forge repository changed; see workflows/MIGRATIONS.md")
+            const forge = status.forge
+            if (!forge) throw new Error("PR resource IDs require immutable forge intent prepared before submission")
+            if (!sameRepository(forge.repository, config.forge.repository))
+                throw new Error("forge repository differs from the configured repository")
             scope = {
                 ...common,
                 kind: resource,
-                mcpServer: environment.forge.config.mcpServer,
+                mcpServer: config.forge.mcpServer,
                 repository: forge.repository,
                 head: forge.head,
                 target: forge.target,
@@ -128,11 +112,6 @@ export function resolveResourceIdsContext(cwd: string, entityDir: string, resour
     return { directory, status, scope }
 }
 
-function sameRepository(left: { owner: string; repo: string }, right: { owner: string; repo: string }): boolean {
-    return (
-        left.owner.toLowerCase() === right.owner.toLowerCase() && left.repo.toLowerCase() === right.repo.toLowerCase()
-    )
-}
 function responseObject(evidence: ProviderEvidence): Record<string, unknown> {
     return mcpResponsePayload(evidence.response)
 }
@@ -235,7 +214,8 @@ export function shippingReadDecision(
 ): GitHubMergeDecision {
     try {
         const resourceIds = resourceIdsFromRead(scope, evidence, tools)
-        if (!isResourceIdsKind(resourceIds, "github-pull-request")) throw new Error("shipping requires exact PR evidence")
+        if (!isResourceIdsKind(resourceIds, "github-pull-request"))
+            throw new Error("shipping requires exact PR evidence")
         if (resourceIds.value.number !== expectedPrNumber)
             throw new Error("shipping PR does not match the locally recorded PR")
         return planGitHubMerge(

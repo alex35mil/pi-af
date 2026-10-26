@@ -103,7 +103,6 @@ describe("workflow model-facing contracts", () => {
             "confirm_tracker_initialization",
             "provision_github_project",
             "incoming_pull_request_checkout",
-            "cleanup_delivery_branch",
             "prepare_plan_presentation",
         ])
             assert.ok(!registeredWorkflowTools().some((t) => t.name === old), old)
@@ -245,7 +244,7 @@ describe("workflow model-facing contracts", () => {
                 call({
                     name: "codemode",
                     arguments: {
-                        code: 'text(await describeTool("init_gig")); text(await tools.mcp__memory__echo({}));',
+                        code: 'text(await describeTool("init_github_gig")); text(await tools.mcp__memory__echo({}));',
                     },
                 }),
                 answer("Done."),
@@ -274,17 +273,17 @@ describe("workflow model-facing contracts", () => {
             setup(root) {
                 fs.writeFileSync(
                     path.join(root, "agent/permissions.json"),
-                    JSON.stringify({ defaultMode: "deny", allow: ["codemode"], deny: ["init_gig"] }),
+                    JSON.stringify({ defaultMode: "deny", allow: ["codemode"], deny: ["preflight_gig"] }),
                 )
             },
         })
         try {
-            assert.ok(h.session.getAllTools().some((t) => t.name === "init_gig"))
+            assert.ok(h.session.getAllTools().some((t) => t.name === "preflight_gig"))
             h.respond(
                 call({
                     name: "codemode",
                     arguments: {
-                        code: 'text(await tools.init_gig({title:"Blocked",slug:"blocked",request:"Do not execute.",priority:"High",kind:"refactor"}));',
+                        code: 'text(await tools.preflight_gig({title:"Blocked",slug:"blocked",request:"Do not execute.",kind:"refactor"}));',
                     },
                 }),
                 answer("Denied."),
@@ -293,7 +292,7 @@ describe("workflow model-facing contracts", () => {
             const result = h.manager.buildSessionProjection().messages.find((m) => m.role === "toolResult")
             const outcome = json(result)
             assert.equal(outcome.isError, true)
-            assert.equal(outcome.details.calls[0].name, "init_gig")
+            assert.equal(outcome.details.calls[0].name, "preflight_gig")
             assert.equal(outcome.details.calls[0].status, "cancelled")
             assert.equal(fs.existsSync(path.join(h.root, ".project/.local/gigs")), false)
         } finally {
@@ -348,7 +347,36 @@ describe("workflow model-facing contracts", () => {
                 fs.mkdirSync(path.join(root, ".project"))
                 fs.writeFileSync(
                     path.join(root, ".project/config.json"),
-                    JSON.stringify({ branches: { format: "identifier-title" } }),
+                    JSON.stringify({ branches: { format: "number-title" } }),
+                )
+                const repository = { owner: "fixture", repo: "app" }
+                const statuses = {
+                    backlog: "Backlog",
+                    todo: "Todo",
+                    inProgress: "In Progress",
+                    inReview: "In Review",
+                    done: "Done",
+                    canceled: "Canceled",
+                }
+                fs.writeFileSync(
+                    path.join(root, ".project/integrations.json"),
+                    JSON.stringify({
+                        tracker: {
+                            provider: "github",
+                            mcpServer: "github",
+                            repository,
+                            project: { owner: "fixture", ownerType: "user", number: 1 },
+                            fields: {
+                                status: { field: "Status", values: statuses },
+                                phase: {
+                                    field: "Phase",
+                                    values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
+                                },
+                                priority: { scope: "project", field: "Priority", values: ["High"] },
+                            },
+                        },
+                        forge: { provider: "github", mcpServer: "github", repository },
+                    }),
                 )
                 fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
             },
@@ -359,19 +387,23 @@ describe("workflow model-facing contracts", () => {
         }
         try {
             await invoke(
-                'text(await tools.inspect_project_setup({})); text(await tools.prepare_artifacts({})); text(await describeTool("init_gig"));',
+                'text(await tools.inspect_project_setup({})); text(await tools.prepare_artifacts({})); text(await describeTool("init_github_gig"));',
             )
             await invoke(
-                'text(await tools.init_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",priority:"High",kind:"refactor"}));',
+                'text(await tools.preflight_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor"})); text(await tools.init_github_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor",object:{issueId:900,issueNumber:9,issueUrl:"https://github.com/fixture/app/issues/9"}}));',
             )
-            const directory = path.join(".project/.local/gigs", fs.readdirSync(path.join(h.root, ".project/.local/gigs"))[0])
+            const directory = ".project/.local/gigs/9-fixture-work"
+            assert.ok(fs.existsSync(path.join(h.root, directory, "metadata.json")))
             const metadataPath = path.join(h.root, directory, "metadata.json")
             const initial = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
             git(h.root, "switch", initial.branch.name)
             await invoke(`text(await tools.initialize_integration({entityDir:${JSON.stringify(directory)}}));`)
+            const native = JSON.stringify({
+                field: { name: "Phase", dataType: "SINGLE_SELECT", options: ["Planning", "Execution", "Self-Review"] },
+            })
             for (const phase of ["execution", "selfReview", "planning"]) {
                 await invoke(
-                    `text(await tools.set_local_workflow_phase({entityDir:${JSON.stringify(directory)},phase:${JSON.stringify(phase)}}));`,
+                    `text(await tools.set_github_workflow_phase({entityDir:${JSON.stringify(directory)},phase:${JSON.stringify(phase)},lifecycle:"inProgress",native:${native}}));`,
                 )
                 assert.equal(JSON.parse(fs.readFileSync(metadataPath, "utf8")).phase, phase)
             }
@@ -390,8 +422,8 @@ describe("workflow model-facing contracts", () => {
                 assert.ok(m.tokens <= 2500)
                 assert.ok(m.tools.every((t) => !names.has(t.name as (typeof expectedWorkflowTools)[number])))
             }
-            assert.equal(JSON.parse(fs.readFileSync(metadataPath, "utf8")).id, initial.id)
-            assert.equal(fs.existsSync(path.join(h.root, directory, "status.md")), true)
+            assert.deepEqual(JSON.parse(fs.readFileSync(metadataPath, "utf8")).tracker, initial.tracker)
+            assert.equal(fs.existsSync(path.join(h.root, directory, "status.md")), false)
         } finally {
             await h.cleanup()
         }

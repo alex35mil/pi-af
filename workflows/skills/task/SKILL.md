@@ -2,19 +2,16 @@
 name: task
 description: "Use for Deliverable work belonging to exactly one Epic under <repo>/.project/.local/epics/<epic>/tasks/."
 allowed-tools:
-    - "init_task"
-    - "adopt_github_task"
-    - "adopt_linear_task"
+    - "preflight_task"
+    - "init_github_task"
+    - "init_linear_task"
     - "review_task"
     - "prepare_task_plan_presentation"
     - "review_epic"
     - "prepare_epic_plan_presentation"
     - "prepare_artifacts"
-    - "set_local_workflow_phase"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
-    - "confirm_github_tracker"
-    - "confirm_linear_tracker"
     - "render_provider_body"
     - "prepare_tracker_publication"
     - "prepare_tracker_publication_update"
@@ -38,9 +35,7 @@ allowed-tools:
     - "record_resource_ids"
     - "invalidate_resource_ids"
     - "select_pull_request_resource"
-    - "finalize_linear_branch"
-    - "cleanup_ancestry_delivery_branch"
-    - "cleanup_github_delivery_branch"
+    - "cleanup_delivery_branch"
     - "read(.project/*)"
     - "write(.project/*)"
     - "edit(.project/*)"
@@ -62,15 +57,17 @@ The Deliverable lifecycle owns the shared flow. This file owns choosing the pare
 
 Follow the Deliverable resume steps for a Task under its Epic's `tasks/` directory, then:
 
-1. **Find the parent** from the directory the Task lives in. Read its `brief.md`, `metadata.json`, `notes.md` when present, its lifecycle (`status.md` or native tracker state), and `epic.md`.
+1. **Find the parent** from the directory the Task lives in. Read its `brief.md`, `metadata.json`, `notes.md` when present, its native tracker lifecycle, and `epic.md`.
 2. **Verify:**
    - the Task's copied branch is the parent's Epic branch or the repository default;
-   - `epic.md` references this Task's qualified ID exactly once.
+   - `epic.md` carries this Task's marker (`[#N]` or `[ENG-N]`) exactly once.
 
    The Task's stored target wins when the Epic's current `taskTarget` differs.
 3. **Continue** through the Deliverable lifecycle.
 
 ## Initialize
+
+Initialization follows [initialize from the tracker object](../../references/integrations/shared.md#initialize-from-the-tracker-object).
 
 1. **Adoption preflight:** when adopting Backlog or Todo work, first read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Task preflight, including the exact parent Linear Project check.
 2. **Choose the parent and item:** follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs). The user must also name:
@@ -82,20 +79,20 @@ Follow the Deliverable resume steps for a Task under its Epic's `tasks/` directo
    - Read the parent's approved Task delivery strategy and rationale in `epic.md`, and its current `taskTarget`. The initial Epic pointer is not approval.
    - When the strategy is missing or conflicts with the intended target, resolve it with the user through the Epic's planning, acceptance, and routing steps first.
    - Routing intent is recorded at Epic plan acceptance, and selecting default proves no delivery. When the target is default, read [Epic delivery](../../references/epic.md). An earlier target switch doesn't prove current delivery.
-4. **Initialize:** call `init_task`, `adopt_github_task`, or `adopt_linear_task` with:
+4. **New work:** call `preflight_task` with the values below, then create the issue in the parent's relationship as the tracker reference describes.
+5. **Initialize:** call `init_github_task` or `init_linear_task` with:
    - the repo-relative `parentEpicDir`;
    - the selected `epicItemTitle`;
    - the approved metadata, the Request as `request`, and the slug;
-   - the adoption `source` facts, when adopting.
+   - the issue as `object`.
 
    **What the tool does:**
-   - It requires exactly one plan entry with `epicItemTitle`, generates the Task ID, and tags that entry `[TASK-<raw-id>]`. From then on the ID, not the title or order, is the relation. The Task's own `title` may differ from the plan line.
-   - It creates the directory and renders the configured branch. The `tracker` format uses the Linear issue's branch.
-5. **Targets:** the Task copies the parent's current `taskTarget` into its immutable `start` and `target`, either the Epic branch or the stored default.
-   - A default target revalidates delivery through local ancestry or `epicDelivery: { kind: "github-pr", evidence }` from the configured forge, which covers squash merges. Pass current PR evidence to the tool when using that route.
-6. **Linear `tracker` branches** start as `tracker-pending`: bind the tracker, save the returned `gitBranchName`, call `finalize_linear_branch`, then switch to the ready branch. Static formats are ready at initialization.
+   - It requires exactly one plan entry with `epicItemTitle` and tags it with the issue's marker, `[#N]` or `[ENG-N]`. From then on the marker, not the title or order, is the relation. The Task's own `title` may differ from the plan line.
+   - It names the directory and branch from the issue. The `tracker` format uses the Linear issue's `gitBranchName`.
+6. **Targets:** the Task copies the parent's current `taskTarget` into its immutable `start` and `target`, either the Epic branch or the stored default.
+   - A default target revalidates delivery through local ancestry or `epicDelivery: { kind: "github-pr", evidence }` from the configured forge, which covers squash merges. Pass current PR evidence to preflight and initialization when using that route.
 
-Continue through the Deliverable lifecycle only once the branch is ready.
+Finish board setup before planning.
 
 ## Parent synchronization
 
@@ -122,7 +119,7 @@ At every material Task decision, and before final review, compare the outcome wi
 
 **Markers and completion:**
 
-- Keep every `[TASK-…]` marker through approved Epic title or order edits.
+- Keep every Task marker (`[#N]` or `[ENG-N]`) through approved Epic title or order edits.
 - Follow the shared delivery and cleanup. The Task's `done` lifecycle completes its plan line without another commit.
 
 A Task can never lose or change its parent and cannot be converted into a Gig.

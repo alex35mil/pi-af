@@ -32,6 +32,7 @@ import registerPr from "../workflows/extensions/pr/index.ts"
 import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("contributions")
@@ -97,11 +98,11 @@ function fixture() {
     git("add", ".gitignore", "README.md")
     git("commit", "-m", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
+        path.join(root, ".project/integrations.json"),
+        JSON.stringify({ tracker: minimalTracker(), forge }),
     )
-    fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ forge }))
     prepareArtifactPersistence(root)
     return { root, git, close: () => fs.rmSync(root, { recursive: true, force: true }) }
 }
@@ -244,19 +245,13 @@ describe("incoming PR identity and context", () => {
             assert.match(result.safety.checkout.scale[4].meaning, /No malicious indicators/)
             assert.match(result.safety.checkout.assessment, /not a guarantee/)
             assert.match(result.safety.checkout.approval, /Every score requires explicit checkout approval/)
-            assert.match(
-                result.safety.checkout.phases,
-                /standard rebase and conflict resolution immediately publish/,
-            )
+            assert.match(result.safety.checkout.phases, /standard rebase and conflict resolution immediately publish/)
             assert.match(
                 result.safety.checkout.rebase,
                 /Observe actual target\/contributor tips separately from unchanged provider evidence/,
             )
             assert.match(result.safety.checkout.rebase, /Never use plain --force/)
-            assert.match(
-                result.safety.execution,
-                /separate command and appropriately isolated environment approval/,
-            )
+            assert.match(result.safety.execution, /separate command and appropriately isolated environment approval/)
             assert.throws(
                 () => incomingPullRequestContext(f.root, "https://github.com/other/app/pull/12", mcpTools),
                 /configured repository/,
@@ -278,7 +273,7 @@ describe("incoming PR identity and context", () => {
             fs.writeFileSync(path.join(f.root, ".project/integrations.json"), "{}")
             assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools))
             fs.rmSync(path.join(f.root, ".project/integrations.json"))
-            assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools), /requires a configured/)
+            assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools), /missing required/)
         } finally {
             f.close()
         }
@@ -629,10 +624,7 @@ describe("incoming PR private review", () => {
             for (const [name, content] of Object.entries(preserved))
                 assert.equal(fs.readFileSync(path.join(f.root, local, name), "utf-8"), content)
             for (const name of oldFiles)
-                assert.equal(
-                    fs.readFileSync(path.join(f.root, oldRound, name), "utf-8"),
-                    `Existing review ${name}.\n`,
-                )
+                assert.equal(fs.readFileSync(path.join(f.root, oldRound, name), "utf-8"), `Existing review ${name}.\n`)
             assert.deepEqual(fs.readdirSync(path.join(f.root, local, `${baseSha}-${headSha}`)), ["review-042"])
             assert.equal(fs.readFileSync(path.join(f.root, input.dossierPath), "utf-8"), dossier())
         } finally {

@@ -31,14 +31,14 @@ Workflow operations are discovered on demand through the existing permission-awa
 
 [`workflows/`](workflows/) contains reusable workflows for Epics, Tasks, and Gigs:
 
-- `/project-setup` — interactively configure artifacts, branches, optional integrations, and policies;
+- `/project-setup` — interactively configure the tracker, forge, branches, and policies;
 - `/epic` — plan and maintain an initiative of prospective Tasks;
 - `/task` — initialize or resume work belonging to one Epic;
 - `/gig` — initialize or resume standalone work;
-- `/backlog` — optional integration-only future-work intake;
-- `/todo` — optional integration-only ready-work intake;
+- `/backlog` — future-work intake into the tracker;
+- `/todo` — ready-work intake into the tracker;
 - `/pr` — privately review an incoming PR. You approve a checkout only after seeing a safety score, and each fix, push, publication, and merge needs its own approval. See [incoming PR handling](workflows/references/pr/incoming.md).
 
 Say “Report this workflow issue” to prepare ordinary Todo work in the workflow source project's tracker. Set `workflowProject` to that source checkout's absolute path in private global `workflows.json` in Pi's agent directory; its existing tracker configuration stays authoritative. The exact sanitized report and destination require approval, with the named MCP tools available in the reporting session. Missing configuration errors with what to create and where, without starting setup. See [workflow reporting](workflows/README.md#report-a-workflow-problem).
 
-Authoritative workflow artifacts live under `.project/.local/` and never enter Git; trackers never receive workflow-system traces. Optional tracker support includes GitHub or Linear; optional forge support currently uses GitHub. Runtime provider operations use Pi-registered MCP tools through the same permission extension as every other agent. Guided setup may additionally inspect Linear and provision an explicitly approved GitHub Project through credential-isolated direct APIs. See the [workflow setup and artifact guide](workflows/README.md).
+Every project uses a tracker (GitHub or Linear) and a GitHub forge. The tracker object is each Epic, Task, and Gig's identity, and every Deliverable ships through a merged PR. Workflow artifacts live under `.project/.local/` and never enter Git. Runtime provider operations use Pi-registered MCP tools through the same permission extension as every other agent. Guided setup may additionally inspect Linear and provision an explicitly approved GitHub Project through credential-isolated direct APIs. See the [workflow setup and artifact guide](workflows/README.md).

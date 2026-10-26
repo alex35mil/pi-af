@@ -8,8 +8,7 @@ import { Value } from "typebox/value"
 import { phaseValues } from "./workflow-phase-fixtures.ts"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
-import { beginProviderCreation, recordProviderCreation } from "../workflows/extensions/integrations/creation.ts"
+import { beginPullRequestCreation, recordPullRequestCreation } from "../workflows/extensions/integrations/creation.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
 import {
     OperationResourceIdsMemo,
@@ -32,7 +31,7 @@ import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 const mcpTools = workflowMcpCatalog("github", "linear")
 
 const repo = { owner: "alex", repo: "example" }
-const common = { entityId: "GIG-01M3S2H283", mcpServer: "github" }
+const common = { entity: "23-example", mcpServer: "github" }
 const prScope = {
     ...common,
     kind: "github-pull-request" as const,
@@ -67,10 +66,7 @@ function fixture() {
     git(["init", "-q"])
     fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const statuses = {
         backlog: "Backlog",
         todo: "Todo",
@@ -87,61 +83,33 @@ function fixture() {
                 mcpServer: "github",
                 repository: repo,
                 project: itemScope.project,
-                labels: {
-                    kind: {
-                        epic: "Epic",
-                        deliverableKinds: {
-                            feature: "Feature",
-                            bugfix: "Bugfix",
-                            research: "Research",
-                            refactor: "Refactor",
-                            audit: "Audit",
-                            chore: "Chore",
-                        },
-                    },
-                },
                 fields: {
                     status: { field: "Status", values: statuses },
                     phase: { field: "Phase", values: { ...phaseValues } },
                     priority: { scope: "project", field: "Priority", values: ["High"] },
-                    internalId: { scope: "project", field: "ID" },
                 },
             },
             forge: { provider: "github", mcpServer: "github", repository: repo },
         }),
     )
     prepareArtifactPersistence(root)
-    const directory = path.join(root, ".project/.local/gigs/20260930-1452.GIG-01M3S2H283.example")
+    const directory = path.join(root, ".project/.local/gigs", common.entity)
     fs.mkdirSync(directory, { recursive: true })
-    const metadata = {
-        id: common.entityId,
-        rawId: "01M3S2H283",
+    const metadata: Record<string, unknown> = {
         slug: "example",
         title: "Example",
         createdAt: "2026-10-01T00:00:00Z",
         phase: "selfReview",
         entity: "gig",
         kind: "refactor",
-        authority: { kind: "tracker", provider: "github" },
         branch: { state: "ready", name: prScope.head, start: "main", target: "main", source: "generated" },
-        integrations: [
-            {
-                role: "tracker",
-                provider: "github",
-                repository: repo,
-                planComment: { state: "unpublished" },
-                state: "bound",
-                external: { issueNumber: 23 },
-            },
-            {
-                role: "forge",
-                provider: "github",
-                repository: repo,
-                head: prScope.head,
-                target: prScope.target,
-                state: "intent",
-            },
-        ],
+        tracker: {
+            provider: "github",
+            repository: repo,
+            external: { issueNumber: 23 },
+            planComment: { state: "unpublished" },
+        },
+        forge: { provider: "github", repository: repo, head: prScope.head, target: prScope.target },
     }
     const file = path.join(directory, "metadata.json")
     fs.writeFileSync(file, JSON.stringify(metadata))
@@ -456,112 +424,100 @@ describe("resource ID operations", () => {
         }
     })
 
-    it("keeps desired initial Priority when recording a tracker create", async () => {
+    it("refuses a second PR intent and never creates one for an Epic", async () => {
         const f = fixture()
         try {
+            await assert.rejects(beginPullRequestCreation(f.root, f.directory), /PR intent already exists/)
+            const epicDir = path.join(f.root, ".project/.local/epics/9-rollout")
+            fs.mkdirSync(epicDir, { recursive: true })
             fs.writeFileSync(
-                f.file,
+                path.join(epicDir, "metadata.json"),
                 JSON.stringify({
-                    ...f.metadata,
-                    authority: {
-                        kind: "tracker",
+                    slug: "rollout",
+                    title: "Rollout",
+                    createdAt: "2026-10-01T00:00:00Z",
+                    phase: "execution",
+                    entity: "epic",
+                    taskTarget: "epic",
+                    branch: { state: "ready", name: "9-rollout", start: "main", target: "main", source: "generated" },
+                    tracker: {
                         provider: "github",
-                        desired: { lifecycle: "inProgress", priority: "High" },
+                        repository: repo,
+                        external: { issueNumber: 9 },
+                        planComment: { state: "unpublished" },
                     },
-                    integrations: [
-                        {
-                            role: "tracker",
-                            provider: "github",
-                            planComment: { state: "unpublished" },
-                            repository: repo,
-                            state: "awaiting",
-                            operation: "create issue",
-                        },
-                    ],
                 }),
             )
-            await beginProviderCreation(f.root, f.directory, "tracker")
-            await recordProviderCreation(
-                f.root,
-                f.directory,
-                "tracker",
-                {
-                    tool: "mcp__github__issue_write",
-                    arguments: { method: "create", ...repo, title: "Example" },
-                    response: { id: "101", url: "https://github.com/alex/example/issues/23" },
-                },
-                mcpTools,
-            )
-            assert.deepEqual(readEntityStatus(f.directory).authority, {
-                kind: "tracker",
-                provider: "github",
-                desired: { lifecycle: "inProgress", priority: "High" },
-            })
+            await assert.rejects(beginPullRequestCreation(f.root, epicDir), /Epics never create pull requests/)
         } finally {
             f.cleanup()
         }
     })
 
     for (const format of ["payload", "mcpText", "mcpStructured"] as const) {
-            it(`records creation and selection locally after one submission commit (${format})`, async () => {
-                const f = fixture()
-                try {
-                    f.metadata.integrations = f.metadata.integrations.filter((x) => x.role !== "forge")
-                    fs.writeFileSync(f.file, JSON.stringify(f.metadata))
-                    await beginProviderCreation(f.root, f.directory, "forge")
-                    f.git(["add", "."])
-                    f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
-                    const committed = fs.readFileSync(f.file, "utf8")
-                    const payload = { id: "4700971917", url: pr.html_url }
-                    const responses = {
-                        payload,
-                        mcpText: { content: [{ type: "text", text: JSON.stringify(payload) }] },
-                        mcpStructured: { content: [], structuredContent: payload },
-                    }
-                    const result = await recordProviderCreation(
+        it(`records creation and selection locally after one submission commit (${format})`, async () => {
+            const f = fixture()
+            try {
+                delete f.metadata.forge
+                fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+                f.git(["add", "."])
+                f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
+                await beginPullRequestCreation(f.root, f.directory)
+                const intent = fs.readFileSync(f.file, "utf8")
+                assert.deepEqual(JSON.parse(intent).forge, {
+                    provider: "github",
+                    repository: repo,
+                    head: prScope.head,
+                    target: prScope.target,
+                })
+                const payload = { id: "4700971917", url: pr.html_url }
+                const responses = {
+                    payload,
+                    mcpText: { content: [{ type: "text", text: JSON.stringify(payload) }] },
+                    mcpStructured: { content: [], structuredContent: payload },
+                }
+                const result = await recordPullRequestCreation(
+                    f.root,
+                    f.directory,
+                    {
+                        tool: "mcp__github__create_pull_request",
+                        arguments: {
+                            ...repo,
+                            head: prScope.head,
+                            base: prScope.target,
+                            title: "Example",
+                            body: "Approved",
+                        },
+                        response: responses[format],
+                    },
+                    mcpTools,
+                )
+                assert.deepEqual(Object.keys(result).sort(), ["entity", "resourceIds"])
+                assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
+                const recorded = readResourceIdsCache(f.directory)
+                await assert.rejects(
+                    recordPullRequestCreation(
                         f.root,
                         f.directory,
-                        "forge",
                         {
                             tool: "mcp__github__create_pull_request",
-                            arguments: {
-                                ...repo,
-                                head: prScope.head,
-                                base: prScope.target,
-                                title: "Example",
-                                body: "Approved",
-                            },
-                            response: responses[format],
+                            arguments: { ...repo, head: prScope.head, base: prScope.target, title: "Example" },
+                            response: { content: [], structuredContent: payload, isError: true },
                         },
                         mcpTools,
-                    )
-                    assert.deepEqual(Object.keys(result).sort(), ["entityId", "resourceIds", "role"])
-                    assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
-                    const recorded = readResourceIdsCache(f.directory)
-                    await assert.rejects(
-                        recordProviderCreation(
-                            f.root,
-                            f.directory,
-                            "forge",
-                            {
-                                tool: "mcp__github__create_pull_request",
-                                arguments: { ...repo, head: prScope.head, base: prScope.target, title: "Example" },
-                                response: { content: [], structuredContent: payload, isError: true },
-                            },
-                            mcpTools,
-                        ),
-                        /MCP error/,
-                    )
-                    assert.deepEqual(readResourceIdsCache(f.directory), recorded)
-                    await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
-                    assert.equal(fs.readFileSync(f.file, "utf8"), committed)
-                    assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json"])
-                    assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
-                    assert.equal(f.git(["status", "--porcelain"]), "")
-                    assert.equal(f.git(["ls-files", "--", ".project/.local"]), "")
-                } finally {
-                    f.cleanup()
-                }
-            })
+                    ),
+                    /MCP error/,
+                )
+                assert.deepEqual(readResourceIdsCache(f.directory), recorded)
+                await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
+                assert.equal(fs.readFileSync(f.file, "utf8"), intent)
+                assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json"])
+                assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
+                assert.equal(f.git(["status", "--porcelain"]), "")
+                assert.equal(f.git(["ls-files", "--", ".project/.local"]), "")
+            } finally {
+                f.cleanup()
+            }
+        })
     }
 })

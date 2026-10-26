@@ -13,6 +13,7 @@ import {
 } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { planGitHubMerge, type GitHubMergeSubject } from "../workflows/extensions/integrations/forge/github/merge.ts"
 
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("forge")
@@ -22,7 +23,7 @@ const sha = "a".repeat(40)
 const baseSha = "b".repeat(40)
 const scope = {
     kind: "github-pull-request" as const,
-    entityId: "GIG-01M57ACGTF",
+    entity: "12-shared-merge",
     mcpServer: "forge",
     repository,
     head: "source",
@@ -62,13 +63,10 @@ function fixture() {
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
-        JSON.stringify({ forge: { provider: "github", mcpServer: "forge", repository } }),
+        JSON.stringify({ tracker: minimalTracker(), forge: { provider: "github", mcpServer: "forge", repository } }),
     )
     prepareArtifactPersistence(root)
     const plan = (reviewed: ProviderEvidence = evidence(), current = reviewed) =>

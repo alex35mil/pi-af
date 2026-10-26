@@ -6,25 +6,29 @@ import { describe, it } from "node:test"
 
 import { Value } from "typebox/value"
 
-import {
-    EntityMetadataSchema,
-    EntityStatusSchema,
-    resolveEntityDirectory,
-    resolveEntityPath,
-} from "../workflows/extensions/__lib/entity.ts"
-import { IntegrationRecordSchema } from "../workflows/extensions/integrations/records.ts"
+import { EntityStatusSchema, resolveEntityDirectory, resolveEntityPath } from "../workflows/extensions/__lib/entity.ts"
+import { TrackerRecordSchema } from "../workflows/extensions/integrations/records.ts"
 import { parseReviewReport } from "../workflows/extensions/review/findings.ts"
 import { RecordReviewResponseSchema } from "../workflows/extensions/review/index.ts"
 
 const commonMetadata = {
-    id: "GIG-01KDVDNA00",
-    rawId: "01KDVDNA00",
     slug: "example",
     title: "Example",
     createdAt: "2026-01-01T00:00:00Z",
     phase: "planning",
-    branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
-    integrations: [],
+    branch: {
+        state: "ready",
+        name: "example",
+        start: "main",
+        target: "main",
+        source: "generated",
+    },
+    tracker: {
+        provider: "github",
+        repository: { owner: "example", repo: "project" },
+        external: { issueNumber: 2 },
+        planComment: { state: "unpublished" },
+    },
 }
 
 const finding = {
@@ -38,115 +42,116 @@ const finding = {
 }
 
 describe("workflow consolidation contracts", () => {
-    it("preserves every metadata/status authority variant and strict field boundary", () => {
+    it("keeps a strict metadata boundary with no local lifecycle, ID, or authority", () => {
         for (const entity of ["epic", "task", "gig"] as const) {
-            for (const authority of [
-                { kind: "workflow", priority: "not set" },
-                { kind: "tracker", provider: "github" },
-                { kind: "tracker", provider: "linear", desired: { lifecycle: "inProgress", priority: "High" } },
-            ]) {
-                const metadata = {
-                    ...commonMetadata,
-                    entity,
-                    authority,
-                    ...(entity === "epic" ? { taskTarget: "epic" } : { kind: "feature" }),
-                }
-                assert.equal(Value.Check(EntityMetadataSchema, metadata), true)
-                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, state: "planning" }), false)
-                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, extra: true }), false)
-                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, parentEpic: "example" }), false)
-                assert.equal(
-                    Value.Check(
-                        EntityMetadataSchema,
-                        entity === "epic" ? { ...metadata, kind: "feature" } : { ...metadata, taskTarget: "epic" },
-                    ),
-                    false,
-                )
-                assert.equal(Value.Check(EntityStatusSchema, metadata), authority.kind === "tracker")
-                for (const state of ["inProgress", "inReview", "done"]) {
-                    assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state }), authority.kind === "workflow")
-                }
-                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "planning" }), false)
-                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "backlog" }), false)
-                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, state: "todo" }), false)
-                for (const phase of ["planning", "execution", "selfReview"]) {
-                    assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, phase }), true)
-                }
-                assert.equal(Value.Check(EntityMetadataSchema, { ...metadata, phase: "paused" }), false)
+            const metadata = {
+                ...commonMetadata,
+                entity,
+                ...(entity === "epic" ? { taskTarget: "epic" } : { kind: "feature" }),
             }
+            assert.equal(Value.Check(EntityStatusSchema, metadata), true)
+            for (const extra of [
+                { state: "inProgress" },
+                { id: "GIG-01KDVDNA00" },
+                { authority: { kind: "tracker", provider: "github" } },
+                { integrations: [] },
+                { parentEpic: "example" },
+                { extra: true },
+            ])
+                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, ...extra }), false)
+            assert.equal(
+                Value.Check(
+                    EntityStatusSchema,
+                    entity === "epic" ? { ...metadata, kind: "feature" } : { ...metadata, taskTarget: "epic" },
+                ),
+                false,
+            )
+            const { tracker: _tracker, ...untracked } = metadata
+            assert.equal(Value.Check(EntityStatusSchema, untracked), false)
+            for (const phase of ["planning", "execution", "selfReview"])
+                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, phase }), true)
+            assert.equal(Value.Check(EntityStatusSchema, { ...metadata, phase: "paused" }), false)
+            assert.equal(
+                Value.Check(EntityStatusSchema, {
+                    ...metadata,
+                    branch: { ...metadata.branch, state: "tracker-pending" },
+                }),
+                false,
+            )
         }
     })
 
-    it("preserves complete and partial provider checkpoint identities", () => {
+    it("records each tracker object by its identity only", () => {
         const cases = [
             {
                 provider: "github",
                 repository: { owner: "example", repo: "project" },
                 planComment: { state: "unpublished" },
-                identity: { issueNumber: 2 },
+                external: { issueNumber: 2 },
             },
             {
                 provider: "linear",
                 planDocument: { state: "unpublished" },
                 resource: "task-issue",
-                identity: { issueId: "issue", projectId: "project" },
+                external: {
+                    issueId: "issue",
+                    identifier: "ENG-2",
+                    projectId: "project",
+                },
             },
             {
                 provider: "linear",
                 planDocument: { state: "unpublished" },
                 resource: "gig-issue",
-                identity: { issueId: "issue" },
+                external: { issueId: "issue", identifier: "ENG-2" },
+            },
+            {
+                provider: "linear",
+                planDocument: { state: "unpublished" },
+                resource: "project",
+                external: { projectId: "p", createdAt: "2026-10-01T09:00:00.000Z" },
             },
         ]
-        for (const { identity, ...provider } of cases) {
-            const common = { role: "tracker", ...provider }
-            for (const checkpoint of [
-                { state: "awaiting", operation: "create" },
-                { state: "pending", operations: ["create"] },
-                { state: "issue-bound-pending", external: identity, operations: ["complete binding"] },
-                { state: "bound-pending", external: identity, operations: ["confirm"] },
-                { state: "bound", external: identity },
-            ])
-                assert.equal(Value.Check(IntegrationRecordSchema, { ...common, ...checkpoint }), true)
-            assert.equal(Value.Check(IntegrationRecordSchema, { ...common, state: "pending", operations: [] }), false)
+        for (const record of cases) {
+            assert.equal(Value.Check(TrackerRecordSchema, record), true)
+            assert.equal(Value.Check(TrackerRecordSchema, { ...record, state: "bound" }), false)
             assert.equal(
-                Value.Check(IntegrationRecordSchema, {
-                    ...common,
-                    state: "awaiting",
-                    operation: "create",
-                    extra: true,
+                Value.Check(TrackerRecordSchema, {
+                    ...record,
+                    operations: ["confirm"],
                 }),
                 false,
             )
+            const { external: _external, ...unidentified } = record
+            assert.equal(Value.Check(TrackerRecordSchema, unidentified), false)
         }
-        const project = {
-            role: "tracker",
-            provider: "linear",
-            planDocument: { state: "unpublished" },
-            resource: "project",
-            external: { projectId: "p" },
-        }
-        assert.equal(Value.Check(IntegrationRecordSchema, { ...project, state: "bound" }), true)
         assert.equal(
-            Value.Check(IntegrationRecordSchema, { ...project, state: "bound-pending", operations: ["confirm"] }),
-            true,
-        )
-        assert.equal(
-            Value.Check(IntegrationRecordSchema, { ...project, state: "issue-bound-pending", operations: ["confirm"] }),
+            Value.Check(TrackerRecordSchema, {
+                ...cases[2],
+                external: { issueId: "issue", identifier: "eng-2" },
+            }),
             false,
         )
     })
 
     it("keeps report semantics separate from adjudication input validation", () => {
         const report = (overrides = {}) =>
-            JSON.stringify({ findings: [{ ...finding, severity: "warning", ...overrides }], signoff: "blocked" })
+            JSON.stringify({
+                findings: [{ ...finding, severity: "warning", ...overrides }],
+                signoff: "blocked",
+            })
         assert.doesNotThrow(() => parseReviewReport(report()))
         for (const overrides of [{ id: "F2" }, { title: " " }, { extra: true }, { userDecision: " " }]) {
             assert.throws(() => parseReviewReport(report(overrides)))
         }
         assert.throws(() => parseReviewReport(JSON.stringify({ findings: [], signoff: "blocked" })))
         assert.throws(() =>
-            parseReviewReport(JSON.stringify({ findings: [{ ...finding, severity: "warning" }], signoff: "approved" })),
+            parseReviewReport(
+                JSON.stringify({
+                    findings: [{ ...finding, severity: "warning" }],
+                    signoff: "approved",
+                }),
+            ),
         )
         const { userDecision: _userDecision, ...inputFinding } = finding
         const response = {
@@ -158,7 +163,10 @@ describe("workflow consolidation contracts", () => {
         }
         assert.equal(Value.Check(RecordReviewResponseSchema, response), true)
         assert.equal(
-            Value.Check(RecordReviewResponseSchema, { ...response, findings: [{ ...finding, severity: "warning" }] }),
+            Value.Check(RecordReviewResponseSchema, {
+                ...response,
+                findings: [{ ...finding, severity: "warning" }],
+            }),
             false,
         )
     })
@@ -173,7 +181,11 @@ describe("workflow consolidation contracts", () => {
             assert.equal(resolveEntityPath(root, cwd, "../.project/.local/gigs/example"), entity)
             assert.equal(resolveEntityPath(root, root, ".project/.local/gigs/example"), entity)
             assert.equal(resolveEntityDirectory(root, cwd, entity), entity)
-            for (const raw of [".project/.local/gigs", ".project/.local/gigs/../../outside", ".project/.local/gigs-sibling/example"]) {
+            for (const raw of [
+                ".project/.local/gigs",
+                ".project/.local/gigs/../../outside",
+                ".project/.local/gigs-sibling/example",
+            ]) {
                 assert.throws(() => resolveEntityPath(root, root, raw), /must be inside/)
             }
             assert.throws(() => resolveEntityDirectory(root, root, ".project/.local/gigs/missing"), /does not exist/)

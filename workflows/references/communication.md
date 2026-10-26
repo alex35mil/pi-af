@@ -6,6 +6,7 @@ These rules apply to chat and to every prose artifact the workflow writes: brief
 
 - **Chat:** rely on context you've already established; don't restate it.
 - **Durable and external text** must make sense to its reader without the conversation.
+- **Published text** (issues, plan comments and documents, PR bodies) never points readers at files under `.project/.local/`; they can't open them. Describe the content instead.
 
 ## Order and plain language
 

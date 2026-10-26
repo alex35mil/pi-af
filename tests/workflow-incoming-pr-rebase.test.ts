@@ -12,6 +12,7 @@ import type { IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 type Kind = "clean" | "conflict" | "multiple" | "merged" | "alreadyApplied" | "customDriver" | "literalPath"
@@ -48,11 +49,11 @@ function fixture(kind: Kind = "clean") {
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ branches: { format: "identifier" } }),
+        path.join(root, ".project/integrations.json"),
+        JSON.stringify({ tracker: minimalTracker(), forge }),
     )
-    fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ forge }))
     prepareArtifactPersistence(root)
     fs.writeFileSync(path.join(root, "README.md"), "parent staged\n")
     git(root, "add", "README.md")
@@ -345,9 +346,7 @@ process.exit(result.status ?? 1);
             assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/index")), before.index)
             assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/config")), config)
             assert.deepEqual(
-                ["file.txt", "other.txt", "upstream.txt"].map((file) =>
-                    fs.readFileSync(path.join(f.checkout, file)),
-                ),
+                ["file.txt", "other.txt", "upstream.txt"].map((file) => fs.readFileSync(path.join(f.checkout, file))),
                 files,
             )
             assert.deepEqual(f.record().evidence, saved.evidence)
@@ -1192,7 +1191,6 @@ process.exit(result.status ?? 1);
                         values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                     },
                     priority: { scope: "project", field: "Priority", values: ["High"] },
-                    internalId: { scope: "project", field: "Internal ID" },
                 },
             }
             fs.writeFileSync(configFile, JSON.stringify(config))

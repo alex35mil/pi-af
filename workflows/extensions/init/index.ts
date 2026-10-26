@@ -4,22 +4,23 @@ import { Value } from "typebox/value"
 
 import {
     EntityInitializationSchema,
-    EpicInitializationSchema,
-    TaskInitializationSchema,
-    GigInitializationSchema,
+    EpicPreflightSchema,
+    GigPreflightSchema,
     initializeEntity,
     type InitializedEntity,
+    preflightEntity,
+    PreflightSchema,
     setEpicTaskTarget,
+    TaskPreflightSchema,
 } from "./entity.js"
 import { workflowTools } from "../__lib/tools.js"
 import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
 import {
-    GitHubInitializationSourceSchema,
-    LinearProjectInitializationSourceSchema,
-    LinearTaskInitializationSourceSchema,
-    LinearGigInitializationSourceSchema,
+    GitHubTrackerObjectSchema,
+    LinearGigIssueObjectSchema,
+    LinearProjectObjectSchema,
+    LinearTaskIssueObjectSchema,
 } from "../integrations/records.js"
-import { resolveLinearTrackerBranchRendererForInitialization } from "../integrations/tracker/linear.js"
 import { seedInitializedEntityResourceIds } from "./resource-ids.js"
 
 const SetEpicTaskTargetSchema = Type.Object(
@@ -34,70 +35,41 @@ export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "initialization")
     const mcpTools = observeMcpTools(pi)
     const entities = [
-        {
-            entity: "epic",
-            schema: EpicInitializationSchema,
-            linear: LinearProjectInitializationSourceSchema,
-            resource: "project",
-        },
-        {
-            entity: "task",
-            schema: TaskInitializationSchema,
-            linear: LinearTaskInitializationSourceSchema,
-            resource: "task-issue",
-        },
-        {
-            entity: "gig",
-            schema: GigInitializationSchema,
-            linear: LinearGigInitializationSourceSchema,
-            resource: "gig-issue",
-        },
+        { entity: "epic", preflight: EpicPreflightSchema, linear: LinearProjectObjectSchema },
+        { entity: "task", preflight: TaskPreflightSchema, linear: LinearTaskIssueObjectSchema },
+        { entity: "gig", preflight: GigPreflightSchema, linear: LinearGigIssueObjectSchema },
     ] as const
     for (const variant of entities) {
-        const common = Type.Omit(variant.schema, ["entity", "source"])
-        const sources = [
-            { name: `init_${variant.entity}`, source: undefined, fixed: { mode: "new" } },
-            {
-                name: `adopt_github_${variant.entity}`,
-                source: GitHubInitializationSourceSchema,
-                fixed: { mode: "external", provider: "github" },
+        // Rebuild as a strict object; Omit alone doesn't keep additionalProperties: false.
+        const common = Type.Object(Type.Omit(variant.preflight, ["entity"]).properties, { additionalProperties: false })
+        tools.registerTool({
+            name: `preflight_${variant.entity}`,
+            label: `preflight_${variant.entity}`,
+            description: `Run every local check for an approved new ${variant.entity} before its tracker object is created. Changes nothing; a failure means nothing should be created on the tracker.`,
+            parameters: common,
+            async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+                const input = Value.Parse(PreflightSchema, { ...Value.Parse(common, params), entity: variant.entity })
+                const result = preflightEntity(input, { cwd: ctx.cwd, tools: mcpTools })
+                return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
             },
-            {
-                name: `adopt_linear_${variant.entity}`,
-                source: variant.linear,
-                fixed: { mode: "external", provider: "linear", resource: variant.resource },
-            },
-        ] as const
-        for (const source of sources) {
-            const parameters = Type.Object(
-                {
-                    ...common.properties,
-                    ...(source.source ? { source: Type.Omit(source.source, ["mode", "provider", "resource"]) } : {}),
-                },
-                { additionalProperties: false },
-            )
+        })
+        for (const [provider, object] of [
+            ["github", GitHubTrackerObjectSchema],
+            ["linear", variant.linear],
+        ] as const) {
+            const name = `init_${provider}_${variant.entity}`
+            const parameters = Type.Object({ ...common.properties, object }, { additionalProperties: false })
             tools.registerTool({
-                name: source.name,
-                label: source.name,
-                description: `${source.source ? "Adopt explicitly selected tracker work as" : "Initialize"} an approved ${variant.entity} with its identity, artifacts, and exact branch contract. Preserve approved title, Request, Priority, and required adoption evidence.`,
+                name,
+                label: name,
+                description: `Initialize an approved ${variant.entity} from its existing ${provider === "github" ? "GitHub issue" : "Linear object"}, newly created or explicitly selected. Names the directory and branch from the tracker object and records its Resource IDs.`,
                 parameters,
-                async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-                    const supplied = Value.Parse(parameters, params)
-                    const sourceFields = source.source
-                        ? Value.Parse(Type.Omit(source.source, ["mode", "provider", "resource"]), supplied.source)
-                        : {}
+                async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
                     const input = Value.Parse(EntityInitializationSchema, {
-                        ...supplied,
+                        ...Value.Parse(parameters, params),
                         entity: variant.entity,
-                        source: { ...sourceFields, ...source.fixed },
                     })
-                    const renderTrackerBranch = await resolveLinearTrackerBranchRendererForInitialization(
-                        ctx.cwd,
-                        ctx.isProjectTrusted(),
-                        input,
-                        signal,
-                    )
-                    const initialized = initializeEntity(input, { cwd: ctx.cwd, renderTrackerBranch, tools: mcpTools })
+                    const initialized = initializeEntity(input, { cwd: ctx.cwd, tools: mcpTools })
                     await seedInitializedEntityResourceIds(initialized, ctx.cwd)
                     return {
                         content: [{ type: "text" as const, text: formatInitializedEntity(initialized) }],
@@ -117,9 +89,7 @@ export default function (pi: ExtensionAPI): void {
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             const input = Value.Parse(SetEpicTaskTargetSchema, params)
             const status = setEpicTaskTarget(input.entityDir, input.target, { cwd: ctx.cwd })
-            if (status.entity !== "epic" || status.branch.state !== "ready") {
-                throw new Error("updated entity is not a ready Epic")
-            }
+            if (status.entity !== "epic") throw new Error("updated entity is not an Epic")
             const branch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
             return {
                 content: [{ type: "text" as const, text: `Future Tasks will start from and target ${branch}.` }],
@@ -130,18 +100,11 @@ export default function (pi: ExtensionAPI): void {
 }
 
 export function formatInitializedEntity(initialized: Pick<InitializedEntity, "directory" | "status">): string {
-    const integrationSummary = initialized.status.integrations.map(
-        (integration) => `${integration.role}/${integration.provider}: ${integration.state}`,
-    )
     const branch = initialized.status.branch
     return [
-        `Initialized ${initialized.status.id}.`,
-        `Directory: ${initialized.directory}`,
-        branch.state === "ready" ? `Branch: ${branch.name}` : "Branch: pending tracker branch name",
+        `Initialized ${initialized.directory}.`,
+        `Branch: ${branch.name}`,
         `Start/target: ${branch.start}`,
-        branch.state === "ready"
-            ? "Switch to the stored branch before implementation. Do not push it automatically."
-            : "Finish tracker binding and call finalize_linear_branch before planning work.",
-        ...(integrationSummary.length > 0 ? [`Integrations: ${integrationSummary.join(", ")}`] : []),
+        "Next: set up the board (Project membership, Status, Priority, Phase, Kind label when configured). Switch to the stored branch before implementation. Do not push it automatically.",
     ].join("\n")
 }

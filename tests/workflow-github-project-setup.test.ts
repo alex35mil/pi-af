@@ -476,7 +476,6 @@ function projectContained(source: Record<string, unknown>) {
             status: defaults.status,
             phase: defaults.phase,
             priority: { scope: "project", ...defaults.priority },
-            internalId: { scope: "project", ...defaults.internalId },
         },
     }
 }
@@ -510,12 +509,6 @@ function organizationNative(source: Record<string, unknown>) {
                 provisionMissing: true,
                 visibility: "all",
             },
-            internalId: {
-                scope: "issue",
-                ...defaults.internalId,
-                provisionMissing: true,
-                visibility: "organization_members_only",
-            },
         },
     }
 }
@@ -547,7 +540,7 @@ describe("GitHub Project setup", () => {
         assert.equal(github.projects.length, 1)
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
-            ["Status", "Phase", "Priority", "Internal ID"],
+            ["Status", "Phase", "Priority"],
         )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.project.number, 1)
@@ -707,7 +700,7 @@ describe("GitHub Project setup", () => {
         assert.deepEqual(github.projects[0].repositoryIds, ["repo-node"])
         assert.deepEqual(
             github.issueFields.map((field) => field.name),
-            ["Priority", "Internal ID"],
+            ["Priority"],
         )
         const tracker = applied.trackerConfig as Record<string, any>
         assert.equal(tracker.fields.priority.scope, "issue")
@@ -990,10 +983,7 @@ describe("GitHub Project setup", () => {
             { operation: "apply", specification: mixed, approvedPlanHash: preview.planHash },
             setupOptions(github),
         )
-        assert.deepEqual(
-            github.issueFields.map((field) => field.name),
-            ["Internal ID"],
-        )
+        assert.deepEqual(github.issueFields, [])
         assert.deepEqual(
             github.projects[0].fields.map((field) => field.name),
             ["Status", "Phase", "Priority"],
@@ -1641,7 +1631,7 @@ describe("GitHub Project setup", () => {
         assert.equal(views[0].groupBy.length, 3)
         assert.equal(views[0].verticalGroupBy.length, 4)
         assert.equal(views[0].sortBy.length, 5)
-        assert.equal((result.project as any).fields.length, 9)
+        assert.equal((result.project as any).fields.length, 8)
         assert.equal(github.viewWrites.length, 0)
         assert.deepEqual(result.unavailableSettings, ["defaultRepository", "fieldSum", "sliceBy", "defaultStatus"])
     })
@@ -2234,8 +2224,10 @@ describe("GitHub Project setup", () => {
                 if (mismatch === "sort-field") view.sortBy[0].field = project.fields[0]
                 if (mismatch === "direction") view.sortBy[0].direction = "DESC"
                 if (mismatch === "visible") view.visibleFieldIds = [builtins[0].id]
-                if (mismatch === "extra")
-                    view.visibleFieldIds.push(project.fields.find((field) => field.name === "Internal ID")!.id)
+                if (mismatch === "extra") {
+                    project.fields.push({ id: "field-extra", name: "Unselected", dataType: "TEXT" })
+                    view.visibleFieldIds.push("field-extra")
+                }
                 if (mismatch === "duplicate") view.visibleFieldIds.push(view.visibleFieldIds[0])
                 if (mismatch === "name") view.name = "secret-token unexpected name"
                 if (mismatch === "layout") view.layout = "TABLE_LAYOUT"

@@ -299,8 +299,10 @@ function splitLines(value: string): string[] {
     return value ? value.split(/\r?\n/).filter(Boolean) : []
 }
 
+// Lists entities whose tracker record is bound to a provider object, so setup never
+// replaces a tracker that existing work is linked to.
 function inspectBoundEntityTrackers(root: string) {
-    const results: Array<{ path: string; id: string; provider: string; state: string }> = []
+    const results: Array<{ path: string; entity: string; provider: string; reference: string }> = []
     const visit = (directory: string): void => {
         if (!fs.existsSync(directory)) return
         for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -311,33 +313,23 @@ function inspectBoundEntityTrackers(root: string) {
                 continue
             }
             if (entry.name !== "metadata.json") continue
+            const entity = path.basename(directory)
             try {
                 const metadata = JSON.parse(fs.readFileSync(absolute, "utf-8")) as Record<string, unknown>
-                if (!Array.isArray(metadata.integrations)) continue
-                for (const rawIntegration of metadata.integrations) {
-                    if (!rawIntegration || typeof rawIntegration !== "object") continue
-                    const integration = rawIntegration as Record<string, unknown>
-                    if (
-                        integration.role !== "tracker" ||
-                        typeof integration.provider !== "string" ||
-                        typeof integration.state !== "string" ||
-                        !("external" in integration)
-                    )
-                        continue
-                    results.push({
-                        path: path.relative(root, absolute),
-                        id: typeof metadata.id === "string" ? metadata.id : "unknown",
-                        provider: integration.provider,
-                        state: integration.state,
-                    })
-                }
+                const tracker = metadata.tracker as Record<string, unknown> | undefined
+                const external = tracker?.external as Record<string, unknown> | undefined
+                if (!tracker || typeof tracker.provider !== "string" || !external) continue
+                const reference =
+                    typeof external.issueNumber === "number"
+                        ? `#${external.issueNumber}`
+                        : typeof external.identifier === "string"
+                          ? external.identifier
+                          : typeof external.projectId === "string"
+                            ? `project ${external.projectId}`
+                            : "unknown"
+                results.push({ path: path.relative(root, absolute), entity, provider: tracker.provider, reference })
             } catch {
-                results.push({
-                    path: path.relative(root, absolute),
-                    id: "invalid-metadata",
-                    provider: "unknown",
-                    state: "invalid",
-                })
+                results.push({ path: path.relative(root, absolute), entity, provider: "unknown", reference: "invalid" })
             }
         }
     }

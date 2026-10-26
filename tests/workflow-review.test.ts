@@ -103,7 +103,7 @@ describe("workflow reviewer isolation", () => {
 
     it("routes review categories and plan presentation through their required Phase", async () => {
         const repository = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-phase-tools-"))
-        const entityDir = ".project/.local/gigs/20260101-0000.GIG-01KDVDNA00.example"
+        const entityDir = ".project/.local/gigs/7-example"
         const directory = path.join(repository, entityDir)
         const metadataPath = path.join(directory, "metadata.json")
         try {
@@ -112,25 +112,23 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(repository, ".gitignore"), "/.project/.local/\n")
             fs.writeFileSync(
                 path.join(repository, ".project/config.json"),
-                JSON.stringify({ branches: { format: "identifier-title" } }),
+                JSON.stringify({ branches: { format: "number-title" } }),
             )
             prepareArtifactPersistence(repository)
             const metadata = {
-                id: "GIG-01KDVDNA00",
-                rawId: "01KDVDNA00",
                 title: "Example",
                 slug: "example",
                 createdAt: "2026-01-01T00:00:00Z",
                 entity: "gig",
                 kind: "feature",
-                authority: { kind: "workflow", priority: "not set" },
-                integrations: [],
-                branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
+                branch: { state: "ready", name: "7-example", start: "main", target: "main", source: "generated" },
+                tracker: {
+                    provider: "github",
+                    repository: { owner: "example", repo: "project" },
+                    external: { issueNumber: 7 },
+                    planComment: { state: "unpublished" },
+                },
             }
-            fs.writeFileSync(
-                path.join(directory, "status.md"),
-                '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
-            )
             const plan = "# Plan\n\n## Overview\n\nA plan.\n\n## Work\n\nDetails.\n"
             fs.writeFileSync(path.join(directory, "draft.md"), plan)
             const acceptedPlan = "# Previously accepted plan\n"
@@ -163,7 +161,7 @@ describe("workflow reviewer isolation", () => {
                         phase === (category === "plan" ? "planning" : "selfReview")
                             ? (error: unknown) => error === stopBeforeRunner
                             : new RegExp(
-                                  `${category} review requires In Progress and Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
+                                  `${category} review requires Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
                               ),
                     )
                     assert.equal(fs.readFileSync(metadataPath, "utf-8"), before)
@@ -181,7 +179,7 @@ describe("workflow reviewer isolation", () => {
                     assert.match(JSON.stringify(result.content), /plan-001/)
                     assert.match(JSON.stringify(result.content), /Snapshot:.*candidate\.md/)
                     assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
-                } else await assert.rejects(invoke(), /plan review requires In Progress and Phase Planning/)
+                } else await assert.rejects(invoke(), /plan review requires Phase Planning/)
                 assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
                 assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
             }
@@ -461,10 +459,7 @@ describe("workflow reviewer isolation", () => {
         try {
             fs.mkdirSync(path.join(epic, "reviews", "plan-001"), { recursive: true })
             fs.writeFileSync(path.join(epic, "draft.md"), "current Epic candidate\n")
-            fs.writeFileSync(
-                path.join(epic, "reviews", "plan-001", "candidate.md"),
-                "orphan Epic candidate\n",
-            )
+            fs.writeFileSync(path.join(epic, "reviews", "plan-001", "candidate.md"), "orphan Epic candidate\n")
 
             const snapshot = await snapshotPlan(epic, 1)
             assert.equal(snapshot, path.join(epic, "reviews", "plan-001", "candidate.md"))
@@ -491,7 +486,7 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(epicDir, "brief.md"), "# Brief\n")
             fs.writeFileSync(
                 path.join(epicDir, "epic.md"),
-                "# Accepted\n\n## Ordered Tasks\n\n1. [TASK-01KDVDNA00] **Existing Task** — keep it.\n",
+                "# Accepted\n\n## Ordered Tasks\n\n1. [#41] **Existing Task** — keep it.\n",
             )
             const candidate = path.join(epicDir, "draft.md")
             fs.writeFileSync(candidate, "# Candidate\n")
@@ -503,41 +498,33 @@ describe("workflow reviewer isolation", () => {
                 "## plan-review-001.response.md\n\nF1 rejected by user.",
             )
             assert.ok(prompt.includes(policies))
-            assert.match(prompt, /TASK-01KDVDNA00/)
+            assert.match(prompt, /\[#41\] \*\*Existing Task/)
             assert.match(prompt, /F1 rejected by user/)
             assert.doesNotMatch(prompt, /# log\.md/)
             assert.match(prompt, /Return only one JSON object/)
             assert.doesNotMatch(prompt, /## Findings/)
 
-            const gigDir = path.join(repository, ".project", ".local", "gigs", "20260101-0000.GIG-01KDVDNA00.example")
+            const gigDir = path.join(repository, ".project", ".local", "gigs", "7-example")
             fs.mkdirSync(path.join(gigDir, "reviews"), { recursive: true })
             fs.writeFileSync(path.join(gigDir, "brief.md"), "# Brief\n")
             fs.writeFileSync(path.join(gigDir, "plan.md"), "# Root cause\n\nUnique bugfix evidence.\n")
             fs.writeFileSync(
                 path.join(gigDir, "metadata.json"),
                 JSON.stringify({
-                    id: "GIG-01KDVDNA00",
-                    rawId: "01KDVDNA00",
                     title: "Example",
-                    authority: { kind: "workflow", priority: "not set" },
                     createdAt: "2026-01-01T00:00:00.000Z",
                     phase: "selfReview",
-                    branch: {
-                        state: "ready",
-                        name: "GIG-01KDVDNA00-example",
-                        start: "main",
-                        target: "main",
-                        source: "generated",
-                    },
+                    branch: { state: "ready", name: "7-example", start: "main", target: "main", source: "generated" },
                     slug: "example",
-                    integrations: [],
+                    tracker: {
+                        provider: "github",
+                        repository: { owner: "example", repo: "project" },
+                        external: { issueNumber: 7 },
+                        planComment: { state: "unpublished" },
+                    },
                     entity: "gig",
                     kind: "bugfix",
                 }),
-            )
-            fs.writeFileSync(
-                path.join(gigDir, "status.md"),
-                '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
             )
             const deliverablePrompt = await buildDeliverableReviewPrompt(
                 { cwd: repository } as never,

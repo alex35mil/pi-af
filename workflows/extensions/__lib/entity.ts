@@ -8,26 +8,21 @@ import {
     DeliverableKindSchema,
     ReadyBranchContractSchema,
     EPIC_ROOT,
+    entityName,
     GIG_ROOT,
     type InitializedLifecycleState,
-    InitializedLifecycleStateSchema,
-    PrioritySchema,
+    LINEAR_IDENTIFIER_PATTERN,
     PROJECT_ROOT,
-    qualifyId,
-    RawIdSchema,
-    type ReadyBranchContract,
     slugify,
     PhaseSchema,
+    trackerReferenceLabel,
 } from "./domain.js"
 import { writeTextAtomically } from "./files.js"
 import {
-    assertIntegrationInvariants,
-    assertTaskIntegrationParent,
-    IntegrationRecordSchema,
-    ProvisioningBranchContractSchema,
-    TrackerNamedBranchContractSchema,
-    TrackerPendingBranchContractSchema,
-    TrackerProviderSchema,
+    assertTrackerRecordInvariants,
+    ForgeRecordSchema,
+    trackerReference,
+    TrackerRecordSchema,
 } from "../integrations/records.js"
 
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
@@ -54,7 +49,6 @@ export function resolveEntityDirectory(root: string, cwd: string, raw: string): 
 // Entity directories live under the never-committed local root, so their files are flat:
 // no inner .local/ directory.
 export const ENTITY_METADATA_FILE = "metadata.json"
-export const LOCAL_STATUS_FILE = "status.md"
 export const LOCAL_DRAFT_FILE = "draft.md"
 export const LOCAL_NOTES_FILE = "notes.md"
 export const LOCAL_PENDING_FILE = "pending.md"
@@ -78,44 +72,15 @@ export function readPendingEntries(entityDirectory: string): PendingEntry[] {
         )
 }
 
-export const BranchContractSchema = Type.Union([
-    ReadyBranchContractSchema,
-    TrackerPendingBranchContractSchema,
-    TrackerNamedBranchContractSchema,
-    ProvisioningBranchContractSchema,
-])
-export type BranchContract = Static<typeof BranchContractSchema>
-
-const WorkflowAuthoritySchema = Type.Object(
-    { kind: Type.Literal("workflow"), priority: PrioritySchema },
-    { additionalProperties: false },
-)
-const TrackerAuthoritySchema = Type.Union([
-    Type.Object({ kind: Type.Literal("tracker"), provider: TrackerProviderSchema }, { additionalProperties: false }),
-    Type.Object(
-        {
-            kind: Type.Literal("tracker"),
-            provider: TrackerProviderSchema,
-            desired: Type.Object(
-                { lifecycle: InitializedLifecycleStateSchema, priority: PrioritySchema },
-                { additionalProperties: false },
-            ),
-        },
-        { additionalProperties: false },
-    ),
-])
-export type WorkflowAuthority = Static<typeof WorkflowAuthoritySchema>
-export type TrackerAuthority = Static<typeof TrackerAuthoritySchema>
-
+// Lifecycle and Priority always live on the tracker; metadata never caches them.
 const baseMetadataProperties = {
-    id: OneLineSchema,
-    rawId: RawIdSchema,
     slug: OneLineSchema,
     title: OneLineSchema,
     createdAt: OneLineSchema,
     phase: PhaseSchema,
-    branch: BranchContractSchema,
-    integrations: Type.Array(IntegrationRecordSchema),
+    branch: ReadyBranchContractSchema,
+    tracker: TrackerRecordSchema,
+    forge: Type.Optional(ForgeRecordSchema),
 }
 const epicProperties = {
     entity: Type.Literal("epic"),
@@ -126,48 +91,45 @@ const epicProperties = {
 const gigProperties = { entity: Type.Literal("gig"), kind: DeliverableKindSchema }
 const taskProperties = { entity: Type.Literal("task"), kind: DeliverableKindSchema }
 
-function entitySchemas<P extends TProperties>(properties: P) {
-    const common = { ...baseMetadataProperties, ...properties }
-    const workflow = Type.Object({ ...common, authority: WorkflowAuthoritySchema }, { additionalProperties: false })
-    const tracker = Type.Object({ ...common, authority: TrackerAuthoritySchema }, { additionalProperties: false })
-    return {
-        metadata: [workflow, tracker] as const,
-        status: [
-            Type.Object(
-                { ...workflow.properties, state: InitializedLifecycleStateSchema },
-                { additionalProperties: false },
-            ),
-            tracker,
-        ] as const,
-    }
+function entitySchema<P extends TProperties>(properties: P) {
+    return Type.Object({ ...baseMetadataProperties, ...properties }, { additionalProperties: false })
 }
 
-const epicSchemas = entitySchemas(epicProperties)
-const gigSchemas = entitySchemas(gigProperties)
-const taskSchemas = entitySchemas(taskProperties)
-export const EntityMetadataSchema = Type.Union([
-    ...epicSchemas.metadata,
-    ...gigSchemas.metadata,
-    ...taskSchemas.metadata,
+export const EntityStatusSchema = Type.Union([
+    entitySchema(epicProperties),
+    entitySchema(gigProperties),
+    entitySchema(taskProperties),
 ])
-export type EntityMetadata = Static<typeof EntityMetadataSchema>
-
-export const EntityStatusSchema = Type.Union([...epicSchemas.status, ...gigSchemas.status, ...taskSchemas.status])
 export type EntityStatus = Static<typeof EntityStatusSchema>
 
-const LocalStatusSchema = Type.Object({ state: InitializedLifecycleStateSchema }, { additionalProperties: false })
+// Display reference for messages: `#12`, `ENG-7`, or the slug for a Linear Project.
+export function entityLabel(status: EntityStatus): string {
+    return trackerReferenceLabel(trackerReference(status.tracker)) ?? status.slug
+}
+
+// The directory name every entity must have, derived from its tracker identity.
+export function expectedEntityDirectoryName(status: EntityStatus): string {
+    return entityName(trackerReference(status.tracker), status.slug)
+}
+
+// The Epic plan marker that relates a Task to its plan line.
+export function taskMarker(status: EntityStatus): string {
+    const label = trackerReferenceLabel(trackerReference(status.tracker))
+    if (!label || status.entity !== "task") throw new Error("only a Task has a plan marker")
+    return label
+}
 
 const ActiveTaskLifecycleSchema = Type.Union([Type.Literal("inProgress"), Type.Literal("inReview")])
 const ProgressTaskSchema = Type.Object(
     {
-        id: OneLineSchema,
+        marker: OneLineSchema,
         directory: OneLineSchema,
     },
     { additionalProperties: false },
 )
 export const EpicTaskProgressSchema = Type.Object(
     {
-        epicId: OneLineSchema,
+        epic: OneLineSchema,
         items: Type.Array(
             Type.Union([
                 Type.Object(
@@ -200,58 +162,27 @@ export type EpicTaskProgress = Static<typeof EpicTaskProgressSchema>
 
 export function readEntityStatus(entityDirectory: string): EntityStatus {
     const metadataPath = path.join(entityDirectory, ENTITY_METADATA_FILE)
-    const statusPath = path.join(entityDirectory, LOCAL_STATUS_FILE)
     const metadata = readJson(metadataPath, "entity metadata")
-    if (!Value.Check(EntityMetadataSchema, metadata)) {
-        const details = [...Value.Errors(EntityMetadataSchema, metadata)]
+    if (!Value.Check(EntityStatusSchema, metadata)) {
+        const details = [...Value.Errors(EntityStatusSchema, metadata)]
             .map((error) => `${error.instancePath || "/"}: ${error.message}`)
             .join("; ")
-        throw new Error(
-            `invalid entity metadata in ${metadataPath}: ${details}; see workflows/MIGRATIONS.md to convert this entity to the current format`,
-        )
+        throw new Error(`invalid entity metadata in ${metadataPath}: ${details}`)
     }
-
-    let value: unknown = metadata
-    if (metadata.authority.kind === "workflow") {
-        if (!fs.existsSync(statusPath)) throw new Error(`missing authoritative local status: ${statusPath}`)
-        const markdown = fs.readFileSync(statusPath, "utf-8")
-        const match = /^```json\s*\n([\s\S]*?)\n```/m.exec(markdown)
-        if (!match) throw new Error(`missing JSON status block: ${statusPath}`)
-        let localStatus: unknown
-        try {
-            localStatus = JSON.parse(match[1])
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            throw new Error(`invalid JSON status block in ${statusPath}: ${message}`)
-        }
-        if (!Value.Check(LocalStatusSchema, localStatus)) {
-            const details = [...Value.Errors(LocalStatusSchema, localStatus)]
-                .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-                .join("; ")
-            throw new Error(`invalid local status in ${statusPath}: ${details}`)
-        }
-        value = { ...metadata, ...localStatus }
-    } else if (fs.existsSync(statusPath)) {
-        throw new Error(`tracker-backed entity must not have local lifecycle state: ${statusPath}`)
-    }
-
-    if (!Value.Check(EntityStatusSchema, value)) throw new Error(`invalid combined entity status: ${entityDirectory}`)
-    assertEntityStatusInvariants(value, entityDirectory)
-    return value
+    assertEntityStatusInvariants(metadata, entityDirectory)
+    return metadata
 }
 
 function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: string): void {
     const fail = (message: string): never => {
         throw new Error(`invalid entity metadata in ${path.join(entityDirectory, ENTITY_METADATA_FILE)}: ${message}`)
     }
-    if (status.id !== qualifyId(status.entity, status.rawId)) fail("qualified ID does not match entity and rawId")
     if (slugify(status.slug) !== status.slug) fail("slug is not normalized")
-
-    const expectedDirectorySuffix = `.${status.id}.${status.slug}`
-    if (!path.basename(entityDirectory).endsWith(expectedDirectorySuffix)) {
-        fail("directory name does not match entity metadata")
-    }
-    assertIntegrationInvariants(status, fail)
+    if (path.basename(entityDirectory) !== expectedEntityDirectoryName(status))
+        fail("directory name does not match the tracker identity and slug")
+    assertTrackerRecordInvariants(status.entity, status.tracker, fail)
+    if (status.forge && (status.forge.head !== status.branch.name || status.forge.target !== status.branch.target))
+        fail("forge association must match the branch contract")
 
     const expectedBase =
         status.entity === "task"
@@ -265,16 +196,11 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
                   ) {
                       fail(`Task is not contained under ${EPIC_ROOT}/<epic>/tasks`)
                   }
-                  const actualParent = readEntityStatus(actualParentDirectory)
+                  const parent = readEntityStatus(actualParentDirectory)
                   if (status.entity !== "task") return fail("Task status lost its entity discriminator")
-                  if (actualParent.entity !== "epic") fail("Task container is not an Epic")
-                  assertTaskIntegrationParent(status, actualParent, fail)
-                  const actualParentBranch = actualParent.branch
-                  if (actualParentBranch.state !== "ready") return fail("Task parent Epic branch is not ready")
-                  if (
-                      status.branch.start !== actualParentBranch.name &&
-                      status.branch.start !== actualParentBranch.target
-                  ) {
+                  if (parent.entity !== "epic") fail("Task container is not an Epic")
+                  assertTaskTrackerParent(status, parent, fail)
+                  if (status.branch.start !== parent.branch.name && status.branch.start !== parent.branch.target) {
                       fail("Task base is neither the containing Epic branch nor its default target")
                   }
                   if (status.branch.start !== status.branch.target) {
@@ -282,12 +208,11 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
                   }
                   const parentEpicPath = path.join(actualParentDirectory, "epic.md")
                   if (!fs.existsSync(parentEpicPath)) fail("Task parent has no accepted epic.md")
-                  const matchingMarkers = readOrderedTaskEntries(parentEpicPath).filter(
-                      (entry) => entry.state === "initialized" && entry.taskId === status.id,
+                  const marker = taskMarker(status)
+                  const matching = readOrderedTaskEntries(parentEpicPath).filter(
+                      (entry) => entry.state === "initialized" && entry.marker === marker,
                   )
-                  if (matchingMarkers.length !== 1) {
-                      fail(`Task parent epic.md must contain exactly one marker for ${status.id}`)
-                  }
+                  if (matching.length !== 1) fail(`Task parent epic.md must contain exactly one marker for ${marker}`)
                   return status.branch.start
               })()
             : status.branch.start
@@ -295,6 +220,18 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
     if (status.branch.start !== expectedBase || status.branch.target !== expectedBase) {
         fail("branch start/target do not match the entity branch contract")
     }
+}
+
+function assertTaskTrackerParent(task: EntityStatus, parent: EntityStatus, fail: (message: string) => never): void {
+    if (task.tracker.provider !== parent.tracker.provider) fail("Task and parent Epic use different trackers")
+    if (
+        task.tracker.provider === "linear" &&
+        task.tracker.resource === "task-issue" &&
+        parent.tracker.provider === "linear" &&
+        parent.tracker.resource === "project" &&
+        task.tracker.external.projectId !== parent.tracker.external.projectId
+    )
+        fail("Linear Task Project does not match its parent Epic Project")
 }
 
 export function readEpicTaskProgress(
@@ -318,31 +255,30 @@ export function readEpicTaskProgress(
         const taskDirectory = path.join(tasksDirectory, entry.name)
         const task = readEntityStatus(taskDirectory)
         if (task.entity !== "task") throw new Error(`non-Task directory under Epic tasks: ${taskDirectory}`)
-        if (tasks.has(task.id)) throw new Error(`multiple Task directories use ID ${task.id}`)
+        const marker = taskMarker(task)
+        if (tasks.has(marker)) throw new Error(`multiple Task directories use ${marker}`)
         const lifecycle =
-            "state" in task
-                ? task.state
-                : (trackerLifecycle[task.id] ??
-                  (() => {
-                      throw new Error(`tracker lifecycle is required for ${task.id}`)
-                  })())
-        tasks.set(task.id, {
+            trackerLifecycle[marker] ??
+            (() => {
+                throw new Error(`tracker lifecycle is required for ${marker}`)
+            })()
+        tasks.set(marker, {
             directory: path.join(EPIC_ROOT, path.basename(epicDirectory), "tasks", entry.name),
             lifecycle,
         })
     }
 
-    const referencedTaskIds = new Set<string>()
+    const referenced = new Set<string>()
     const progress: EpicTaskProgress = {
-        epicId: epic.id,
+        epic: entityLabel(epic),
         items: planItems.map((planItem) => {
             if (planItem.state === "prospective") {
                 return { state: "prospective" as const, display: planItem.display }
             }
-            referencedTaskIds.add(planItem.taskId)
-            const task = tasks.get(planItem.taskId)
-            if (!task) throw new Error(`Epic plan item references missing Task ${planItem.taskId}`)
-            const taskReference = { id: planItem.taskId, directory: task.directory }
+            referenced.add(planItem.marker)
+            const task = tasks.get(planItem.marker)
+            if (!task) throw new Error(`Epic plan item references missing Task ${planItem.marker}`)
+            const taskReference = { marker: planItem.marker, directory: task.directory }
             if (task.lifecycle === "done") {
                 return { state: "complete" as const, display: planItem.display, task: taskReference }
             }
@@ -357,18 +293,21 @@ export function readEpicTaskProgress(
             }
         }),
     }
-    for (const taskId of tasks.keys()) {
-        if (!referencedTaskIds.has(taskId)) throw new Error(`${taskId} is not referenced by an Epic plan item`)
+    for (const marker of tasks.keys()) {
+        if (!referenced.has(marker)) throw new Error(`${marker} is not referenced by an Epic plan item`)
     }
     if (!Value.Check(EpicTaskProgressSchema, progress)) {
-        throw new Error(`generated invalid Task progress for ${epic.id}`)
+        throw new Error(`generated invalid Task progress for ${epicDirectory}`)
     }
     return progress
 }
 
 export type OrderedTaskEntry =
     | { state: "prospective"; line: string; display: string }
-    | { state: "initialized"; line: string; display: string; taskId: string }
+    | { state: "initialized"; line: string; display: string; marker: string }
+
+// A Task marker is the Task's tracker reference: `[#12]` on GitHub, `[ENG-7]` on Linear.
+const TASK_MARKER = new RegExp(`^\\[(#[1-9][0-9]*|${LINEAR_IDENTIFIER_PATTERN.slice(1, -1)})\\]\\s+(\\S.*)$`)
 
 export function readOrderedTaskEntries(epicPath: string): OrderedTaskEntry[] {
     const planLines = fs.readFileSync(epicPath, "utf-8").split(/\r?\n/)
@@ -383,55 +322,24 @@ export function readOrderedTaskEntries(epicPath: string): OrderedTaskEntry[] {
         if (!inOrderedTasks) continue
         const ordered = /^\d+\.\s+(\S.*)$/.exec(line)
         if (!ordered) continue
-        const marker = /^\[(TASK-[0-7][0-9A-HJKMNP-TV-Z]{9})\]\s+(\S.*)$/.exec(ordered[1])
-        if (ordered[1].startsWith("[TASK-") && !marker) {
-            throw new Error(`Epic contains an invalid Task ID marker: ${JSON.stringify(line)}`)
+        const marker = TASK_MARKER.exec(ordered[1])
+        if (/^\[[^\]]*\]\s/.test(ordered[1]) && !marker) {
+            throw new Error(`Epic contains an invalid Task marker: ${JSON.stringify(line)}`)
         }
         entries.push(
             marker
-                ? { state: "initialized", line, taskId: marker[1], display: marker[2] }
+                ? { state: "initialized", line, marker: marker[1], display: marker[2] }
                 : { state: "prospective", line, display: ordered[1] },
         )
     }
-    const taskIds = entries.flatMap((entry) => (entry.state === "initialized" ? [entry.taskId] : []))
-    if (new Set(taskIds).size !== taskIds.length)
-        throw new Error(`Epic contains duplicate Task ID markers: ${epicPath}`)
+    const markers = entries.flatMap((entry) => (entry.state === "initialized" ? [entry.marker] : []))
+    if (new Set(markers).size !== markers.length) throw new Error(`Epic contains duplicate Task markers: ${epicPath}`)
     return entries
-}
-
-export function assertEntityBranchReady(status: EntityStatus): asserts status is EntityStatus & {
-    branch: ReadyBranchContract
-} {
-    if (status.branch.state !== "ready") {
-        throw new Error(
-            `${status.id} branch is ${status.branch.state}; finish tracker binding and branch provisioning first`,
-        )
-    }
 }
 
 export function writeEntityStatus(entityDirectory: string, status: EntityStatus): void {
     if (!Value.Check(EntityStatusSchema, status))
-        throw new Error(`cannot write invalid entity status: ${entityDirectory}`)
-    const statusPath = path.join(entityDirectory, LOCAL_STATUS_FILE)
-    if (status.authority.kind === "workflow") {
-        if (!("state" in status))
-            throw new Error(`workflow-authority entity has no lifecycle state: ${entityDirectory}`)
-        const { state, ...metadata } = status
-        if (!Value.Check(EntityMetadataSchema, metadata)) {
-            throw new Error(`cannot write invalid entity metadata: ${entityDirectory}`)
-        }
-        writeTextAtomically(path.join(entityDirectory, ENTITY_METADATA_FILE), `${JSON.stringify(metadata, null, 2)}\n`)
-        const localStatus = `# Status\n\n\`\`\`json\n${JSON.stringify({ state }, null, 2)}\n\`\`\`\n`
-        if (!fs.existsSync(statusPath) || fs.readFileSync(statusPath, "utf-8") !== localStatus)
-            writeTextAtomically(statusPath, localStatus)
-        return
-    }
-    if (fs.existsSync(statusPath)) {
-        throw new Error(`tracker-backed entity must not have local lifecycle state: ${statusPath}`)
-    }
-    if (!Value.Check(EntityMetadataSchema, status)) {
         throw new Error(`cannot write invalid entity metadata: ${entityDirectory}`)
-    }
     writeTextAtomically(path.join(entityDirectory, ENTITY_METADATA_FILE), `${JSON.stringify(status, null, 2)}\n`)
 }
 

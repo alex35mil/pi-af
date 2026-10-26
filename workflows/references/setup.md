@@ -52,25 +52,20 @@ It works before configuration exists or while it's invalid, and touches no files
 
 ```json
 {
-    "branches": { "format": "identifier-title" }
+    "branches": { "format": "number-title" }
 }
 ```
 
 - Workflow work is always local; [artifacts](./artifacts.md#terminology) defines Git membership and local files.
-- `branches.format` is one format string for every Epic, Task, and Gig. Allowed formats:
-  - `tracker`
-  - `username/identifier-title`
-  - `username/identifier`
-  - `username-identifier-title`
-  - `username-identifier`
-  - `identifier-title`
-  - `title-identifier`
-  - `identifier`
-- `tracker` is allowed only with a Linear tracker. Task and Gig then use the exact issue branch names, and Epic reconstructs the current Linear workspace template from read-only API data. GitHub-tracked projects need a static format.
+- `branches.format` is one format string for every Epic, Task, and Gig:
+  - `number-title`: the entity's name in lowercase, such as `12-fix-login` or `eng-12-fix-login`;
+  - `username/number-title`: the same with a `<username>/` prefix;
+  - `tracker`: Linear's own issue branch names.
+- `tracker` is allowed only with a Linear tracker. Task and Gig then use the exact issue branch names, and an Epic uses its dated name, `<YYYYMMDD>-<slug>`. GitHub-tracked projects need a static format.
 
 ### Username
 
-A static format starting with `username` needs `branches.username` in the global `~/<agent-dir>/workflows.json` or the local `.project/config.local.json`:
+`username/number-title` needs `branches.username` in the global `~/<agent-dir>/workflows.json` or the local `.project/config.local.json`:
 
 ```json
 {
@@ -115,7 +110,7 @@ To report workflow problems from any consuming project, set `workflowProject` in
 
 - `inspect_integrations` and `inspect_queue_intake` take `target: "current" | "workflow"`.
 - `current` inspects the current repository and doesn't need the reference.
-- `workflow` reads the source's `.project/integrations.json` and `.project/config.json` with the same tracker schema, artifact policy, validation, and read-only readiness checks, and returns `target` and `projectRoot`.
+- `workflow` reads the source's `.project/integrations.json` and `.project/config.json` with the same tracker schema, validation, and read-only readiness checks, and returns `target` and `projectRoot`.
 - The path must be the repository root; filesystem aliases resolve consistently. Consuming-project setup isn't a prerequisite.
 
 **Errors:**
@@ -128,9 +123,8 @@ Use only the source tracker's MCP tools already registered in the reporting sess
 
 ## Integration configuration
 
-`.project/integrations.json` holds independent optional `tracker` and `forge` roles.
+`.project/integrations.json` is required and holds both roles: `tracker` (GitHub or Linear) and `forge` (GitHub).
 
-- At least one role must exist when the file exists. Omit the file when both are absent.
 - Every role has a non-empty MCP server name made of letters, digits, `_`, `.`, or `-`.
 - A GitHub repository identity is a non-empty `owner` and `repo`.
 
@@ -190,27 +184,16 @@ Use only the source tracker's MCP tools already registered in the reporting sess
 
 **Workspace inspection:**
 
-- During guided setup, `inspect_linear_workspace` reads the workspace, the authenticated viewer, accessible teams, team issue statuses, Project statuses, and the branch template, through Linear's public GraphQL API, without mutating anything.
+- During guided setup, `inspect_linear_workspace` reads the workspace, the authenticated viewer, accessible teams, team issue statuses, and Project statuses, through Linear's public GraphQL API, without mutating anything.
 - `viewer.name` is the Full Name; `viewer.displayName` is the workspace-unique Username and is returned as `viewer.username`.
-- Setup saves only the team, status names, and Phase group scopes, names, and children the user selects. Provider IDs, viewer identity, the branch template, and credentials stay out of configuration.
+- Setup saves only the team, status names, and Phase group scopes, names, and children the user selects. Provider IDs, viewer identity, and credentials stay out of configuration.
 - A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
-**Supported branch templates** for the `tracker` format, exactly:
+**Branch names with `tracker`:**
 
-- `{username}/{issueIdentifier}-{issueTitle}`
-- `{username}/{issueIdentifier}`
-- `{username}-{issueIdentifier}-{issueTitle}`
-- `{username}-{issueIdentifier}`
-- `{issueIdentifier}-{issueTitle}`
-- `{issueTitle}-{issueIdentifier}`
-- `{issueIdentifier}`
-
-**Branch names:**
-
-- A Task or Gig uses the exact provider-generated issue branch.
-- An Epic re-reads the current template and viewer at initialization, then substitutes `viewer.username`, the lowercase Epic ID for `{issueIdentifier}`, and the normalized slug for `{issueTitle}`.
+- A Task or Gig uses the exact provider-generated issue branch (`gitBranchName`).
+- An Epic, a Linear Project with no branch of its own, uses its dated name, `<YYYYMMDD>-<slug>`.
 - Linear `tracker` never uses local or global workflow username settings.
-- A null or different template is unsupported and never normalized or approximated; the user picks a static format or fixes Linear.
 
 ### GitHub tracker
 
@@ -220,15 +203,14 @@ Never hand-build GitHub tracker configuration. Use the exact `trackerConfig` ret
 - the Project owner, owner type (`user` or `org`), and the Project's URL number;
 - one Project Status field mapping `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled` to distinct names;
 - one Project Phase single-select field mapping `planning`, `execution`, and `selfReview` to distinct names;
-- the workflow-owned repository Kind label names for Epic and all six Deliverable kinds;
 - Priority, with `issue` or `project` scope, a field name, and unique non-empty values that exclude lowercase `not set`;
-- Internal ID, with `issue` or `project` scope and a field name.
+- when the user opts in, the repository Kind label names for Epic and all six Deliverable kinds.
 
 **Constraints:**
 
 - All Project-scoped field names are distinct, and Kind label names are distinct case-insensitively.
 - Status and Phase are always Project-scoped.
-- Phase projects In Progress activity. Workflows don't apply the Kind labels.
+- Phase projects In Progress activity. With Kind labels configured, initialization and queue intake apply exactly one managed Kind label; without them, no Kind is projected.
 - Native GitHub issue Type stays independent and unmanaged. Never substitute other labels, Custom Properties, or another field scope.
 
 Example returned configuration for a Project-contained tracker (use the actual output, not these sample identities):
@@ -273,8 +255,7 @@ Example returned configuration for a Project-contained tracker (use the actual o
                 "scope": "project",
                 "field": "Priority",
                 "values": ["Urgent", "High", "Medium", "Low"]
-            },
-            "internalId": { "scope": "project", "field": "Internal ID" }
+            }
         }
     }
 }

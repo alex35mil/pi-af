@@ -9,10 +9,10 @@ import { assertPlanDocumentUrl, type PlanDocument } from "./plan-document.js"
 import { hasPublicationMarker, type PublicationAdapter, type PublicationIdentity } from "./plan-publication.js"
 import { LINEAR_PLAN_DOCUMENT_TITLE } from "./projection.js"
 import { requirePublicationCall } from "./publication-evidence.js"
-import type { IntegrationRecord } from "./records.js"
+import type { LinearTrackerRecord } from "./records.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
-type Tracker = Extract<IntegrationRecord, { role: "tracker"; provider: "linear"; state: "bound" }>
+type Tracker = LinearTrackerRecord
 const listingFields = ["id", "url", "issue", "project"]
 const parentArguments = ["issue", "project", "initiative", "cycle", "team"]
 
