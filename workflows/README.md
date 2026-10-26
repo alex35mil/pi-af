@@ -40,7 +40,7 @@ See [incoming PR handling](references/pr/incoming.md).
 
 Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help set up project workflows. Guided setup previews changes and asks for approval; it never stages files. It supports:
 
-- one branch format for every entity: `number-title`, `username/number-title`, or Linear's own naming;
+- one branch format for every entity: `identifier-title`, `username/identifier-title`, or Linear's own naming;
 - the tracker and forge, with official MCP registration;
 - read-only Linear workspace discovery;
 - separately approved GitHub Project/field provisioning and recovery;

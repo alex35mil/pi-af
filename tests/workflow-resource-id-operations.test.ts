@@ -66,7 +66,10 @@ function fixture() {
     git(["init", "-q"])
     fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     const statuses = {
         backlog: "Backlog",
         todo: "Todo",

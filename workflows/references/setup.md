@@ -52,20 +52,20 @@ It works before configuration exists or while it's invalid, and touches no files
 
 ```json
 {
-    "branches": { "format": "number-title" }
+    "branches": { "format": "identifier-title" }
 }
 ```
 
 - Workflow work is always local; [artifacts](./artifacts.md#terminology) defines Git membership and local files.
 - `branches.format` is one format string for every Epic, Task, and Gig:
-  - `number-title`: the entity's name in lowercase, such as `12-fix-login` or `eng-12-fix-login`;
-  - `username/number-title`: the same with a `<username>/` prefix;
+  - `identifier-title`: the entity's name in lowercase, the tracker's identifier then the slug, such as `12-fix-login`, `eng-12-fix-login`, or `20261026-billing-revamp` for a Linear Epic;
+  - `username/identifier-title`: the same with a `<username>/` prefix;
   - `tracker`: Linear's own issue branch names.
 - `tracker` is allowed only with a Linear tracker. Task and Gig then use the exact issue branch names, and an Epic uses its dated name, `<YYYYMMDD>-<slug>`. GitHub-tracked projects need a static format.
 
 ### Username
 
-`username/number-title` needs `branches.username` in the global `~/<agent-dir>/workflows.json` or the local `.project/config.local.json`:
+`username/identifier-title` needs `branches.username` in the global `~/<agent-dir>/workflows.json` or the local `.project/config.local.json`:
 
 ```json
 {

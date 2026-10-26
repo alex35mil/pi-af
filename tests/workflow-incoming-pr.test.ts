@@ -98,7 +98,10 @@ function fixture() {
     git("add", ".gitignore", "README.md")
     git("commit", "-m", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
         JSON.stringify({ tracker: minimalTracker(), forge }),

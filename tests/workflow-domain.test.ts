@@ -34,7 +34,7 @@ function git(cwd: string, args: string[]): string {
     return cp.execFileSync("git", args, { cwd, encoding: "utf-8" }).trim()
 }
 
-function temporaryRepository(tracker: "github" | "linear" = "github", format = "number-title"): string {
+function temporaryRepository(tracker: "github" | "linear" = "github", format = "identifier-title"): string {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-domain-"))
     git(directory, ["init", "-b", "main"])
     git(directory, ["config", "user.email", "test@example.com"])
@@ -149,9 +149,9 @@ describe("workflow domain", () => {
             () => entityName({ provider: "linear", projectCreatedAt: "2026-13-01T00:00:00Z" }, "x"),
             /invalid timestamp/,
         )
-        assert.equal(formatBranchName("ENG-7-work", "number-title"), "eng-7-work")
-        assert.equal(formatBranchName("12-work", "username/number-title", "alex"), "alex/12-work")
-        assert.throws(() => formatBranchName("12-work", "username/number-title"), /configured username/)
+        assert.equal(formatBranchName("ENG-7-work", "identifier-title"), "eng-7-work")
+        assert.equal(formatBranchName("12-work", "username/identifier-title", "alex"), "alex/12-work")
+        assert.throws(() => formatBranchName("12-work", "username/identifier-title"), /configured username/)
         assert.deepEqual(readyBranch("12-work", "main", "generated"), {
             state: "ready",
             name: "12-work",

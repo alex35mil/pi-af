@@ -80,7 +80,7 @@ New or revised accepted `epic.md`, `plan.md`, `result.md`, and `report.md` use p
 ## Names and initial branches
 
 - An entity's directory is `<reference>-<slug>`: `12-<slug>` for a GitHub issue, `ENG-12-<slug>` for a Linear issue, and `<YYYYMMDD>-<slug>` for a Linear Epic.
-- The `number-title` branch format uses that name in lowercase; `username/number-title` prefixes it with `<username>/`. Only initialized entities get directories and branches.
+- The `identifier-title` branch format uses that name in lowercase; `username/identifier-title` prefixes it with `<username>/`. Only initialized entities get directories and branches.
 - Epic and Gig start from and target the repository default branch. It's resolved, in order, from `origin/HEAD`, an existing workflow contract, the current attached local branch, or the sole local branch. A remote is optional.
 - A Task copies its parent Epic's current target. The Task skill owns its prerequisites and parent relation.
 - The initialization tool renders the one configured `branches.format` for every entity. Formats starting with `username` read `branches.username` from `.project/config.local.json` or global `workflows.json`; never infer it. The Linear `tracker` format uses exact issue branch names for Task and Gig, and the slug for an Epic (see [Linear tracker](./integrations/tracker/linear.md)). When configuring formats, read [setup](./setup.md#project-configuration).

@@ -12,7 +12,9 @@ export const EntityTypeSchema = Type.Enum(["epic", "task", "gig"], {
 })
 export type EntityType = Static<typeof EntityTypeSchema>
 
-export const BranchFormatSchema = Type.Enum(["number-title", "username/number-title", "tracker"], { type: "string" })
+export const BranchFormatSchema = Type.Enum(["identifier-title", "username/identifier-title", "tracker"], {
+    type: "string",
+})
 export type BranchFormat = Static<typeof BranchFormatSchema>
 export type GeneratedBranchFormat = Exclude<BranchFormat, "tracker">
 
@@ -127,9 +129,9 @@ export function validateDeliverableKind(value: string): DeliverableKind {
 export function formatBranchName(name: string, format: GeneratedBranchFormat, username?: string): string {
     const branch = name.toLowerCase()
     switch (format) {
-        case "number-title":
+        case "identifier-title":
             return branch
-        case "username/number-title":
+        case "username/identifier-title":
             return `${requireUsername(username)}/${branch}`
     }
 }

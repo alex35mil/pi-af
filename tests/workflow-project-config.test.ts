@@ -45,7 +45,7 @@ function writeWorkflowSettings(filePath: string, username: string): void {
     fs.writeFileSync(filePath, JSON.stringify({ branches: { username } }))
 }
 
-function config(branches: unknown = { format: "number-title" }) {
+function config(branches: unknown = { format: "identifier-title" }) {
     return { branches }
 }
 
@@ -60,7 +60,7 @@ describe("workflow project configuration", () => {
         const localSettingsPath = path.join(root, ".project/config.local.json")
         const options = { globalSettingsPath }
         try {
-            writeConfig(root, config({ format: "username/number-title" }))
+            writeConfig(root, config({ format: "username/identifier-title" }))
             assert.throws(
                 () => resolveWorkflowProject(root, options),
                 (error: Error) =>
@@ -611,7 +611,7 @@ describe("workflow project configuration", () => {
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
             writeConfig(root, config({ format: "feature/identifier" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
-            writeConfig(root, config({ format: "number-title", username: "alex" }))
+            writeConfig(root, config({ format: "identifier-title", username: "alex" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
             writeConfig(root, config({ format: { epic: "identifier", deliverable: "tracker" } }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
@@ -645,7 +645,7 @@ describe("workflow project configuration", () => {
             assert.equal(loadProjectConfig(root, { globalSettingsPath }).branches.username, undefined)
             fs.rmSync(localSettingsPath)
 
-            writeConfig(root, config({ format: "username/number-title" }))
+            writeConfig(root, config({ format: "username/identifier-title" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /username is required/)
 
             writeWorkflowSettings(globalSettingsPath, "global-user")
@@ -653,7 +653,7 @@ describe("workflow project configuration", () => {
 
             writeWorkflowSettings(localSettingsPath, "alex")
             const configured = loadProjectConfig(root, { globalSettingsPath })
-            assert.equal(configured.branches.format, "username/number-title")
+            assert.equal(configured.branches.format, "username/identifier-title")
             assert.equal(configured.branches.username, "alex")
 
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
@@ -714,7 +714,7 @@ describe("workflow project configuration", () => {
     it("asserts a missing local-settings exclusion without writing and prepares it once", () => {
         const root = repository()
         try {
-            writeConfig(root, config({ format: "username/number-title" }))
+            writeConfig(root, config({ format: "username/identifier-title" }))
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
             writeWorkflowSettings(path.join(root, ".project", "config.local.json"), "alex")
             const exclude = path.join(root, ".git", "info", "exclude")

@@ -151,7 +151,7 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 
 **Static formats:**
 
-- Offer `number-title` as the default, with `username/number-title` as the alternative ([setup contract](../../references/setup.md#project-configuration)). Save the choice once as `branches.format`.
+- Offer `identifier-title` as the default, with `username/identifier-title` as the alternative ([setup contract](../../references/setup.md#project-configuration)). Save the choice once as `branches.format`.
 - For Linear, first ask: 1. Use Linear branch naming (`tracker`), or 2. Use one static workflow format (`static`).
 
 **`tracker`:**
@@ -160,7 +160,7 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 - Explain that a Task or Gig uses the issue's `gitBranchName`, and an Epic uses `<YYYYMMDD>-<slug>`, dated by the Linear Project's creation.
 - Don't ask for or read username settings.
 
-**Username (`username/number-title`):**
+**Username (`username/identifier-title`):**
 
 - Use `.project/config.local.json` when it has one, otherwise the global `workflows.json`.
 - When neither has one, ask and propose `.project/config.local.json` with `{ "branches": { "username": "<value>" } }`.

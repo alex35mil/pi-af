@@ -43,7 +43,10 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
         done: "Done",
         canceled: "Canceled",
     }
-    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
+    fs.writeFileSync(
+        path.join(root, ".project/config.json"),
+        JSON.stringify({ branches: { format: "identifier-title" } }),
+    )
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
         JSON.stringify({

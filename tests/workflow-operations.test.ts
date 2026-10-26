@@ -249,7 +249,7 @@ describe("workflow operations", () => {
             fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
             fs.writeFileSync(
                 path.join(root, ".project/config.json"),
-                JSON.stringify({ branches: { format: "number-title" } }),
+                JSON.stringify({ branches: { format: "identifier-title" } }),
             )
             fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ tracker: github, forge }))
             prepareArtifactPersistence(root)
