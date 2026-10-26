@@ -187,11 +187,12 @@ Each `reviews/<phase>-NNN/` directory holds:
 | `review.md` | Rendered reviewer findings and signoff. |
 | `report.json` | Validated structured report used by the renderer. |
 | `response.md` | Rendered adjudication, written by `record_review_response`. |
-| `request.md` | Exact context sent to the reviewer. |
+| `request.md` | Exact context sent to the reviewer, followed by any report-correction message. |
 | `transcript.md` | Readable reviewer activity. |
 | `agent.jsonl` | Raw Pi event stream. |
-| `outcome.json` | Validated signoff, used by blocked-review confirmation. |
+| `outcome.json` | Exit code and validated signoff, used by the blocked-review checkpoint and the failed-review pause. |
 | `stderr.txt` | Present only when non-empty. |
+| `invalid-report.md` | Failed rounds only: the reviewer's unvalidated final output. |
 
 ### Provider records and Resource IDs
 
