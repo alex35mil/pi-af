@@ -13,10 +13,17 @@ const PERMISSIONS_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "permission
 
 type ReviewStatus = "running" | "completed" | "failed"
 
+/** A private reviewer session directory; `resume` continues its only session instead of starting one. */
+export interface ReviewerSession {
+    directory: string
+    resume: boolean
+}
+
 export interface ReviewAgentRunOptions {
     environment: ReviewerEnvironment
     cwd: string
     prompt: string
+    session: ReviewerSession
     signal?: AbortSignal
     model?: string
     agentName: string
@@ -38,7 +45,7 @@ export async function runReviewAgent(options: ReviewAgentRunOptions): Promise<Re
     const promptPath = path.join(tmpDir, "prompt.md")
     await fs.promises.writeFile(promptPath, options.prompt, { encoding: "utf-8", mode: 0o600 })
 
-    const args = buildReviewerArgs(options.agentName, promptPath, launch)
+    const args = buildReviewerArgs(options.agentName, promptPath, launch, options.session)
 
     const invocation = getPiInvocation(args)
     const child = spawn(invocation.command, invocation.args, {
@@ -55,7 +62,7 @@ export async function runReviewAgent(options: ReviewAgentRunOptions): Promise<Re
     let finalOutput = ""
     let currentActivity = "starting"
     const jsonl = options.jsonlPath
-        ? fs.createWriteStream(options.jsonlPath, { encoding: "utf-8", mode: 0o600 })
+        ? fs.createWriteStream(options.jsonlPath, { encoding: "utf-8", mode: 0o600, flags: "a" })
         : undefined
 
     const publishUpdate = (status: ReviewStatus) => {
@@ -136,11 +143,18 @@ export function renderReviewTranscript(events: unknown[]): string {
     return lines.join("\n")
 }
 
-export function buildReviewerArgs(agentName: string, promptPath: string, launch: ReviewerLaunch): string[] {
+export function buildReviewerArgs(
+    agentName: string,
+    promptPath: string,
+    launch: ReviewerLaunch,
+    session: ReviewerSession,
+): string[] {
     const args = [
         "--mode",
         "json",
-        "--no-session",
+        "--session-dir",
+        session.directory,
+        ...(session.resume ? ["--continue"] : []),
         "--no-extensions",
         "--extension",
         RULES_EXTENSION_PATH,

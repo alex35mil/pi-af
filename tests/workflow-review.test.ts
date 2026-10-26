@@ -19,6 +19,7 @@ import registerReviewTools, {
     blockedReviewGate,
     buildDeliverableReviewPrompt,
     createReviewRoundDirectory,
+    failedReviewGate,
     formatBlockedReviewPause,
     latestApprovedPlanSnapshot,
     ReviewRequestSchema,
@@ -27,7 +28,42 @@ import registerReviewTools, {
 } from "../workflows/extensions/review/index.ts"
 import registerEpic from "../workflows/extensions/epic/index.ts"
 import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
-import { recordRoundResponse } from "../workflows/extensions/review/round.ts"
+import type { ReviewAgentRunOptions, ReviewAgentRunResult } from "../workflows/extensions/review/agent.ts"
+import { executeReviewRound, recordRoundResponse } from "../workflows/extensions/review/round.ts"
+
+function runResult(finalOutput: string, exitCode = 0): ReviewAgentRunResult {
+    return { exitCode, finalOutput, stderr: "", events: [] }
+}
+
+async function runRound(directory: string, outputs: ReviewAgentRunResult[]) {
+    const calls: ReviewAgentRunOptions[] = []
+    const sessionDirs: string[] = []
+    const run = executeReviewRound(
+        {
+            environment: { defaultProvider: undefined, defaultModel: undefined, claudeCode: { kind: "unavailable" } },
+            cwd: directory,
+            directory,
+            prompt: "Review.",
+            additionalFiles: [],
+            agentName: "test",
+            progressLabel: "test",
+        },
+        async (options) => {
+            calls.push(options)
+            sessionDirs.push(options.session.directory)
+            assert.ok(fs.existsSync(options.session.directory))
+            const next = outputs.shift()
+            assert.ok(next, "unexpected reviewer run")
+            return next
+        },
+    )
+    const outcome = await run.then(
+        (value) => ({ value, error: undefined }),
+        (error: Error) => ({ value: undefined, error }),
+    )
+    for (const sessionDir of sessionDirs) assert.equal(fs.existsSync(sessionDir), false)
+    return { ...outcome, calls }
+}
 
 function reviewRoundDir(entity: string, phase: string, round: number): string {
     return path.join(entity, "reviews", `${phase}-${round.toString().padStart(3, "0")}`)
@@ -243,7 +279,7 @@ describe("workflow reviewer isolation", () => {
 
         assert.throws(
             () => parseReviewReport(JSON.stringify({ ...report, commentary: "extra" })),
-            /unexpected or missing fields/,
+            /unexpected commentary/,
         )
         assert.equal(
             parseReviewReport(
@@ -268,6 +304,108 @@ describe("workflow reviewer isolation", () => {
         assert.match(transcript, /## Review findings/)
         assert.match(transcript, /Invalid structured review output omitted/)
         assert.doesNotMatch(transcript, /uncanonical prose/)
+    })
+
+    it("extracts one report from surrounding prose and names invalid fields", () => {
+        const report = reviewReport("blocked")
+        const json = JSON.stringify(report)
+        assert.deepEqual(parseReviewReport(`I checked the files {see notes}.\n\n${json}\n\nDone.`), report)
+        assert.deepEqual(parseReviewReport("```json\n" + json + "\n```"), report)
+        assert.throws(() => parseReviewReport("No report here."), /must contain one JSON review report/)
+        assert.throws(() => parseReviewReport(`${json}\n${json}`), /contains 2 JSON review report objects/)
+
+        const { severity: _severity, ...withoutSeverity } = report.findings[0]
+        assert.throws(
+            () => parseReviewReport(`Summary.\n${JSON.stringify({ ...report, findings: [withoutSeverity] })}`),
+            /review finding 1 is missing severity/,
+        )
+        assert.throws(
+            () => parseReviewReport(JSON.stringify({ ...report, findings: [{ ...report.findings[0], note: "x" }] })),
+            /review finding 1 has unexpected note/,
+        )
+    })
+
+    it("corrects an invalid report once in the same reviewer session", async () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-correction-"))
+        try {
+            const report = reviewReport("blocked")
+            const { severity: _severity, ...withoutSeverity } = report.findings[0]
+            const invalid = JSON.stringify({ ...report, findings: [withoutSeverity] })
+            const { value, error, calls } = await runRound(directory, [
+                runResult(invalid),
+                runResult(JSON.stringify(report)),
+            ])
+            assert.equal(error, undefined)
+            assert.equal(value?.report.signoff, "blocked")
+            assert.deepEqual(
+                calls.map((call) => call.session.resume),
+                [false, true],
+            )
+            assert.equal(calls[0].session.directory, calls[1].session.directory)
+            assert.match(calls[1].prompt, /missing severity/)
+            assert.ok(calls[1].prompt.includes(invalid))
+            assert.equal(calls[1].jsonlPath, calls[0].jsonlPath)
+            assert.ok(fs.existsSync(path.join(directory, "review.md")))
+            assert.ok(fs.existsSync(path.join(directory, "report.json")))
+            assert.equal(fs.existsSync(path.join(directory, "invalid-report.md")), false)
+            assert.equal(JSON.parse(fs.readFileSync(path.join(directory, "outcome.json"), "utf-8")).signoff, "blocked")
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true })
+        }
+    })
+
+    it("saves unvalidated output when the correction also fails", async () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-invalid-"))
+        try {
+            const { error, calls } = await runRound(directory, [
+                runResult("F1 is a real blocker."),
+                runResult("Still prose: F1 is a real blocker."),
+            ])
+            assert.equal(calls.length, 2)
+            assert.match(error?.message ?? "", /after one correction/)
+            assert.match(error?.message ?? "", /Unvalidated reviewer output/)
+            assert.ok(error?.message.includes("Still prose: F1 is a real blocker."))
+            assert.ok(fs.readFileSync(path.join(directory, "invalid-report.md"), "utf-8").includes("Still prose"))
+            assert.equal(fs.existsSync(path.join(directory, "report.json")), false)
+            assert.equal(JSON.parse(fs.readFileSync(path.join(directory, "outcome.json"), "utf-8")).signoff, null)
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true })
+        }
+    })
+
+    it("does not correct after a failed reviewer process", async () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-exit-"))
+        try {
+            const { error, calls } = await runRound(directory, [runResult("", 1)])
+            assert.equal(calls.length, 1)
+            assert.match(error?.message ?? "", /exited with code 1/)
+            assert.equal(fs.existsSync(path.join(directory, "invalid-report.md")), false)
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true })
+        }
+    })
+
+    it("pauses after consecutive failed rounds independently of blocked reviews", async () => {
+        const entity = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-failures-"))
+        try {
+            writeReviewRound(entity, "final", 1, null)
+            assert.equal(await failedReviewGate(entity, "final", 1), undefined)
+            writeReviewRound(entity, "final", 2, "blocked", { exitCode: 143 })
+            assert.deepEqual(await failedReviewGate(entity, "final", 2), [1, 2])
+            writeReviewRound(entity, "final", 3, "blocked")
+            assert.equal(await failedReviewGate(entity, "final", 3), undefined)
+            writeReviewRound(entity, "final", 4, null)
+            assert.equal(await failedReviewGate(entity, "final", 4), undefined)
+            writeReviewRound(entity, "final", 5, null)
+            assert.deepEqual(await failedReviewGate(entity, "final", 5), [4, 5])
+            writeReviewRound(entity, "final", 6, null)
+            assert.deepEqual(await failedReviewGate(entity, "final", 6), [4, 5, 6])
+            assert.equal(await failedReviewGate(entity, "interim", 1), undefined)
+            for (const round of [7, 8]) writeReviewRound(entity, "final", round, "blocked")
+            assert.deepEqual((await blockedReviewGate(entity, "final", 8, 3))?.blockedRounds, [3, 7, 8])
+        } finally {
+            fs.rmSync(entity, { recursive: true, force: true })
+        }
     })
 
     it("renders adjudicated severity from the saved report", async () => {
@@ -387,7 +525,12 @@ describe("workflow reviewer isolation", () => {
     })
 
     it("loads active rules and the same permission extension used by every agent", () => {
-        const args = buildReviewerArgs("Deliverable Reviewer", "/tmp/prompt.md", { kind: "standard", model: undefined })
+        const args = buildReviewerArgs(
+            "Deliverable Reviewer",
+            "/tmp/prompt.md",
+            { kind: "standard", model: undefined },
+            { directory: "/tmp/session", resume: false },
+        )
         const extensions = args.flatMap((value, index) => (value === "--extension" ? [args[index + 1]] : []))
 
         assert.equal(args.includes("--no-extensions"), true)

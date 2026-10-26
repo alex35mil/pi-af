@@ -422,10 +422,12 @@ describe("incoming PR private review", () => {
                 },
                 async (options) => {
                     assert.equal(options.cwd, f.root)
-                    const args = buildReviewerArgs(options.agentName, "prompt.md", {
-                        kind: "standard",
-                        model: options.model,
-                    })
+                    const args = buildReviewerArgs(
+                        options.agentName,
+                        "prompt.md",
+                        { kind: "standard", model: options.model },
+                        options.session,
+                    )
                     assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls")
                     assert.ok(args.includes("--no-extensions"))
                     assert.ok(args.includes("--no-skills"))

@@ -208,6 +208,10 @@ export default function (pi: ExtensionAPI) {
                     agentName: `${input.entity}-review`,
                     progressLabel: `${input.entity === "epic" ? "Epic" : "Deliverable"} review agent`,
                     onUpdate: (update) => onUpdate?.(textResult(update)),
+                }).catch(async (error: unknown) => {
+                    const message = error instanceof Error ? error.message : String(error)
+                    const failedGate = await failedReviewGate(entityDir, phase, round)
+                    throw new Error(failedGate ? `${message}\n\n${formatFailedReviewPause(failedGate)}` : message)
                 })
                 const signoff = report.signoff
 
@@ -370,6 +374,40 @@ async function nextReviewRound(entityDir: string, phase: ReviewPhase): Promise<n
     return ((await readReviewRounds(entityDir, phase)).at(-1)?.round ?? 0) + 1
 }
 
+/** Consecutive failed rounds that always pause, independent of the configured blocked-review threshold. */
+export const FAILED_REVIEW_PAUSE_AFTER = 2
+
+function isFailedOutcome(outcome: Static<typeof ReviewOutcomeSchema>): boolean {
+    return outcome.exitCode !== 0 || outcome.signoff === null
+}
+
+/** Returns the current failure streak when the just-completed failed round reaches the fixed pause limit. */
+export async function failedReviewGate(
+    entityDir: string,
+    phase: ReviewPhase,
+    completedRound: number,
+): Promise<number[] | undefined> {
+    let failedRounds: number[] = []
+    for (const { round, directory: roundDir } of await readReviewRounds(entityDir, phase)) {
+        if (round > completedRound) break
+        if (!fs.existsSync(path.join(roundDir, REVIEW_OUTCOME_FILE))) continue
+        failedRounds = isFailedOutcome(await readReviewOutcome(roundDir)) ? [...failedRounds, round] : []
+    }
+    return failedRounds.at(-1) === completedRound && failedRounds.length >= FAILED_REVIEW_PAUSE_AFTER
+        ? failedRounds
+        : undefined
+}
+
+export function formatFailedReviewPause(failedRounds: readonly number[]): string {
+    const rounds = failedRounds.map((round) => round.toString().padStart(3, "0")).join(", ")
+    return [
+        `Review rounds ${rounds} failed in a row without a valid report. This pause applies even without a configured blocked-review threshold.`,
+        "Stop. Do not run another review in this category yet.",
+        "Tell the user which rounds failed and why, and show any unvalidated reviewer output as evidence only, never as a review or signoff.",
+        "Then ask the user how to proceed, and wait for their answer.",
+    ].join("\n")
+}
+
 export interface BlockedReviewGate {
     blockedCount: number
     blockedRounds: number[]
@@ -389,7 +427,7 @@ export async function blockedReviewGate(
         const outcomePath = path.join(roundDir, REVIEW_OUTCOME_FILE)
         if (!fs.existsSync(outcomePath)) continue
         const outcome = await readReviewOutcome(roundDir)
-        if (outcome.exitCode !== 0 || outcome.signoff === null) continue
+        if (isFailedOutcome(outcome)) continue
 
         gate = undefined
         if (outcome.signoff === "approved") {

@@ -39,6 +39,15 @@ Enabled only when `.project/config.json` sets `reviews.userConfirmationAfter`.
 - Mixed or unclear: resolve the judgment before correcting or reviewing again.
 - Store no approval token or continuation state.
 
+## Failed reviews
+
+A round fails when the reviewer exits with an error, or returns no valid report even after the tool's one automatic correction.
+
+- The tool may return the reviewer's unvalidated output. Use it as evidence for your own checks, never as a review, finding list, or signoff.
+- After two failed rounds in a row in one category, the tool pauses. This applies whether or not the blocked-review checkpoint is enabled.
+- At the pause, report the failures and any unvalidated output, then ask the user how to proceed and wait.
+- Failed rounds don't count toward the blocked-review checkpoint, and a valid signoff resets the failure count.
+
 ## Round files
 
 Each round lives in `reviews/<category>-NNN/`; the files are listed in [artifacts](./artifacts.md#review-round-files). `report.json` is the machine report, and `review.md`, `response.md`, and chat all use the one shared renderer. `outcome.json` holds the signoff used for the checkpoint count.

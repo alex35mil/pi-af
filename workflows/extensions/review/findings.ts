@@ -48,29 +48,26 @@ export interface ReviewReport {
     signoff: ReviewSignoff
 }
 
+const FINDING_KEYS = [...Object.keys(ReviewResponseFindingSchema.properties), "severity"]
+const REPORT_KEYS = ["findings", "signoff"] as const
+const SEVERITIES = new Set<ReviewSeverity>(REVIEW_SEVERITIES)
+
 export function reviewAgentOutputInstructions(): string {
     return [
         "Return only one JSON object. Do not wrap it in Markdown or add commentary.",
+        "Your whole response must be that JSON object: put no summary, explanation, or other text before or after it.",
         "Use this exact shape:",
         '{"findings":[{"id":"F1","title":"Short direct title","severity":"critical|warning|suggestion|question","problem":"What is wrong","useCase":"One simple supported scenario that demonstrates it","impact":"What concretely happens","resolution":"The direct correction","userDecision":null}],"signoff":"blocked"}',
         "Number finding IDs consecutively from F1. Use an empty findings array when there are no findings.",
+        `Every finding must contain exactly these ${FINDING_KEYS.length} keys: ${FINDING_KEYS.join(", ")}. Never leave out severity.`,
         "Write short, direct, concrete sentences. Explain necessary technical terms. Do not use review-process jargon or list corrections without explaining the problem.",
         "Set userDecision to null when established requirements determine the correction. Otherwise state the exact decision the user must make.",
         "Use blocked when any critical, warning, or question finding remains. Suggestions may appear with either signoff. Use approved only when no blocking-severity finding remains.",
     ].join("\n")
 }
 
-const FINDING_KEYS = [...Object.keys(ReviewResponseFindingSchema.properties), "severity"]
-const REPORT_KEYS = ["findings", "signoff"] as const
-const SEVERITIES = new Set<ReviewSeverity>(REVIEW_SEVERITIES)
-
 export function parseReviewReport(output: string): ReviewReport {
-    let value: unknown
-    try {
-        value = JSON.parse(output.trim())
-    } catch {
-        throw new Error("reviewer output must be one JSON review report")
-    }
+    const value = extractReportObject(output)
     assertRecord(value, "review report")
     assertExactKeys(value, REPORT_KEYS, "review report")
     if (!Array.isArray(value.findings)) throw new Error("review report findings must be an array")
@@ -115,6 +112,61 @@ export function renderReviewDocument(report: ReviewReport): string {
     return `${renderReviewFindings(report.findings)}\n\n## Review status\n\n**Signoff:** ${report.signoff}\n`
 }
 
+/** Accepts one report object, alone or surrounded by prose or a code fence; validation stays strict. */
+function extractReportObject(output: string): unknown {
+    const trimmed = output.trim()
+    try {
+        return JSON.parse(trimmed)
+    } catch {
+        // Fall through to locating the report object inside surrounding text.
+    }
+    const candidates: Record<string, unknown>[] = []
+    let index = trimmed.indexOf("{")
+    while (index !== -1) {
+        const end = balancedObjectEnd(trimmed, index)
+        let candidate: unknown
+        if (end !== undefined) {
+            try {
+                candidate = JSON.parse(trimmed.slice(index, end + 1))
+            } catch {
+                candidate = undefined
+            }
+        }
+        if (isRecord(candidate) && "findings" in candidate) {
+            candidates.push(candidate)
+            index = trimmed.indexOf("{", end! + 1)
+        } else {
+            index = trimmed.indexOf("{", index + 1)
+        }
+    }
+    if (candidates.length === 0) throw new Error("reviewer output must contain one JSON review report object")
+    if (candidates.length > 1)
+        throw new Error(`reviewer output contains ${candidates.length} JSON review report objects; return exactly one`)
+    return candidates[0]
+}
+
+function balancedObjectEnd(text: string, start: number): number | undefined {
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let index = start; index < text.length; index++) {
+        const char = text[index]
+        if (inString) {
+            if (escaped) escaped = false
+            else if (char === "\\") escaped = true
+            else if (char === '"') inString = false
+        } else if (char === '"') {
+            inString = true
+        } else if (char === "{") {
+            depth++
+        } else if (char === "}") {
+            depth--
+            if (depth === 0) return index
+        }
+    }
+    return undefined
+}
+
 function parseFinding(value: unknown, index: number): ReviewFinding {
     const context = `review finding ${index + 1}`
     assertRecord(value, context)
@@ -145,16 +197,23 @@ function parseFinding(value: unknown, index: number): ReviewFinding {
     }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
 function assertRecord(value: unknown, context: string): asserts value is Record<string, unknown> {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error(`${context} must be an object`)
-    }
+    if (!isRecord(value)) throw new Error(`${context} must be an object`)
 }
 
 function assertExactKeys(value: Record<string, unknown>, expected: readonly string[], context: string): void {
-    const actual = Object.keys(value).sort()
-    const wanted = [...expected].sort()
-    if (actual.join("\n") !== wanted.join("\n")) throw new Error(`${context} has unexpected or missing fields`)
+    const actual = Object.keys(value)
+    const missing = expected.filter((key) => !actual.includes(key))
+    const unexpected = actual.filter((key) => !expected.includes(key))
+    const problems = [
+        ...(missing.length ? [`is missing ${missing.join(", ")}`] : []),
+        ...(unexpected.length ? [`has unexpected ${unexpected.join(", ")}`] : []),
+    ]
+    if (problems.length) throw new Error(`${context} ${problems.join(" and ")}`)
 }
 
 function requiredString(value: unknown, context: string): string {

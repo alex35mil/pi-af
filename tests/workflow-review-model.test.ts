@@ -199,10 +199,21 @@ describe("reviewer provider loading", () => {
                 model: "claude-code/review-fixture",
                 extensionPath: h.extensionPath,
             })
-            const args = buildReviewerArgs("review", "prompt.md", launch)
+            const args = buildReviewerArgs("review", "prompt.md", launch, { directory: "/tmp/session", resume: false })
             assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls")
-            for (const flag of ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"])
+            for (const flag of ["--no-extensions", "--no-skills", "--no-prompt-templates"])
                 assert.ok(args.includes(flag))
+            assert.equal(args[args.indexOf("--session-dir") + 1], "/tmp/session")
+            assert.equal(args.includes("--no-session"), false)
+            assert.equal(args.includes("--continue"), false)
+            const resumed = buildReviewerArgs("review", "prompt.md", launch, {
+                directory: "/tmp/session",
+                resume: true,
+            })
+            assert.deepEqual(
+                resumed.filter((value) => !args.includes(value)),
+                ["--continue"],
+            )
             assert.equal(args.filter((value) => value === "--extension").length, 3)
             assert.equal(args[args.indexOf("--model") + 1], "claude-code/review-fixture")
         } finally {
@@ -222,7 +233,10 @@ describe("reviewer provider loading", () => {
                 const launch = await resolveReviewerLaunch(h.environment, selection)
                 assert.deepEqual(launch, { kind: "standard", model: selection })
                 assert.equal(
-                    buildReviewerArgs("review", "prompt.md", launch).filter((value) => value === "--extension").length,
+                    buildReviewerArgs("review", "prompt.md", launch, {
+                        directory: "/tmp/session",
+                        resume: false,
+                    }).filter((value) => value === "--extension").length,
                     2,
                 )
             }
@@ -336,6 +350,7 @@ describe("reviewer provider loading", () => {
                 environment: { ...h.environment, defaultProvider: "claude-code", defaultModel: fixtureModel.id },
                 cwd: h.root,
                 prompt: "Return the structured review report.",
+                session: { directory: fs.mkdtempSync(path.join(h.root, "session-")), resume: false },
                 agentName: "isolation-fixture",
                 progressLabel: "test",
             })
