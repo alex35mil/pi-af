@@ -99,7 +99,7 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
 1. **Prepare.** After an accepted `epic.md` or `plan.md` change, call `prepare_integration_projection`, then `prepare_tracker_publication` with the full source. The Project or issue keeps its original title or name and description.
 2. **First publication** creates one document titled Plan, attached by Project UUID for an Epic or issue UUID for a Task or Gig.
    - Run only the returned `save_document`, immediately, and record clear success with `record_tracker_publication`.
-   - A pending creation needs recovery, never another create.
+   - A pending creation needs recovery, never a create of your own.
 3. **Updates to a published document:**
    - Run the returned `get_document` and parent reads, then call `prepare_tracker_publication_update` with the full source and the actual `document` and `parent` evidence. The parent read must prove that its display identifier maps to the stored UUID.
    - Run the resulting full-content update by document ID only, without title or parent arguments, so publication never renames or reparents it.

@@ -4,15 +4,21 @@ Read this only when a provider outcome is uncertain or partial, or a tool return
 
 ## Pending plan publication
 
-The first `prepare_tracker_publication` call for an unpublished plan saves a pending opaque token before returning its non-idempotent create. Any later call returns `recovery-required` instead of another create. Never create a replacement automatically.
+The first `prepare_tracker_publication` call for an unpublished plan saves a pending opaque token before returning its non-idempotent create. Any later call returns `recovery-required` instead of another create. Recovery then reads the provider and decides from what it finds; never create a replacement on your own.
 
-This means preparing without running the returned create leaves the entity stuck: recovery finds no marked comment or document and returns `blocked`. Recovery can't tell "never sent" from "sent, outcome unknown". Prevent it by running the returned mutation in the same step as the prepare call, and never calling prepare again just to look at the output. When it has already happened, report it to the maintainer; don't edit `metadata.json` by hand without their approval. The fix is tracked in #87.
+Call `recover_tracker_publication` with the approved `source` and the complete reads below:
+
+- **One marked publication:** the create landed. The tool records it as published.
+- **None, after a complete read:** the create never landed. The tool returns the same create with the saved token, which the original approval still covers. Run it and record it as usual. Keeping the token means a late copy of the earlier create shows up as a second match.
+- **Several:** stop for maintainer direction.
+
+Still run every prepared mutation in the same step and never call prepare just to look at its output; recovery costs extra reads.
 
 ### GitHub comment
 
 1. Read every page of the bound issue's comments with the registered `issue_read` `get_comments`. Use explicit page numbers, one consistent `perPage` (1–100), and continue until a short or empty page.
 2. Call `recover_tracker_publication` with all pages.
-3. Only one comment containing the saved marker establishes identity. No match, duplicate matches, a missing published comment, or conflicting identity stops for maintainer direction.
+3. Only one comment containing the saved marker establishes identity. For a pending plan, no match returns the create; duplicate matches, a missing published comment, or conflicting identity stop for maintainer direction.
 4. The tool returns the identified comment body; use it to compare an uncertain update.
 
 ### Linear document
@@ -21,7 +27,7 @@ This means preparing without running the returned create leaves the entity stuck
 2. Use the prepared listing arguments (explicit fields and limit, `createdAt` order, archived included). Follow cursors until `hasNextPage: false`.
 3. Epic listings use the exact Project filter. Issue listings have no issue filter, so scan the complete accessible listing. Never narrow by title, query, or team as a substitute.
 4. Listings truncate content. A `recovery-read-required` result (distinct from the pending publication's `recovery-required`) returns full-read lookups for every candidate with a matching parent. Run them and resubmit all prior evidence plus those reads.
-5. Only a unique token match on the bound parent establishes identity. Missing or duplicate matches, missing parent or content, errors, or incomplete pages stop without another create.
+5. Only a unique token match on the bound parent establishes identity. For a pending plan, no match after every candidate is fully read returns the create. Duplicate matches, a missing published document, missing parent or content, errors, or incomplete pages stop without another create.
 6. Compare an uncertain update against full `get_document` content, never against list or create previews.
 
 ## Uncertain updates

@@ -109,7 +109,7 @@ The tracker object comes first; the local entity is named from it. New work and 
 1. **Start from the full approved source** in the [reviewed document shape](../artifacts.md#reviewed-document-shape). Never summarize or condense during publication.
 2. **Local references:** published text never points readers at ignored files under `.project/.local/` ([communication](../communication.md)).
 3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full approved source.
-   - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output. A second call returns `recovery-required`, and when nothing was posted, recovery can't proceed without the maintainer (#87).
+   - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output; a second call returns `recovery-required` and needs recovery reads.
    - Record a first creation with `record_tracker_publication`, passing the actual call as `evidence`.
    - For a published Linear document, preparation asks for verification reads. Read the saved document and its bound issue or Project, then call `prepare_tracker_publication_update` with `source`, `document`, and `parent` evidence. The parent read maps the native display identifier to the bound UUID. Run the returned update by document ID only, never with parent or title arguments.
    - A missing, moved, archived, or conflicting document stops for maintainer direction, never reattachment or replacement.

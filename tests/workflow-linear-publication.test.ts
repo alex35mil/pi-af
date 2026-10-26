@@ -113,7 +113,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
     const record = (evidence: ProviderEvidence) =>
         trackerPublication(root, { entityDir: directory, action: "record", evidence }, tools)
     const recover = (pages: ProviderEvidence[]) =>
-        trackerPublication(root, { entityDir: directory, action: "recover", pages }, tools)
+        trackerPublication(root, { entityDir: directory, action: "recover", source, pages }, tools)
     const parent = (): ProviderEvidence => ({
         tool: kind === "epic" ? "mcp__linear__get_project" : "mcp__linear__get_issue",
         arguments: kind === "epic" ? { query: "project-uuid" } : { id: "issue-uuid" },
@@ -312,7 +312,7 @@ describe("managed Linear plan documents", () => {
             }
         })
 
-    it("preserves state for absent, duplicate, incomplete, narrowed and failed recovery evidence", async () => {
+    it("preserves state for duplicate, incomplete, narrowed and failed recovery evidence", async () => {
         const f = fixture()
         try {
             const prepared = await f.prepare()
@@ -320,7 +320,6 @@ describe("managed Linear plan documents", () => {
             const body = prepared.mutation.arguments.content
             assert.ok(typeof body === "string")
             const before = fs.readFileSync(f.file, "utf8")
-            assert.equal((await f.recover([f.parent(), f.listing([])])).state, "blocked")
             const both = [f.document(body), f.document(body, "second")]
             assert.equal(
                 (await f.recover([f.parent(), f.listing(both), f.read(body), f.read(body, "second")])).state,
@@ -425,6 +424,40 @@ describe("managed Linear plan documents", () => {
             f.dispose()
         }
     })
+
+    for (const kind of ["epic", "gig"] as const)
+        it(`re-issues the same create when a complete listing finds the pending document was never saved (${kind})`, async () => {
+            const f = fixture(kind)
+            try {
+                const prepared = await f.prepare()
+                assert.ok(prepared.state === "mutation-needed")
+                const pending = f.saved().tracker.planDocument
+                assert.equal(pending.state, "pending")
+
+                // A same-parent document without the marker is read in full first, then ruled out.
+                const other = { ...f.document("Unrelated", "other"), content: undefined }
+                const evidence = [f.parent(), f.listing([other])]
+                const needed = await f.recover(evidence)
+                assert.equal(needed.state, "recovery-read-required")
+                const reissued = await f.recover([...evidence, f.read("Unrelated", "other")])
+                assert.ok(reissued.state === "mutation-needed")
+                assert.deepEqual(reissued.mutation, prepared.mutation)
+                assert.deepEqual(f.saved().tracker.planDocument, pending)
+
+                assert.equal(
+                    (await f.record({ ...reissued.mutation, response: { id: documentId, url } })).state,
+                    "published",
+                )
+                assert.deepEqual(f.saved().tracker.planDocument, {
+                    state: "published",
+                    token: pending.token,
+                    id: documentId,
+                    url,
+                })
+            } finally {
+                f.dispose()
+            }
+        })
 
     it("uses the parent Epic's own document state during synchronization", async () => {
         const f = fixture("task")

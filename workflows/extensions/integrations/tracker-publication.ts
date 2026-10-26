@@ -31,7 +31,7 @@ export const TrackerPublicationSchema = Type.Union([
         { additionalProperties: false },
     ),
     Type.Object(
-        { ...common, action: Type.Literal("recover"), pages: Type.Array(EvidenceSchema, { minItems: 1 }) },
+        { ...common, action: Type.Literal("recover"), source, pages: Type.Array(EvidenceSchema, { minItems: 1 }) },
         { additionalProperties: false },
     ),
 ])
@@ -78,6 +78,10 @@ function runPublication<I>(input: TrackerPublicationInput, adapter: PublicationA
     }
     const recovered = adapter.recover(input.pages, saved.token)
     if (!Array.isArray(recovered)) return recovered
+    // A complete read with no marked publication proves a pending create never landed, so the
+    // same create is safe to send. Keeping the token lets a late earlier create show up as a duplicate.
+    if (recovered.length === 0 && saved.state === "pending")
+        return { state: "mutation-needed" as const, mutation: adapter.create(render(input.source, saved.token)) }
     if (recovered.length !== 1)
         return {
             state: "blocked" as const,
@@ -131,7 +135,7 @@ export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatal
         toolsApi.registerTool({
             name,
             label: name,
-            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. Linear published updates require prepare_tracker_publication_update with exact document and parent read evidence. Recovery uses GitHub comment pages or Linear parent read, complete document listing pages, and full document reads. Saves local authoritative state only; never calls providers or authorizes publication. Pending creation never automatically retries.`,
+            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. The first prepare for an unpublished plan saves pending state before returning its create; run that create immediately. Linear published updates require prepare_tracker_publication_update with exact document and parent read evidence. Recovery takes the approved source and complete GitHub comment pages, or the Linear parent read, complete document listing pages, and full document reads. One match identifies the publication; for a pending plan, no match returns the same create with the saved token; several matches stop. Saves local authoritative state only; never calls providers or authorizes publication.`,
             parameters,
             async execute(_id, input, _signal, _onUpdate, ctx) {
                 const result = await trackerPublication(
