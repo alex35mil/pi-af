@@ -41,7 +41,7 @@ Enabled only when `.project/config.json` sets `reviews.userConfirmationAfter`.
 
 ## Round files
 
-Each round lives in `.local/reviews/<category>-NNN/`; the files are listed in [artifacts](./artifacts.md#review-round-files). `report.json` is the machine report, and `review.md`, `response.md`, and chat all use the one shared renderer. `outcome.json` holds the signoff used for the checkpoint count.
+Each round lives in `reviews/<category>-NNN/`; the files are listed in [artifacts](./artifacts.md#review-round-files). `report.json` is the machine report, and `review.md`, `response.md`, and chat all use the one shared renderer. `outcome.json` holds the signoff used for the checkpoint count.
 
 ## Incoming PR adjudication
 

@@ -8,8 +8,8 @@ This procedure extends [integration roles](../shared.md). Ordinary resume never 
 
 [Epic delivery](../../epic.md) keeps the approved routing intent separate from the delivery proof checked at Task initialization.
 
-- Record the routing choice before committing, and deliver the accepted plan and its routing metadata together through the normal PR flow. No target change is needed after the merge.
-- Every default-target Task initialization verifies delivery, including a squash-merged planning PR, from GitHub's merged-PR confirmation plus local revision and versioned plan checks.
+- Record the routing choice at plan acceptance; it stays local. No target change is needed after a merge.
+- Every default-target Task initialization verifies delivery, including a squash-merged planning PR, from GitHub's merged-PR confirmation plus local revision checks.
 - It creates no forge intent, changes no lifecycle, and authorizes no merge.
 - The Epic skill owns the strategy approval and each delivery operation's approval.
 

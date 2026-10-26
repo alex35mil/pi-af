@@ -8,7 +8,7 @@ import { Value } from "typebox/value"
 
 import { writeTextAtomically } from "../__lib/files.js"
 
-export const RESOURCE_IDS_CACHE_FILE = ".local/metadata.json"
+export const RESOURCE_IDS_CACHE_FILE = "resource-ids.json"
 
 const OneLine = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 const PositiveInteger = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })
@@ -17,7 +17,7 @@ const Project = Type.Object(
     { owner: OneLine, ownerType: Type.Union([Type.Literal("user"), Type.Literal("org")]), number: PositiveInteger },
     { additionalProperties: false },
 )
-const commonScope = { entityId: OneLine, mcpServer: OneLine }
+const commonScope = { entity: OneLine, mcpServer: OneLine }
 const githubIssueScope = { ...commonScope, repository: Repository, issueNumber: PositiveInteger }
 
 export const GitHubIssueResourceIdsScopeSchema = Type.Object(
@@ -97,7 +97,7 @@ export function isResourceIdsKind<K extends ResourceIdsScope["kind"]>(
 }
 
 export const ResourceIdsCacheSchema = Type.Object(
-    { entityId: OneLine, resourceIds: Type.Array(ResourceIdsSchema) },
+    { entity: OneLine, resourceIds: Type.Array(ResourceIdsSchema) },
     { additionalProperties: false },
 )
 export type ResourceIdsCache = Static<typeof ResourceIdsCacheSchema>
@@ -188,12 +188,12 @@ export function readResourceIdsCache(entityDirectory: string): ResourceIdsCache 
         const kinds = new Set<ResourceIdsScope["kind"]>()
         const resourceIds = raw.resourceIds.map((ids) => {
             const parsed = parseResourceIds(ids)
-            if (parsed.scope.entityId !== raw.entityId) throw new Error("entry does not belong to the cache entity")
+            if (parsed.scope.entity !== raw.entity) throw new Error("entry does not belong to the cache entity")
             if (kinds.has(parsed.scope.kind)) throw new Error(`duplicate ${parsed.scope.kind} entry`)
             kinds.add(parsed.scope.kind)
             return parsed
         })
-        return { entityId: raw.entityId, resourceIds }
+        return { entity: raw.entity, resourceIds }
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         throw new Error(
@@ -202,14 +202,14 @@ export function readResourceIdsCache(entityDirectory: string): ResourceIdsCache 
     }
 }
 
-function ownedCache(entityDirectory: string, entityId: string): ResourceIdsCache {
+function ownedCache(entityDirectory: string, entity: string): ResourceIdsCache {
     const cache = readResourceIdsCache(entityDirectory)
-    return cache?.entityId === entityId ? cache : { entityId, resourceIds: [] }
+    return cache?.entity === entity ? cache : { entity, resourceIds: [] }
 }
 
 export function readCachedResourceIds(entityDirectory: string, rawScope: unknown): ResourceIds | undefined {
     const scope = parseResourceIdsScope(rawScope)
-    const ids = ownedCache(entityDirectory, scope.entityId).resourceIds.find((entry) =>
+    const ids = ownedCache(entityDirectory, scope.entity).resourceIds.find((entry) =>
         isDeepStrictEqual(entry.scope, scope),
     )
     return ids ? structuredClone(ids) : undefined
@@ -223,19 +223,18 @@ function writeCache(file: string, cache: ResourceIdsCache): void {
 export async function recordResourceIds(entityDirectory: string, raw: readonly unknown[]): Promise<ResourceIds[]> {
     const resourceIds = raw.map(parseResourceIds)
     if (resourceIds.length === 0) return []
-    const entityId = resourceIds[0].scope.entityId
+    const entity = resourceIds[0].scope.entity
     const kinds = new Set<ResourceIdsScope["kind"]>()
     for (const ids of resourceIds) {
-        if (ids.scope.entityId !== entityId)
-            throw new Error("cannot record resource IDs for different entities together")
+        if (ids.scope.entity !== entity) throw new Error("cannot record resource IDs for different entities together")
         if (kinds.has(ids.scope.kind)) throw new Error(`duplicate ${ids.scope.kind} update`)
         kinds.add(ids.scope.kind)
     }
     const file = path.resolve(entityDirectory, RESOURCE_IDS_CACHE_FILE)
     return withFileMutationQueue(file, async () => {
-        const cache = ownedCache(entityDirectory, entityId)
+        const cache = ownedCache(entityDirectory, entity)
         const next = {
-            entityId,
+            entity,
             resourceIds: [...cache.resourceIds.filter((ids) => !kinds.has(ids.scope.kind)), ...resourceIds],
         }
         if (!isDeepStrictEqual(cache, next)) writeCache(file, next)
@@ -250,7 +249,7 @@ export async function resolveCachedResourceIds(
     const scope = parseResourceIdsScope(rawScope)
     const file = path.resolve(entityDirectory, RESOURCE_IDS_CACHE_FILE)
     return withFileMutationQueue(file, async () => {
-        const cache = ownedCache(entityDirectory, scope.entityId)
+        const cache = ownedCache(entityDirectory, scope.entity)
         const ids = cache.resourceIds.find((candidate) => candidate.scope.kind === scope.kind)
         if (!ids) return undefined
         if (isDeepStrictEqual(ids.scope, scope)) return structuredClone(ids)
@@ -264,7 +263,7 @@ export async function invalidateResourceIds(entityDirectory: string, rawScope: u
     const scope = parseResourceIdsScope(rawScope)
     const file = path.resolve(entityDirectory, RESOURCE_IDS_CACHE_FILE)
     await withFileMutationQueue(file, async () => {
-        const cache = ownedCache(entityDirectory, scope.entityId)
+        const cache = ownedCache(entityDirectory, scope.entity)
         const resourceIds = cache.resourceIds.filter((ids) => !isDeepStrictEqual(ids.scope, scope))
         if (resourceIds.length !== cache.resourceIds.length) writeCache(file, { ...cache, resourceIds })
     })

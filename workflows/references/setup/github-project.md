@@ -10,7 +10,7 @@ Read this when provisioning, adopting, or resuming a GitHub Project for a GitHub
    - A new Project uses the suggested title unless the user overrides it, and the resolved title appears in the preview before creation.
    - Adopted titles stay unchanged.
 4. **Field scope:**
-   - Personal repositories use Project-contained Priority and Internal ID, with no scope question and no organization metadata discovery.
+   - Personal repositories use Project-contained Priority, with no scope question and no organization metadata discovery.
    - Organization repositories keep an explicit choice of Project-contained, organization-native, or custom scope, independent of the Project owner type.
    - Preview enforces repository ownership for issue-scoped inputs.
 5. **Existing Projects.** `inspect_github_project` takes `credentialEnv`, `projectOwner`, and `projectNumber`. It returns the Project's short description, fields, and views, fully paginated.
@@ -76,7 +76,7 @@ Presentation is a setup-only input to preview and apply, never runtime configura
   - GitHub supports visibility, not a controllable card-field order, so setup promises no Board field order.
 - **Table views** keep ordered-field matching.
 - **Semantic references:** list configured Status, Priority, and Phase as `{ "kind": "workflow", "field": "status" | "priority" | "phase" }`, never by literal field name, so custom-named metadata resolves to the right field. Other fields use `{ "kind": "field", "name": "..." }`. A missing or ambiguous field blocks; it's never dropped silently.
-- **Hidden and label-backed fields:** Internal ID is provisioned but hidden. Kind is represented by repository labels.
+- **Label-backed Kind:** when the user opts in, Kind is represented by repository labels, not a Project field.
 - **Sorting:** a fresh Board's Priority sort needs the configured Priority field exposed on the Project, even when it isn't visible. Hiding it doesn't replace attaching issue-scoped Priority.
 
 ### Priority order

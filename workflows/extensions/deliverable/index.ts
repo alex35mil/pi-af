@@ -7,46 +7,27 @@ import * as Git from "../__lib/git.js"
 import { workflowTools } from "../__lib/tools.js"
 import { shippingReadDecision, resolveResourceIdsContext } from "../integrations/resource-id-operations.js"
 import { isResourceIdsKind, readCachedResourceIds } from "../integrations/resource-ids.js"
-import { AncestryDeliveryCleanupInputSchema, GitHubDeliveryCleanupInputSchema, runDeliveryCleanup } from "./cleanup.js"
+import { DeliveryCleanupInputSchema, runDeliveryCleanup } from "./cleanup.js"
 
 export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "delivery")
     const catalog = observeMcpTools(pi)
-    const operations = [
-        ["cleanup_ancestry_delivery_branch", AncestryDeliveryCleanupInputSchema],
-        ["cleanup_github_delivery_branch", GitHubDeliveryCleanupInputSchema],
-    ] as const
-    for (const [name, parameters] of operations) {
-        tools.registerTool({
-            name,
-            label: name,
-            description:
-                name === "cleanup_github_delivery_branch"
-                    ? "Execute an explicitly approved post-merge Task/Gig branch cleanup in the current clone from the exact configured pull_request_read get evidence for the recorded PR. Validates current state and never deletes a remote branch."
-                    : "Execute an explicitly approved post-merge Task/Gig branch cleanup in the current clone, proving delivery by Git ancestry. Validates current state and never deletes a remote branch.",
-            parameters,
-            async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                const input = Value.Parse(parameters, params)
-                const completion =
-                    input.completionAuthority === "workflow"
-                        ? { kind: "workflow" }
-                        : { kind: "tracker", provider: input.completionAuthority, lifecycle: "done" }
-                const merge =
-                    name === "cleanup_github_delivery_branch"
-                        ? githubMergeProof(
-                              ctx.cwd,
-                              Value.Parse(GitHubDeliveryCleanupInputSchema, params),
-                              catalog,
-                          )
-                        : { kind: "git-ancestry" }
-                const result = runDeliveryCleanup({ entityDir: input.entityDir, completion, merge }, { cwd: ctx.cwd })
-                return {
-                    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-                    details: result,
-                }
-            },
-        })
-    }
+    tools.registerTool({
+        name: "cleanup_delivery_branch",
+        label: "cleanup_delivery_branch",
+        description:
+            "Execute an explicitly approved post-merge Task/Gig branch cleanup in the current clone from the exact configured pull_request_read get evidence for the recorded PR. Validates current state and never deletes a remote branch.",
+        parameters: DeliveryCleanupInputSchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const input = Value.Parse(DeliveryCleanupInputSchema, params)
+            const merge = githubMergeProof(ctx.cwd, input, catalog)
+            const result = runDeliveryCleanup({ entityDir: input.entityDir, merge }, { cwd: ctx.cwd })
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                details: result,
+            }
+        },
+    })
 }
 
 // Extracts merged-state proof from PR-get evidence with the same validation as prepare_integration_merge.

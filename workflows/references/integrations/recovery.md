@@ -30,12 +30,12 @@ For a published comment, document, or PR body, read the exact saved body and com
 
 ## Uncertain tracker creation
 
-A returned error can follow creation or partial application. Keep the pending or known-created checkpoint.
+A returned error can follow creation or partial application. Nothing local exists yet, so the approved intake is the only record.
 
-- **GitHub:** check the original create arguments. When that create included the qualified Internal ID, recover by that exact ID. Otherwise search by the exact approved title, repository, and required relationship. This applies to Task parent-bearing creates, which omit issue fields, and to the Project-scoped Internal ID, which is assigned later. Complete pagination and require exactly one match.
-- **Linear:** search the exact approved title or name, configured team, and exact Task Project or projectless Gig relationship, in both artifact modes.
+- **GitHub:** search by the exact approved title, repository, and required relationship. Complete pagination and require exactly one match.
+- **Linear:** search the exact approved title or name, configured team, and exact Task Project or projectless Gig relationship.
 
-Continue when exactly one object is confirmed. Retry only after confirmed absence. Never add markers, choose the first result, or create a replacement on ambiguous or denied evidence.
+Initialize from the object when exactly one is confirmed. Retry the create only after confirmed absence. Never add markers, choose the first result, or create a replacement on ambiguous or denied evidence.
 
 ## Uncertain PR operations
 

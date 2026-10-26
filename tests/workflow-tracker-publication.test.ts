@@ -26,24 +26,17 @@ const source =
     "# Plan\n\n## Overview\n\nKeep the request and show the plan.\n\n### Plan highlights\n\n- One comment.\n\n## Implementation\n\nUpdate the plan.\n"
 const token = "ab345678-1234-4567-8901-123456789abc"
 
-function fixture(
-    kind: "epic" | "task" | "gig" = "gig",
-    mode: "versioned" | "unversioned" = "versioned",
-    adopted = false,
-) {
+function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tracker-publication-"))
     const git = (...args: string[]) => cp.execFileSync("git", args, { cwd: root, stdio: "pipe" })
     git("init", "-b", "main")
     git("config", "user.email", "test@example.com")
     git("config", "user.name", "Test")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     git("add", ".gitignore")
     git("commit", "-m", "initial")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts: mode, branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const kinds = Object.fromEntries(
         ["feature", "bugfix", "research", "refactor", "audit", "chore"].map((k) => [k, `Kind: ${k}`]),
     )
@@ -73,33 +66,25 @@ function fixture(
                         values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                     },
                     priority: { scope: "project", field: "Priority", values: ["High"] },
-                    internalId: { scope: "project", field: "Internal ID" },
                 },
             },
+            forge: { provider: "github", mcpServer: "github", repository },
         }),
     )
     prepareArtifactPersistence(root)
-    const common = {
-        title: "Work",
-        slug: "work",
-        request,
-        priority: "High",
-        source: adopted
-            ? {
-                  mode: "external" as const,
-                  provider: "github" as const,
-                  issueId: 100,
-                  issueNumber: 42,
-                  issueUrl: "https://github.com/example/project/issues/42",
-                  projectItemId: 200,
-              }
-            : { mode: "new" as const },
-    }
+    // A new and an adopted issue initialize the same way; only the selected object differs.
+    const object = (issueNumber: number) => ({
+        issueId: 100 + issueNumber,
+        issueNumber,
+        issueUrl: `https://github.com/example/project/issues/${issueNumber}`,
+        ...(adopted ? { projectItemId: 200 } : {}),
+    })
+    const common = { title: "Work", slug: "work", request, object: object(42) }
     const parent =
         kind === "task"
             ? initializeEntity(
-                  { ...common, entity: "epic", title: "Parent", slug: "parent" },
-                  { cwd: root, now: new Date("2026-01-01T00:00:00Z") },
+                  { ...common, entity: "epic", title: "Parent", slug: "parent", object: object(41) },
+                  { cwd: root },
               )
             : undefined
     if (parent)
@@ -119,26 +104,11 @@ function fixture(
                     parentEpicDir: parent!.directory,
                     epicItemTitle: "Work",
                 }
-    const initialized = initializeEntity(input, { cwd: root, now: new Date("2026-01-01T00:01:00Z") })
+    const initialized = initializeEntity(input, { cwd: root })
     const directory = initialized.directory
     const file = path.join(root, directory, "metadata.json")
     const original = JSON.parse(fs.readFileSync(file, "utf8"))
-    assert.deepEqual(original.integrations[0].planComment, { state: "unpublished" })
-    const bound = {
-        ...original,
-        authority: { kind: "tracker", provider: "github" },
-        integrations: [
-            {
-                role: "tracker",
-                provider: "github",
-                repository,
-                state: "bound",
-                external: { issueNumber: 42 },
-                planComment: { state: "unpublished" },
-            },
-        ],
-    }
-    fs.writeFileSync(file, JSON.stringify(bound))
+    assert.deepEqual(original.tracker.planComment, { state: "unpublished" })
     const read = () => readEntityStatus(path.join(root, directory))
     const saved = () => JSON.parse(fs.readFileSync(file, "utf8"))
     const prepare = (content = source, catalog = tools) =>
@@ -212,9 +182,9 @@ describe("managed GitHub plan comments", () => {
                     const full = f.remote(prepared.mutation.arguments.body)
                     const response = shape === "minimal" ? { id: "123", url: full.html_url } : full
                     await f.record({ ...prepared.mutation, response: envelope(response, mode) })
-                    assert.deepEqual(f.saved().integrations[0].planComment, {
+                    assert.deepEqual(f.saved().tracker.planComment, {
                         state: "published",
-                        token: f.saved().integrations[0].planComment.token,
+                        token: f.saved().tracker.planComment.token,
                         id: 123,
                         url: full.html_url,
                     })
@@ -281,90 +251,73 @@ describe("managed GitHub plan comments", () => {
     })
 
     for (const kind of ["epic", "task", "gig"] as const)
-        for (const mode of ["versioned", "unversioned"] as const)
-            for (const adopted of [false, true])
-                it(`uses one comment for ${kind}/${mode}/${adopted ? "adopted" : "new"}`, async () => {
-                    const f = fixture(kind, mode, adopted)
-                    try {
-                        const brief = fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8")
-                        const prepared = await f.prepare()
-                        assert.ok(prepared.state === "mutation-needed")
-                        assert.ok(typeof prepared.mutation.arguments.body === "string")
-                        assert.equal(prepared.mutation.tool, "mcp__github__add_issue_comment")
-                        assert.ok("issue_number" in prepared.mutation.arguments)
-                        assert.equal(prepared.mutation.arguments.issue_number, 42)
-                        const pending = f.saved().integrations[0].planComment
-                        assert.equal(pending.state, "pending")
-                        assert.ok(prepared.mutation.arguments.body.endsWith(planPublicationMarker(pending.token)))
-                        assert.doesNotMatch(prepared.mutation.arguments.body, /(?:GIG|TASK|EPIC)-|\.project\//)
-                        assert.match(
-                            prepared.mutation.arguments.body,
-                            /^# Plan\n\nKeep the request and show the plan\.\n\n## Highlights\n\n- One comment\.\n\n<details>\n<summary>Full plan<\/summary>/,
-                        )
-                        assert.equal("title" in prepared.mutation.arguments, false)
-                        await f.record({
-                            tool: prepared.mutation.tool,
-                            arguments: prepared.mutation.arguments,
-                            response: f.remote(prepared.mutation.arguments.body),
-                        })
-                        const identity = f.saved().integrations[0].planComment
-                        assert.equal(identity.state, "published")
-                        const updated = await f.prepare(source.replace("Update the plan.", "Updated scope."))
-                        assert.ok(updated.state === "mutation-needed")
-                        assert.ok(typeof updated.mutation.arguments.body === "string")
-                        assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
-                        assert.ok("comment_id" in updated.mutation.arguments)
-                        assert.equal(updated.mutation.arguments.comment_id, 123)
-                        assert.match(updated.mutation.arguments.body, /^# Plan\n[\s\S]*\n## Highlights\n/)
-                        assert.match(updated.mutation.arguments.body, /Updated scope/)
-                        assert.ok(updated.mutation.arguments.body.endsWith(planPublicationMarker(identity.token)))
-                        assert.deepEqual(f.saved().integrations[0].planComment, identity)
-                        assert.equal(fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8"), brief)
-                        const context = buildIntegrationContext(
-                            { cwd: f.root } as ExtensionContext,
-                            { operation: "artifactProjection", entityDir: f.directory },
-                            tools,
-                        )
-                        assert.equal(context.state, "enabled")
-                        if (context.state !== "enabled" || !context.projection || context.projection.mode === "none")
-                            assert.fail()
-                        assert.match(
-                            context.projection.rendering,
-                            /prepare_tracker_publication.*Preserve issue title\/description/,
-                        )
-                        assert.ok("planComment" in context.projection)
-                        assert.deepEqual(context.projection.planComment, identity)
-                        if (mode === "unversioned")
-                            assert.equal(
-                                cp
-                                    .execFileSync("git", ["check-ignore", f.file], { cwd: f.root, encoding: "utf8" })
-                                    .trim(),
-                                f.file,
-                            )
-                        f.read()
-                    } finally {
-                        f.dispose()
-                    }
-                })
+        for (const adopted of [false, true])
+            it(`uses one comment for ${kind}/${adopted ? "adopted" : "new"}`, async () => {
+                const f = fixture(kind, adopted)
+                try {
+                    const brief = fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8")
+                    const prepared = await f.prepare()
+                    assert.ok(prepared.state === "mutation-needed")
+                    assert.ok(typeof prepared.mutation.arguments.body === "string")
+                    assert.equal(prepared.mutation.tool, "mcp__github__add_issue_comment")
+                    assert.ok("issue_number" in prepared.mutation.arguments)
+                    assert.equal(prepared.mutation.arguments.issue_number, 42)
+                    const pending = f.saved().tracker.planComment
+                    assert.equal(pending.state, "pending")
+                    assert.ok(prepared.mutation.arguments.body.endsWith(planPublicationMarker(pending.token)))
+                    assert.doesNotMatch(prepared.mutation.arguments.body, /(?:GIG|TASK|EPIC)-|\.project\//)
+                    assert.match(
+                        prepared.mutation.arguments.body,
+                        /^# Plan\n\nKeep the request and show the plan\.\n\n## Highlights\n\n- One comment\.\n\n<details>\n<summary>Full plan<\/summary>/,
+                    )
+                    assert.equal("title" in prepared.mutation.arguments, false)
+                    await f.record({
+                        tool: prepared.mutation.tool,
+                        arguments: prepared.mutation.arguments,
+                        response: f.remote(prepared.mutation.arguments.body),
+                    })
+                    const identity = f.saved().tracker.planComment
+                    assert.equal(identity.state, "published")
+                    const updated = await f.prepare(source.replace("Update the plan.", "Updated scope."))
+                    assert.ok(updated.state === "mutation-needed")
+                    assert.ok(typeof updated.mutation.arguments.body === "string")
+                    assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
+                    assert.ok("comment_id" in updated.mutation.arguments)
+                    assert.equal(updated.mutation.arguments.comment_id, 123)
+                    assert.match(updated.mutation.arguments.body, /^# Plan\n[\s\S]*\n## Highlights\n/)
+                    assert.match(updated.mutation.arguments.body, /Updated scope/)
+                    assert.ok(updated.mutation.arguments.body.endsWith(planPublicationMarker(identity.token)))
+                    assert.deepEqual(f.saved().tracker.planComment, identity)
+                    assert.equal(fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8"), brief)
+                    const context = buildIntegrationContext(
+                        { cwd: f.root } as ExtensionContext,
+                        { operation: "artifactProjection", entityDir: f.directory },
+                        tools,
+                    )
+                    assert.equal(context.state, "enabled")
+
+                    assert.match(
+                        context.projection.rendering,
+                        /prepare_tracker_publication.*Preserve issue title\/description/,
+                    )
+                    assert.ok("planComment" in context.projection)
+                    assert.deepEqual(context.projection.planComment, identity)
+                    assert.equal(
+                        cp.execFileSync("git", ["check-ignore", f.file], { cwd: f.root, encoding: "utf8" }).trim(),
+                        f.file,
+                    )
+                    f.read()
+                } finally {
+                    f.dispose()
+                }
+            })
 
     it("publishes a synchronized parent Epic using its own comment state", async () => {
         const f = fixture("task")
         try {
             assert.ok(f.parentDirectory)
             const parentFile = path.join(f.root, f.parentDirectory, "metadata.json")
-            const parent = JSON.parse(fs.readFileSync(parentFile, "utf8"))
-            parent.authority = { kind: "tracker", provider: "github" }
-            parent.integrations = [
-                {
-                    role: "tracker",
-                    provider: "github",
-                    repository,
-                    state: "bound",
-                    external: { issueNumber: 41 },
-                    planComment: { state: "unpublished" },
-                },
-            ]
-            fs.writeFileSync(parentFile, JSON.stringify(parent))
+            assert.equal(JSON.parse(fs.readFileSync(parentFile, "utf8")).tracker.external.issueNumber, 41)
             const childBefore = f.saved()
             const prepared = await trackerPublication(
                 f.root,
@@ -419,7 +372,7 @@ describe("managed GitHub plan comments", () => {
         try {
             await assert.rejects(f.prepare(source, new Map()), /unavailable/)
             await assert.rejects(f.prepare("No overview"), /Overview/)
-            assert.deepEqual(f.saved().integrations[0].planComment, { state: "unpublished" })
+            assert.deepEqual(f.saved().tracker.planComment, { state: "unpublished" })
             const results = await Promise.all([f.prepare(), f.prepare()])
             assert.equal(results.filter((r) => r.state === "mutation-needed").length, 1)
             assert.equal(results.filter((r) => r.state === "recovery-required").length, 1)
@@ -447,17 +400,17 @@ describe("managed GitHub plan comments", () => {
                     f.page(envelope([], mode), 3, 1),
                 ]
                 assert.equal((await f.recover(pages)).state, "identified")
-                const identity = f.saved().integrations[0].planComment
+                const identity = f.saved().tracker.planComment
                 assert.equal(identity.id, 123)
                 const readback = await f.recover(pages)
                 assert.ok("body" in readback)
                 assert.equal(verifyMarkdownProjection(signed, readback.body as string).verified, true)
-                assert.deepEqual(f.saved().integrations[0].planComment, identity)
+                assert.deepEqual(f.saved().tracker.planComment, identity)
                 const absent = await f.recover([f.page([])])
                 assert.equal(absent.state, "blocked")
                 const conflict = await f.recover([f.page([f.remote(signed, 456)])])
                 assert.equal(conflict.state, "blocked")
-                assert.deepEqual(f.saved().integrations[0].planComment, identity)
+                assert.deepEqual(f.saved().tracker.planComment, identity)
             } finally {
                 f.dispose()
             }
@@ -505,23 +458,6 @@ describe("managed GitHub plan comments", () => {
                 await assert.rejects(f.record(invalid))
             assert.deepEqual(f.saved(), before)
             assert.equal((await f.prepare()).state, "recovery-required")
-        } finally {
-            f.dispose()
-        }
-    })
-
-    it("migrates only missing comment state and preserves the rest of the entity", () => {
-        const f = fixture()
-        try {
-            const before = f.saved()
-            const legacy = structuredClone(before)
-            delete legacy.integrations[0].planComment
-            fs.writeFileSync(f.file, JSON.stringify(legacy))
-            assert.throws(f.read, /MIGRATIONS/)
-            legacy.integrations[0].planComment = { state: "unpublished" }
-            fs.writeFileSync(f.file, JSON.stringify(legacy))
-            f.read()
-            assert.deepEqual(f.saved(), before)
         } finally {
             f.dispose()
         }

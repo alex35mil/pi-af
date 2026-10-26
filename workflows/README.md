@@ -6,8 +6,9 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 - **Task**: a Deliverable belonging to exactly one Epic.
 - **Gig**: a standalone Deliverable.
 - **Deliverable**: the shared Task/Gig lifecycle, with Feature, Bugfix, Refactor, Research, Audit, and Chore strategies.
-- **Tracker**: optional GitHub or Linear work tracking, including native lifecycle, Phase, and Priority.
-- **Forge**: optional GitHub pull requests, independent of the tracker.
+- **Tracker**: required GitHub or Linear work tracking. The tracker object (`#12`, `ENG-12`, or a Linear Project) is the entity's identity and holds native lifecycle, Phase, and Priority.
+- **Forge**: required GitHub pull requests. Every Deliverable ships through a merged PR.
+- **Artifacts**: plans, notes, and reviews live under `.project/.local/` and never enter Git.
 
 ## Commands
 
@@ -21,9 +22,9 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 /pr <GitHub PR URL or #NN>
 ```
 
-Only `/backlog` and `/todo` require a tracker. Prospective Tasks and queued Backlog/Todo objects do not receive workflow identity until explicitly initialized.
+New work creates the tracker object first; the local entity is named after it (`12-<slug>`, `ENG-12-<slug>`, or `<YYYYMMDD>-<slug>` for a Linear Epic, dated by the Project's creation). Prospective Tasks and queued Backlog/Todo objects get a local entity only when explicitly initialized.
 
-`/pr` reviews an existing contribution privately. It needs a configured GitHub forge, but no tracker or initialized entity.
+`/pr` reviews an existing contribution privately. It uses the configured GitHub forge and needs no initialized entity.
 
 - **Before checkout:** you get a 1–5 malicious-code safety score with evidence and limitations. Every score needs your explicit approval before anything is checked out.
 - **Checkout:** registered tools manage an independent nested checkout. The agent never reconstructs that Git work in Bash, and the parent repository stays untouched.
@@ -39,9 +40,8 @@ See [incoming PR handling](references/pr/incoming.md).
 
 Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help set up project workflows. Guided setup previews changes and asks for approval; it never stages files. It supports:
 
-- `versioned` or `unversioned` artifacts;
-- one branch format for every entity;
-- independent tracker/forge roles and official MCP registration;
+- one branch format for every entity: `number-title`, `username/number-title`, or Linear's own naming;
+- the tracker and forge, with official MCP registration;
 - read-only Linear workspace discovery;
 - separately approved GitHub Project/field provisioning and recovery;
 - optional Project Policies and accepted-artifact diff gates.
@@ -88,13 +88,13 @@ Canceled:    terminal unsuccessful status for queued or initialized work
 
 - Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Interim and final reviews, and your review of delivered work, use Self-Review.
 - Status stays In Progress through all of these local loops.
-- Phase shows as a GitHub Project field or a Linear label group in both artifact modes; without a tracker it stays in workflow metadata. See [Phase](references/phase.md).
+- Phase shows as a GitHub Project field or a Linear label group. See [Phase](references/phase.md).
 
 **Submitting and shipping:**
 
 - After final review passes, you review the work and decide whether to submit it. Approving an earlier draft or file write isn't submission approval.
 - A Deliverable may have several commits within its accepted scope. When the plan defines commit steps, each step is reviewed and then committed before the next.
-- Submitting and shipping are separate. Submission commits the work and opens or updates a PR when a forge is configured. An explicit request to ship merges, marks the work Done, and cleans up the local branch.
+- Submitting and shipping are separate. Submission commits the work and opens or updates a PR; work with no repository changes gets one empty commit so the PR can open. An explicit request to ship merges, marks the work Done, and cleans up the local branch.
 
 See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
@@ -102,9 +102,9 @@ See [Deliverable guidance](references/deliverable.md) for the full flow and [Epi
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
-- Record the approved routing intent before committing Epic planning, and deliver the plan and metadata together.
+- Record the approved routing intent at Epic plan acceptance; it stays local.
 - Selecting default doesn't prove delivery: every new or adopted default-target Task requires the planning work to be delivered first.
-- Delivery is checked by local ancestry or a verified merged GitHub PR, which also covers squash merges, along with repository, branch, revision, and versioned-plan checks.
+- Epic planning commits nothing, so an Epic branch with no commits ahead of its target counts as delivered. Otherwise delivery needs a verified merged GitHub PR, which also covers squash merges, along with repository, branch, and revision checks.
 - Changing the strategy affects future Tasks only.
 
  See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
@@ -128,7 +128,7 @@ Accepted plans and completion artifacts start with a concise `## Overview`, foll
 
 GitHub folds use `<details>`; Linear uses native `+++` sections. Nothing is summarized or dropped.
 
-- Unversioned disclosure approval covers visible and folded content alike.
+- Published text never points at files under `.project/.local/`, since readers can't open them.
 - Older documents are brought into this shape through normal review before publication; reads never rewrite completed artifacts.
 - Local tests check the generated Markdown, not live Linear rendering.
 

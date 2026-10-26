@@ -9,12 +9,11 @@ import { Value } from "typebox/value"
 import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
-import { EPIC_ROOT, PROJECT_ROOT, type DeliverableKind } from "../__lib/domain.js"
+import { EPIC_ROOT, GIG_ROOT, PROJECT_ROOT, type DeliverableKind } from "../__lib/domain.js"
 import {
-    assertEntityBranchReady,
+    entityLabel,
     LOCAL_DRAFT_FILE,
     LOCAL_REVIEWS_DIR,
-    LOCAL_STATUS_FILE,
     readEntityStatus,
     readPendingEntries,
     resolveEntityPath,
@@ -62,7 +61,7 @@ export const ReviewRequestSchema = Type.Union([
     Type.Object(
         {
             entity: Type.Literal("epic"),
-            entityDir: Type.String({ description: "Epic directory under .project/epics/" }),
+            entityDir: Type.String({ description: `Epic directory under ${EPIC_ROOT}/` }),
             phase: Type.Enum(["plan"], { type: "string" }),
             ...optionalReviewerProperties,
         },
@@ -81,7 +80,7 @@ export const ReviewRequestSchema = Type.Union([
     Type.Object(
         {
             entity: Type.Literal("gig"),
-            entityDir: Type.String({ description: "Gig directory under .project/gigs/" }),
+            entityDir: Type.String({ description: `Gig directory under ${GIG_ROOT}/` }),
             phase: StringEnum(["plan", "interim", "final"] as const),
             subject: Type.Optional(Type.String({ description: "Interim review subject/question" })),
             ...optionalReviewerProperties,
@@ -105,7 +104,7 @@ type RecordReviewResponseParams = Static<typeof RecordReviewResponseSchema>
 
 const optionalPresentationProperties = {
     snapshot: Type.Optional(
-        Type.String({ description: "Optional reviewed plan snapshot path, e.g. .local/reviews/plan-002/candidate.md" }),
+        Type.String({ description: "Optional reviewed plan snapshot path, e.g. reviews/plan-002/candidate.md" }),
     ),
 }
 
@@ -113,7 +112,7 @@ export const PreparePlanPresentationSchema = Type.Union([
     Type.Object(
         {
             entity: Type.Literal("epic"),
-            entityDir: Type.String({ description: "Epic directory under .project/epics/" }),
+            entityDir: Type.String({ description: `Epic directory under ${EPIC_ROOT}/` }),
             ...optionalPresentationProperties,
         },
         { additionalProperties: false },
@@ -129,7 +128,7 @@ export const PreparePlanPresentationSchema = Type.Union([
     Type.Object(
         {
             entity: Type.Literal("gig"),
-            entityDir: Type.String({ description: "Gig directory under .project/gigs/" }),
+            entityDir: Type.String({ description: `Gig directory under ${GIG_ROOT}/` }),
             ...optionalPresentationProperties,
         },
         { additionalProperties: false },
@@ -236,7 +235,7 @@ export default function (pi: ExtensionAPI) {
             const input: RecordReviewResponseParams = Value.Parse(RecordReviewResponseSchema, params)
             assertArtifactPersistencePrepared(ctx.cwd)
             const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
-            assertEntityBranchReady(readEntityStatus(entityDir))
+            readEntityStatus(entityDir)
 
             const roundName = `${input.phase}-${input.round.toString().padStart(3, "0")}`
             const roundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, roundName)
@@ -303,11 +302,10 @@ function resolveEntityDir(cwd: string, raw: string): string {
 
 export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
     const status = readEntityStatus(directory)
-    assertEntityBranchReady(status)
     const requiredPhase = phase === "plan" ? "planning" : "selfReview"
-    if (status.phase !== requiredPhase || ("state" in status && status.state !== "inProgress")) {
+    if (status.phase !== requiredPhase) {
         throw new Error(
-            `${status.id} ${phase} review requires In Progress and Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
+            `${entityLabel(status)} ${phase} review requires Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
         )
     }
 }
@@ -437,7 +435,7 @@ function resolvePlanSnapshotPath(cwd: string, entityDir: string, raw: string): s
     const resolved = path.resolve(entityDir, raw)
     const reviewsDir = path.resolve(entityDir, LOCAL_REVIEWS_DIR)
     if (!resolved.startsWith(reviewsDir + path.sep)) {
-        throw new Error("snapshot must be inside the entity .local/reviews directory")
+        throw new Error("snapshot must be inside the entity reviews directory")
     }
     if (!fs.existsSync(resolved)) {
         throw new Error(`Plan snapshot does not exist: ${path.relative(cwd, resolved)}`)
@@ -450,7 +448,7 @@ export async function requireApprovedPlanSnapshot(entityDir: string, snapshotPat
     const roundDir = path.dirname(resolved)
     const reviewsDir = path.resolve(entityDir, LOCAL_REVIEWS_DIR)
     if (path.dirname(roundDir) !== reviewsDir || path.basename(resolved) !== "candidate.md") {
-        throw new Error("snapshot must be .local/reviews/plan-NNN/candidate.md")
+        throw new Error("snapshot must be reviews/plan-NNN/candidate.md")
     }
     const match = /^plan-(\d{3})$/.exec(path.basename(roundDir))
     if (!match) throw new Error("snapshot must belong to a numbered plan review round")
@@ -540,7 +538,6 @@ export async function buildDeliverableReviewPrompt(
     const plan = await readOptional(planPath)
     const brief = await readOptional(path.join(gigDir, "brief.md"))
     const metadata = await readOptional(path.join(gigDir, "metadata.json"))
-    const localStatus = await readOptional(path.join(gigDir, LOCAL_STATUS_FILE))
     const entityStatus = readEntityStatus(gigDir)
     if (entityStatus.entity === "epic") throw new Error(`expected Deliverable status in ${gigDir}`)
     const report = await readOptional(path.join(gigDir, "report.md"))
@@ -549,7 +546,7 @@ export async function buildDeliverableReviewPrompt(
         const pendingEntries = readPendingEntries(gigDir)
         if (pendingEntries.length > 0) {
             throw new Error(
-                `${entityStatus.id} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
+                `${entityLabel(entityStatus)} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
             )
         }
         if (deliverableKindRequiresReport(entityStatus.kind)) {
@@ -614,11 +611,6 @@ export async function buildDeliverableReviewPrompt(
         "",
         fence(truncate(metadata || "(missing)", MAX_EMBEDDED_FILE_BYTES), "json"),
         "",
-        localStatus
-            ? ["# .local/status.md", "", fence(truncate(localStatus, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join(
-                  "\n",
-              )
-            : "",
         report ? ["# report.md", "", fence(truncate(report, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
         result ? ["# result.md", "", fence(truncate(result, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
         parentEpic?.content ?? "",

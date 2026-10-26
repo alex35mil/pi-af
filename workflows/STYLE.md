@@ -14,10 +14,10 @@ This guide is for people and agents editing `workflows/skills/` and `workflows/r
 
 - Use imperative steps, one rule per bullet. Keep a step under about 40 words.
 - State the positive rule first, then its exceptions.
-- Use tables for state machines and for choices that vary along one axis (kind, provider, artifact mode).
+- Use tables for state machines and for choices that vary along one axis (kind, provider, entity).
 - Don't use slash lists ("create/recover/resubmit"). Write the words out, or split the rule.
 - Use "exact" only where it changes behavior, such as an exact SHA or exact arguments.
-- Avoid chains of qualifiers ("immutable versioned repository/head/target intent"). Name the thing once, then refer to it.
+- Avoid chains of qualifiers ("immutable saved repository/head/target intent"). Name the thing once, then refer to it.
 - Prefer one short paragraph over a long one. When a paragraph mixes authorization, procedure, and failure handling, split it into those three parts.
 
 ## Changing instructions

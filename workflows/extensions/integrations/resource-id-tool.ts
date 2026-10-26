@@ -5,7 +5,7 @@ import { workflowTools } from "../__lib/tools.js"
 
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { OperationResourceIdsMemo } from "./resource-ids.js"
-import { beginProviderCreation, recordProviderCreation } from "./creation.js"
+import { beginPullRequestCreation, recordPullRequestCreation } from "./creation.js"
 import {
     invalidateStaleResourceIds,
     recordResourceIdsEvidence,
@@ -27,14 +27,13 @@ export const EvidenceSchema = Type.Object(
     },
     { additionalProperties: false },
 )
-const creationCommon = {
-    entityDir: common.entityDir,
-    role: Type.Enum(["tracker", "forge"], { type: "string" }),
-}
 export const ResourceIdsToolSchema = Type.Union([
-    Type.Object({ ...creationCommon, action: Type.Literal("beginCreation") }, { additionalProperties: false }),
     Type.Object(
-        { ...creationCommon, action: Type.Literal("recordCreation"), evidence: EvidenceSchema },
+        { entityDir: common.entityDir, action: Type.Literal("beginCreation") },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        { entityDir: common.entityDir, action: Type.Literal("recordCreation"), evidence: EvidenceSchema },
         { additionalProperties: false },
     ),
     Type.Object(
@@ -83,15 +82,9 @@ export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIds
                 })
                 const entityDir = input.entityDir.replace(/^@/, "")
                 const result = await (async () => {
-                    if (input.action === "beginCreation") return beginProviderCreation(ctx.cwd, entityDir, input.role)
+                    if (input.action === "beginCreation") return beginPullRequestCreation(ctx.cwd, entityDir)
                     if (input.action === "recordCreation") {
-                        const recorded = await recordProviderCreation(
-                            ctx.cwd,
-                            entityDir,
-                            input.role,
-                            input.evidence,
-                            tools,
-                        )
+                        const recorded = await recordPullRequestCreation(ctx.cwd, entityDir, input.evidence, tools)
                         for (const ids of recorded.resourceIds) memo.record(ids)
                         return recorded
                     }

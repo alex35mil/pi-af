@@ -1,84 +1,7 @@
-import * as project from "../../../../extensions/__lib/project.js"
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
-import { type EntityIdentity, qualifyId } from "../../__lib/domain.js"
-import { type EntityStatus, readEntityStatus, resolveEntityDirectory, writeEntityStatus } from "../../__lib/entity.js"
-import * as Git from "../../__lib/git.js"
-import { assertArtifactPersistencePrepared } from "../../__lib/project-config.js"
-import type { EntityInitialization } from "../../init/entity.js"
-import { loadIntegrationConfig, type LinearTracker } from "../config.js"
-import { registeredCredentialEnvironment } from "../mcp.js"
-
 const LinearApiRecordSchema = Type.Record(Type.String(), Type.Unknown())
-
-export interface FinalizeLinearBranchOptions {
-    cwd: string
-    afterProvisioningCheckpoint?: () => void
-    afterBranchCreated?: () => void
-}
-
-export function finalizeLinearBranch(rawEntityDirectory: string, options: FinalizeLinearBranchOptions): EntityStatus {
-    const root = project.resolveRootDir(options.cwd)
-    Git.run(root, ["rev-parse", "--show-toplevel"])
-    assertArtifactPersistencePrepared(root)
-    const entityDirectory = resolveEntityDirectory(root, options.cwd, rawEntityDirectory)
-    let status = readEntityStatus(entityDirectory)
-    if (status.entity === "epic") throw new Error("Linear Projects do not supply workflow branch names")
-    const tracker = status.integrations.find(
-        (integration) =>
-            integration.role === "tracker" &&
-            integration.provider === "linear" &&
-            integration.resource !== "project" &&
-            (integration.state === "bound" || integration.state === "bound-pending"),
-    )
-    if (!tracker) throw new Error("branch finalization requires a bound Linear issue tracker record")
-
-    if (status.branch.state === "ready") return status
-
-    if (status.branch.state === "tracker-pending") {
-        throw new Error(
-            "save the exact Linear issue branch name in the tracker-named branch contract before finalization",
-        )
-    }
-    if (status.branch.state === "tracker-named") {
-        const name = status.branch.name
-        Git.run(root, ["check-ref-format", "--branch", name])
-        Git.run(root, ["show-ref", "--verify", `refs/heads/${status.branch.start}`])
-        if (Git.succeeds(root, ["show-ref", "--verify", `refs/heads/${name}`])) {
-            throw new Error(`workflow branch already exists: ${name}`)
-        }
-        const provisioning = {
-            state: "provisioning" as const,
-            provider: "linear" as const,
-            name,
-            start: status.branch.start,
-            target: status.branch.target,
-            startCommit: Git.run(root, ["rev-parse", `refs/heads/${status.branch.start}`]),
-        }
-        writeEntityStatus(entityDirectory, { ...status, branch: provisioning })
-        status = readEntityStatus(entityDirectory)
-        options.afterProvisioningCheckpoint?.()
-    }
-
-    if (status.branch.state !== "provisioning") throw new Error("branch is not ready for Linear provisioning")
-    const existingCommit = Git.tryRun(root, ["rev-parse", `refs/heads/${status.branch.name}`])
-    if (existingCommit && existingCommit !== status.branch.startCommit) {
-        throw new Error(`workflow branch collision at a different commit: ${status.branch.name}`)
-    }
-    if (!existingCommit) Git.run(root, ["branch", status.branch.name, status.branch.startCommit])
-    options.afterBranchCreated?.()
-
-    const ready = {
-        state: "ready" as const,
-        name: status.branch.name,
-        start: status.branch.start,
-        target: status.branch.target,
-        source: "tracker" as const,
-    }
-    writeEntityStatus(entityDirectory, { ...status, branch: ready })
-    return readEntityStatus(entityDirectory)
-}
 
 const EnvironmentNameSchema = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })
 
@@ -88,18 +11,6 @@ export const LinearWorkspaceInspectionToolSchema = Type.Object(
 )
 
 export type LinearWorkspaceInspectionInput = Static<typeof LinearWorkspaceInspectionToolSchema>
-
-export const LINEAR_BRANCH_TEMPLATES = [
-    "{username}/{issueIdentifier}-{issueTitle}",
-    "{username}/{issueIdentifier}",
-    "{username}-{issueIdentifier}-{issueTitle}",
-    "{username}-{issueIdentifier}",
-    "{issueIdentifier}-{issueTitle}",
-    "{issueTitle}-{issueIdentifier}",
-    "{issueIdentifier}",
-] as const
-export type LinearBranchTemplate = (typeof LINEAR_BRANCH_TEMPLATES)[number]
-const LINEAR_BRANCH_TEMPLATE_SET = new Set<string>(LINEAR_BRANCH_TEMPLATES)
 
 interface LinearTeam {
     id: string
@@ -136,14 +47,6 @@ export interface LinearWorkspaceInspection {
     }
     teams: Array<LinearTeam & { issueStatuses: LinearStatus[] }>
     projectStatuses: LinearProjectStatus[]
-    branchFormat:
-        | { state: "supported"; template: LinearBranchTemplate }
-        | { state: "unsupported"; template: string | null }
-}
-
-export interface LinearTrackerBranchContext {
-    template: LinearBranchTemplate
-    username: string
 }
 
 export interface LinearWorkspaceInspectionOptions {
@@ -178,60 +81,7 @@ export async function inspectLinearWorkspace(
             issueStatuses: sortStatuses(statusesByTeam.get(team.id) ?? []),
         })),
         projectStatuses: sortProjectStatuses(workspace.projectStatuses),
-        branchFormat: resolveLinearBranchFormat(workspace.gitBranchFormat),
     }
-}
-
-export async function inspectLinearTrackerBranch(
-    rawInput: unknown,
-    options: LinearWorkspaceInspectionOptions = {},
-): Promise<LinearTrackerBranchContext> {
-    const input = Value.Parse(LinearWorkspaceInspectionToolSchema, rawInput)
-    const token = (options.env ?? process.env)[input.credentialEnv]
-    if (!token) throw new Error(`environment variable ${input.credentialEnv} is not set`)
-
-    const settings = await new LinearClient(options.fetch ?? fetch, token, options.signal).getTrackerBranchSettings()
-    const branchFormat = resolveLinearBranchFormat(settings.gitBranchFormat)
-    if (branchFormat.state === "unsupported") {
-        throw new Error(
-            `Linear tracker branch format is unsupported: ${branchFormat.template === null ? "null" : JSON.stringify(branchFormat.template)}`,
-        )
-    }
-    return {
-        template: branchFormat.template,
-        username: settings.viewer.username,
-    }
-}
-
-export async function resolveLinearTrackerBranchRendererForInitialization(
-    cwd: string,
-    projectTrusted: boolean,
-    input: EntityInitialization,
-    signal?: AbortSignal,
-    options: Omit<LinearWorkspaceInspectionOptions, "signal"> = {},
-) {
-    if (input.entity !== "epic") return undefined
-    const projectConfig = assertArtifactPersistencePrepared(cwd)
-    if (projectConfig.branches.format !== "tracker") return undefined
-
-    const loaded = loadIntegrationConfig(cwd)
-    if (loaded.state !== "enabled" || loaded.config.tracker?.provider !== "linear") return undefined
-    const tracker = loaded.config.tracker
-    const credentialEnv = registeredCredentialEnvironment(cwd, tracker.mcpServer, "linear", projectTrusted)
-    const context = await inspectLinearTrackerBranch({ credentialEnv }, { ...options, signal })
-    return (identity: EntityIdentity) => formatLinearTrackerBranch(identity, context)
-}
-
-export function resolveLinearBranchFormat(template: string | null): LinearWorkspaceInspection["branchFormat"] {
-    if (template === null || !LINEAR_BRANCH_TEMPLATE_SET.has(template)) return { state: "unsupported", template }
-    return { state: "supported", template: template as LinearBranchTemplate }
-}
-
-export function formatLinearTrackerBranch(identity: EntityIdentity, context: LinearTrackerBranchContext): string {
-    return context.template
-        .replaceAll("{username}", context.username)
-        .replaceAll("{issueIdentifier}", qualifyId(identity.entity, identity.rawId).toLowerCase())
-        .replaceAll("{issueTitle}", identity.slug)
 }
 
 class LinearClient {
@@ -250,7 +100,6 @@ class LinearClient {
         workspace: LinearWorkspaceInspection["workspace"]
         viewer: LinearWorkspaceInspection["viewer"]
         projectStatuses: LinearProjectStatus[]
-        gitBranchFormat: string | null
     }> {
         const data = await this.graphql(`query WorkspaceSetup {
             viewer { id name displayName }
@@ -258,7 +107,6 @@ class LinearClient {
                 id
                 name
                 urlKey
-                gitBranchFormat
                 projectStatuses {
                     id
                     name
@@ -284,28 +132,6 @@ class LinearClient {
                     team: status.team === null ? null : teamFields(record(status.team, "project status team")),
                 }
             }),
-            gitBranchFormat:
-                organization.gitBranchFormat === null
-                    ? null
-                    : text(organization.gitBranchFormat, "organization gitBranchFormat"),
-        }
-    }
-
-    async getTrackerBranchSettings(): Promise<{
-        viewer: LinearWorkspaceInspection["viewer"]
-        gitBranchFormat: string | null
-    }> {
-        const data = await this.graphql(`query TrackerBranchSettings {
-            viewer { id name displayName }
-            organization { gitBranchFormat }
-        }`)
-        const organization = record(data.organization, "Linear organization")
-        return {
-            viewer: viewerFields(data.viewer),
-            gitBranchFormat:
-                organization.gitBranchFormat === null
-                    ? null
-                    : text(organization.gitBranchFormat, "organization gitBranchFormat"),
         }
     }
 

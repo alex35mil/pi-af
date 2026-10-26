@@ -19,8 +19,8 @@ import {
     resolveCachedResourceIds,
 } from "../workflows/extensions/integrations/resource-ids.ts"
 
-const entityId = "GIG-01M3S2H283"
-const common = { entityId, mcpServer: "github" }
+const entity = "7-example"
+const common = { entity, mcpServer: "github" }
 const repository = { owner: "alex", repo: "example" }
 const issue = {
     scope: { ...common, kind: "github-issue" as const, repository, issueNumber: 23 },
@@ -42,7 +42,7 @@ const pullRequest = {
 }
 const linearProject = {
     scope: {
-        entityId,
+        entity,
         mcpServer: "linear",
         kind: "linear-project" as const,
         team: "Engineering",
@@ -52,7 +52,7 @@ const linearProject = {
 }
 const linearIssue = {
     scope: {
-        entityId,
+        entity,
         mcpServer: "linear",
         kind: "linear-issue" as const,
         team: "Engineering",
@@ -95,8 +95,8 @@ describe("local resource IDs storage", () => {
                 assert.deepEqual(await resolveCachedResourceIds(directory, ids.scope), ids)
             }
             const returned = await resolveCachedResourceIds(directory, issue.scope)
-            returned!.scope.entityId = "changed"
-            assert.equal(readResourceIdsCache(directory)!.entityId, entityId)
+            returned!.scope.entity = "changed"
+            assert.equal(readResourceIdsCache(directory)!.entity, entity)
         } finally {
             cleanup()
         }
@@ -153,10 +153,10 @@ describe("local resource IDs storage", () => {
         const { directory, cleanup } = fixture()
         try {
             await recordResourceIds(directory, [issue])
-            const scope = { ...issue.scope, entityId: "GIG-other" }
+            const scope = { ...issue.scope, entity: "8-other" }
             assert.equal(await resolveCachedResourceIds(directory, scope), undefined)
             await recordResourceIds(directory, [{ ...issue, scope }])
-            assert.equal(readResourceIdsCache(directory)!.entityId, "GIG-other")
+            assert.equal(readResourceIdsCache(directory)!.entity, "8-other")
             assert.equal(await resolveCachedResourceIds(directory, issue.scope), undefined)
         } finally {
             cleanup()
@@ -181,11 +181,11 @@ describe("local resource IDs storage", () => {
         try {
             const file = path.join(directory, RESOURCE_IDS_CACHE_FILE)
             for (const raw of [
-                { entityId, resourceIds: [issue], status: "Done" },
-                { entityId, resourceIds: [{ ...issue, value: { ...issue.value, body: "snapshot" } }] },
-                { entityId, resourceIds: [issue, issue] },
-                { entityId: "wrong", resourceIds: [issue] },
-                { entityId, resourceIds: [{ ...issue, scope: { ...issue.scope, priority: "High" } }] },
+                { entity, resourceIds: [issue], status: "Done" },
+                { entity, resourceIds: [{ ...issue, value: { ...issue.value, body: "snapshot" } }] },
+                { entity, resourceIds: [issue, issue] },
+                { entity: "wrong", resourceIds: [issue] },
+                { entity, resourceIds: [{ ...issue, scope: { ...issue.scope, priority: "High" } }] },
             ]) {
                 writeRaw(directory, raw)
                 const before = fs.readFileSync(file, "utf-8")
@@ -200,34 +200,28 @@ describe("local resource IDs storage", () => {
         }
     })
 
-    it("keeps immutable metadata and Git status unchanged in both artifact modes", async () => {
-        for (const mode of ["versioned", "unversioned"]) {
-            const { directory: root, cleanup } = fixture()
-            try {
-                const git = (args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf-8" }).trim()
-                git(["init", "-q"])
-                const directory = path.join(root, ".project/gigs/work")
-                fs.mkdirSync(directory, { recursive: true })
-                const metadata = path.join(directory, "metadata.json")
-                fs.writeFileSync(metadata, "immutable work identity\n")
-                if (mode === "versioned") {
-                    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
-                    git(["add", ".gitignore", ".project"])
-                } else {
-                    fs.appendFileSync(path.join(root, ".git/info/exclude"), "\n/.project/\n")
-                }
-                const status = git(["status", "--short"])
-                const bytes = fs.readFileSync(metadata)
-                await recordResourceIds(directory, [issue, projectItem, pullRequest])
-                assert.equal(git(["status", "--short"]), status)
-                assert.deepEqual(fs.readFileSync(metadata), bytes)
-                assert.equal(
-                    git(["check-ignore", "--", path.relative(root, path.join(directory, RESOURCE_IDS_CACHE_FILE))]),
-                    ".project/gigs/work/.local/metadata.json",
-                )
-            } finally {
-                cleanup()
-            }
+    it("keeps immutable metadata and Git status unchanged", async () => {
+        const { directory: root, cleanup } = fixture()
+        try {
+            const git = (args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf-8" }).trim()
+            git(["init", "-q"])
+            const directory = path.join(root, ".project/.local/gigs/work")
+            fs.mkdirSync(directory, { recursive: true })
+            const metadata = path.join(directory, "metadata.json")
+            fs.writeFileSync(metadata, "immutable work identity\n")
+            fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
+            git(["add", ".gitignore"])
+            const status = git(["status", "--short"])
+            const bytes = fs.readFileSync(metadata)
+            await recordResourceIds(directory, [issue, projectItem, pullRequest])
+            assert.equal(git(["status", "--short"]), status)
+            assert.deepEqual(fs.readFileSync(metadata), bytes)
+            assert.equal(
+                git(["check-ignore", "--", path.relative(root, path.join(directory, RESOURCE_IDS_CACHE_FILE))]),
+                ".project/.local/gigs/work/resource-ids.json",
+            )
+        } finally {
+            cleanup()
         }
     })
 

@@ -9,6 +9,7 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import type { IncomingProjectContextInput } from "../workflows/extensions/integrations/forge/github/incoming-pr-project.ts"
 
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("forge", "board")
@@ -112,19 +113,16 @@ function reconciled(status: string | null = "Backlog") {
         attempt: { tool, arguments: args },
     }
 }
-function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
+function fixture() {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pr-project-")))
     const git = (...args: string[]) =>
         cp.execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim()
     git("init", "-q", "-b", "main")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts, branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const config = {
         forge: { provider: "github", mcpServer: "forge", repository },
         tracker: {
@@ -152,7 +150,6 @@ function fixture(artifacts: "versioned" | "unversioned" = "versioned") {
                     values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                 },
                 priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
-                internalId: { scope: "project", field: "Internal ID" },
             },
         },
     }
@@ -181,74 +178,72 @@ function mutation(decision: ReturnType<ReturnType<typeof fixture>["plan"]>) {
 }
 
 describe("maintainer-controlled incoming PR Project", () => {
-    for (const mode of ["versioned", "unversioned"] as const)
-        it(`adds actual ${mode} PR membership and applies the explicitly selected initial status`, () => {
-            const f = fixture(mode)
-            try {
-                for (const choice of ["backlog", "todo"]) {
-                    const first = f.plan({ action: "intake", choice, membership: absent() })
-                    assert.deepEqual(mutation(first), {
-                        tool: "mcp__board__projects_write",
-                        arguments: {
-                            ...address,
-                            method: "add_project_item",
-                            item_owner: "upstream",
-                            item_repo: "app",
-                            item_type: "pull_request",
-                            pull_request_number: 12,
-                        },
-                    })
-                }
-                const initialized = f.plan({ action: "intake", choice: "todo", membership: added() })
-                assert.deepEqual(mutation(initialized).arguments, {
+    it(`adds actual PR membership and applies the explicitly selected initial status`, () => {
+        const f = fixture()
+        try {
+            for (const choice of ["backlog", "todo"]) {
+                const first = f.plan({ action: "intake", choice, membership: absent() })
+                assert.deepEqual(mutation(first), {
+                    tool: "mcp__board__projects_write",
+                    arguments: {
+                        ...address,
+                        method: "add_project_item",
+                        item_owner: "upstream",
+                        item_repo: "app",
+                        item_type: "pull_request",
+                        pull_request_number: 12,
+                    },
+                })
+            }
+            const initialized = f.plan({ action: "intake", choice: "todo", membership: added() })
+            assert.deepEqual(mutation(initialized).arguments, {
+                ...address,
+                method: "update_project_item",
+                item_id: 99,
+                updated_field: { name: "Status", value: "Todo" },
+            })
+            assert.equal(fs.existsSync(path.join(f.root, ".project/.local/gigs")), false)
+        } finally {
+            f.close()
+        }
+    })
+    it(`finishes Todo intake after the add response is lost without another add`, () => {
+        const f = fixture()
+        try {
+            const attempt = mutation(f.plan({ action: "intake", choice: "todo", membership: absent() }))
+            const server = { adds: 0, item: null as ReturnType<typeof present> | null }
+            assert.throws(() => {
+                server.adds++
+                server.item = present("Backlog")
+                throw new Error("Connection lost after server applied the add")
+            }, /Connection lost/)
+            assert.ok(server.item)
+            const membership = { ...server.item, state: "reconciled", attempt }
+            assert.equal(Object.hasOwn(attempt, "response"), false)
+            const next = f.plan({ action: "intake", choice: "todo", membership })
+            assert.deepEqual(mutation(next), {
+                tool: "mcp__board__projects_write",
+                arguments: {
                     ...address,
                     method: "update_project_item",
                     item_id: 99,
                     updated_field: { name: "Status", value: "Todo" },
-                })
-                assert.equal(fs.existsSync(path.join(f.root, ".project/gigs")), false)
-            } finally {
-                f.close()
-            }
-        })
-    for (const mode of ["versioned", "unversioned"] as const)
-        it(`finishes ${mode} Todo intake after the add response is lost without another add`, () => {
-            const f = fixture(mode)
-            try {
-                const attempt = mutation(f.plan({ action: "intake", choice: "todo", membership: absent() }))
-                const server = { adds: 0, item: null as ReturnType<typeof present> | null }
-                assert.throws(() => {
-                    server.adds++
-                    server.item = present("Backlog")
-                    throw new Error("Connection lost after server applied the add")
-                }, /Connection lost/)
-                assert.ok(server.item)
-                const membership = { ...server.item, state: "reconciled", attempt }
-                assert.equal(Object.hasOwn(attempt, "response"), false)
-                const next = f.plan({ action: "intake", choice: "todo", membership })
-                assert.deepEqual(mutation(next), {
-                    tool: "mcp__board__projects_write",
-                    arguments: {
-                        ...address,
-                        method: "update_project_item",
-                        item_id: 99,
-                        updated_field: { name: "Status", value: "Todo" },
-                    },
-                })
-                server.item = present("Todo")
-                assert.deepEqual(
-                    f.plan({
-                        action: "intake",
-                        choice: "todo",
-                        membership: { ...membership, ...server.item, state: "reconciled" },
-                    }),
-                    { state: "unchanged", status: "Todo" },
-                )
-                assert.equal(server.adds, 1)
-            } finally {
-                f.close()
-            }
-        })
+                },
+            })
+            server.item = present("Todo")
+            assert.deepEqual(
+                f.plan({
+                    action: "intake",
+                    choice: "todo",
+                    membership: { ...membership, ...server.item, state: "reconciled" },
+                }),
+                { state: "unchanged", status: "Todo" },
+            )
+            assert.equal(server.adds, 1)
+        } finally {
+            f.close()
+        }
+    })
     it("uses native MCP replies across PR, field, membership, creation, and absence evidence", () => {
         const f = fixture()
         const native = (evidence: { tool: string; arguments: object; response: unknown }) => ({
@@ -505,7 +500,10 @@ describe("maintainer-controlled incoming PR Project", () => {
             f.plan()
             assert.equal(f.git("status", "--porcelain"), before)
             assert.deepEqual(fs.readFileSync(path.join(f.root, ".git/index")), index)
-            fs.writeFileSync(path.join(f.root, ".project/integrations.json"), JSON.stringify({ forge: f.config.forge }))
+            fs.writeFileSync(
+                path.join(f.root, ".project/integrations.json"),
+                JSON.stringify({ tracker: minimalTracker(), forge: f.config.forge }),
+            )
             assert.equal(f.plan().state, "blocked")
             const context = buildIntegrationContext(
                 { cwd: f.root } as never,

@@ -12,10 +12,11 @@ import type { IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 type Kind = "clean" | "conflict" | "multiple" | "merged" | "alreadyApplied" | "customDriver" | "literalPath"
-function fixture(mode: "versioned" | "unversioned" = "versioned", kind: Kind = "clean") {
+function fixture(kind: Kind = "clean") {
     const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "incoming-rebase-")))
     const root = path.join(temp, "parent")
     const source = path.join(temp, "source")
@@ -42,17 +43,17 @@ function fixture(mode: "versioned" | "unversioned" = "versioned", kind: Kind = "
     git(root, "config", "--global", "user.name", "Fixture")
     git(root, "config", "--global", "user.email", "fixture@example.invalid")
     git(root, "init", "-b", "main")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.writeFileSync(path.join(root, "README.md"), "parent\n")
     git(root, "add", ".")
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts: mode, branches: { format: "identifier" } }),
+        path.join(root, ".project/integrations.json"),
+        JSON.stringify({ tracker: minimalTracker(), forge }),
     )
-    fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ forge }))
     prepareArtifactPersistence(root)
     fs.writeFileSync(path.join(root, "README.md"), "parent staged\n")
     git(root, "add", "README.md")
@@ -280,49 +281,48 @@ process.exit(result.status ?? 1);
         }
     })
 
-    for (const mode of ["versioned", "unversioned"] as const) {
-        it(`recovers a saved ${mode} HTTPS-failed result using SSH and its original lease`, async () => {
-            const f = fixture(mode)
-            const previousPath = process.env.PATH
-            try {
-                const headRef = "feature/visible-agent-status"
-                const ref = `refs/heads/${headRef}`
-                f.git(f.forkRemote, "update-ref", ref, f.head)
-                f.git(f.forkRemote, "update-ref", "-d", "refs/heads/main")
-                f.evidence.response.head.ref = headRef
-                await f.ready()
-                await f.call("observeTarget")
-                // Construct the existing completed-but-unpublished fixture, not another
-                // recovery route: only publishRebase below exercises the tool under test.
-                f.git(f.checkout, "fetch", f.baseRemote, f.target)
-                f.git(f.checkout, "rebase", f.target)
-                const resultSha = f.git(f.checkout, "rev-parse", "HEAD")
-                const saved = f.record()
-                delete saved.publishedRebase
-                saved.phase = "rebased"
-                saved.rebase = {
-                    sourceSha: f.head,
-                    targetSha: f.target,
-                    leaseSha: f.head,
-                    resultSha,
-                    publication: { kind: "rejected", observedHead: f.head },
-                }
-                saved.messages = ["fatal: could not read Username for 'https://github.com': terminal prompts disabled"]
-                fs.writeFileSync(path.join(path.dirname(f.checkout), "checkout.json"), JSON.stringify(saved))
-                const before = f.nested()
-                const config = fs.readFileSync(path.join(f.checkout, ".git/config"))
-                const global = fs.readFileSync(f.global)
-                const files = ["file.txt", "other.txt", "upstream.txt"].map((file) =>
-                    fs.readFileSync(path.join(f.checkout, file)),
-                )
-                const parent = f.parent()
-                const realGit = cp.execFileSync("which", ["git"], { encoding: "utf-8" }).trim()
-                const bin = path.join(f.temp, "recovery-bin")
-                const log = path.join(f.temp, "recovery-arguments.jsonl")
-                fs.mkdirSync(bin)
-                fs.writeFileSync(
-                    path.join(bin, "git"),
-                    `#!${process.execPath}
+    it(`recovers a saved HTTPS-failed result using SSH and its original lease`, async () => {
+        const f = fixture()
+        const previousPath = process.env.PATH
+        try {
+            const headRef = "feature/visible-agent-status"
+            const ref = `refs/heads/${headRef}`
+            f.git(f.forkRemote, "update-ref", ref, f.head)
+            f.git(f.forkRemote, "update-ref", "-d", "refs/heads/main")
+            f.evidence.response.head.ref = headRef
+            await f.ready()
+            await f.call("observeTarget")
+            // Construct the existing completed-but-unpublished fixture, not another
+            // recovery route: only publishRebase below exercises the tool under test.
+            f.git(f.checkout, "fetch", f.baseRemote, f.target)
+            f.git(f.checkout, "rebase", f.target)
+            const resultSha = f.git(f.checkout, "rev-parse", "HEAD")
+            const saved = f.record()
+            delete saved.publishedRebase
+            saved.phase = "rebased"
+            saved.rebase = {
+                sourceSha: f.head,
+                targetSha: f.target,
+                leaseSha: f.head,
+                resultSha,
+                publication: { kind: "rejected", observedHead: f.head },
+            }
+            saved.messages = ["fatal: could not read Username for 'https://github.com': terminal prompts disabled"]
+            fs.writeFileSync(path.join(path.dirname(f.checkout), "checkout.json"), JSON.stringify(saved))
+            const before = f.nested()
+            const config = fs.readFileSync(path.join(f.checkout, ".git/config"))
+            const global = fs.readFileSync(f.global)
+            const files = ["file.txt", "other.txt", "upstream.txt"].map((file) =>
+                fs.readFileSync(path.join(f.checkout, file)),
+            )
+            const parent = f.parent()
+            const realGit = cp.execFileSync("which", ["git"], { encoding: "utf-8" }).trim()
+            const bin = path.join(f.temp, "recovery-bin")
+            const log = path.join(f.temp, "recovery-arguments.jsonl")
+            fs.mkdirSync(bin)
+            fs.writeFileSync(
+                path.join(bin, "git"),
+                `#!${process.execPath}
 const cp = require('node:child_process');
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -331,131 +331,128 @@ if (args.some(arg => ['init', 'fetch', 'checkout', 'reset', 'rebase'].includes(a
 const result = cp.spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit', env: process.env });
 process.exit(result.status ?? 1);
 `,
-                    { mode: 0o700 },
-                )
-                process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`
-                const recovered = await f.call("publishRebase")
-                assert.equal(recovered.phase, "fixes")
-                assert.equal(recovered.phaseValid, true)
-                assert.deepEqual(recovered.rebase, {
-                    ...saved.rebase,
-                    publication: { kind: "confirmed", headSha: resultSha },
-                })
-                assert.equal(f.git(f.forkRemote, "rev-parse", ref), resultSha)
-                assert.equal(f.git(f.checkout, "rev-parse", "HEAD"), before.head)
-                assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/index")), before.index)
-                assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/config")), config)
-                assert.deepEqual(
-                    ["file.txt", "other.txt", "upstream.txt"].map((file) =>
-                        fs.readFileSync(path.join(f.checkout, file)),
-                    ),
-                    files,
-                )
-                assert.deepEqual(f.record().evidence, saved.evidence)
-                assert.deepEqual(f.record().revision, saved.revision)
-                assert.deepEqual(f.record().observation, saved.observation)
-                assert.deepEqual(fs.readFileSync(f.global), global)
-                assert.deepEqual(f.parent(), parent)
-                const calls: string[][] = fs
-                    .readFileSync(log, "utf-8")
-                    .trim()
-                    .split("\n")
-                    .map((line) => JSON.parse(line))
-                assert.ok(
-                    calls.every(
-                        (args) => !args.some((arg) => ["init", "fetch", "checkout", "reset", "rebase"].includes(arg)),
-                    ),
-                )
-                const transport = calls.filter((args) => args.includes("ls-remote") || args.includes("push"))
-                assert.equal(transport.length, 3)
-                assert.ok(transport.every((args) => args.includes("git@github.com:contributor/app.git")))
-                const pushes = transport.filter((args) => args.includes("push"))
-                assert.equal(pushes.length, 1)
-                assert.ok(pushes[0].includes(`--force-with-lease=${ref}:${f.head}`))
-                assert.ok(pushes[0].includes(`${resultSha}:${ref}`))
-                assert.equal(pushes[0].includes("--force"), false)
-            } finally {
-                if (previousPath === undefined) delete process.env.PATH
-                else process.env.PATH = previousPath
-                f.close()
-            }
-        })
+                { mode: 0o700 },
+            )
+            process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`
+            const recovered = await f.call("publishRebase")
+            assert.equal(recovered.phase, "fixes")
+            assert.equal(recovered.phaseValid, true)
+            assert.deepEqual(recovered.rebase, {
+                ...saved.rebase,
+                publication: { kind: "confirmed", headSha: resultSha },
+            })
+            assert.equal(f.git(f.forkRemote, "rev-parse", ref), resultSha)
+            assert.equal(f.git(f.checkout, "rev-parse", "HEAD"), before.head)
+            assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/index")), before.index)
+            assert.deepEqual(fs.readFileSync(path.join(f.checkout, ".git/config")), config)
+            assert.deepEqual(
+                ["file.txt", "other.txt", "upstream.txt"].map((file) => fs.readFileSync(path.join(f.checkout, file))),
+                files,
+            )
+            assert.deepEqual(f.record().evidence, saved.evidence)
+            assert.deepEqual(f.record().revision, saved.revision)
+            assert.deepEqual(f.record().observation, saved.observation)
+            assert.deepEqual(fs.readFileSync(f.global), global)
+            assert.deepEqual(f.parent(), parent)
+            const calls: string[][] = fs
+                .readFileSync(log, "utf-8")
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line))
+            assert.ok(
+                calls.every(
+                    (args) => !args.some((arg) => ["init", "fetch", "checkout", "reset", "rebase"].includes(arg)),
+                ),
+            )
+            const transport = calls.filter((args) => args.includes("ls-remote") || args.includes("push"))
+            assert.equal(transport.length, 3)
+            assert.ok(transport.every((args) => args.includes("git@github.com:contributor/app.git")))
+            const pushes = transport.filter((args) => args.includes("push"))
+            assert.equal(pushes.length, 1)
+            assert.ok(pushes[0].includes(`--force-with-lease=${ref}:${f.head}`))
+            assert.ok(pushes[0].includes(`${resultSha}:${ref}`))
+            assert.equal(pushes[0].includes("--force"), false)
+        } finally {
+            if (previousPath === undefined) delete process.env.PATH
+            else process.env.PATH = previousPath
+            f.close()
+        }
+    })
 
-        it(`rebases and immediately updates the ${mode} fork before fixes`, async () => {
-            const f = fixture(mode)
-            try {
-                const parent = f.parent()
-                await f.ready()
-                const observed = await f.call("observeTarget")
-                assert.equal(observed.revision.base.sha, f.common)
-                assert.equal(observed.observation.targetSha, f.target)
-                assert.equal(observed.observation.headSha, f.head)
-                assert.notEqual(f.common, f.target)
-                const result = await f.call("rebase", { targetSha: f.target, expectedHeadSha: f.head })
-                assert.equal(result.phase, "fixes")
-                assert.equal(result.phaseValid, true)
-                assert.equal(result.rebase.publication.kind, "confirmed")
-                assert.equal(result.rebase.leaseSha, f.head)
-                assert.notEqual(result.baselineSha, f.head)
-                assert.equal(f.forkHead(), result.baselineSha)
-                assert.equal(f.git(f.baseRemote, "rev-parse", "refs/heads/main"), f.target)
-                assert.equal(f.git(f.checkout, "merge-base", "--is-ancestor", f.target, result.baselineSha), "")
-                assert.equal(f.git(f.checkout, "rev-list", "--count", `${f.target}..HEAD`), "2")
-                assert.equal(
-                    f.git(f.checkout, "log", "--format=%an <%ae>", `${f.target}..HEAD`),
-                    "Fixture <fixture@example.invalid>\nFixture <fixture@example.invalid>",
-                )
-                assert.deepEqual(f.record().evidence, f.originalEvidence)
-                assert.equal(result.revision.head.sha, f.head)
-                assert.equal(result.providerRevision.head.sha, f.head, "No fabricated provider response after push")
-                f.evidence.response.head.sha = f.forkHead()
-                f.evidence.response.base.sha = f.target
-                const fresh = await f.call("inspect")
-                assert.equal(fresh.providerHeadMatchesBaseline, true)
-                fs.appendFileSync(path.join(f.checkout, "file.txt"), "our later fix\n")
-                const fixed = await f.call("inspect")
-                assert.equal(fixed.git.staged, false)
-                assert.match(fs.readFileSync(fixed.paths.fixesDiff.absolute, "utf-8"), /\+our later fix/)
-                assert.equal(f.forkHead(), result.baselineSha, "Later fixes are not automatically published")
-                assert.deepEqual(f.parent(), parent)
-            } finally {
-                f.close()
-            }
-        })
-        it(`exposes ${mode} conflicts and publishes immediately after approved resolution`, async () => {
-            const f = fixture(mode, "conflict")
-            try {
-                const parent = f.parent()
-                await f.ready()
-                const conflict = await f.rebase()
-                assert.equal(conflict.phase, "rebasing")
-                assert.equal(conflict.phaseValid, true)
-                assert.equal(conflict.git.native.targetSha, f.target)
-                assert.deepEqual(
-                    [...new Set(conflict.git.unmerged.map((entry: { path: string }) => entry.path))],
-                    ["file.txt"],
-                )
-                assert.match(fs.readFileSync(conflict.paths.conflictsDiff.absolute, "utf-8"), /file\.txt/)
-                assert.equal(f.forkHead(), f.head)
-                assert.equal((await f.call("inspect")).phase, "rebasing")
-                fs.writeFileSync(path.join(f.checkout, "file.txt"), "approved combined resolution\n")
-                const published = await f.call("continueRebase", { resolutionPaths: ["file.txt"] })
-                assert.equal(published.phase, "fixes")
-                assert.equal(published.rebase.publication.kind, "confirmed")
-                assert.equal(f.forkHead(), published.baselineSha)
-                assert.deepEqual(published.git.unmerged, [])
-                assert.equal(published.git.staged, false)
-                assert.equal(published.git.unstaged, false)
-                assert.deepEqual(f.record().evidence, f.originalEvidence)
-                assert.deepEqual(f.parent(), parent)
-            } finally {
-                f.close()
-            }
-        })
-    }
+    it(`rebases and immediately updates the fork before fixes`, async () => {
+        const f = fixture()
+        try {
+            const parent = f.parent()
+            await f.ready()
+            const observed = await f.call("observeTarget")
+            assert.equal(observed.revision.base.sha, f.common)
+            assert.equal(observed.observation.targetSha, f.target)
+            assert.equal(observed.observation.headSha, f.head)
+            assert.notEqual(f.common, f.target)
+            const result = await f.call("rebase", { targetSha: f.target, expectedHeadSha: f.head })
+            assert.equal(result.phase, "fixes")
+            assert.equal(result.phaseValid, true)
+            assert.equal(result.rebase.publication.kind, "confirmed")
+            assert.equal(result.rebase.leaseSha, f.head)
+            assert.notEqual(result.baselineSha, f.head)
+            assert.equal(f.forkHead(), result.baselineSha)
+            assert.equal(f.git(f.baseRemote, "rev-parse", "refs/heads/main"), f.target)
+            assert.equal(f.git(f.checkout, "merge-base", "--is-ancestor", f.target, result.baselineSha), "")
+            assert.equal(f.git(f.checkout, "rev-list", "--count", `${f.target}..HEAD`), "2")
+            assert.equal(
+                f.git(f.checkout, "log", "--format=%an <%ae>", `${f.target}..HEAD`),
+                "Fixture <fixture@example.invalid>\nFixture <fixture@example.invalid>",
+            )
+            assert.deepEqual(f.record().evidence, f.originalEvidence)
+            assert.equal(result.revision.head.sha, f.head)
+            assert.equal(result.providerRevision.head.sha, f.head, "No fabricated provider response after push")
+            f.evidence.response.head.sha = f.forkHead()
+            f.evidence.response.base.sha = f.target
+            const fresh = await f.call("inspect")
+            assert.equal(fresh.providerHeadMatchesBaseline, true)
+            fs.appendFileSync(path.join(f.checkout, "file.txt"), "our later fix\n")
+            const fixed = await f.call("inspect")
+            assert.equal(fixed.git.staged, false)
+            assert.match(fs.readFileSync(fixed.paths.fixesDiff.absolute, "utf-8"), /\+our later fix/)
+            assert.equal(f.forkHead(), result.baselineSha, "Later fixes are not automatically published")
+            assert.deepEqual(f.parent(), parent)
+        } finally {
+            f.close()
+        }
+    })
+    it(`exposes conflicts and publishes immediately after approved resolution`, async () => {
+        const f = fixture("conflict")
+        try {
+            const parent = f.parent()
+            await f.ready()
+            const conflict = await f.rebase()
+            assert.equal(conflict.phase, "rebasing")
+            assert.equal(conflict.phaseValid, true)
+            assert.equal(conflict.git.native.targetSha, f.target)
+            assert.deepEqual(
+                [...new Set(conflict.git.unmerged.map((entry: { path: string }) => entry.path))],
+                ["file.txt"],
+            )
+            assert.match(fs.readFileSync(conflict.paths.conflictsDiff.absolute, "utf-8"), /file\.txt/)
+            assert.equal(f.forkHead(), f.head)
+            assert.equal((await f.call("inspect")).phase, "rebasing")
+            fs.writeFileSync(path.join(f.checkout, "file.txt"), "approved combined resolution\n")
+            const published = await f.call("continueRebase", { resolutionPaths: ["file.txt"] })
+            assert.equal(published.phase, "fixes")
+            assert.equal(published.rebase.publication.kind, "confirmed")
+            assert.equal(f.forkHead(), published.baselineSha)
+            assert.deepEqual(published.git.unmerged, [])
+            assert.equal(published.git.staged, false)
+            assert.equal(published.git.unstaged, false)
+            assert.deepEqual(f.record().evidence, f.originalEvidence)
+            assert.deepEqual(f.parent(), parent)
+        } finally {
+            f.close()
+        }
+    })
 
     it("continues multiple conflicts without publishing an intermediate commit", async () => {
-        const f = fixture("versioned", "multiple")
+        const f = fixture("multiple")
         try {
             await f.ready()
             await f.rebase()
@@ -474,7 +471,7 @@ process.exit(result.status ?? 1);
     })
     for (const kind of ["merged", "alreadyApplied"] as const)
         it(`uses standard rebase semantics for ${kind} history`, async () => {
-            const f = fixture("versioned", kind)
+            const f = fixture(kind)
             try {
                 await f.ready()
                 const result = await f.rebase()
@@ -563,7 +560,7 @@ process.exit(result.status ?? 1);
     })
     for (const missing of [false, true])
         it(`preserves remote changes when the ${missing ? "deleted" : "advanced"} contributor branch rejects the lease`, async () => {
-            const f = fixture("versioned", "conflict")
+            const f = fixture("conflict")
             try {
                 const parent = f.parent()
                 await f.ready()
@@ -610,7 +607,7 @@ process.exit(result.status ?? 1);
         }
     })
     it("supports an approved conflict deletion without staging other paths", async () => {
-        const f = fixture("versioned", "conflict")
+        const f = fixture("conflict")
         try {
             await f.ready()
             await f.rebase()
@@ -624,7 +621,7 @@ process.exit(result.status ?? 1);
         }
     })
     it("stages literal resolution paths without capturing late unrelated files", async () => {
-        const f = fixture("versioned", "literalPath")
+        const f = fixture("literalPath")
         const previousPath = process.env.PATH
         try {
             await f.ready()
@@ -668,7 +665,7 @@ process.exit(result.status ?? 1);
     })
 
     it("rejects escaping resolution paths without changing rebase state", async () => {
-        const f = fixture("versioned", "conflict")
+        const f = fixture("conflict")
         try {
             await f.ready()
             await f.rebase()
@@ -801,7 +798,7 @@ process.exit(result.status ?? 1);
     })
 
     it("refuses outside-path edits and index changes during resolution", async () => {
-        const f = fixture("versioned", "conflict")
+        const f = fixture("conflict")
         try {
             await f.ready()
             await f.rebase()
@@ -819,7 +816,7 @@ process.exit(result.status ?? 1);
         }
     })
     it("suppresses custom merge drivers, filters, hooks, signing and editor helpers", async () => {
-        const f = fixture("versioned", "customDriver")
+        const f = fixture("customDriver")
         try {
             await f.ready()
             const marker = path.join(f.temp, "marker.sh")
@@ -861,42 +858,40 @@ process.exit(result.status ?? 1);
 })
 
 describe("registered incoming PR additive fix delivery and owned cleanup", () => {
-    for (const mode of ["versioned", "unversioned"] as const) {
-        it(`commits then separately publishes ${mode} fixes and advances the managed baseline`, async () => {
-            const f = fixture(mode)
-            try {
-                await f.ready()
-                const parent = f.parent()
-                fs.appendFileSync(path.join(f.checkout, "file.txt"), "approved fix\n")
-                const committed = await f.call("commitFixes", {
-                    paths: ["file.txt"],
-                    message: "fix: reviewed correction",
-                })
-                assert.equal(committed.phase, "committedFixes")
-                assert.equal(committed.phaseValid, true)
-                assert.equal(committed.baselineSha, f.head)
-                assert.equal(f.forkHead(), f.head, "Commit approval alone must not push")
-                const resultSha = committed.fixCommit.resultSha
-                assert.equal(f.git(f.checkout, "rev-parse", "HEAD^"), f.head)
-                assert.equal(committed.git.headCommit.message, "fix: reviewed correction\n")
-                const published = await f.call("publishFixes")
-                assert.equal(published.phase, "fixes")
-                assert.equal(published.phaseValid, true)
-                assert.equal(published.baselineSha, resultSha)
-                assert.equal(f.forkHead(), resultSha)
-                f.evidence.response.head.sha = resultSha
-                fs.appendFileSync(path.join(f.checkout, "file.txt"), "later draft\n")
-                const inspected = await f.call("inspect")
-                assert.match(fs.readFileSync(inspected.paths.fixesDiff.absolute, "utf8"), /\+later draft/)
-                assert.doesNotMatch(fs.readFileSync(inspected.paths.fixesDiff.absolute, "utf8"), /\+approved fix/)
-                assert.match(fs.readFileSync(inspected.paths.publishedFixesDiff.absolute, "utf8"), /\+approved fix/)
-                assert.deepEqual(f.record().evidence, f.originalEvidence)
-                assert.deepEqual(f.parent(), parent)
-            } finally {
-                f.close()
-            }
-        })
-    }
+    it(`commits then separately publishes fixes and advances the managed baseline`, async () => {
+        const f = fixture()
+        try {
+            await f.ready()
+            const parent = f.parent()
+            fs.appendFileSync(path.join(f.checkout, "file.txt"), "approved fix\n")
+            const committed = await f.call("commitFixes", {
+                paths: ["file.txt"],
+                message: "fix: reviewed correction",
+            })
+            assert.equal(committed.phase, "committedFixes")
+            assert.equal(committed.phaseValid, true)
+            assert.equal(committed.baselineSha, f.head)
+            assert.equal(f.forkHead(), f.head, "Commit approval alone must not push")
+            const resultSha = committed.fixCommit.resultSha
+            assert.equal(f.git(f.checkout, "rev-parse", "HEAD^"), f.head)
+            assert.equal(committed.git.headCommit.message, "fix: reviewed correction\n")
+            const published = await f.call("publishFixes")
+            assert.equal(published.phase, "fixes")
+            assert.equal(published.phaseValid, true)
+            assert.equal(published.baselineSha, resultSha)
+            assert.equal(f.forkHead(), resultSha)
+            f.evidence.response.head.sha = resultSha
+            fs.appendFileSync(path.join(f.checkout, "file.txt"), "later draft\n")
+            const inspected = await f.call("inspect")
+            assert.match(fs.readFileSync(inspected.paths.fixesDiff.absolute, "utf8"), /\+later draft/)
+            assert.doesNotMatch(fs.readFileSync(inspected.paths.fixesDiff.absolute, "utf8"), /\+approved fix/)
+            assert.match(fs.readFileSync(inspected.paths.publishedFixesDiff.absolute, "utf8"), /\+approved fix/)
+            assert.deepEqual(f.record().evidence, f.originalEvidence)
+            assert.deepEqual(f.parent(), parent)
+        } finally {
+            f.close()
+        }
+    })
     it("retains historical rebase evidence after additive fix publication", async () => {
         const f = fixture()
         try {
@@ -974,43 +969,42 @@ else process.exit(result.status ?? 1);
             f.close()
         }
     })
-    for (const mode of ["versioned", "unversioned"] as const)
-        for (const phase of ["prepared", "contributorReview", "fixes"] as const)
-            it(`cleans only the owned ${mode} ${phase} checkout after confirmed merge`, async () => {
-                const f = fixture(mode)
-                try {
-                    await f.call("prepare")
-                    if (phase !== "prepared") await f.call("checkout")
-                    if (phase === "fixes") await f.call("beginFixes")
-                    const parent = f.parent()
-                    const local = path.dirname(f.checkout)
-                    const evidence = path.join(
-                        local,
-                        "reviews",
-                        `${f.common}-${f.head}`,
-                        "review-001",
-                        "inputs",
-                        "source.txt",
-                    )
-                    fs.mkdirSync(path.dirname(evidence), { recursive: true })
-                    fs.writeFileSync(evidence, "immutable review bytes\n")
-                    fs.writeFileSync(path.join(local, "notes.md"), "private notes\n")
-                    f.evidence.response.state = "closed"
-                    f.evidence.response.merged = true
-                    f.evidence.response.merged_at = "2026-10-21T12:00:00Z"
-                    const cleaned = await f.call("cleanup", { completion: { kind: "forgeOnly" } })
-                    assert.equal(cleaned.phase, "removed")
-                    assert.equal(fs.existsSync(f.checkout), false)
-                    assert.equal(fs.readFileSync(evidence, "utf8"), "immutable review bytes\n")
-                    assert.equal(fs.readFileSync(path.join(local, "notes.md"), "utf8"), "private notes\n")
-                    assert.equal((await f.call("inspect")).phase, "removed")
-                    assert.equal((await f.call("cleanup", { completion: { kind: "forgeOnly" } })).phase, "removed")
-                    assert.equal(f.forkHead(), f.head)
-                    assert.deepEqual(f.parent(), parent)
-                } finally {
-                    f.close()
-                }
-            })
+    for (const phase of ["prepared", "contributorReview", "fixes"] as const)
+        it(`cleans only the owned ${phase} checkout after confirmed merge`, async () => {
+            const f = fixture()
+            try {
+                await f.call("prepare")
+                if (phase !== "prepared") await f.call("checkout")
+                if (phase === "fixes") await f.call("beginFixes")
+                const parent = f.parent()
+                const local = path.dirname(f.checkout)
+                const evidence = path.join(
+                    local,
+                    "reviews",
+                    `${f.common}-${f.head}`,
+                    "review-001",
+                    "inputs",
+                    "source.txt",
+                )
+                fs.mkdirSync(path.dirname(evidence), { recursive: true })
+                fs.writeFileSync(evidence, "immutable review bytes\n")
+                fs.writeFileSync(path.join(local, "notes.md"), "private notes\n")
+                f.evidence.response.state = "closed"
+                f.evidence.response.merged = true
+                f.evidence.response.merged_at = "2026-10-21T12:00:00Z"
+                const cleaned = await f.call("cleanup", { completion: { kind: "forgeOnly" } })
+                assert.equal(cleaned.phase, "removed")
+                assert.equal(fs.existsSync(f.checkout), false)
+                assert.equal(fs.readFileSync(evidence, "utf8"), "immutable review bytes\n")
+                assert.equal(fs.readFileSync(path.join(local, "notes.md"), "utf8"), "private notes\n")
+                assert.equal((await f.call("inspect")).phase, "removed")
+                assert.equal((await f.call("cleanup", { completion: { kind: "forgeOnly" } })).phase, "removed")
+                assert.equal(f.forkHead(), f.head)
+                assert.deepEqual(f.parent(), parent)
+            } finally {
+                f.close()
+            }
+        })
     it("refuses cleanup before merge proof or with unpublished local work", async () => {
         const f = fixture()
         try {
@@ -1197,7 +1191,6 @@ process.exit(result.status ?? 1);
                         values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                     },
                     priority: { scope: "project", field: "Priority", values: ["High"] },
-                    internalId: { scope: "project", field: "Internal ID" },
                 },
             }
             fs.writeFileSync(configFile, JSON.stringify(config))

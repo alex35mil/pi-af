@@ -14,7 +14,7 @@ These rules apply to every workflow. Other files refer to them by name instead o
 - **Discovery.** Workflow operations are deferred tools. Before the first call to a workflow tool in a session, call `describeTool()` for its exact input schema. When a call fails validation, correct the input from the error. Don't guess the shape again.
 - **Evidence.** Tools that consume provider results take `evidence: { tool, arguments, response }`: the registered tool name, the exact arguments, and the actual response, unmodified.
 - **Proportional checks.** Run cheap local checks freely, and batch independent ones in Codemode. Once scope and approval are settled, call remote operations directly and let them validate. Add a costly preflight only when it prevents concrete harm that handling the operation's error cannot, such as a wrong target, unauthorized side effects, or irreversible loss.
-- **Ordering.** A step that writes workflow metadata finishes before the next step that depends on it. For example, `begin_resource_creation` finishes before staging the commit that must include its change.
+- **Ordering.** A step that writes workflow metadata finishes before the next step that depends on it. For example, `begin_resource_creation` finishes before the PR create that depends on it.
 - **Prepare-then-run tools.** Some prepare tools save state before returning a mutation, notably the first `prepare_tracker_publication` call. Run the returned mutation in the same step, and never call such a tool again just to look at its output.
 
 ## MCP boundary
@@ -33,7 +33,3 @@ Call providers only through the configured registered MCP tools, under normal pe
 - An approval covers exactly the operation or set of operations it names. Commit, push, PR creation, merge, branch deletion, and worktree operations each need approval unless an approved set already includes them.
 - Discovering a tool, preparing arguments, or a passing review grants no approval.
 - Current explicit user instructions override `.project/policies.md`, which overrides these reusable workflow files.
-
-## Saved-data migrations
-
-When an operational read rejects the saved data of the entity you are actively working on, read [migrations](../MIGRATIONS.md). Convert only that entity, report the conversion in one line, and investigate with the user when no entry matches. Never convert done entities.

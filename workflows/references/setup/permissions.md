@@ -13,7 +13,7 @@ Offer these only for selected, active integration providers, replacing `<server>
 | Role or provider | Recommended allow | Access and use |
 | --- | --- | --- |
 | Any active integration server | `mcp(<server>, hint: readOnly)` | All tools that server advertises with explicit `readOnlyHint: true`; useful for repeated tracker and PR reads. Trusts the server's annotation; missing or false hints don't match. |
-| GitHub tracker | `mcp(<server>, projects_write)` | The entire Project mutation tool, including item and field updates for Status, Phase, and Internal ID, and its other mutations. |
+| GitHub tracker | `mcp(<server>, projects_write)` | The entire Project mutation tool, including item and field updates for Status, Phase, and Priority, and its other mutations. |
 | GitHub tracker | `mcp(<server>, issue_write)` | The entire issue create and update tool, including body, labels, fields, and state; useful for intake and metadata. |
 | GitHub tracker | `mcp(<server>, add_issue_comment)` | The entire comment create and reaction tool; used for the first plan publication and discussion. |
 | GitHub tracker | `mcp(<server>, update_issue_comment)` | The entire comment update tool; used to update the managed plan comment. |

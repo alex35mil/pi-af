@@ -81,28 +81,35 @@ describe("workflow tool discovery", () => {
             assert.equal(tool.exposure, "deferred")
             assert.equal(tool.namespace?.name, "workflows_initialization")
         }
-        const schema = tools.find((tool) => tool.name === "init_gig")!.parameters
-        const input = { title: "Example", slug: "example", request: "Do the work.", priority: "High", kind: "refactor" }
-        assert.ok(accepts(schema, input))
-        assert.ok(!accepts(schema, { ...input, entity: "gig" }))
-        assert.ok(!accepts(schema, { ...input, source: { mode: "new" } }))
-        assert.ok(!accepts(schema, { ...input, kind: "unsupported" }))
-        const adopted = tools.find((tool) => tool.name === "adopt_github_gig")!.parameters
-        assert.ok(!accepts(adopted, input))
+        const input = { title: "Example", slug: "example", request: "Do the work.", kind: "refactor" }
+        const preflight = tools.find((tool) => tool.name === "preflight_gig")!.parameters
+        assert.ok(accepts(preflight, input))
+        assert.ok(!accepts(preflight, { ...input, entity: "gig" }))
+        assert.ok(!accepts(preflight, { ...input, priority: "High" }))
+        assert.ok(!accepts(preflight, { ...input, kind: "unsupported" }))
+        const issue = { issueId: 123, issueNumber: 4, issueUrl: "https://github.com/o/r/issues/4" }
+        const github = tools.find((tool) => tool.name === "init_github_gig")!.parameters
+        assert.ok(!accepts(github, input))
+        assert.ok(accepts(github, { ...input, object: issue }))
+        assert.ok(accepts(github, { ...input, object: { ...issue, projectItemId: 456 } }))
+        const linear = tools.find((tool) => tool.name === "init_linear_gig")!.parameters
+        assert.ok(!accepts(linear, { ...input, object: issue }))
         assert.ok(
-            accepts(adopted, {
+            accepts(linear, {
                 ...input,
-                source: {
-                    issueId: 123,
-                    issueNumber: 4,
-                    issueUrl: "https://github.com/o/r/issues/4",
-                    projectItemId: 456,
-                },
+                object: { issueId: "uuid", identifier: "ENG-4", issueUrl: "https://linear.app/x/issue/ENG-4" },
             }),
         )
-        const task = tools.find((tool) => tool.name === "init_task")!.parameters
-        assert.ok(!accepts(task, input))
-        assert.ok(accepts(task, { ...input, parentEpicDir: ".project/epics/example", epicItemTitle: "Example" }))
+        const task = tools.find((tool) => tool.name === "init_github_task")!.parameters
+        assert.ok(!accepts(task, { ...input, object: issue }))
+        assert.ok(
+            accepts(task, {
+                ...input,
+                object: issue,
+                parentEpicDir: ".project/.local/epics/example",
+                epicItemTitle: "Example",
+            }),
+        )
     })
 
     it("discovers initialization through native Codemode without declaring or inlining the catalog", async () => {
@@ -115,24 +122,26 @@ describe("workflow tool discovery", () => {
         })
         try {
             assert.ok(h.session.getActiveToolNames().includes("codemode"))
-            assert.ok(!h.session.getActiveToolNames().includes("init_gig"))
+            assert.ok(!h.session.getActiveToolNames().includes("init_github_gig"))
             h.respond(
-                call({ name: "codemode", arguments: { code: 'text(await describeTool("init_gig"));' } }),
+                call({ name: "codemode", arguments: { code: 'text(await describeTool("init_github_gig"));' } }),
                 answer("Discovered."),
             )
             await h.prompt("Find the standalone initialization operation.")
             for (const request of h.requests) {
                 const tools = getCurrentTools(request.messages)
-                assert.ok(!tools.some((tool) => tool.name === "init_gig"))
-                assert.ok(!tools.find((tool) => tool.name === "codemode")!.description.includes("tools.init_gig"))
+                assert.ok(!tools.some((tool) => tool.name === "init_github_gig"))
+                assert.ok(
+                    !tools.find((tool) => tool.name === "codemode")!.description.includes("tools.init_github_gig"),
+                )
             }
             const result = h.manager.buildSessionProjection().messages.find((message) => message.role === "toolResult")
-            assert.match(JSON.stringify(result), /init_gig/)
-            assert.match(JSON.stringify(result), /priority/)
+            assert.match(JSON.stringify(result), /init_github_gig/)
+            assert.match(JSON.stringify(result), /issueNumber/)
             assert.match(JSON.stringify(result), /refactor/)
             await h.reopen()
             assert.ok(h.session.getActiveToolNames().includes("codemode"))
-            assert.ok(!h.session.getActiveToolNames().includes("init_gig"))
+            assert.ok(!h.session.getActiveToolNames().includes("init_github_gig"))
         } finally {
             await h.cleanup()
         }

@@ -30,7 +30,7 @@ import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
 import { recordRoundResponse } from "../workflows/extensions/review/round.ts"
 
 function reviewRoundDir(entity: string, phase: string, round: number): string {
-    return path.join(entity, ".local", "reviews", `${phase}-${round.toString().padStart(3, "0")}`)
+    return path.join(entity, "reviews", `${phase}-${round.toString().padStart(3, "0")}`)
 }
 
 function reviewFile(entity: string, phase: string, round: number): string {
@@ -103,39 +103,34 @@ describe("workflow reviewer isolation", () => {
 
     it("routes review categories and plan presentation through their required Phase", async () => {
         const repository = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-phase-tools-"))
-        const entityDir = ".project/gigs/20260101-0000.GIG-01KDVDNA00.example"
+        const entityDir = ".project/.local/gigs/7-example"
         const directory = path.join(repository, entityDir)
         const metadataPath = path.join(directory, "metadata.json")
         try {
             cp.execFileSync("git", ["init", "-q", repository])
-            fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
-            fs.writeFileSync(path.join(repository, ".gitignore"), ".project/**/.local/\n")
+            fs.mkdirSync(directory, { recursive: true })
+            fs.writeFileSync(path.join(repository, ".gitignore"), "/.project/.local/\n")
             fs.writeFileSync(
                 path.join(repository, ".project/config.json"),
-                JSON.stringify({
-                    artifacts: "versioned",
-                    branches: { format: "identifier-title" },
-                }),
+                JSON.stringify({ branches: { format: "number-title" } }),
             )
             prepareArtifactPersistence(repository)
             const metadata = {
-                id: "GIG-01KDVDNA00",
-                rawId: "01KDVDNA00",
                 title: "Example",
                 slug: "example",
                 createdAt: "2026-01-01T00:00:00Z",
                 entity: "gig",
                 kind: "feature",
-                authority: { kind: "workflow", priority: "not set" },
-                integrations: [],
-                branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
+                branch: { state: "ready", name: "7-example", start: "main", target: "main", source: "generated" },
+                tracker: {
+                    provider: "github",
+                    repository: { owner: "example", repo: "project" },
+                    external: { issueNumber: 7 },
+                    planComment: { state: "unpublished" },
+                },
             }
-            fs.writeFileSync(
-                path.join(directory, ".local/status.md"),
-                '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
-            )
             const plan = "# Plan\n\n## Overview\n\nA plan.\n\n## Work\n\nDetails.\n"
-            fs.writeFileSync(path.join(directory, ".local/draft.md"), plan)
+            fs.writeFileSync(path.join(directory, "draft.md"), plan)
             const acceptedPlan = "# Previously accepted plan\n"
             fs.writeFileSync(path.join(directory, "plan.md"), acceptedPlan)
             fs.writeFileSync(path.join(directory, "result.md"), "# Result\n\nDelivered work.\n")
@@ -166,7 +161,7 @@ describe("workflow reviewer isolation", () => {
                         phase === (category === "plan" ? "planning" : "selfReview")
                             ? (error: unknown) => error === stopBeforeRunner
                             : new RegExp(
-                                  `${category} review requires In Progress and Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
+                                  `${category} review requires Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
                               ),
                     )
                     assert.equal(fs.readFileSync(metadataPath, "utf-8"), before)
@@ -184,7 +179,7 @@ describe("workflow reviewer isolation", () => {
                     assert.match(JSON.stringify(result.content), /plan-001/)
                     assert.match(JSON.stringify(result.content), /Snapshot:.*candidate\.md/)
                     assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
-                } else await assert.rejects(invoke(), /plan review requires In Progress and Phase Planning/)
+                } else await assert.rejects(invoke(), /plan review requires Phase Planning/)
                 assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
                 assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
             }
@@ -197,7 +192,7 @@ describe("workflow reviewer isolation", () => {
                     "test",
                     {
                         entityDir,
-                        snapshot: ".local/reviews/plan-002/candidate.md",
+                        snapshot: "reviews/plan-002/candidate.md",
                     },
                     undefined,
                     undefined,
@@ -295,7 +290,7 @@ describe("workflow reviewer isolation", () => {
         assert.equal(
             Value.Check(ReviewRequestSchema, {
                 entity: "epic",
-                entityDir: ".project/epics/example",
+                entityDir: ".project/.local/epics/example",
                 phase: "plan",
             }),
             true,
@@ -303,7 +298,7 @@ describe("workflow reviewer isolation", () => {
         assert.equal(
             Value.Check(ReviewRequestSchema, {
                 entity: "epic",
-                entityDir: ".project/epics/example",
+                entityDir: ".project/.local/epics/example",
                 phase: "final",
             }),
             false,
@@ -311,7 +306,7 @@ describe("workflow reviewer isolation", () => {
         assert.equal(
             Value.Check(ReviewRequestSchema, {
                 entity: "task",
-                entityDir: ".project/epics/example/tasks/task",
+                entityDir: ".project/.local/epics/example/tasks/task",
                 phase: "final",
             }),
             true,
@@ -319,7 +314,7 @@ describe("workflow reviewer isolation", () => {
         assert.equal(
             Value.Check(ReviewRequestSchema, {
                 entity: "task",
-                entityDir: ".project/epics/example/tasks/task",
+                entityDir: ".project/.local/epics/example/tasks/task",
                 phase: "final",
                 continuation: { approved: true },
             }),
@@ -328,9 +323,9 @@ describe("workflow reviewer isolation", () => {
         assert.equal(
             Value.Check(ReviewRequestSchema, {
                 entity: "gig",
-                entityDir: ".project/gigs/example",
+                entityDir: ".project/.local/gigs/example",
                 phase: "plan",
-                epicDir: ".project/epics/example",
+                epicDir: ".project/.local/epics/example",
             }),
             false,
         )
@@ -407,7 +402,7 @@ describe("workflow reviewer isolation", () => {
         const entity = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-fresh-checkout-"))
         try {
             const round = await createReviewRoundDirectory(entity, "plan", 1)
-            assert.equal(round, path.join(entity, ".local", "reviews", "plan-001"))
+            assert.equal(round, path.join(entity, "reviews", "plan-001"))
             assert.equal(fs.statSync(round).isDirectory(), true)
         } finally {
             fs.rmSync(entity, { recursive: true, force: true })
@@ -417,7 +412,7 @@ describe("workflow reviewer isolation", () => {
     it("binds an orphan plan snapshot to the retried review round", async () => {
         const deliverable = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-round-"))
         try {
-            const localDir = path.join(deliverable, ".local")
+            const localDir = deliverable
             const reviewsDir = path.join(localDir, "reviews")
             fs.mkdirSync(path.join(reviewsDir, "plan-001"), { recursive: true })
             fs.writeFileSync(path.join(localDir, "draft.md"), "current reviewed plan\n")
@@ -462,15 +457,12 @@ describe("workflow reviewer isolation", () => {
     it("snapshots an Epic candidate through the shared planning protocol", async () => {
         const epic = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-epic-review-round-"))
         try {
-            fs.mkdirSync(path.join(epic, ".local", "reviews", "plan-001"), { recursive: true })
-            fs.writeFileSync(path.join(epic, ".local", "draft.md"), "current Epic candidate\n")
-            fs.writeFileSync(
-                path.join(epic, ".local", "reviews", "plan-001", "candidate.md"),
-                "orphan Epic candidate\n",
-            )
+            fs.mkdirSync(path.join(epic, "reviews", "plan-001"), { recursive: true })
+            fs.writeFileSync(path.join(epic, "draft.md"), "current Epic candidate\n")
+            fs.writeFileSync(path.join(epic, "reviews", "plan-001", "candidate.md"), "orphan Epic candidate\n")
 
             const snapshot = await snapshotPlan(epic, 1)
-            assert.equal(snapshot, path.join(epic, ".local", "reviews", "plan-001", "candidate.md"))
+            assert.equal(snapshot, path.join(epic, "reviews", "plan-001", "candidate.md"))
             assert.equal(fs.readFileSync(snapshot, "utf-8"), "current Epic candidate\n")
         } finally {
             fs.rmSync(epic, { recursive: true, force: true })
@@ -480,9 +472,8 @@ describe("workflow reviewer isolation", () => {
     it("propagates Project Policies into a fresh review prompt", async () => {
         const repository = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-prompt-"))
         try {
-            const epicDir = path.join(repository, ".project", "epics", "example")
-            fs.mkdirSync(path.join(repository, ".project"), { recursive: true })
-            fs.mkdirSync(path.join(epicDir, ".local"), { recursive: true })
+            const epicDir = path.join(repository, ".project", ".local", "epics", "example")
+            fs.mkdirSync(epicDir, { recursive: true })
             const policies = [
                 "# Project Policies",
                 "",
@@ -495,9 +486,9 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(epicDir, "brief.md"), "# Brief\n")
             fs.writeFileSync(
                 path.join(epicDir, "epic.md"),
-                "# Accepted\n\n## Ordered Tasks\n\n1. [TASK-01KDVDNA00] **Existing Task** — keep it.\n",
+                "# Accepted\n\n## Ordered Tasks\n\n1. [#41] **Existing Task** — keep it.\n",
             )
-            const candidate = path.join(epicDir, ".local", "draft.md")
+            const candidate = path.join(epicDir, "draft.md")
             fs.writeFileSync(candidate, "# Candidate\n")
 
             const prompt = await buildEpicReviewPrompt(
@@ -507,41 +498,33 @@ describe("workflow reviewer isolation", () => {
                 "## plan-review-001.response.md\n\nF1 rejected by user.",
             )
             assert.ok(prompt.includes(policies))
-            assert.match(prompt, /TASK-01KDVDNA00/)
+            assert.match(prompt, /\[#41\] \*\*Existing Task/)
             assert.match(prompt, /F1 rejected by user/)
             assert.doesNotMatch(prompt, /# log\.md/)
             assert.match(prompt, /Return only one JSON object/)
             assert.doesNotMatch(prompt, /## Findings/)
 
-            const gigDir = path.join(repository, ".project", "gigs", "20260101-0000.GIG-01KDVDNA00.example")
-            fs.mkdirSync(path.join(gigDir, ".local", "reviews"), { recursive: true })
+            const gigDir = path.join(repository, ".project", ".local", "gigs", "7-example")
+            fs.mkdirSync(path.join(gigDir, "reviews"), { recursive: true })
             fs.writeFileSync(path.join(gigDir, "brief.md"), "# Brief\n")
             fs.writeFileSync(path.join(gigDir, "plan.md"), "# Root cause\n\nUnique bugfix evidence.\n")
             fs.writeFileSync(
                 path.join(gigDir, "metadata.json"),
                 JSON.stringify({
-                    id: "GIG-01KDVDNA00",
-                    rawId: "01KDVDNA00",
                     title: "Example",
-                    authority: { kind: "workflow", priority: "not set" },
                     createdAt: "2026-01-01T00:00:00.000Z",
                     phase: "selfReview",
-                    branch: {
-                        state: "ready",
-                        name: "GIG-01KDVDNA00-example",
-                        start: "main",
-                        target: "main",
-                        source: "generated",
-                    },
+                    branch: { state: "ready", name: "7-example", start: "main", target: "main", source: "generated" },
                     slug: "example",
-                    integrations: [],
+                    tracker: {
+                        provider: "github",
+                        repository: { owner: "example", repo: "project" },
+                        external: { issueNumber: 7 },
+                        planComment: { state: "unpublished" },
+                    },
                     entity: "gig",
                     kind: "bugfix",
                 }),
-            )
-            fs.writeFileSync(
-                path.join(gigDir, ".local", "status.md"),
-                '# Status\n\n```json\n{\n  "state": "inProgress"\n}\n```\n',
             )
             const deliverablePrompt = await buildDeliverableReviewPrompt(
                 { cwd: repository } as never,
@@ -570,7 +553,7 @@ describe("workflow reviewer isolation", () => {
                 path.join(gigDir, "result.md"),
                 "# Result\n\n## Overview\n\n- Fixed the defect.\n\n## Verification\n\n- `test` — passed\n",
             )
-            const pendingPath = path.join(gigDir, ".local", "pending.md")
+            const pendingPath = path.join(gigDir, "pending.md")
             assert.equal(fs.existsSync(pendingPath), false)
             const rerunFinalPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final")
             assert.match(rerunFinalPrompt, /# result\.md/)

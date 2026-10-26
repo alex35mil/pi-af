@@ -9,6 +9,7 @@ import { workflowTools } from "../__lib/tools.js"
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
 import { EXTENSION as PERMISSIONS_EXTENSION } from "../../../extensions/permissions/index.js"
+import { EPIC_ROOT, GIG_ROOT } from "../__lib/domain.js"
 import * as Git from "../__lib/git.js"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
@@ -65,7 +66,7 @@ export default function (pi: ExtensionAPI): void {
         name: "prepare_artifacts",
         label: "prepare_artifacts",
         description:
-            "Validate configured versioned artifact rules or prepare unversioned artifact exclusion for .project without changing the Git index.",
+            "Validate that .project/.local/ is ignored and untracked, and prepare the local settings exclusion, without changing the Git index.",
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
             Value.Parse(EmptySchema, params)
@@ -74,10 +75,7 @@ export default function (pi: ExtensionAPI): void {
                 content: [
                     {
                         type: "text" as const,
-                        text:
-                            prepared.mode === "unversioned"
-                                ? `Prepared unversioned artifact mode using ${prepared.excludePath}.`
-                                : "Versioned artifact persistence is ready.",
+                        text: "Workflow artifact persistence is ready.",
                     },
                 ],
                 details: prepared,
@@ -301,48 +299,41 @@ function splitLines(value: string): string[] {
     return value ? value.split(/\r?\n/).filter(Boolean) : []
 }
 
+// Lists entities whose tracker record is bound to a provider object, so setup never
+// replaces a tracker that existing work is linked to.
 function inspectBoundEntityTrackers(root: string) {
-    const results: Array<{ path: string; id: string; provider: string; state: string }> = []
+    const results: Array<{ path: string; entity: string; provider: string; reference: string }> = []
     const visit = (directory: string): void => {
         if (!fs.existsSync(directory)) return
         for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
             const absolute = path.join(directory, entry.name)
             if (entry.isDirectory()) {
-                if (entry.name !== ".local") visit(absolute)
+                // Review rounds and scratch hold copies and probes, never entity metadata.
+                if (entry.name !== "reviews" && entry.name !== "scratch") visit(absolute)
                 continue
             }
             if (entry.name !== "metadata.json") continue
+            const entity = path.basename(directory)
             try {
                 const metadata = JSON.parse(fs.readFileSync(absolute, "utf-8")) as Record<string, unknown>
-                if (!Array.isArray(metadata.integrations)) continue
-                for (const rawIntegration of metadata.integrations) {
-                    if (!rawIntegration || typeof rawIntegration !== "object") continue
-                    const integration = rawIntegration as Record<string, unknown>
-                    if (
-                        integration.role !== "tracker" ||
-                        typeof integration.provider !== "string" ||
-                        typeof integration.state !== "string" ||
-                        !("external" in integration)
-                    )
-                        continue
-                    results.push({
-                        path: path.relative(root, absolute),
-                        id: typeof metadata.id === "string" ? metadata.id : "unknown",
-                        provider: integration.provider,
-                        state: integration.state,
-                    })
-                }
+                const tracker = metadata.tracker as Record<string, unknown> | undefined
+                const external = tracker?.external as Record<string, unknown> | undefined
+                if (!tracker || typeof tracker.provider !== "string" || !external) continue
+                const reference =
+                    typeof external.issueNumber === "number"
+                        ? `#${external.issueNumber}`
+                        : typeof external.identifier === "string"
+                          ? external.identifier
+                          : typeof external.projectId === "string"
+                            ? `project ${external.projectId}`
+                            : "unknown"
+                results.push({ path: path.relative(root, absolute), entity, provider: tracker.provider, reference })
             } catch {
-                results.push({
-                    path: path.relative(root, absolute),
-                    id: "invalid-metadata",
-                    provider: "unknown",
-                    state: "invalid",
-                })
+                results.push({ path: path.relative(root, absolute), entity, provider: "unknown", reference: "invalid" })
             }
         }
     }
-    visit(path.join(root, ".project", "epics"))
-    visit(path.join(root, ".project", "gigs"))
+    visit(path.join(root, EPIC_ROOT))
+    visit(path.join(root, GIG_ROOT))
     return results.sort((left, right) => left.path.localeCompare(right.path))
 }

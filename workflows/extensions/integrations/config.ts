@@ -12,18 +12,6 @@ export const INTEGRATION_CONFIG_PATH = ".project/integrations.json"
 
 const FieldNameSchema = Type.String({ minLength: 1 })
 
-export const ScopedFieldSchema = Type.Union([
-    Type.Object(
-        { scope: Type.Enum(["issue"], { type: "string" }), field: FieldNameSchema },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        { scope: Type.Enum(["project"], { type: "string" }), field: FieldNameSchema },
-        { additionalProperties: false },
-    ),
-])
-export type ScopedField = Static<typeof ScopedFieldSchema>
-
 const PriorityOptionSchema = Type.String({ minLength: 1, pattern: "^(?!not set$)[^\\r\\n]+$" })
 
 export const PriorityFieldSchema = Type.Union([
@@ -121,12 +109,8 @@ export const GitHubTrackerSchema = Type.Object(
             },
             { additionalProperties: false },
         ),
-        labels: Type.Object(
-            {
-                kind: KindLabelsSchema,
-            },
-            { additionalProperties: false },
-        ),
+        // Kind labels are applied only when configured.
+        labels: Type.Optional(Type.Object({ kind: KindLabelsSchema }, { additionalProperties: false })),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -141,7 +125,6 @@ export const GitHubTrackerSchema = Type.Object(
                     { additionalProperties: false },
                 ),
                 priority: PriorityFieldSchema,
-                internalId: ScopedFieldSchema,
             },
             { additionalProperties: false },
         ),
@@ -177,16 +160,10 @@ export type TrackerConfig = Static<typeof TrackerConfigSchema>
 export const GitHubForgeSchema = Type.Object(GitHubRoleProperties, { additionalProperties: false })
 export type GitHubForge = Static<typeof GitHubForgeSchema>
 
-export const IntegrationConfigSchema = Type.Union([
-    Type.Object(
-        { tracker: TrackerConfigSchema, forge: Type.Optional(GitHubForgeSchema) },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        { tracker: Type.Optional(TrackerConfigSchema), forge: GitHubForgeSchema },
-        { additionalProperties: false },
-    ),
-])
+export const IntegrationConfigSchema = Type.Object(
+    { tracker: TrackerConfigSchema, forge: GitHubForgeSchema },
+    { additionalProperties: false },
+)
 export type IntegrationConfig = Static<typeof IntegrationConfigSchema>
 
 export function assertConfiguredPriority(config: TrackerConfig, priority: string): void {
@@ -197,10 +174,6 @@ export function assertConfiguredPriority(config: TrackerConfig, priority: string
     if (priority === PRIORITY_NOT_SET || config.fields.priority.values.includes(priority)) return
     throw new Error(`priority is not configured for the GitHub tracker: ${JSON.stringify(priority)}`)
 }
-
-export type LoadedIntegrationConfig =
-    | { state: "disabled"; path: string }
-    | { state: "enabled"; path: string; config: IntegrationConfig }
 
 function assertDistinctStatuses(provider: string, scope: string, statuses: Static<typeof StatusValuesSchema>): void {
     const options = Object.values(statuses)
@@ -221,17 +194,18 @@ function assertGitHubTrackerInvariants(config: GitHubTracker): void {
         throw new Error("GitHub Status mappings must use distinct options")
     }
 
-    const managedLabels = [config.labels.kind.epic, ...Object.values(config.labels.kind.deliverableKinds)]
-    const normalizedLabels = managedLabels.map((label) => label.toLowerCase())
-    if (new Set(normalizedLabels).size !== normalizedLabels.length) {
-        throw new Error("GitHub Kind label names must be distinct case-insensitively")
+    if (config.labels) {
+        const managedLabels = [config.labels.kind.epic, ...Object.values(config.labels.kind.deliverableKinds)]
+        const normalizedLabels = managedLabels.map((label) => label.toLowerCase())
+        if (new Set(normalizedLabels).size !== normalizedLabels.length) {
+            throw new Error("GitHub Kind label names must be distinct case-insensitively")
+        }
     }
 
     const projectFieldNames = [
         config.fields.status.field,
         config.fields.phase.field,
         ...(config.fields.priority.scope === "project" ? [config.fields.priority.field] : []),
-        ...(config.fields.internalId.scope === "project" ? [config.fields.internalId.field] : []),
     ]
     const duplicateProjectFields = projectFieldNames.filter(
         (field, index) => projectFieldNames.indexOf(field) !== index,
@@ -243,18 +217,24 @@ function assertGitHubTrackerInvariants(config: GitHubTracker): void {
     }
 }
 
-export function loadIntegrationConfig(cwd: string): LoadedIntegrationConfig {
+// Workflows need both a tracker and a GitHub forge.
+export function loadIntegrationConfig(cwd: string): IntegrationConfig {
     const configPath = path.join(project.resolveRootDir(cwd), INTEGRATION_CONFIG_PATH)
-    if (!fs.existsSync(configPath)) return { state: "disabled", path: configPath }
+    if (!fs.existsSync(configPath))
+        throw new Error(`missing required ${INTEGRATION_CONFIG_PATH}: configure a tracker and a forge`)
+    return validateIntegrationConfig(readIntegrationConfig(configPath))
+}
 
-    let value: unknown
+function readIntegrationConfig(configPath: string): unknown {
     try {
-        value = JSON.parse(fs.readFileSync(configPath, "utf-8"))
+        return JSON.parse(fs.readFileSync(configPath, "utf-8"))
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`invalid ${INTEGRATION_CONFIG_PATH}: ${message}`)
     }
+}
 
+function validateIntegrationConfig(value: unknown): IntegrationConfig {
     if (!Value.Check(IntegrationConfigSchema, value)) {
         const details = [...Value.Errors(IntegrationConfigSchema, value)]
             .map((error) => `${error.instancePath || "/"}: ${error.message}`)
@@ -262,8 +242,8 @@ export function loadIntegrationConfig(cwd: string): LoadedIntegrationConfig {
         throw new Error(`invalid ${INTEGRATION_CONFIG_PATH}: ${details}`)
     }
     try {
-        if (value.tracker?.provider === "github") assertGitHubTrackerInvariants(value.tracker)
-        if (value.tracker?.provider === "linear") {
+        if (value.tracker.provider === "github") assertGitHubTrackerInvariants(value.tracker)
+        if (value.tracker.provider === "linear") {
             assertDistinctPhases(value.tracker.phase.issues.values)
             assertDistinctPhases(value.tracker.phase.projects.values)
             assertDistinctStatuses("Linear", "issue", value.tracker.statuses.issues)
@@ -274,5 +254,5 @@ export function loadIntegrationConfig(cwd: string): LoadedIntegrationConfig {
         throw new Error(`invalid ${INTEGRATION_CONFIG_PATH}: ${message}`)
     }
 
-    return { state: "enabled", path: configPath, config: value }
+    return value
 }

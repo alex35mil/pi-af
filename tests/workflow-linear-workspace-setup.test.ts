@@ -1,19 +1,12 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import {
-    formatLinearTrackerBranch,
-    inspectLinearTrackerBranch,
-    inspectLinearWorkspace,
-    LINEAR_BRANCH_TEMPLATES,
-    resolveLinearBranchFormat,
-} from "../workflows/extensions/integrations/tracker/linear.ts"
+import { inspectLinearWorkspace } from "../workflows/extensions/integrations/tracker/linear.ts"
 
 class FakeLinear {
     readonly authorizationHeaders: string[] = []
     readonly queries: string[] = []
     acceptedAuthorization = "linear-api-key"
-    branchFormat: string | null = "{username}/{issueIdentifier}-{issueTitle}"
     graphError: string | undefined
 
     readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -28,12 +21,6 @@ class FakeLinear {
         assert.doesNotMatch(body.query, /mutation/i)
         if (this.graphError) return graph({}, [{ message: this.graphError }])
 
-        if (body.query.includes("query TrackerBranchSettings")) {
-            return graph({
-                viewer: { id: "viewer-1", name: "Alex Example", displayName: "alex" },
-                organization: { gitBranchFormat: this.branchFormat },
-            })
-        }
         if (body.query.includes("query WorkspaceSetup")) {
             return graph({
                 viewer: { id: "viewer-1", name: "Alex Example", displayName: "alex" },
@@ -41,7 +28,6 @@ class FakeLinear {
                     id: "workspace-1",
                     name: "Acme",
                     urlKey: "acme",
-                    gitBranchFormat: this.branchFormat,
                     projectStatuses: [
                         {
                             id: "project-started",
@@ -160,35 +146,10 @@ describe("Linear workspace setup inspection", () => {
                 { name: "Alpha Review", team: "Alpha" },
             ],
         )
-        assert.deepEqual(result.branchFormat, {
-            state: "supported",
-            template: "{username}/{issueIdentifier}-{issueTitle}",
-        })
+        assert.equal("branchFormat" in result, false)
         assert.ok(fake.queries.length >= 3)
         assert.ok(fake.queries.every((query) => !/mutation/i.test(query)))
         assert.ok(fake.authorizationHeaders.every((header) => header === "linear-api-key"))
-    })
-
-    it("resolves tracker rendering from Linear Username rather than Full Name", async () => {
-        const fake = new FakeLinear()
-        const result = await inspectLinearTrackerBranch(
-            { credentialEnv: "LINEAR_TEST_KEY" },
-            { fetch: fake.fetch, env: { LINEAR_TEST_KEY: "linear-api-key" } },
-        )
-
-        assert.deepEqual(result, {
-            template: "{username}/{issueIdentifier}-{issueTitle}",
-            username: "alex",
-        })
-        assert.equal(
-            formatLinearTrackerBranch({ entity: "epic", rawId: "01KDVDNA00", slug: "linear-epic" }, result),
-            "alex/epic-01kdvdna00-linear-epic",
-        )
-        assert.equal(fake.queries.length, 1)
-        assert.equal(
-            fake.queries[0].replace(/\s+/g, " ").trim(),
-            "query TrackerBranchSettings { viewer { id name displayName } organization { gitBranchFormat } }",
-        )
     })
 
     it("supports both documented Linear API authentication headers", async () => {
@@ -202,49 +163,6 @@ describe("Linear workspace setup inspection", () => {
 
         assert.deepEqual(fake.authorizationHeaders.slice(0, 2), ["oauth-token", "Bearer oauth-token"])
         assert.ok(fake.authorizationHeaders.slice(2).every((header) => header === "Bearer oauth-token"))
-    })
-
-    it("accepts and renders only the seven exact supported Linear branch templates", () => {
-        const identity = { entity: "epic" as const, rawId: "01KDVDNA00", slug: "linear-epic" }
-        const expected = [
-            "alex/epic-01kdvdna00-linear-epic",
-            "alex/epic-01kdvdna00",
-            "alex-epic-01kdvdna00-linear-epic",
-            "alex-epic-01kdvdna00",
-            "epic-01kdvdna00-linear-epic",
-            "linear-epic-epic-01kdvdna00",
-            "epic-01kdvdna00",
-        ]
-        assert.equal(LINEAR_BRANCH_TEMPLATES.length, expected.length)
-        for (const [index, template] of LINEAR_BRANCH_TEMPLATES.entries()) {
-            assert.deepEqual(resolveLinearBranchFormat(template), { state: "supported", template })
-            assert.equal(formatLinearTrackerBranch(identity, { template, username: "alex" }), expected[index])
-        }
-        assert.deepEqual(resolveLinearBranchFormat(null), { state: "unsupported", template: null })
-        assert.deepEqual(resolveLinearBranchFormat("{issueIdentifier}/{issueTitle}"), {
-            state: "unsupported",
-            template: "{issueIdentifier}/{issueTitle}",
-        })
-        assert.deepEqual(resolveLinearBranchFormat("{issueidentifier}-{issuetitle}"), {
-            state: "unsupported",
-            template: "{issueidentifier}-{issuetitle}",
-        })
-        assert.deepEqual(resolveLinearBranchFormat("constructor"), {
-            state: "unsupported",
-            template: "constructor",
-        })
-    })
-
-    it("rejects an unsupported tracker template before branch rendering", async () => {
-        const fake = new FakeLinear()
-        fake.branchFormat = "{issueIdentifier}/{issueTitle}"
-        await assert.rejects(
-            inspectLinearTrackerBranch(
-                { credentialEnv: "LINEAR_TEST_KEY" },
-                { fetch: fake.fetch, env: { LINEAR_TEST_KEY: "linear-api-key" } },
-            ),
-            /Linear tracker branch format is unsupported/,
-        )
     })
 
     it("fails clearly when the credential environment variable is absent", async () => {

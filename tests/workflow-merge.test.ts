@@ -13,6 +13,7 @@ import {
 } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { planGitHubMerge, type GitHubMergeSubject } from "../workflows/extensions/integrations/forge/github/merge.ts"
 
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("forge")
@@ -22,7 +23,7 @@ const sha = "a".repeat(40)
 const baseSha = "b".repeat(40)
 const scope = {
     kind: "github-pull-request" as const,
-    entityId: "GIG-01M57ACGTF",
+    entity: "12-shared-merge",
     mcpServer: "forge",
     repository,
     head: "source",
@@ -52,23 +53,20 @@ function evidence(fork = false) {
         },
     }
 }
-function fixture(artifacts: "versioned" | "unversioned") {
+function fixture() {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "shared-merge-")))
     const git = (...args: string[]) =>
         cp.execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim()
     git("init", "-q", "-b", "main")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.writeFileSync(path.join(root, "README.md"), "Fixture\n")
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts, branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
-        JSON.stringify({ forge: { provider: "github", mcpServer: "forge", repository } }),
+        JSON.stringify({ tracker: minimalTracker(), forge: { provider: "github", mcpServer: "forge", repository } }),
     )
     prepareArtifactPersistence(root)
     const plan = (reviewed: ProviderEvidence = evidence(), current = reviewed) =>
@@ -92,28 +90,27 @@ function fixture(artifacts: "versioned" | "unversioned") {
 }
 
 describe("one repository merge operation", () => {
-    for (const mode of ["versioned", "unversioned"] as const)
-        it(`gives Deliverable and incoming ${mode} callers the same pinned squash operation`, () => {
-            const f = fixture(mode)
-            try {
-                const read = evidence()
-                const before = f.snapshot()
-                const expected = {
-                    state: "merge-needed",
-                    arguments: { ...repository, pullNumber: 12, merge_method: "squash", expectedHeadSha: sha },
-                }
-                assert.deepEqual(planGitHubMerge(subject, read, mcpTools), expected)
-                assert.deepEqual(shippingReadDecision(scope, read, sha, 12, mcpTools), expected)
-                assert.deepEqual(f.plan(read), expected)
-                assert.equal(fs.existsSync(path.join(f.root, ".project/gigs")), false)
-                assert.deepEqual(f.snapshot(), before)
-            } finally {
-                f.close()
+    it(`gives Deliverable and incoming callers the same pinned squash operation`, () => {
+        const f = fixture()
+        try {
+            const read = evidence()
+            const before = f.snapshot()
+            const expected = {
+                state: "merge-needed",
+                arguments: { ...repository, pullNumber: 12, merge_method: "squash", expectedHeadSha: sha },
             }
-        })
+            assert.deepEqual(planGitHubMerge(subject, read, mcpTools), expected)
+            assert.deepEqual(shippingReadDecision(scope, read, sha, 12, mcpTools), expected)
+            assert.deepEqual(f.plan(read), expected)
+            assert.equal(fs.existsSync(path.join(f.root, ".project/.local/gigs")), false)
+            assert.deepEqual(f.snapshot(), before)
+        } finally {
+            f.close()
+        }
+    })
 
     it("uses native MCP results for both pinned merge and confirmed-merge paths", () => {
-        const f = fixture("versioned")
+        const f = fixture()
         try {
             const read = evidence()
             const wrap = (response: typeof read.response) => ({
@@ -141,7 +138,7 @@ describe("one repository merge operation", () => {
     })
 
     it("keeps incoming fork addressing separate from the Deliverable branch association", () => {
-        const f = fixture("versioned")
+        const f = fixture()
         try {
             const read = evidence(true)
             const incoming = f.plan(read)
@@ -160,7 +157,7 @@ describe("one repository merge operation", () => {
     })
 
     it("reuses complete merged proof through both callers even after the target advances", () => {
-        const f = fixture("versioned")
+        const f = fixture()
         try {
             const reviewed = evidence()
             const merged = evidence()
@@ -180,7 +177,7 @@ describe("one repository merge operation", () => {
     })
 
     it("blocks changed reviewed heads, base revisions and addressing", () => {
-        const f = fixture("versioned")
+        const f = fixture()
         try {
             const reviewed = evidence(true)
             for (const change of ["head", "base", "ref", "repository"] as const) {

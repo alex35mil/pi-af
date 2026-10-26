@@ -4,7 +4,7 @@ The Epic skill owns the approved Task delivery strategy, recorded in reviewed `e
 
 ## Apply the approved strategy
 
-During Epic planning, get the strategy approved and record it in reviewed `epic.md`. On acceptance, apply it before any planning commit:
+During Epic planning, get the strategy approved and record it in reviewed `epic.md`. Apply it on acceptance:
 
 - **Epic:** keep `taskTarget: epic`, or call `set_epic_task_target` with `target: epic`. The local Epic branch must exist.
 - **Default:** call `set_epic_task_target` with `target: default`. The local Epic and default-target branches must exist. Delivery isn't required to select this intent.
@@ -16,7 +16,7 @@ During Epic planning, get the strategy approved and record it in reviewed `epic.
 
 **Delivery:**
 
-- Commit and deliver the accepted plan and routing metadata together through the normal approved Git and PR flow. No metadata change is needed after the merge.
+- Routing metadata is local and never committed. No metadata change is needed after a merge.
 - A revision with default intent that isn't delivered still can't initialize a Task.
 
 **Approvals:**
@@ -27,12 +27,13 @@ During Epic planning, get the strategy approved and record it in reviewed `epic.
 
 ## Choose delivery evidence
 
-`init_task`, `adopt_github_task`, and `adopt_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
+`preflight_task`, `init_github_task`, and `init_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
 
 ### Local ancestry
 
 Use `epicDelivery: { kind: "git-ancestry" }`, or omit it. Git must confirm that the current local Epic head is an ancestor of the stored local target.
 
+- Epic planning commits nothing, so an Epic branch with no commits ahead of its target passes.
 - Fast-forward and merge-commit delivery keep ancestry.
 - Squash and rebase delivery usually don't, so use the GitHub route for them.
 - Similar content or commit messages are not evidence.
@@ -54,7 +55,7 @@ The validator requires:
 **What this proves:**
 
 - GitHub's confirmation is trusted as delivery evidence, so merge-commit, squash, and rebase all qualify without ancestry.
-- The local source revision and target branch are checked, and versioned Task initialization also checks the accepted plan (below).
+- The local source revision and target branch are checked.
 - It doesn't prove that the local target contains the merge commit or every merged change.
 - The guard never fetches or moves refs; sync branches only through separately approved operations.
 
@@ -68,7 +69,6 @@ The validator requires:
 
 1. **Strategy.** Read the approved strategy and the current parent pointer. Resolve a missing or conflicting decision through the Epic skill's plan acceptance and routing step. The initial `taskTarget: epic` is not approval.
 2. **Delivery.** Every new or adopted default-target Task revalidates the current Epic revision and its delivery evidence; recorded routing intent proves nothing. Pass current PR evidence again when using that route.
-3. **Versioned plan check.** The working parent `epic.md` must match the stored target branch's copy exactly, so the accepted plan and its Task markers are reachable. Changed or missing content blocks before any branch, artifact, or parent annotation. Unversioned artifacts keep their exclusion rules and skip this check.
-4. **Initialize.** Copy the parent's target into the Task's immutable start and target, and annotate its plan item once.
+3. **Initialize.** Copy the parent's target into the Task's immutable start and target, and annotate its plan item once.
 
 All other parent, item, hierarchy, Priority, persistence, and branch-readiness gates still apply. No Epic lifecycle change or remote operation is implied.

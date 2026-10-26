@@ -6,7 +6,7 @@ import { type Static, type TSchema, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
-import { type BranchFormat, BranchFormatSchema, PROJECT_ROOT } from "./domain.js"
+import { type BranchFormat, BranchFormatSchema, PROJECT_LOCAL_ROOT, PROJECT_ROOT } from "./domain.js"
 import * as Git from "./git.js"
 
 export { BranchFormatSchema }
@@ -15,10 +15,9 @@ export type { BranchFormat }
 export const PROJECT_CONFIG_PATH = `${PROJECT_ROOT}/config.json`
 export const LOCAL_PROJECT_CONFIG_PATH = `${PROJECT_ROOT}/config.local.json`
 export const GLOBAL_WORKFLOW_SETTINGS_NAME = "workflows"
-export const UNVERSIONED_PROJECT_EXCLUDE = `/${PROJECT_ROOT}/`
 export const LOCAL_PROJECT_CONFIG_EXCLUDE = `/${LOCAL_PROJECT_CONFIG_PATH}`
-export const ENTITY_LOCAL_IGNORE = `${PROJECT_ROOT}/**/.local/`
-const ENTITY_LOCAL_PATHSPEC = `:(glob)${PROJECT_ROOT}/**/.local/**`
+// The single repository rule that keeps every workflow entity and private evidence out of Git.
+export const PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}/`
 
 const BranchConfigurationSchema = Type.Object({ format: BranchFormatSchema }, { additionalProperties: false })
 const ReviewConfigurationSchema = Type.Object(
@@ -28,7 +27,6 @@ const ReviewConfigurationSchema = Type.Object(
 
 export const ProjectConfigSchema = Type.Object(
     {
-        artifacts: Type.Union([Type.Literal("versioned"), Type.Literal("unversioned")]),
         branches: BranchConfigurationSchema,
         reviews: Type.Optional(ReviewConfigurationSchema),
     },
@@ -123,12 +121,12 @@ let validatedPersistenceInputs: string | undefined
 
 export function prepareArtifactPersistence(cwd: string) {
     validatedPersistenceInputs = undefined
-    const { config, excludePath, missing } = inspectArtifactPersistence(cwd)
+    const { excludePath, missing } = inspectArtifactPersistence(cwd)
     if (missing) {
         appendExcludeEntry(excludePath, missing.comment, missing.entry)
         assertArtifactPersistencePrepared(cwd)
     }
-    return { mode: config.artifacts, state: "ready" as const, excludePath }
+    return { state: "ready" as const, excludePath }
 }
 
 export function assertArtifactPersistencePrepared(cwd: string): ProjectConfig {
@@ -144,43 +142,22 @@ function inspectArtifactPersistence(cwd: string) {
     const excludePath = before.excludePath
     if (before.key === validatedPersistenceInputs) return { config, excludePath, missing: undefined }
     validatedPersistenceInputs = undefined
-    const hasExclude = hasUnversionedProjectExclude(excludePath)
 
-    if (config.artifacts === "versioned") {
-        if (hasExclude) {
-            throw new Error(
-                `${PROJECT_CONFIG_PATH} uses versioned artifacts but ${UNVERSIONED_PROJECT_EXCLUDE} remains in ${relativeOrAbsolute(root, excludePath)}; remove it manually`,
-            )
-        }
-        assertVersionedLocalStateIgnored(root)
-        assertLocalProjectConfigOutsideGit(root)
-        assertEntityLocalStateOutsideGit(root)
-        if (
-            fs.existsSync(path.join(root, LOCAL_PROJECT_CONFIG_PATH)) &&
-            !hasExcludeEntry(excludePath, LOCAL_PROJECT_CONFIG_EXCLUDE)
-        ) {
-            return {
-                config,
-                excludePath,
-                missing: {
-                    entry: LOCAL_PROJECT_CONFIG_EXCLUDE,
-                    comment: "# local workflow settings",
-                    label: "local workflow settings",
-                },
-            }
-        }
-    } else {
-        assertNoProjectPathsInGit(root)
-        if (!hasExclude) {
-            return {
-                config,
-                excludePath,
-                missing: {
-                    entry: UNVERSIONED_PROJECT_EXCLUDE,
-                    comment: "# unversioned workflow artifacts",
-                    label: "unversioned artifacts",
-                },
-            }
+    assertProjectLocalIgnored(root)
+    assertLocalProjectConfigOutsideGit(root)
+    assertProjectLocalOutsideGit(root)
+    if (
+        fs.existsSync(path.join(root, LOCAL_PROJECT_CONFIG_PATH)) &&
+        !hasExcludeEntry(excludePath, LOCAL_PROJECT_CONFIG_EXCLUDE)
+    ) {
+        return {
+            config,
+            excludePath,
+            missing: {
+                entry: LOCAL_PROJECT_CONFIG_EXCLUDE,
+                comment: "# local workflow settings",
+                label: "local workflow settings",
+            },
         }
     }
     // Cache only the inputs actually inspected, never inputs changed during the scan.
@@ -257,20 +234,10 @@ function formatUsesUsername(format: BranchFormat): boolean {
     return format.startsWith("username")
 }
 
-function assertNoProjectPathsInGit(root: string): void {
-    const inGit = Git.run(root, ["ls-files", "--cached", "--", PROJECT_ROOT])
-    const staged = Git.run(root, ["diff", "--cached", "--name-only", "--", PROJECT_ROOT])
-    if (inGit || staged) {
+function assertProjectLocalIgnored(root: string): void {
+    if (!hasExcludeEntry(path.join(root, ".gitignore"), PROJECT_LOCAL_IGNORE)) {
         throw new Error(
-            `unversioned artifact mode cannot proceed while ${PROJECT_ROOT}/ paths are in Git or staged; removal from Git requires separate user approval`,
-        )
-    }
-}
-
-function assertVersionedLocalStateIgnored(root: string): void {
-    if (!hasExcludeEntry(path.join(root, ".gitignore"), ENTITY_LOCAL_IGNORE)) {
-        throw new Error(
-            `versioned artifacts require ${ENTITY_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing`,
+            `workflow artifacts require ${PROJECT_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing`,
         )
     }
 }
@@ -285,18 +252,14 @@ function assertLocalProjectConfigOutsideGit(root: string): void {
     }
 }
 
-function assertEntityLocalStateOutsideGit(root: string): void {
-    const inGit = Git.run(root, ["ls-files", "--cached", "--", ENTITY_LOCAL_PATHSPEC])
-    const staged = Git.run(root, ["diff", "--cached", "--name-only", "--", ENTITY_LOCAL_PATHSPEC])
+function assertProjectLocalOutsideGit(root: string): void {
+    const inGit = Git.run(root, ["ls-files", "--cached", "--", PROJECT_LOCAL_ROOT])
+    const staged = Git.run(root, ["diff", "--cached", "--name-only", "--", PROJECT_LOCAL_ROOT])
     if (inGit || staged) {
         throw new Error(
-            `entity .local directories must remain outside Git; remove them from the index before continuing`,
+            `${PROJECT_LOCAL_ROOT}/ must remain outside Git; remove it from the index with git rm --cached before continuing`,
         )
     }
-}
-
-function hasUnversionedProjectExclude(excludePath: string): boolean {
-    return hasExcludeEntry(excludePath, UNVERSIONED_PROJECT_EXCLUDE)
 }
 
 function hasExcludeEntry(excludePath: string, entry: string): boolean {
@@ -312,9 +275,4 @@ function appendExcludeEntry(excludePath: string, comment: string, entry: string)
     const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf-8") : ""
     const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
     fs.appendFileSync(excludePath, `${separator}${comment}\n${entry}\n`)
-}
-
-function relativeOrAbsolute(root: string, target: string): string {
-    const relative = path.relative(root, target)
-    return relative && !relative.startsWith("..") ? relative : target
 }

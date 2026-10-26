@@ -13,9 +13,10 @@ import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.t
 import { IncomingCheckoutSchema, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
+import { minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
-function fixture(mode: "versioned" | "unversioned", diverged = false) {
+function fixture(diverged = false) {
     const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "incoming-checkout-tool-")))
     const root = path.join(temp, "parent")
     const source = path.join(temp, "source")
@@ -48,17 +49,17 @@ function fixture(mode: "versioned" | "unversioned", diverged = false) {
             )
             .trim()
     git(root, "init", "-b", "main")
-    fs.writeFileSync(path.join(root, ".gitignore"), ".project/**/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
     fs.writeFileSync(path.join(root, "README.md"), "parent\n")
     git(root, "add", ".")
     git(root, "commit", "-m", "parent")
     fs.mkdirSync(path.join(root, ".project"))
-    fs.writeFileSync(
-        path.join(root, ".project/config.json"),
-        JSON.stringify({ artifacts: mode, branches: { format: "identifier" } }),
-    )
+    fs.writeFileSync(path.join(root, ".project/config.json"), JSON.stringify({ branches: { format: "number-title" } }))
     const forge = { provider: "github", mcpServer: "fixture", repository: { owner: "upstream", repo: "app" } }
-    fs.writeFileSync(path.join(root, ".project/integrations.json"), JSON.stringify({ forge }))
+    fs.writeFileSync(
+        path.join(root, ".project/integrations.json"),
+        JSON.stringify({ tracker: minimalTracker(), forge }),
+    )
     prepareArtifactPersistence(root)
     fs.writeFileSync(path.join(root, "README.md"), "parent staged\n")
     git(root, "add", "README.md")
@@ -190,104 +191,99 @@ function fixture(mode: "versioned" | "unversioned", diverged = false) {
 }
 
 describe("registered incoming PR checkout tool", () => {
-    for (const mode of ["versioned", "unversioned"] as const) {
-        for (const diverged of [false, true])
-            it(`owns the ${mode} ${diverged ? "diverged" : "linear"} checkout and clean transition`, async () => {
-                const f = fixture(mode, diverged)
-                try {
-                    const before = f.parentState()
-                    const prepared = await f.call("prepare")
-                    assert.equal(prepared.phase, "prepared")
-                    assert.equal(prepared.git.head, null)
-                    assert.equal(prepared.reviewBaseSha, f.common)
-                    assert.equal(prepared.revision.base.sha, f.base)
-                    assert.equal(prepared.paths.checkout.absolute, f.checkout)
-                    assert.equal(prepared.paths.checkout.relative, ".project/.local/pull-requests/12/checkout")
-                    assert.equal(fs.existsSync(path.join(f.checkout, "src")), false)
-                    assert.ok(fs.statSync(path.join(f.checkout, ".git")).isDirectory())
-                    assert.equal((await f.call("prepare")).phase, "prepared")
-                    const review = await f.call("checkout")
-                    assert.equal(review.phase, "contributorReview")
-                    assert.equal(review.git.head, f.common)
-                    assert.equal(review.git.detached, true)
-                    assert.equal(review.git.staged, true)
-                    assert.equal(review.git.unstaged, false)
-                    assert.equal(review.git.indexMatchesContributorHead, true)
-                    assert.deepEqual(review.git.untracked, [])
-                    const contribution = fs.readFileSync(review.paths.contributionDiff.absolute, "utf-8")
-                    assert.match(contribution, /contributor second/)
-                    assert.match(contribution, /deleted file/)
-                    assert.match(contribution, /tracked ignored addition/)
-                    assert.doesNotMatch(contribution, /upstream\.txt/)
-                    assert.equal(fs.readFileSync(review.paths.fixesDiff.absolute, "utf-8"), "")
-                    assert.equal((await f.call("checkout")).phase, "contributorReview")
-                    assert.equal((await f.call("inspect")).git.head, f.common)
-                    const fixes = await f.call("beginFixes")
-                    assert.equal(fixes.phase, "fixes")
-                    assert.equal(fixes.git.head, f.head)
-                    assert.equal(fixes.git.staged, false)
-                    assert.equal(fixes.git.unstaged, false)
-                    assert.equal(f.git(f.checkout, "rev-parse", "HEAD^"), f.first)
-                    fs.appendFileSync(path.join(f.checkout, "src/example.lua"), "our fix\n")
-                    fs.writeFileSync(path.join(f.checkout, "new.lua"), "new fix file\n")
-                    const draft = await f.call("inspect")
-                    assert.equal(draft.phase, "fixes")
-                    assert.equal(draft.git.head, f.head)
-                    assert.equal(draft.git.staged, false)
-                    assert.equal(draft.git.unstaged, true)
-                    assert.deepEqual(draft.git.untracked, ["new.lua"])
-                    assert.match(fs.readFileSync(draft.paths.fixesDiff.absolute, "utf-8"), /\+our fix/)
-                    assert.equal(fs.readFileSync(draft.paths.contributionDiff.absolute, "utf-8"), contribution)
-                    const draftBefore = f.nestedState()
-                    await f.call("beginFixes")
-                    await f.call("prepare")
-                    await assert.rejects(f.call("checkout"), /Cannot return to contributor review/)
-                    assert.deepEqual(f.nestedState(), draftBefore)
-                    assert.equal(draft.parent.verifiedUnchanged, true)
-                    assert.equal(
-                        f.git(f.root, "check-ignore", path.relative(f.root, path.join(f.checkout, "src/example.lua"))),
-                        path.relative(f.root, path.join(f.checkout, "src/example.lua")),
-                    )
-                    assert.deepEqual(f.parentState(), before)
-                } finally {
-                    f.close()
-                }
-            })
+    for (const diverged of [false, true])
+        it(`owns the ${diverged ? "diverged" : "linear"} checkout and clean transition`, async () => {
+            const f = fixture(diverged)
+            try {
+                const before = f.parentState()
+                const prepared = await f.call("prepare")
+                assert.equal(prepared.phase, "prepared")
+                assert.equal(prepared.git.head, null)
+                assert.equal(prepared.reviewBaseSha, f.common)
+                assert.equal(prepared.revision.base.sha, f.base)
+                assert.equal(prepared.paths.checkout.absolute, f.checkout)
+                assert.equal(prepared.paths.checkout.relative, ".project/.local/pull-requests/12/checkout")
+                assert.equal(fs.existsSync(path.join(f.checkout, "src")), false)
+                assert.ok(fs.statSync(path.join(f.checkout, ".git")).isDirectory())
+                assert.equal((await f.call("prepare")).phase, "prepared")
+                const review = await f.call("checkout")
+                assert.equal(review.phase, "contributorReview")
+                assert.equal(review.git.head, f.common)
+                assert.equal(review.git.detached, true)
+                assert.equal(review.git.staged, true)
+                assert.equal(review.git.unstaged, false)
+                assert.equal(review.git.indexMatchesContributorHead, true)
+                assert.deepEqual(review.git.untracked, [])
+                const contribution = fs.readFileSync(review.paths.contributionDiff.absolute, "utf-8")
+                assert.match(contribution, /contributor second/)
+                assert.match(contribution, /deleted file/)
+                assert.match(contribution, /tracked ignored addition/)
+                assert.doesNotMatch(contribution, /upstream\.txt/)
+                assert.equal(fs.readFileSync(review.paths.fixesDiff.absolute, "utf-8"), "")
+                assert.equal((await f.call("checkout")).phase, "contributorReview")
+                assert.equal((await f.call("inspect")).git.head, f.common)
+                const fixes = await f.call("beginFixes")
+                assert.equal(fixes.phase, "fixes")
+                assert.equal(fixes.git.head, f.head)
+                assert.equal(fixes.git.staged, false)
+                assert.equal(fixes.git.unstaged, false)
+                assert.equal(f.git(f.checkout, "rev-parse", "HEAD^"), f.first)
+                fs.appendFileSync(path.join(f.checkout, "src/example.lua"), "our fix\n")
+                fs.writeFileSync(path.join(f.checkout, "new.lua"), "new fix file\n")
+                const draft = await f.call("inspect")
+                assert.equal(draft.phase, "fixes")
+                assert.equal(draft.git.head, f.head)
+                assert.equal(draft.git.staged, false)
+                assert.equal(draft.git.unstaged, true)
+                assert.deepEqual(draft.git.untracked, ["new.lua"])
+                assert.match(fs.readFileSync(draft.paths.fixesDiff.absolute, "utf-8"), /\+our fix/)
+                assert.equal(fs.readFileSync(draft.paths.contributionDiff.absolute, "utf-8"), contribution)
+                const draftBefore = f.nestedState()
+                await f.call("beginFixes")
+                await f.call("prepare")
+                await assert.rejects(f.call("checkout"), /Cannot return to contributor review/)
+                assert.deepEqual(f.nestedState(), draftBefore)
+                assert.equal(draft.parent.verifiedUnchanged, true)
+                assert.equal(
+                    f.git(f.root, "check-ignore", path.relative(f.root, path.join(f.checkout, "src/example.lua"))),
+                    path.relative(f.root, path.join(f.checkout, "src/example.lua")),
+                )
+                assert.deepEqual(f.parentState(), before)
+            } finally {
+                f.close()
+            }
+        })
 
-        for (const change of ["tracked", "staged", "untracked", "ignored", "head", "revision"] as const)
-            it(`preserves ${mode} ${change} changes on refused transition`, async () => {
-                const f = fixture(mode, true)
-                try {
-                    const parent = f.parentState()
-                    await f.call("prepare")
-                    await assert.rejects(f.call("beginFixes"), /Contributor review must finish/)
-                    await f.call("checkout")
-                    const selected = structuredClone(f.evidence)
-                    if (change === "tracked" || change === "staged") {
-                        fs.appendFileSync(path.join(f.checkout, "src/example.lua"), "unexpected\n")
-                        if (change === "staged") f.git(f.checkout, "add", "src/example.lua")
-                    }
-                    const extra = path.join(
-                        f.checkout,
-                        change === "ignored" ? "ignored/unexpected.txt" : "unexpected.txt",
-                    )
-                    if (change === "untracked" || change === "ignored") fs.writeFileSync(extra, "preserve me\n")
-                    if (change === "head") f.git(f.checkout, "reset", "--soft", f.head)
-                    if (change === "revision") selected.response.base.sha = f.common
-                    const before = f.nestedState()
-                    await assert.rejects(f.call("beginFixes", selected), /changed|Expected detached/)
-                    assert.deepEqual(f.nestedState(), before)
-                    if (change === "untracked" || change === "ignored")
-                        assert.equal(fs.readFileSync(extra, "utf-8"), "preserve me\n")
-                    assert.deepEqual(f.parentState(), parent)
-                } finally {
-                    f.close()
+    for (const change of ["tracked", "staged", "untracked", "ignored", "head", "revision"] as const)
+        it(`preserves ${change} changes on refused transition`, async () => {
+            const f = fixture(true)
+            try {
+                const parent = f.parentState()
+                await f.call("prepare")
+                await assert.rejects(f.call("beginFixes"), /Contributor review must finish/)
+                await f.call("checkout")
+                const selected = structuredClone(f.evidence)
+                if (change === "tracked" || change === "staged") {
+                    fs.appendFileSync(path.join(f.checkout, "src/example.lua"), "unexpected\n")
+                    if (change === "staged") f.git(f.checkout, "add", "src/example.lua")
                 }
-            })
-    }
+                const extra = path.join(f.checkout, change === "ignored" ? "ignored/unexpected.txt" : "unexpected.txt")
+                if (change === "untracked" || change === "ignored") fs.writeFileSync(extra, "preserve me\n")
+                if (change === "head") f.git(f.checkout, "reset", "--soft", f.head)
+                if (change === "revision") selected.response.base.sha = f.common
+                const before = f.nestedState()
+                await assert.rejects(f.call("beginFixes", selected), /changed|Expected detached/)
+                assert.deepEqual(f.nestedState(), before)
+                if (change === "untracked" || change === "ignored")
+                    assert.equal(fs.readFileSync(extra, "utf-8"), "preserve me\n")
+                assert.deepEqual(f.parentState(), parent)
+            } finally {
+                f.close()
+            }
+        })
 
     it("suppresses automatic Git helpers throughout actual tool operations", async () => {
-        const f = fixture("versioned", true)
+        const f = fixture(true)
         try {
             const marker = path.join(f.temp, "marker.sh")
             const executed = path.join(f.temp, "executed")
@@ -328,7 +324,7 @@ describe("registered incoming PR checkout tool", () => {
 
     for (const kind of ["existing", "symlink", "dangling", "git-link", "environment", "failed-fetch"] as const)
         it(`refuses unsafe ${kind} setup and preserves parent/work`, async () => {
-            const f = fixture("versioned")
+            const f = fixture()
             try {
                 const before = f.parentState()
                 if (kind === "environment") {
@@ -368,7 +364,7 @@ describe("registered incoming PR checkout tool", () => {
         })
 
     it("serializes parallel preparation through the registered handler", async () => {
-        const f = fixture("versioned", true)
+        const f = fixture(true)
         try {
             const before = f.parentState()
             const results = await Promise.all([f.call("prepare"), f.call("prepare")])
@@ -386,7 +382,7 @@ describe("registered incoming PR checkout tool", () => {
     })
 
     it("validates actual configured provider identity before creating a checkout", async () => {
-        const f = fixture("versioned")
+        const f = fixture()
         try {
             const before = f.parentState()
             for (const kind of ["server", "repository", "number", "missing-head"] as const) {

@@ -47,7 +47,6 @@ const github = Value.Parse(GitHubTrackerSchema, {
         status: { field: "Status", values: statuses },
         phase: { field: "Phase", values: phaseValues },
         priority: { scope: "project", field: "Priority", values: ["High"] },
-        internalId: { scope: "project", field: "ID" },
     },
 })
 const linear = Value.Parse(LinearTrackerSchema, {
@@ -59,18 +58,50 @@ const linear = Value.Parse(LinearTrackerSchema, {
 })
 const githubFacts: Extract<NativePhaseFacts, { provider: "github" }> = {
     provider: "github",
-    field: { name: "Phase", dataType: "SINGLE_SELECT", options: Object.values(phaseValues) },
+    field: {
+        name: "Phase",
+        dataType: "SINGLE_SELECT",
+        options: Object.values(phaseValues),
+    },
     current: null,
 }
 function linearFacts(): Extract<NativePhaseFacts, { provider: "linear" }> {
-    const label = { team: null, parentId: null, isGroup: false, groupType: null, retiredAt: null }
+    const label = {
+        team: null,
+        parentId: null,
+        isGroup: false,
+        groupType: null,
+        retiredAt: null,
+    }
     return {
         provider: "linear",
         catalog: [
-            { ...label, id: "phase", name: "Phase", isGroup: true, groupType: "singleSelect" },
-            ...Object.entries(phaseValues).map(([id, name]) => ({ ...label, id, name, parentId: "phase" })),
-            { ...label, id: "other-group", name: "Other", isGroup: true, groupType: "singleSelect" },
-            { ...label, id: "other-execution", name: "Execution", parentId: "other-group" },
+            {
+                ...label,
+                id: "phase",
+                name: "Phase",
+                isGroup: true,
+                groupType: "singleSelect",
+            },
+            ...Object.entries(phaseValues).map(([id, name]) => ({
+                ...label,
+                id,
+                name,
+                parentId: "phase",
+            })),
+            {
+                ...label,
+                id: "other-group",
+                name: "Other",
+                isGroup: true,
+                groupType: "singleSelect",
+            },
+            {
+                ...label,
+                id: "other-execution",
+                name: "Execution",
+                parentId: "other-group",
+            },
         ],
         applied: ["customer-label", "other-execution", "planning"],
     }
@@ -122,8 +153,10 @@ describe("shared workflow Phase", () => {
         assert.deepEqual(cleared.labels, ["customer-label", "other-execution"])
         assert.equal(cleared.changed, true)
         assert.equal(
-            planPhaseMutation(github, "gig", "selfReview", "inProgress", { ...githubFacts, current: "Self-Review" })
-                .changed,
+            planPhaseMutation(github, "gig", "selfReview", "inProgress", {
+                ...githubFacts,
+                current: "Self-Review",
+            }).changed,
             false,
         )
         assert.equal(planPhaseMutation(github, "gig", "selfReview", "done", githubFacts).changed, false)
@@ -136,7 +169,11 @@ describe("shared workflow Phase", () => {
             { ...githubFacts.field, options: ["Planning", "Execution"] },
         ])
             assert.throws(
-                () => planPhaseMutation(github, "gig", "planning", "inProgress", { ...githubFacts, field }),
+                () =>
+                    planPhaseMutation(github, "gig", "planning", "inProgress", {
+                        ...githubFacts,
+                        field,
+                    }),
                 /Phase/,
             )
         assert.throws(() => planPhaseMutation(github, "gig", "planning", "inProgress", linearFacts()), /provider/)
@@ -194,129 +231,91 @@ describe("shared workflow Phase", () => {
         assert.throws(() => resolveLinearPhaseGroup(tracker, "gig", facts.catalog), /Phase/)
     })
 
-    it("requires the category-specific Phase and active local lifecycle for every entity", () => {
+    it("requires the category-specific Phase for every entity on both trackers", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-review-"))
-        const epicDir = path.join(root, ".project/epics/20260101-0000.EPIC-01KDVDNA00.example")
+        const branch = {
+            state: "ready",
+            name: "example",
+            start: "main",
+            target: "main",
+            source: "generated",
+        }
         const common = {
-            rawId: "01KDVDNA00",
             title: "Example",
             slug: "example",
             createdAt: "2026-01-01T00:00:00Z",
-            authority: { kind: "workflow", priority: "not set" },
-            integrations: [],
-            branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
+            branch,
         }
         try {
-            for (const entity of ["epic", "task", "gig"] as const) {
-                const id = `${entity.toUpperCase()}-01KDVDNA00`
-                const directory =
-                    entity === "epic"
-                        ? epicDir
-                        : path.join(
-                              entity === "task" ? path.join(epicDir, "tasks") : root,
-                              `20260101-0000.${id}.example`,
-                          )
-                fs.mkdirSync(path.join(directory, ".local"), { recursive: true })
-                const metadata = {
-                    ...common,
-                    id,
-                    entity,
-                    ...(entity === "epic" ? { taskTarget: "default" } : { kind: "feature" }),
-                }
-                if (entity === "epic")
-                    fs.writeFileSync(
-                        path.join(directory, "epic.md"),
-                        "## Ordered Tasks\n\n1. [TASK-01KDVDNA00] Example\n",
-                    )
-                for (const phase of ["planning", "execution", "selfReview"]) {
-                    fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
-                    for (const state of ["inProgress", "inReview", "done", "canceled"]) {
+            for (const provider of ["github", "linear"] as const) {
+                const epicName = provider === "github" ? "1-example" : "20261001-example"
+                const epicDir = path.join(root, provider, ".project/.local/epics", epicName)
+                const tracker = (entity: "epic" | "task" | "gig") =>
+                    provider === "github"
+                        ? {
+                              provider,
+                              repository: { owner: "example", repo: "example" },
+                              external: { issueNumber: entity === "epic" ? 1 : 2 },
+                              planComment: { state: "unpublished" },
+                          }
+                        : entity === "epic"
+                          ? {
+                                provider,
+                                resource: "project",
+                                external: {
+                                    projectId: "project-uuid",
+                                    createdAt: "2026-10-01T09:00:00.000Z",
+                                },
+                                planDocument: { state: "unpublished" },
+                            }
+                          : {
+                                provider,
+                                resource: entity === "task" ? "task-issue" : "gig-issue",
+                                external: {
+                                    issueId: "issue-uuid",
+                                    identifier: "ENG-2",
+                                    ...(entity === "task" ? { projectId: "project-uuid" } : {}),
+                                },
+                                planDocument: { state: "unpublished" },
+                            }
+                const childName = provider === "github" ? "2-example" : "ENG-2-example"
+                for (const entity of ["epic", "task", "gig"] as const) {
+                    const directory =
+                        entity === "epic"
+                            ? epicDir
+                            : entity === "task"
+                              ? path.join(epicDir, "tasks", childName)
+                              : path.join(root, provider, ".project/.local/gigs", childName)
+                    fs.mkdirSync(directory, { recursive: true })
+                    const metadata = {
+                        ...common,
+                        entity,
+                        tracker: tracker(entity),
+                        ...(entity === "epic" ? { taskTarget: "default" } : { kind: "feature" }),
+                    }
+                    if (entity === "epic")
                         fs.writeFileSync(
-                            path.join(directory, ".local/status.md"),
-                            `# Status\n\n\`\`\`json\n${JSON.stringify({ state })}\n\`\`\`\n`,
+                            path.join(directory, "epic.md"),
+                            `## Ordered Tasks\n\n1. [${provider === "github" ? "#2" : "ENG-2"}] Example\n`,
                         )
+                    for (const phase of ["planning", "execution", "selfReview"]) {
+                        fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
                         for (const category of entity === "epic"
                             ? (["plan"] as const)
                             : (["plan", "interim", "final"] as const)) {
                             const expected = category === "plan" ? "planning" : "selfReview"
-                            if (phase === expected && state === "inProgress")
-                                assert.doesNotThrow(() => assertReviewPhase(directory, category))
+                            if (phase === expected) assert.doesNotThrow(() => assertReviewPhase(directory, category))
                             else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
                         }
                     }
-                }
-                fs.writeFileSync(
-                    path.join(directory, "metadata.json"),
-                    JSON.stringify({ ...metadata, phase: "planning" }),
-                )
-                fs.writeFileSync(
-                    path.join(directory, ".local/status.md"),
-                    '# Status\n\n```json\n{"state":"inProgress"}\n```\n',
-                )
-            }
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true })
-        }
-    })
-
-    it("checks tracker-backed Phase without local lifecycle and preserves the pending-branch gate", () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-tracker-review-"))
-        const directory = path.join(root, "20260101-0000.GIG-01KDVDNA00.example")
-        fs.mkdirSync(directory)
-        const common = {
-            id: "GIG-01KDVDNA00",
-            rawId: "01KDVDNA00",
-            title: "Example",
-            slug: "example",
-            createdAt: "2026-01-01T00:00:00Z",
-            entity: "gig",
-            kind: "feature",
-            branch: { state: "ready", name: "example", start: "main", target: "main", source: "generated" },
-        }
-        try {
-            for (const provider of ["github", "linear"]) {
-                const integration =
-                    provider === "github"
-                        ? {
-                              role: "tracker",
-                              provider,
-                              repository: { owner: "example", repo: "example" },
-                              planComment: { state: "unpublished" },
-                              state: "bound",
-                              external: { issueNumber: 1 },
-                          }
-                        : {
-                              role: "tracker",
-                              provider,
-                              planDocument: { state: "unpublished" },
-                              resource: "gig-issue",
-                              state: "bound",
-                              external: { issueId: "issue-uuid" },
-                          }
-                const metadata = { ...common, authority: { kind: "tracker", provider }, integrations: [integration] }
-                for (const phase of ["planning", "execution", "selfReview"]) {
-                    fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
-                    for (const category of ["plan", "interim", "final"] as const) {
-                        if (phase === (category === "plan" ? "planning" : "selfReview"))
-                            assert.doesNotThrow(() => assertReviewPhase(directory, category))
-                        else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
-                    }
-                }
-                if (provider === "linear") {
-                    for (const category of ["plan", "interim", "final"] as const) {
+                    if (entity === "epic")
                         fs.writeFileSync(
                             path.join(directory, "metadata.json"),
-                            JSON.stringify({
-                                ...metadata,
-                                phase: category === "plan" ? "planning" : "selfReview",
-                                branch: { state: "tracker-pending", provider, start: "main", target: "main" },
-                            }),
+                            JSON.stringify({ ...metadata, phase: "planning" }),
                         )
-                        assert.throws(() => assertReviewPhase(directory, category), /branch is tracker-pending/)
-                    }
+                    assert.equal(fs.existsSync(path.join(directory, "status.md")), false)
                 }
             }
-            assert.equal(fs.existsSync(path.join(directory, ".local/status.md")), false)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

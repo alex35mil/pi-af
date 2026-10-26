@@ -10,6 +10,7 @@ import {
     type McpToolCatalog,
 } from "../../../../../extensions/__lib/mcp.js"
 import * as project from "../../../../../extensions/__lib/project.js"
+import { PROJECT_LOCAL_ROOT } from "../../../__lib/domain.js"
 import { assertArtifactPersistencePrepared } from "../../../__lib/project-config.js"
 import { loadIntegrationConfig, type GitHubForge } from "../../config.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
@@ -67,15 +68,11 @@ function normalizeRepository(repository: Repository): Repository {
 
 export function incomingPullRequestContext(cwd: string, reference: string, tools: McpToolCatalog) {
     const root = project.resolveRootDir(cwd)
-    const config = assertArtifactPersistencePrepared(root)
-    const loaded = loadIntegrationConfig(root)
-    if (loaded.state !== "enabled" || !loaded.config.forge)
-        throw new Error("Incoming PR handling requires a configured GitHub forge")
-    const forge = loaded.config.forge
+    assertArtifactPersistencePrepared(root)
+    const { forge, tracker } = loadIntegrationConfig(root)
     const selected = parseIncomingReference(reference, forge.repository)
-    const tracker = loaded.config.tracker
     const board =
-        tracker?.provider === "github"
+        tracker.provider === "github"
             ? {
                   state: "enabled" as const,
                   mcpServer: tracker.mcpServer,
@@ -95,12 +92,11 @@ export function incomingPullRequestContext(cwd: string, reference: string, tools
               }
             : {
                   state: "disabled" as const,
-                  reason: "No GitHub Project is configured; forge-only inspection remains available.",
+                  reason: "The tracker isn't a GitHub Project; forge-only inspection remains available.",
               }
     return {
         state: "enabled" as const,
         operation: "incomingPullRequest" as const,
-        artifactMode: config.artifacts,
         project: board,
         roles: { forge: { state: "enabled" as const, provider: "github" as const, config: forge } },
         incomingPullRequest: {
@@ -152,7 +148,7 @@ export function incomingPullRequestContext(cwd: string, reference: string, tools
 
 export function incomingLocalDirectory(selected: IncomingPullRequest): string {
     const checked = pullRequest(selected.repository, String(selected.number))
-    return path.join(".project", ".local", "pull-requests", String(checked.number))
+    return path.join(PROJECT_LOCAL_ROOT, "pull-requests", String(checked.number))
 }
 
 export function incomingRevision(

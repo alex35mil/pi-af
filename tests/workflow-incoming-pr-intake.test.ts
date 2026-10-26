@@ -49,7 +49,6 @@ function input() {
                     values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
                 },
                 priority: { scope: "project", field: "Priority", values: ["High", "Low"] },
-                internalId: { scope: "project", field: "Internal ID" },
             },
         },
         tokenSecret: "project_token",

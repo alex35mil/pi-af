@@ -112,19 +112,6 @@ const IssuePrioritySchema = Type.Object(
     },
     { additionalProperties: false },
 )
-const ProjectInternalIdSchema = Type.Object(
-    { scope: Type.Enum(["project"], { type: "string" }), field: OneLineSchema },
-    { additionalProperties: false },
-)
-const IssueInternalIdSchema = Type.Object(
-    {
-        scope: Type.Enum(["issue"], { type: "string" }),
-        field: OneLineSchema,
-        provisionMissing: Type.Boolean(),
-        visibility: Type.Enum(["organization_members_only", "all"], { type: "string" }),
-    },
-    { additionalProperties: false },
-)
 const LayoutSchema = Type.Enum(["table", "board", "roadmap"], { type: "string" })
 const ViewTargetSchema = Type.Union([
     Type.Object({ mode: Type.Enum(["initial"], { type: "string" }) }, { additionalProperties: false }),
@@ -166,17 +153,20 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         project: ProjectSourceSchema,
         presentation: PresentationSchema,
         defaultRepository: DefaultRepositorySchema,
-        labels: Type.Object(
-            {
-                kind: Type.Object(
-                    {
-                        epic: RepositoryLabelSchema,
-                        deliverableKinds: DeliverableKindLabelsSchema,
-                    },
-                    { additionalProperties: false },
-                ),
-            },
-            { additionalProperties: false },
+        // Kind labels are provisioned and configured only when the user opts in.
+        labels: Type.Optional(
+            Type.Object(
+                {
+                    kind: Type.Object(
+                        {
+                            epic: RepositoryLabelSchema,
+                            deliverableKinds: DeliverableKindLabelsSchema,
+                        },
+                        { additionalProperties: false },
+                    ),
+                },
+                { additionalProperties: false },
+            ),
         ),
         fields: Type.Object(
             {
@@ -189,7 +179,6 @@ export const GitHubProjectSpecificationSchema = Type.Object(
                     { additionalProperties: false },
                 ),
                 priority: Type.Union([ProjectPrioritySchema, IssuePrioritySchema]),
-                internalId: Type.Union([ProjectInternalIdSchema, IssueInternalIdSchema]),
             },
             { additionalProperties: false },
         ),
@@ -348,7 +337,6 @@ export const GITHUB_PROJECT_DEFAULTS = {
             { name: "Low", description: "Can be scheduled after higher-priority work.", color: "blue" },
         ],
     },
-    internalId: { field: "Internal ID" },
 } as const
 
 interface ProjectSummary {
@@ -1424,7 +1412,8 @@ function planProjectField(
 }
 
 function desiredRepositoryLabels(specification: GitHubProjectSpecification) {
-    return [specification.labels.kind.epic, ...Object.values(specification.labels.kind.deliverableKinds)]
+    const kind = specification.labels?.kind
+    return kind ? [kind.epic, ...Object.values(kind.deliverableKinds)] : []
 }
 
 async function planRepositoryLabel(
@@ -1457,16 +1446,6 @@ function desiredOrganizationFields(specification: GitHubProjectSpecification) {
                       options: specification.fields.priority.options,
                       visibility: specification.fields.priority.visibility,
                       provisionMissing: specification.fields.priority.provisionMissing,
-                  },
-              ]
-            : []),
-        ...(specification.fields.internalId.scope === "issue"
-            ? [
-                  {
-                      name: specification.fields.internalId.field,
-                      dataType: "text" as const,
-                      visibility: specification.fields.internalId.visibility,
-                      provisionMissing: specification.fields.internalId.provisionMissing,
                   },
               ]
             : []),
@@ -2156,9 +2135,6 @@ function desiredProjectFields(specification: GitHubProjectSpecification): Projec
                   },
               ]
             : []),
-        ...(specification.fields.internalId.scope === "project"
-            ? [{ name: specification.fields.internalId.field, dataType: "TEXT" as const }]
-            : []),
     ]
 }
 
@@ -2274,14 +2250,21 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             ownerType: specification.projectOwner.type,
             number: projectNumber,
         },
-        labels: {
-            kind: {
-                epic: specification.labels.kind.epic.name,
-                deliverableKinds: Object.fromEntries(
-                    Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [key, label.name]),
-                ),
-            },
-        },
+        ...(specification.labels
+            ? {
+                  labels: {
+                      kind: {
+                          epic: specification.labels.kind.epic.name,
+                          deliverableKinds: Object.fromEntries(
+                              Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [
+                                  key,
+                                  label.name,
+                              ]),
+                          ),
+                      },
+                  },
+              }
+            : {}),
         fields: {
             status: {
                 field: specification.fields.status.field,
@@ -2299,10 +2282,6 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
                 scope: specification.fields.priority.scope,
                 field: specification.fields.priority.field,
                 values: specification.fields.priority.options.map((option) => option.name),
-            },
-            internalId: {
-                scope: specification.fields.internalId.scope,
-                field: specification.fields.internalId.field,
             },
         },
     }

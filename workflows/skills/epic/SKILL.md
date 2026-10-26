@@ -1,19 +1,15 @@
 ---
 name: epic
-description: "Use to initialize, shape, review, resume, and complete an Epic under <repo>/.project/epics/. Never implements Task work."
+description: "Use to initialize, shape, review, resume, and complete an Epic under <repo>/.project/.local/epics/. Never implements Task work."
 allowed-tools:
-    - "init_epic"
-    - "adopt_github_epic"
-    - "adopt_linear_epic"
+    - "preflight_epic"
+    - "init_github_epic"
+    - "init_linear_epic"
     - "review_epic"
     - "prepare_epic_plan_presentation"
     - "prepare_artifacts"
-    - "set_local_workflow_phase"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
-    - "confirm_versioned_github_tracker"
-    - "confirm_unversioned_github_tracker"
-    - "confirm_linear_tracker"
     - "set_epic_task_target"
     - "render_provider_body"
     - "prepare_tracker_publication"
@@ -32,8 +28,6 @@ allowed-tools:
     - "prepare_tracker_mutation"
     - "prepare_github_phase_mutation"
     - "prepare_linear_phase_mutation"
-    - "begin_resource_creation"
-    - "record_resource_creation"
     - "resolve_resource_ids"
     - "record_resource_ids"
     - "invalidate_resource_ids"
@@ -59,46 +53,40 @@ When reviewing, read [review](../../references/review.md). When writing human-fa
 
 ## Start or resume
 
-Follow the preparation and entity-selection gates in [artifacts](../../references/artifacts.md#initialization-inputs) for an Epic under `.project/epics/`.
+Follow the preparation and entity-selection gates in [artifacts](../../references/artifacts.md#initialization-inputs) for an Epic under `.project/.local/epics/`.
 
 1. **Read:**
-   - `brief.md`, `metadata.json`, `.local/notes.md` when present, and accepted `epic.md`;
+   - `brief.md`, `metadata.json`, `notes.md` when present, and accepted `epic.md`;
    - the relevant review round, when present;
    - applicable `.project/policies.md`;
-   - `.local/scratch/` only when that context is relevant.
+   - `scratch/` only when that context is relevant.
 
    Create missing notes when continuing local work.
-2. **Lifecycle:**
-   - workflow authority: read `.local/status.md`;
-   - tracker authority: that file must be absent; read lifecycle and Priority fresh from the tracker.
+2. **Lifecycle:** read lifecycle and Priority fresh from the tracker.
 3. **Branch:** switch to the Epic's stored branch before editing its artifacts. This doesn't apply when a Task updates its parent Epic from the Task branch.
-4. **Integrations:** reuse the `resume_integration` result from the artifact gate; a disabled integration is silent. When a role is enabled, read [integration roles](../../references/integrations/shared.md), then the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md), [Linear tracker](../../references/integrations/tracker/linear.md), or [GitHub forge](../../references/integrations/forge/github.md). Update only that role's record.
+4. **Integrations:** reuse the `resume_integration` result from the artifact gate. Read [integration roles](../../references/integrations/shared.md), then the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md) or [Linear tracker](../../references/integrations/tracker/linear.md), and [GitHub forge](../../references/integrations/forge/github.md).
 5. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project, with document and parent verification before updates.
 6. **Summarize** the current state and continue. Never create another Epic.
 
 ## Initialize
 
 1. **Adoption preflight:** when adopting Backlog or Todo work, first read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Epic preflight. An adopted Epic is a GitHub Backlog or Todo issue, or a Linear Backlog or Todo Project.
-2. **Create the entity:** follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs). Call `init_epic` for new work, `adopt_github_epic` for a GitHub issue, or `adopt_linear_epic` for a Linear Project, passing:
-   - the approved values;
-   - the Request as `request`;
-   - the slug;
-   - the adoption `source` facts, when adopting.
+2. **Create the entity:** follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs), then [initialize from the tracker object](../../references/integrations/shared.md#initialize-from-the-tracker-object).
+   - New work: call `preflight_epic`, then create the GitHub issue or Linear Project as the tracker reference describes.
+   - Call `init_github_epic` or `init_linear_epic` with the approved values, the Request as `request`, the slug, and the issue or Project as `object`.
 
-   The tool creates identity, artifacts, a repository-default start and target, and `taskTarget: epic`. With the Linear `tracker` branch format, it also reads the current template and username.
-3. **Bind integrations:** switch to the stored branch and call `initialize_integration` with `entityDir`. When a role is enabled, read the integration references as on resume.
-   - Workflow initialization is saved before any provider mutation, apart from the tool's read-only Linear branch-settings query.
-   - Disabled roles stay absent. A role failure changes only its own pending record and never rolls back working-tree work.
+   The tool names the directory and branch from the object (a Linear Epic is dated by its Project's creation), starts from and targets the repository default, and sets `taskTarget: epic`.
+3. **Set up the board:** switch to the stored branch, call `initialize_integration` with `entityDir`, and follow the provider reference. A board failure is reconciled on resume and never rolls back working-tree work.
 
 ## Working state
 
-[Artifacts](../../references/artifacts.md#brief-and-local-working-state) defines the brief, notes, scratch, and `.local/draft.md`. Accepted `epic.md` is written only through plan acceptance.
+[Artifacts](../../references/artifacts.md#brief-and-local-working-state) defines the brief, notes, scratch, and `draft.md`. Accepted `epic.md` is written only through plan acceptance.
 
 When the Epic is the active workflow, write workflow artifacts only inside its directory and treat repository files outside it as read-only. Provider writes happen only through the integration steps above.
 
 ## Shape the Epic
 
-After research and inquiry, write `.local/draft.md` in the shape below and check it against the document gate. Apply Project Policies to planning, decomposition, review, and completion.
+After research and inquiry, write `draft.md` in the shape below and check it against the document gate. Apply Project Policies to planning, decomposition, review, and completion.
 
 A prospective Task is only an ordered plan line, with no Task ID, directory, branch, or external issue. Never initialize Tasks from the Epic workflow.
 
@@ -110,7 +98,7 @@ A prospective Task is only an ordered plan line, with no Task ID, directory, bra
 
    Recommend one from the decomposition and get explicit approval.
 2. **Record.** Put the approved strategy and rationale in reviewed `epic.md`, both in Plan highlights and in a Task delivery strategy section. The initial `taskTarget: epic` is a provisioning value, not approval.
-3. **Apply.** Call `set_epic_task_target` before committing the accepted plan; when doing so, read [Epic delivery](../../references/epic.md). Deliver `epic.md` and its routing metadata together.
+3. **Apply.** Call `set_epic_task_target` when the plan is accepted; when doing so, read [Epic delivery](../../references/epic.md).
 
 **Notes:**
 
@@ -166,7 +154,7 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 1. **Review.** Follow plan review in [planning](../../references/planning.md#plan-review-and-acceptance) with `review_epic`, this Epic's `entityDir`, and `phase: "plan"`. `prepare_epic_plan_presentation` returns the reviewed snapshot and the `epic.md` target for the write tool's approval diff.
 2. **Wait.** Don't accept or act on the Epic until the user accepts that reviewed diff. Phase stays Planning until then.
 3. **On acceptance:**
-   - record the routing choice with `set_epic_task_target` before any planning commit, so plan and metadata are delivered together;
+   - record the routing choice with `set_epic_task_target`;
    - set Execution ([Phase](../../references/phase.md)); lifecycle stays `inProgress`;
    - publish `epic.md` through the same integration steps as on resume.
 4. **Stop** without initializing or implementing a Task.
@@ -177,17 +165,17 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 
 - The Epic's branch identity never changes.
 - With explicit user approval, it may be merged into its default target before the Epic completes, for example to deliver planning first or to deliver Tasks behind feature flags.
-- Per [Epic delivery](../../references/epic.md), record `target: default` or `target: epic` before committing planning, without delivery evidence. Deliver plan and routing metadata together, and never change the pointer after a merge just to record delivery.
-- Every default-target Task initialization checks current-revision delivery itself, through local ancestry or merged GitHub PR evidence, including squash merges. Undelivered Epic work blocks those initializations without changing the approved routing.
+- Per [Epic delivery](../../references/epic.md), record `target: default` or `target: epic` at plan acceptance, without delivery evidence. Never change the pointer after a merge just to record delivery.
+- Every default-target Task initialization checks current-revision delivery itself. Epic planning commits nothing, so an Epic branch with no commits ahead of its target counts as delivered; otherwise it needs merged GitHub PR evidence, which covers squash merges. Undelivered Epic work blocks those initializations without changing the approved routing.
 - Only future Tasks follow a changed pointer; existing Tasks keep their start and target.
 - Never delete the Epic branch while an active Task targets it.
 
 ### Task markers
 
-- Initializing a Task changes its plan line once, from `1. **Title** — …` to `1. [TASK-<raw-id>] **Title** — …`.
-- That ID is the permanent relation; title and order are display-only and may change. Every later candidate must keep existing `[TASK-…]` markers exactly.
+- Initializing a Task changes its plan line once, from `1. **Title** — …` to `1. [#12] **Title** — …` on GitHub or `1. [ENG-12] **Title** — …` on Linear.
+- That marker is the Task's tracker reference and the permanent relation; title and order are display-only and may change. Every later candidate must keep existing markers exactly.
 
-**Progress** comes from each marker's child lifecycle: `.local/status.md` for workflow-authority Tasks, fresh provider state for tracker-backed ones.
+**Progress** comes from each marker's child lifecycle, read fresh from the tracker.
 
 | Plan line | Meaning |
 | --- | --- |
@@ -204,11 +192,7 @@ When the user explicitly resumes the Epic and asks to complete it:
 
 1. Resolve every Task marker through its child lifecycle. When any Task is neither `done` nor `canceled`, report them and stop.
 2. Reconcile finished Task outcomes against the Epic contract and Project Policies. When drift remains, present it and stop without changing lifecycle; resolve it through Epic planning and acceptance first.
-3. Set lifecycle straight from `inProgress` to `done`:
-   - without a tracker, update `.local/status.md`;
-   - with one, set native Status to the configured `done` value and clear native Phase ([Phase](../../references/phase.md)).
-
-   Keep the last metadata Phase.
-4. Report the completion evidence. Change no versioned artifact; Epic completion never creates a commit, push, PR, or CI run.
+3. Set native Status straight from In Progress to the configured `done` value and clear native Phase ([Phase](../../references/phase.md)). Keep the last metadata Phase.
+4. Report the completion evidence. Change no committed file; Epic completion never creates a commit, push, PR, or CI run.
 
 Never implement Task work from the Epic workflow. Don't push, create a PR, merge, delete branches, or use a worktree without explicit approval of that exact operation or set.

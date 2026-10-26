@@ -8,10 +8,10 @@ import {
 import { assertPlanCommentUrl, type PlanComment } from "./plan-comment.js"
 import { hasPublicationMarker, type PublicationAdapter } from "./plan-publication.js"
 import { requirePublicationCall } from "./publication-evidence.js"
-import type { IntegrationRecord } from "./records.js"
+import type { GitHubTrackerRecord } from "./records.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
-type Tracker = Extract<IntegrationRecord, { role: "tracker"; provider: "github"; state: "bound" }>
+type Tracker = GitHubTrackerRecord
 
 export function githubPublication(
     tracker: Tracker,
