@@ -119,7 +119,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
     const record = (evidence: ProviderEvidence) =>
         trackerPublication(root, { action: "record", entityDir: directory, evidence }, tools)
     const recover = (pages: ProviderEvidence[]) =>
-        trackerPublication(root, { action: "recover", entityDir: directory, pages }, tools)
+        trackerPublication(root, { action: "recover", entityDir: directory, source, pages }, tools)
     const remote = (body: string, id = 123) => ({
         id,
         url: `https://api.github.com/repos/example/project/issues/comments/${id}`,
@@ -248,6 +248,33 @@ describe("managed GitHub plan comments", () => {
                 assert.deepEqual(f.saved(), before)
             }
             assert.equal((await f.prepare()).state, "recovery-required")
+        } finally {
+            f.dispose()
+        }
+    })
+
+    it("re-issues the same create when a complete read finds the pending comment was never posted", async () => {
+        const f = fixture()
+        try {
+            const prepared = await f.prepare()
+            assert.ok(prepared.state === "mutation-needed")
+            const pending = f.saved().tracker.planComment
+            assert.equal(pending.state, "pending")
+            assert.equal((await f.prepare()).state, "recovery-required")
+
+            const reissued = await f.recover([f.page([f.remote("Discussion", 1)], 1, 1), f.page([], 2, 1)])
+            assert.ok(reissued.state === "mutation-needed")
+            assert.deepEqual(reissued.mutation, prepared.mutation)
+            assert.deepEqual(f.saved().tracker.planComment, pending)
+
+            const body = reissued.mutation.arguments.body as string
+            assert.equal((await f.record({ ...reissued.mutation, response: f.remote(body) })).state, "published")
+            assert.deepEqual(f.saved().tracker.planComment, {
+                state: "published",
+                token: pending.token,
+                id: 123,
+                url: "https://github.com/example/project/issues/42#issuecomment-123",
+            })
         } finally {
             f.dispose()
         }
@@ -419,7 +446,7 @@ describe("managed GitHub plan comments", () => {
             }
         })
 
-    it("preserves pending state for absent, duplicate, incomplete, errored and wrong-scope evidence", async () => {
+    it("preserves pending state for duplicate, incomplete, errored and wrong-scope evidence", async () => {
         const f = fixture()
         try {
             const prepared = await f.prepare()
@@ -427,8 +454,7 @@ describe("managed GitHub plan comments", () => {
             assert.ok(typeof prepared.mutation.arguments.body === "string")
             const body = prepared.mutation.arguments.body
             const before = f.saved()
-            for (const comments of [[], [f.remote(body), f.remote(body, 124)]])
-                assert.equal((await f.recover([f.page(comments)])).state, "blocked")
+            assert.equal((await f.recover([f.page([f.remote(body), f.remote(body, 124)])])).state, "blocked")
             for (const pages of [
                 [f.page([f.remote(body)], 1, 1)],
                 [f.page([], 2)],

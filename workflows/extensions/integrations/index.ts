@@ -450,8 +450,8 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
             outcomeProof:
                 "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
             recovery: github
-                ? "after uncertain or partial creation, reconcile complete registered comment pages with recover_tracker_publication; pending creation never automatically retries. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
-                : "after uncertain creation, use recover_tracker_publication with an exact parent UUID/identifier read, complete list_documents cursor pages, and full get_document reads requested for matching-parent candidates. Listings truncate content. Preserve pending state on missing/ambiguous evidence; never automatically create again. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
+                ? "for a pending creation, pass the approved source and complete registered comment pages to recover_tracker_publication. One marked comment is recorded; no marked comment returns the same create with the saved token, which you run; several stop for the maintainer. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
+                : "for a pending creation, pass the approved source, an exact parent UUID/identifier read, complete list_documents cursor pages, and full get_document reads requested for matching-parent candidates to recover_tracker_publication. Listings truncate content. One marked document is recorded; no marked document returns the same create with the saved token, which you run; several, or incomplete evidence, stop. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
             discussion:
                 "keep discussion in comments; requirements and agreed decisions belong in the accepted source artifact",
         },
