@@ -409,7 +409,7 @@ describe("Deliverable branch cleanup", () => {
             const epicBranch = epic.status.branch.name
             fs.writeFileSync(
                 path.join(root, epic.directory, "epic.md"),
-                "# Epic\n\n## Ordered Tasks\n\n1. **Child** — implement it.\n",
+                "# Epic\n\n## Tasks\n\n### [#11] Child\n\nKind: feature\n\nImplement it.\n",
             )
             git(root, ["push", "origin", epicBranch])
             const task = initializeEntity(
@@ -418,9 +418,7 @@ describe("Deliverable branch cleanup", () => {
                     title: "Child",
                     slug: "child",
                     request: "Deliver the child",
-                    kind: "feature",
                     parentEpicDir: epic.directory,
-                    epicItemTitle: "Child",
                     object: issue(11),
                 },
                 { cwd: root },

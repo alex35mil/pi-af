@@ -620,7 +620,7 @@ describe("workflow reviewer isolation", () => {
             const policies = [
                 "# Project Policies",
                 "",
-                "- During Epic plan review, additionally check that every prospective Task identifies its rollout stage.",
+                "- During Epic plan review, additionally check that every planned Task identifies its rollout stage.",
                 "- During Deliverable final review, additionally check the completion artifact against the repository's release checklist.",
                 "- Override automatic submission after final-artifact acceptance: commit locally, then wait for a separate explicit user request before pushing or creating a PR.",
                 "",
@@ -629,7 +629,7 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(epicDir, "brief.md"), "# Brief\n")
             fs.writeFileSync(
                 path.join(epicDir, "epic.md"),
-                "# Accepted\n\n## Ordered Tasks\n\n1. [#41] **Existing Task** — keep it.\n",
+                "# Accepted\n\n## Tasks\n\n### [#41] Existing Task\n\nKind: feature\n\nKeep it.\n",
             )
             const candidate = path.join(epicDir, "draft.md")
             fs.writeFileSync(candidate, "# Candidate\n")
@@ -641,7 +641,7 @@ describe("workflow reviewer isolation", () => {
                 "## plan-review-001.response.md\n\nF1 rejected by user.",
             )
             assert.ok(prompt.includes(policies))
-            assert.match(prompt, /\[#41\] \*\*Existing Task/)
+            assert.match(prompt, /\[#41\] Existing Task/)
             assert.match(prompt, /F1 rejected by user/)
             assert.doesNotMatch(prompt, /# log\.md/)
             assert.match(prompt, /Return only one JSON object/)

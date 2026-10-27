@@ -46,7 +46,7 @@ New queue work needs the approved entity type and destination (`backlog` or `tod
 1. **Read the discussion.** Call registered `list_comments` with the Project UUID as `projectId` for an Epic, or the issue UUID as `issueId` for a Task or Gig. Follow cursors until `hasNextPage: false`, including threads and inline comments. Reconcile material maintainer clarifications before adopting; contributor comments don't authorize scope changes.
 2. **Adopt.** Call `inspect_adoption`, then `init_linear_epic`, `init_linear_task`, or `init_linear_gig`.
    - Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title or name, description, Priority, and relationship without another confirmation.
-   - Ask only for missing or conflicting information. Task and Gig Kind is workflow-only and needs a user choice when it isn't supplied.
+   - Ask only for missing or conflicting information. A Task's Kind comes from its plan section; a Gig's Kind needs a user choice when it isn't supplied.
 3. **Identity.** Responses expose the immutable identity as `uuid`; an issue's `id` is its display identifier. Pass as `object`:
    - for an Epic, the Project UUID, URL, and creation time, which dates the Epic's name;
    - for a Task or Gig, the issue UUID, identifier, URL, and, for a Task, the parent Project UUID.
@@ -72,12 +72,11 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 ## Add to Backlog or Todo
 
-Queue intake follows [queue](../../queue.md). Require the entity type and the selected destination first; a Task needs a bound parent Epic.
+Queue intake follows [queue](../../queue.md). Require the entity type and the selected destination first. Tasks are never queued.
 
 | Entity | Call |
 | --- | --- |
 | Epic | `save_project` in the selected Project Backlog or Todo state, with team and Priority |
-| Task | `save_issue` in the selected issue Backlog or Todo status, with team, Priority, and `project` set to the parent Epic's Project |
 | Gig | `save_issue` in the selected issue Backlog or Todo status, with team and Priority, and no Epic Project |
 
 ## Lifecycle, Phase, and Priority

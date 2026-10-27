@@ -6,7 +6,7 @@ export default function (pi: ExtensionAPI): void {
         handler: async (args, ctx) => {
             const input = args.trim()
             if (!input) {
-                ctx.ui.notify("Usage: /task <description, parent Epic, or existing Task path>", "error")
+                ctx.ui.notify("Usage: /task <parent Epic and Task marker or title, or existing Task path>", "error")
                 return
             }
             pi.sendUserMessage(["Task:", "", input, "", "Use the task skill."].join("\n"))

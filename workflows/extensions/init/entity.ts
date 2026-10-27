@@ -30,17 +30,17 @@ import {
     type EntityStatus,
     EntityStatusSchema,
     readEntityStatus,
-    readOrderedTaskEntries,
+    readEpicTaskDirectories,
     resolveEntityDirectory,
     writeEntityStatus,
 } from "../__lib/entity.js"
-import { writeTextAtomically } from "../__lib/files.js"
+import { type EpicTask, readEpicTasks } from "../__lib/epic-tasks.js"
 import type { ResourceIds } from "../integrations/resource-ids.js"
 import { resourceIdsFromTrackerObject } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared, type ProjectConfig } from "../__lib/project-config.js"
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "../integrations/policy.js"
-import { type GitHubForge, loadIntegrationConfig } from "../integrations/config.js"
+import { loadIntegrationConfig } from "../integrations/config.js"
 import {
     GitHubTrackerObjectSchema,
     LinearGigIssueObjectSchema,
@@ -67,28 +67,28 @@ const baseProperties = {
             "User-approved durable Request; preserve meaning while correcting grammar, spelling, capitalization, punctuation, and formatting; use the workflow command argument for new work or the tracker item's title/name and description for adopted work, plus agreed clarifications",
     }),
 }
-const taskProperties = {
-    kind: DeliverableKindSchema,
-    parentEpicDir: OneLineSchema,
-    epicItemTitle: OneLineSchema,
-    epicDelivery: Type.Optional(EpicDeliverySchema),
-}
-const gigProperties = { kind: DeliverableKindSchema }
-
-// The read-only checks that run before a tracker object is created.
-export const EpicPreflightSchema = Type.Object(
-    { ...baseProperties, entity: Type.Literal("epic") },
+// A Task always starts from the queued issue its parent Epic's issue processing created
+// or linked. The issue's marker selects the plan Task, which also supplies the Kind.
+export const TaskInitializationPropertiesSchema = Type.Object(
+    {
+        ...baseProperties,
+        parentEpicDir: OneLineSchema,
+        epicDelivery: Type.Optional(EpicDeliverySchema),
+    },
     { additionalProperties: false },
 )
-export const TaskPreflightSchema = Type.Object(
-    { ...baseProperties, ...taskProperties, entity: Type.Literal("task") },
+const gigProperties = { kind: DeliverableKindSchema }
+
+// The read-only checks that run before a new Epic or Gig tracker object is created.
+export const EpicPreflightSchema = Type.Object(
+    { ...baseProperties, entity: Type.Literal("epic") },
     { additionalProperties: false },
 )
 export const GigPreflightSchema = Type.Object(
     { ...baseProperties, ...gigProperties, entity: Type.Literal("gig") },
     { additionalProperties: false },
 )
-export const PreflightSchema = Type.Union([EpicPreflightSchema, TaskPreflightSchema, GigPreflightSchema])
+export const PreflightSchema = Type.Union([EpicPreflightSchema, GigPreflightSchema])
 export type PreflightInput = Static<typeof PreflightSchema>
 
 // Initialization records an existing tracker object, created or adopted, as the entity.
@@ -102,7 +102,8 @@ export const EntityInitializationSchema = Type.Union([
     ),
     Type.Object(
         {
-            ...TaskPreflightSchema.properties,
+            ...TaskInitializationPropertiesSchema.properties,
+            entity: Type.Literal("task"),
             object: Type.Union([GitHubTrackerObjectSchema, LinearTaskIssueObjectSchema]),
         },
         { additionalProperties: false },
@@ -116,7 +117,7 @@ export const EntityInitializationSchema = Type.Union([
     ),
 ])
 export type EntityInitialization = Static<typeof EntityInitializationSchema>
-type TaskPreflight = Extract<PreflightInput, { entity: "task" }>
+type TaskInitialization = Extract<EntityInitialization, { entity: "task" }>
 
 export interface InitializeEntityOptions {
     cwd: string
@@ -139,14 +140,14 @@ interface Prepared {
     parent?: ParentEpic
 }
 
-function prepare(input: PreflightInput, options: InitializeEntityOptions): Prepared {
+function prepare(input: PreflightInput | EntityInitialization, options: InitializeEntityOptions): Prepared {
     const root = project.resolveRootDir(options.cwd)
     assertGitRepository(root)
     const projectConfig = assertArtifactPersistencePrepared(root)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(root))
     const slug = slugify(input.slug)
     const parent =
-        input.entity === "task" ? readParentEpic(root, input, environment.forge, options.tools ?? new Map()) : undefined
+        input.entity === "task" ? readParentEpic(root, input, environment, options.tools ?? new Map()) : undefined
     const start = parent ? parent.branch : resolveDefaultBranch(root)
     assertCloneBranch(root, start)
     return { root, projectConfig, environment, slug, start, parent }
@@ -165,13 +166,7 @@ export function preflightEntity(input: PreflightInput, options: InitializeEntity
         state: "ready" as const,
         entity: input.entity,
         tracker: tracker.provider,
-        resource:
-            tracker.provider === "github"
-                ? ("issue" as const)
-                : input.entity === "epic"
-                  ? ("project" as const)
-                  : ("issue" as const),
-        ...(prepared.parent ? { parentTracker: prepared.parent.tracker } : {}),
+        resource: tracker.provider === "linear" && input.entity === "epic" ? ("project" as const) : ("issue" as const),
         start: prepared.start,
         next: "Create only the tracker object with the approved title and Request, then call the matching init tool with its evidence.",
     }
@@ -195,6 +190,9 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
         throw new Error("Linear Task issue does not belong to the parent Epic Project")
 
     const reference = trackerReference(object)
+    // The marker selects the plan Task. Issue processing verified that the issue is a
+    // queued child of this Epic before it tagged the plan; adoption re-reads it.
+    const plannedTask = parent ? plannedTaskFor(parent, trackerReferenceLabel(reference)!) : undefined
     const name = entityName(reference, slug)
     const relativeDirectory =
         input.entity === "task"
@@ -215,7 +213,6 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
     )
 
     let createdBranch: string | undefined
-    let parentEpicUpdated = false
     try {
         createBranch(root, contract)
         createdBranch = contract.name
@@ -231,24 +228,15 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
             EntityStatusSchema,
             input.entity === "epic"
                 ? { ...common, entity: "epic", taskTarget: "epic" }
-                : { ...common, entity: input.entity, kind: input.kind },
+                : { ...common, entity: input.entity, kind: input.entity === "task" ? plannedTask!.kind : input.kind },
         )
         createEntityArtifacts(absoluteDirectory, input, status)
-        if (input.entity === "task") {
-            const marker = trackerReferenceLabel(reference)!
-            writeTextAtomically(
-                parent!.epicPath,
-                annotateEpicPlanItem(parent!.epicContent, parent!.epicItemLine, marker),
-            )
-            parentEpicUpdated = true
-        }
         return {
             directory: relativeDirectory,
             status: readEntityStatus(absoluteDirectory),
             resourceIds: resourceIdsFromTrackerObject(object, environment, name),
         }
     } catch (error) {
-        if (parentEpicUpdated) writeTextAtomically(parent!.epicPath, parent!.epicContent)
         fs.rmSync(absoluteDirectory, { recursive: true, force: true })
         if (createdBranch) deleteCreatedBranch(root, createdBranch)
         throw error
@@ -306,40 +294,32 @@ function createEntityArtifacts(absoluteDirectory: string, input: EntityInitializ
     writeEntityStatus(absoluteDirectory, status)
 }
 
-type OrderedTaskEntry = ReturnType<typeof readOrderedTaskEntries>[number]
-
-function orderedTaskTitle(entry: OrderedTaskEntry): string {
-    const match = /^\*\*(\S(?:.*\S)?)\*\*\s+—\s+\S/.exec(entry.display)
-    if (!match) {
-        throw new Error(`Epic Ordered Tasks entry must use **Title** — description: ${JSON.stringify(entry.line)}`)
-    }
-    return match[1]
-}
-
-function annotateEpicPlanItem(content: string, planItem: string, marker: string): string {
-    const newline = content.includes("\r\n") ? "\r\n" : "\n"
-    const lines = content.split(/\r?\n/)
-    const matches = lines.flatMap((line, index) => (line.trim() === planItem.trim() ? [index] : []))
-    if (matches.length !== 1) throw new Error(`selected Epic plan item changed during Task initialization`)
-    const index = matches[0]
-    if (!/^\s*\d+\.\s+/.test(lines[index])) throw new Error(`selected Epic plan item is not ordered`)
-    lines[index] = lines[index].replace(/^(\s*\d+\.\s+)/, `$1[${marker}] `)
-    return lines.join(newline)
+function plannedTaskFor(parent: ParentEpic, marker: string): EpicTask {
+    const task = parent.tasks.find((candidate) => candidate.marker === marker)
+    if (!task)
+        throw new Error(
+            `parent Epic has no Task tagged ${marker}; finish the Epic's issue processing before starting it`,
+        )
+    if (task.canceled) throw new Error(`parent Epic Task ${marker} is canceled and can't be started`)
+    return task
 }
 
 interface ParentEpic {
     label: string
     directory: string
     branch: string
-    tracker: { provider: "github"; issueNumber: number } | { provider: "linear"; projectId: string }
     trackerProjectId?: string
-    epicPath: string
-    epicContent: string
-    epicItemLine: string
+    tasks: EpicTask[]
 }
 
-function readParentEpic(root: string, input: TaskPreflight, forge: GitHubForge, tools: McpToolCatalog): ParentEpic {
-    const { parentEpicDir: rawDirectory, epicItemTitle, epicDelivery } = input
+function readParentEpic(
+    root: string,
+    input: TaskInitialization,
+    environment: WorkflowEnvironment,
+    tools: McpToolCatalog,
+): ParentEpic {
+    const { parentEpicDir: rawDirectory, epicDelivery } = input
+    const forge = environment.forge
     const epicsRoot = path.join(root, EPIC_ROOT)
     const directory = path.resolve(root, rawDirectory)
     if (!directory.startsWith(`${epicsRoot}${path.sep}`)) {
@@ -350,49 +330,28 @@ function readParentEpic(root: string, input: TaskPreflight, forge: GitHubForge, 
     if (status.entity !== "epic") throw new Error(`parent directory is not an Epic: ${rawDirectory}`)
     const epicPath = path.join(directory, "epic.md")
     if (!fs.existsSync(epicPath)) throw new Error(`parent Epic has no accepted epic.md: ${rawDirectory}`)
-    const epicContent = fs.readFileSync(epicPath, "utf-8")
+    const tasks = readEpicTasks(epicPath)
     const taskBranch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
     if (status.taskTarget === "default") {
         assertEpicDelivered(root, status.branch, epicDelivery ?? { kind: "git-ancestry" }, forge, tools)
     } else if (epicDelivery) {
         throw new Error("Epic delivery evidence is only valid for default-target Tasks")
     }
-    const title = epicItemTitle.trim()
-    const matches = readOrderedTaskEntries(epicPath).filter((entry) => orderedTaskTitle(entry) === title)
-    if (matches.length > 1) {
-        throw new Error(`parent Epic contains multiple ordered Task entries titled ${JSON.stringify(title)}`)
-    }
-    const selected = matches[0]
-    if (!selected) {
-        throw new Error(`parent Epic does not contain an ordered Task entry titled ${JSON.stringify(title)}`)
-    }
-    if (selected.state === "initialized") {
-        throw new Error(`parent Epic item already has an initialized Task: ${JSON.stringify(title)}`)
-    }
-    const tracker =
-        status.tracker.provider === "github"
-            ? {
-                  provider: "github" as const,
-                  issueNumber: status.tracker.external.issueNumber,
-              }
-            : status.tracker.resource === "project"
-              ? {
-                    provider: "linear" as const,
-                    projectId: status.tracker.external.projectId,
-                }
-              : (() => {
-                    throw new Error("parent Epic must be bound to a Linear Project")
-                })()
+    if (status.tracker.provider === "linear" && status.tracker.resource !== "project")
+        throw new Error("parent Epic must be bound to a Linear Project")
+    const started = readEpicTaskDirectories(directory)
+    const trackerProjectId =
+        status.tracker.provider === "linear" && status.tracker.resource === "project"
+            ? status.tracker.external.projectId
+            : undefined
 
     return {
         label: entityLabel(status),
         directory: path.relative(root, directory),
         branch: taskBranch,
-        tracker,
-        ...(tracker.provider === "linear" ? { trackerProjectId: tracker.projectId } : {}),
-        epicPath,
-        epicContent,
-        epicItemLine: selected.line,
+        ...(trackerProjectId ? { trackerProjectId } : {}),
+        // A Task that already has a directory can't be started again.
+        tasks: tasks.filter((task) => !task.marker || !started.has(task.marker)),
     }
 }
 

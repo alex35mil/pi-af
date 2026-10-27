@@ -11,7 +11,7 @@ import {
     preflightEntity,
     PreflightSchema,
     setEpicTaskTarget,
-    TaskPreflightSchema,
+    TaskInitializationPropertiesSchema,
 } from "./entity.js"
 import { workflowTools } from "../__lib/tools.js"
 import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
@@ -35,24 +35,41 @@ export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "initialization")
     const mcpTools = observeMcpTools(pi)
     const entities = [
-        { entity: "epic", preflight: EpicPreflightSchema, linear: LinearProjectObjectSchema },
-        { entity: "task", preflight: TaskPreflightSchema, linear: LinearTaskIssueObjectSchema },
-        { entity: "gig", preflight: GigPreflightSchema, linear: LinearGigIssueObjectSchema },
+        // Rebuild as strict objects; Omit alone doesn't keep additionalProperties: false.
+        {
+            entity: "epic",
+            common: Type.Object(Type.Omit(EpicPreflightSchema, ["entity"]).properties, { additionalProperties: false }),
+            linear: LinearProjectObjectSchema,
+        },
+        { entity: "task", common: TaskInitializationPropertiesSchema, linear: LinearTaskIssueObjectSchema },
+        {
+            entity: "gig",
+            common: Type.Object(Type.Omit(GigPreflightSchema, ["entity"]).properties, { additionalProperties: false }),
+            linear: LinearGigIssueObjectSchema,
+        },
     ] as const
     for (const variant of entities) {
-        // Rebuild as a strict object; Omit alone doesn't keep additionalProperties: false.
-        const common = Type.Object(Type.Omit(variant.preflight, ["entity"]).properties, { additionalProperties: false })
-        tools.registerTool({
-            name: `preflight_${variant.entity}`,
-            label: `preflight_${variant.entity}`,
-            description: `Run every local check for an approved new ${variant.entity} before its tracker object is created. Changes nothing; a failure means nothing should be created on the tracker.`,
-            parameters: common,
-            async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                const input = Value.Parse(PreflightSchema, { ...Value.Parse(common, params), entity: variant.entity })
-                const result = preflightEntity(input, { cwd: ctx.cwd, tools: mcpTools })
-                return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
-            },
-        })
+        const common = variant.common
+        // A Task never creates its tracker issue: it starts from the queued issue its
+        // parent Epic's issue processing created, so it has no preflight.
+        if (variant.entity !== "task")
+            tools.registerTool({
+                name: `preflight_${variant.entity}`,
+                label: `preflight_${variant.entity}`,
+                description: `Run every local check for an approved new ${variant.entity} before its tracker object is created. Changes nothing; a failure means nothing should be created on the tracker.`,
+                parameters: common,
+                async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+                    const input = Value.Parse(PreflightSchema, {
+                        ...Value.Parse(common, params),
+                        entity: variant.entity,
+                    })
+                    const result = preflightEntity(input, { cwd: ctx.cwd, tools: mcpTools })
+                    return {
+                        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                        details: result,
+                    }
+                },
+            })
         for (const [provider, object] of [
             ["github", GitHubTrackerObjectSchema],
             ["linear", variant.linear],
@@ -62,7 +79,10 @@ export default function (pi: ExtensionAPI): void {
             tools.registerTool({
                 name,
                 label: name,
-                description: `Initialize an approved ${variant.entity} from its existing ${provider === "github" ? "GitHub issue" : "Linear object"}, newly created or explicitly selected. Names the directory and branch from the tracker object and records its Resource IDs.`,
+                description:
+                    variant.entity === "task"
+                        ? `Start a Task from its parent Epic's queued ${provider === "github" ? "GitHub issue" : "Linear issue"}, selected by the marker its plan section carries. Takes the Kind from that section, names the directory and branch from the issue, and records its Resource IDs.`
+                        : `Initialize an approved ${variant.entity} from its existing ${provider === "github" ? "GitHub issue" : "Linear object"}, newly created or explicitly selected. Names the directory and branch from the tracker object and records its Resource IDs.`,
                 parameters,
                 async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
                     const input = Value.Parse(EntityInitializationSchema, {

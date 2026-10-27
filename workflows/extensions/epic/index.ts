@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 export default function (pi: ExtensionAPI) {
     pi.registerCommand("epic", {
-        description: "Shape a large idea into an initiative and ordered prospective Tasks",
+        description: "Shape a large idea into an initiative and ordered Tasks, with a queued issue per Task",
         handler: async (args, ctx) => {
             const input = args.trim()
             if (!input) {

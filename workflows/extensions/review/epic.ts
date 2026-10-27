@@ -48,12 +48,15 @@ export async function buildEpicReviewPrompt(
         "- unclear outcome or architecture presented before user/operator/system behavior",
         "- material settled behavior, scope, state/configuration, workflow, failure handling, compatibility, invariant, integration boundary, or migration state missing from the candidate",
         "- missing concrete example where an example is needed to understand an agreed contract",
-        "- major gaps, overlap, or bad ordering among prospective Task units",
-        "- units that do not identify their owned outcome, relevant settled contract, and stopping boundary",
-        "- units that are too broad, too granular, or implementation-level",
+        "- major gaps, overlap, or bad ordering among the Task sections under `## Tasks`",
+        "- Task sections that do not identify their owned outcome, relevant settled contract, and stopping boundary, or whose `Kind:` line doesn't fit the work",
+        "- Task sections that are too broad, too granular, or implementation-level",
         "- hidden initiative/domain decisions that must be resolved before the epic is usable",
         acceptedEpic
-            ? "- removal or alteration of any existing Task marker ([#N] or [ENG-N]); initialized Task identity must survive title or ordering changes"
+            ? [
+                  "- removal or alteration of any existing Task marker ([#N] or [ENG-N]); Task identity must survive title or ordering changes",
+                  "- a tagged Task deleted instead of kept with `Status: canceled`, or `Status: canceled` on a Task that has already started",
+              ].join("\n")
             : "",
         instructions ? `\nExtra instructions:\n${instructions}` : "",
         "",

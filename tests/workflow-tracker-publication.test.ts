@@ -93,20 +93,14 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
     if (parent)
         fs.writeFileSync(
             path.join(root, parent.directory, "epic.md"),
-            "# Parent\n\n## Overview\n\nParent.\n\n## Ordered Tasks\n\n1. **Work** — Work.\n",
+            "# Parent\n\n## Overview\n\nParent.\n\n## Tasks\n\n### [#42] Work\n\nKind: feature\n\nWork.\n",
         )
     const input =
         kind === "epic"
             ? { ...common, entity: kind }
             : kind === "gig"
               ? { ...common, entity: kind, kind: "feature" as const }
-              : {
-                    ...common,
-                    entity: kind,
-                    kind: "feature" as const,
-                    parentEpicDir: parent!.directory,
-                    epicItemTitle: "Work",
-                }
+              : { ...common, entity: kind, parentEpicDir: parent!.directory }
     const initialized = initializeEntity(input, { cwd: root })
     const directory = initialized.directory
     const file = path.join(root, directory, "metadata.json")

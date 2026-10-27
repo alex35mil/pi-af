@@ -69,7 +69,7 @@ These tools read local configuration, authority, and entity state. They never ca
 
 The tracker object comes first; the local entity is named from it. New work and adoption end in the same initialization call.
 
-1. **Preflight new work.** Call `preflight_epic`, `preflight_task`, or `preflight_gig` with the approved values. It runs every local check that doesn't need the tracker object and changes nothing. A failure stops before anything is created on the tracker.
+1. **Preflight new work.** Call `preflight_epic` or `preflight_gig` with the approved values. A Task never creates its object; it adopts the issue its parent's [Task issue processing](../epic-tasks.md#task-issue-processing) created. It runs every local check that doesn't need the tracker object and changes nothing. A failure stops before anything is created on the tracker.
 2. **Get the object.**
    - New work: create only the tracker object, with the approved title and Request, as the provider reference describes. No search first.
    - Adoption: use the explicitly selected object after its provider preflight.
@@ -78,7 +78,7 @@ The tracker object comes first; the local entity is named from it. New work and 
 
 **When something fails:**
 
-- **Uncertain create:** nothing local exists yet. Before any new create for the same intake, search the tracker for the exact approved title and, for a Task, its parent relationship ([recovery](./recovery.md#uncertain-tracker-creation)). One match continues at step 3; none allows a retry; several stop for the user.
+- **Uncertain create:** nothing local exists yet. Before any new create for the same intake, search the tracker for the exact approved title ([recovery](./recovery.md#uncertain-tracker-creation)). One match continues at step 3; none allows a retry; several stop for the user.
 - **Initialization fails after a clear create:** never create again. Report the created object and the failure, fix the cause (for example a name collision), and call initialization again with the same object.
 - **Board setup incomplete on resume:** read fresh Project membership, Status, Priority, and Phase, and apply what's missing. When native Priority is unset, ask the user for it; it isn't kept locally.
 

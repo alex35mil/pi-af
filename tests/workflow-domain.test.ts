@@ -120,11 +120,13 @@ const task = (title: string, parentEpicDir: string, object: unknown) => ({
     title,
     slug: slugify(title),
     request: title,
-    kind: "feature" as const,
     parentEpicDir,
-    epicItemTitle: title,
     object,
 })
+// One `## Tasks` section; tagged once issue processing has created or linked its issue.
+const planTask = (title: string, marker?: string, kind = "feature", extra = "") =>
+    `### ${marker ? `[${marker}] ` : ""}${title}\n\nKind: ${kind}\n${extra}\n${title} outcome.\n`
+const epicPlan = (...tasks: string[]) => `# Epic\n\n## Overview\n\nPlan.\n\n## Tasks\n\n${tasks.join("\n")}`
 
 function init(cwd: string, input: unknown) {
     return initializeEntity(Value.Parse(EntityInitializationSchema, input), {
@@ -237,60 +239,56 @@ describe("workflow domain", () => {
             assert.match(formatInitializedEntity(created), /Initialized \.project\/\.local\/epics\/12-shared-workflow/)
 
             const epicPath = path.join(epicDir, "epic.md")
-            fs.writeFileSync(
-                epicPath,
-                "# Epic\n\n1. **Context only** — not a Task.\n\n## Ordered Tasks\n\n1. **Build it** — the core.\n",
+            const plan = epicPlan(
+                planTask("Build it", "#13", "bugfix"),
+                planTask("Queued", "#14"),
+                planTask("Dropped", "#15", "chore", "Status: canceled\n"),
+                planTask("Later"),
             )
-            const preflight = preflightEntity(
-                {
-                    entity: "task",
-                    title: "Build it",
-                    slug: "build-it",
-                    request: "Build it",
-                    kind: "feature",
-                    parentEpicDir: created.directory,
-                    epicItemTitle: "Build it",
-                },
-                { cwd },
+            fs.writeFileSync(epicPath, plan)
+            assert.throws(
+                () => init(cwd, task("Later", created.directory, issue(16))),
+                /no Task tagged #16; finish the Epic's issue processing/,
             )
-            assert.equal(preflight.state, "ready")
-            assert.deepEqual(preflight.parentTracker, {
-                provider: "github",
-                issueNumber: 12,
-            })
+            assert.throws(() => init(cwd, task("Dropped", created.directory, issue(15))), /canceled/)
 
             const built = init(cwd, task("Build it", created.directory, issue(13)))
             assert.equal(built.directory, ".project/.local/epics/12-shared-workflow/tasks/13-build-it")
             assert.equal(built.status.branch.name, "13-build-it")
             assert.equal(built.status.branch.start, "12-shared-workflow")
-            assert.match(fs.readFileSync(epicPath, "utf-8"), /^1\. \[#13\] \*\*Build it\*\*/m)
-            assert.match(fs.readFileSync(epicPath, "utf-8"), /^1\. \*\*Context only\*\*/m)
+            // The plan section supplies the Kind; initialization never rewrites the plan.
+            assert.equal(built.status.entity === "task" && built.status.kind, "bugfix")
+            assert.equal(fs.readFileSync(epicPath, "utf-8"), plan)
             assert.deepEqual(readEntityStatus(path.join(cwd, built.directory)), built.status)
-            assert.throws(
-                () => init(cwd, task("Build it", created.directory, issue(14))),
-                /already has an initialized Task/,
-            )
+            assert.throws(() => init(cwd, task("Build it", created.directory, issue(13))), /no Task tagged #13/)
 
-            assert.deepEqual(readEpicTaskProgress(epicDir, { "#13": "inProgress" }), {
+            const lifecycles = { "#13": "inProgress", "#14": "todo", "#15": "canceled" } as const
+            assert.deepEqual(readEpicTaskProgress(epicDir, lifecycles), {
                 epic: "#12",
                 items: [
                     {
                         state: "initialized",
-                        display: "**Build it** — the core.",
+                        title: "Build it",
                         lifecycle: "inProgress",
                         task: { marker: "#13", directory: built.directory },
                     },
+                    { state: "queued", title: "Queued", lifecycle: "todo", task: { marker: "#14" } },
+                    { state: "canceled", title: "Dropped", task: { marker: "#15" } },
+                    { state: "unpublished", title: "Later" },
                 ],
             })
-            assert.equal(readEpicTaskProgress(epicDir, { "#13": "done" }).items[0].state, "complete")
-            assert.throws(() => readEpicTaskProgress(epicDir), /tracker lifecycle is required for #13/)
+            assert.equal(readEpicTaskProgress(epicDir, { ...lifecycles, "#13": "done" }).items[0].state, "complete")
+            assert.throws(() => readEpicTaskProgress(epicDir, { "#13": "done" }), /lifecycle is required for #14/)
+            assert.throws(
+                () => readEpicTaskProgress(epicDir, { ...lifecycles, "#14": "inProgress" }),
+                /#14 has started but has no Task directory/,
+            )
 
-            const annotated = fs.readFileSync(epicPath, "utf-8")
-            fs.writeFileSync(epicPath, annotated.replace("[#13] ", ""))
-            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /exactly one marker for #13/)
-            fs.writeFileSync(epicPath, `${annotated}2. [#13] **Again** — duplicate.\n`)
-            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /duplicate Task markers/)
-            fs.writeFileSync(epicPath, annotated.replace("[#13]", "[TASK-01KDVDNA00]"))
+            fs.writeFileSync(epicPath, plan.replace("[#13] ", ""))
+            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /must contain the marker #13/)
+            fs.writeFileSync(epicPath, `${plan}\n${planTask("Again", "#13")}`)
+            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /duplicate Task marker #13/)
+            fs.writeFileSync(epicPath, plan.replace("[#13]", "[TASK-01KDVDNA00]"))
             assert.throws(() => readEpicTaskProgress(epicDir), /invalid Task marker/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -304,7 +302,7 @@ describe("workflow domain", () => {
             const epicBranch = created.status.branch.name
             fs.writeFileSync(
                 path.join(cwd, created.directory, "epic.md"),
-                "# Epic\n\n## Ordered Tasks\n\n1. **First Task** — via Epic.\n2. **Second Task** — on default.\n3. **Third Task** — via Epic.\n",
+                epicPlan(planTask("First Task", "#21"), planTask("Second Task", "#22"), planTask("Third Task", "#23")),
             )
             const first = init(cwd, task("First Task", created.directory, issue(21)))
             assert.equal(first.status.branch.target, epicBranch)
@@ -337,10 +335,7 @@ describe("workflow domain", () => {
         const cwd = temporaryRepository()
         try {
             const created = init(cwd, epic("Planning only", issue(30)))
-            fs.writeFileSync(
-                path.join(cwd, created.directory, "epic.md"),
-                "# Epic\n\n## Ordered Tasks\n\n1. **Ship it** — on default.\n",
-            )
+            fs.writeFileSync(path.join(cwd, created.directory, "epic.md"), epicPlan(planTask("Ship it", "#31")))
             setEpicTaskTarget(created.directory, "default", { cwd })
             const shipped = init(cwd, task("Ship it", created.directory, issue(31)))
             assert.equal(shipped.status.branch.start, "main")
@@ -389,10 +384,7 @@ describe("workflow domain", () => {
                 /workflow branch already exists: 20261003-other-epic/,
             )
 
-            fs.writeFileSync(
-                path.join(cwd, linearEpic.directory, "epic.md"),
-                "# Epic\n\n## Ordered Tasks\n\n1. **Wire it** — the wiring.\n",
-            )
+            fs.writeFileSync(path.join(cwd, linearEpic.directory, "epic.md"), epicPlan(planTask("Wire it", "ENG-8")))
             assert.throws(
                 () =>
                     init(
@@ -429,10 +421,6 @@ describe("workflow domain", () => {
             )
             assert.equal(wired.directory, ".project/.local/epics/20261002-rollout/tasks/ENG-8-wire-it")
             assert.equal(wired.status.branch.name, "alex/eng-8-wire-it")
-            assert.match(
-                fs.readFileSync(path.join(cwd, linearEpic.directory, "epic.md"), "utf-8"),
-                /\[ENG-8\] \*\*Wire it/,
-            )
             assert.equal(wired.resourceIds[0].scope.entity, "ENG-8-wire-it")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
@@ -474,18 +462,10 @@ describe("workflow domain", () => {
             assert.throws(
                 () =>
                     preflightEntity(
-                        {
-                            entity: "task",
-                            title: "Orphan",
-                            slug: "orphan",
-                            request: "Orphan",
-                            kind: "feature",
-                            parentEpicDir: ".project/.local/epics/missing",
-                            epicItemTitle: "Orphan",
-                        },
+                        { entity: "gig", title: "Orphan", slug: "-", request: "Orphan", kind: "feature" },
                         { cwd },
                     ),
-                /metadata\.json/,
+                /slug must contain/,
             )
             assert.equal(git(cwd, ["for-each-ref", "--format=%(refname)"]), before)
             assert.equal(fs.existsSync(path.join(cwd, ".project/.local/gigs")), false)

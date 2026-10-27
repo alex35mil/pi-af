@@ -258,6 +258,9 @@ describe("workflow-source queue context", () => {
             }),
             false,
         )
+        // Accepted Epic plans create every Task issue; Tasks are never queued directly.
+        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, entity: "task" }), false)
+        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, entity: "epic" }), true)
     })
 
     for (const provider of ["github", "linear"] as const) {

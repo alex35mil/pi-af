@@ -82,7 +82,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
         parentDirectory = parent.directory
         fs.writeFileSync(
             path.join(root, parent.directory, "epic.md"),
-            "# Parent\n\n## Overview\n\nParent.\n\n## Ordered Tasks\n\n1. **Work** — Work.\n",
+            `# Parent\n\n## Overview\n\nParent.\n\n## Tasks\n\n### [${issue.identifier}] Work\n\nKind: feature\n\nWork.\n`,
         )
     }
     const initialization =
@@ -92,10 +92,8 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
               ? {
                     ...common,
                     entity: "task" as const,
-                    kind: "feature" as const,
                     object: { ...issue, projectId: "project-uuid" },
                     parentEpicDir: parentDirectory!,
-                    epicItemTitle: "Work",
                 }
               : {
                     ...common,
