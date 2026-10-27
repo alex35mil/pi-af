@@ -25,6 +25,9 @@
  *   "edit(/tmp/*)"                  — match tool "edit" where path matches "/tmp/*"
  *
  * Evaluation order: deny > ask > allow > defaultMode (default: "ask")
+ * Session modes (/permissions-mode, auto-accept) never weaken explicit deny/ask rules:
+ * the result is the stricter of the session mode and any matching explicit deny/ask rule.
+ * Without a matching explicit rule, the session mode replaces allow rules and defaultMode.
  *
  * Argument matching depends on the tool:
  *   bash  — matched against command string
@@ -703,14 +706,49 @@ function getMatchValue(tool: string, input: Record<string, unknown>): string | u
     }
 }
 
+type Restriction = "deny" | "ask" | undefined
+
+function explicitRestriction(
+    settings: PermissionSettings,
+    toolName: string,
+    argValue: string,
+    mcpTool?: McpToolMetadata,
+): Restriction {
+    if (matchesAnyRule(settings.deny ?? [], toolName, argValue, mcpTool)) return "deny"
+    if (matchesAnyRule(settings.ask ?? [], toolName, argValue, mcpTool)) return "ask"
+    return undefined
+}
+
+function restrictionRules(settings: PermissionSettings): string[] {
+    return [...(settings.deny ?? []), ...(settings.ask ?? [])]
+}
+
+/** Whether any deny/ask rule could match an MCP tool, whatever its metadata. */
+function mayRestrictMcp(settings: PermissionSettings): boolean {
+    return restrictionRules(settings).some((rule) => rule === "*" || parseMcpRule(rule) !== undefined)
+}
+
+/** Whether any deny/ask rule could match some command of a non-MCP tool. */
+function mayRestrictTool(settings: PermissionSettings, toolName: string): boolean {
+    return restrictionRules(settings).some(
+        (rule) => !parseMcpRule(rule) && matchPattern(parseRule(rule).toolPattern, toolName),
+    )
+}
+
+function withSession(session: Mode, restriction: Restriction): Mode {
+    if (session === "deny" || restriction === "deny") return "deny"
+    if (restriction === "ask") return "ask"
+    return session
+}
+
 function resolveSingleMode(
     settings: PermissionSettings,
     toolName: string,
     argValue: string,
     mcpTool?: McpToolMetadata,
 ): Mode {
-    if (matchesAnyRule(settings.deny ?? [], toolName, argValue, mcpTool)) return "deny"
-    if (matchesAnyRule(settings.ask ?? [], toolName, argValue, mcpTool)) return "ask"
+    const restriction = explicitRestriction(settings, toolName, argValue, mcpTool)
+    if (restriction) return restriction
     if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue, mcpTool)) return "allow"
     if (matchesAnyRule(settings.allow ?? [], toolName, argValue, mcpTool)) return "allow"
 
@@ -721,6 +759,7 @@ function resolveSingleMode(
  * Resolve the permission mode for a tool call.
  * Bash commands are extracted from their syntax tree and evaluated separately.
  * The strictest mode wins: deny > ask > allow.
+ * A session mode is combined with explicit deny/ask rules and can never weaken them.
  */
 export async function resolveMode(
     settings: PermissionSettings,
@@ -731,19 +770,37 @@ export async function resolveMode(
     bashAnalyzer: BashAnalyzer = analyzeBash,
     mcpTool?: McpToolMetadata,
 ): Promise<Mode> {
-    const override = sessionOverrides.get(toolName)
-    if (override) return override
-    if (toolName.startsWith("mcp__") && !mcpTool) return "deny"
+    const session = sessionOverrides.get(toolName)
+    if (session === "deny") return "deny"
+
+    if (toolName.startsWith("mcp__") && !mcpTool) {
+        // Rules can't be matched without metadata: fail closed unless no rule could apply.
+        return session && !mayRestrictMcp(settings) ? session : "deny"
+    }
 
     if (toolName !== "bash" || !argValue) {
-        return resolveSingleMode(settings, toolName, argValue, mcpTool)
+        return session
+            ? withSession(session, explicitRestriction(settings, toolName, argValue, mcpTool))
+            : resolveSingleMode(settings, toolName, argValue, mcpTool)
     }
+
+    if (session && !mayRestrictTool(settings, toolName)) return session
 
     let analysis
     try {
         analysis = await bashAnalyzer(argValue, cwd)
     } catch {
         return "deny"
+    }
+
+    if (session) {
+        let restriction: Restriction
+        for (const command of analysis.commands) {
+            const mode = explicitRestriction(settings, toolName, command)
+            if (mode === "deny") return "deny"
+            if (mode === "ask") restriction = "ask"
+        }
+        return withSession(session, restriction)
     }
 
     let worst: Mode = analysis.writesFile ? "ask" : "allow"

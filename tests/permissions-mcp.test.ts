@@ -305,15 +305,20 @@ describe("MCP permission rules", () => {
         )
     })
 
-    it("keeps session overrides final", async () => {
+    it("never lets session modes weaken explicit MCP deny or ask rules", async () => {
         const toolName = fixtureToolName("github", "get_issue")
+        const allow = new Map<string, Mode>([[toolName, "allow"]])
 
         assert.equal(
-            await resolveMcp(
-                { defaultMode: "deny", deny: ["mcp(github, hint: readOnly)"] },
-                githubRead,
-                new Map([[toolName, "allow"]]),
-            ),
+            await resolveMcp({ defaultMode: "deny", deny: ["mcp(github, hint: readOnly)"] }, githubRead, allow),
+            "deny",
+        )
+        assert.equal(
+            await resolveMcp({ defaultMode: "deny", ask: ["mcp(github, get_issue)"] }, githubRead, allow),
+            "ask",
+        )
+        assert.equal(
+            await resolveMcp({ defaultMode: "deny", deny: ["mcp(github, other)"] }, githubRead, allow),
             "allow",
         )
         assert.equal(
@@ -324,6 +329,18 @@ describe("MCP permission rules", () => {
             ),
             "deny",
         )
+    })
+
+    it("fails closed for session modes without MCP metadata only when an MCP restriction exists", async () => {
+        const toolName = fixtureToolName("github", "get_issue")
+        const allow = new Map<string, Mode>([[toolName, "allow"]])
+        const resolveUnknown = (settings: PermissionSettings, overrides: ReadonlyMap<string, Mode>) =>
+            resolveMode(settings, toolName, "", undefined, overrides, analyzeBash)
+
+        assert.equal(await resolveUnknown({ deny: ["mcp(other, *)"] }, allow), "deny")
+        assert.equal(await resolveUnknown({ ask: ["*"] }, allow), "deny")
+        assert.equal(await resolveUnknown({ ask: ["bash(git push *)"] }, allow), "allow")
+        assert.equal(await resolveUnknown({ defaultMode: "allow" }, noOverrides), "deny")
     })
 
     it("preserves universal star but excludes other generic patterns", async () => {

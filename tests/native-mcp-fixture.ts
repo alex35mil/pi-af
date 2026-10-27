@@ -53,6 +53,7 @@ export function nativeMcpFixture(
     const prompts: string[] = []
     const notifications: string[] = []
     const order: string[] = []
+    const commands = new Map<string, { handler: (args: string, ctx: ExtensionToolContext) => unknown }>()
     let offered = options.tools ?? [{ name: "echo", inputSchema: { type: "object", properties: {} } }]
     let catalog: McpToolCatalog = new Map()
     let connects = 0
@@ -76,6 +77,7 @@ export function nativeMcpFixture(
         },
         ui: {
             setWidget() {},
+            setStatus() {},
             notify(text: string) {
                 notifications.push(text)
             },
@@ -103,7 +105,9 @@ export function nativeMcpFixture(
             }
         },
         getCommands: () => [],
-        registerCommand() {},
+        registerCommand(name: string, command: { handler: (args: string, ctx: ExtensionToolContext) => unknown }) {
+            commands.set(name, command)
+        },
         registerShortcut() {},
         registerToolRenderer() {},
         getSettings: () => ({}),
@@ -242,6 +246,11 @@ export function nativeMcpFixture(
         notifications,
         order,
         registrations,
+        async command(name: string, args = "") {
+            const command = commands.get(name)
+            if (!command) throw new Error(`missing command ${name}`)
+            await command.handler(args, context)
+        },
         catalog: () => catalog,
         connects: () => connects,
         closes: () => closes,

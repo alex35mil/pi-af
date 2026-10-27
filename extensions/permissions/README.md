@@ -51,11 +51,14 @@ Only an explicit MCP `readOnlyHint: true` matches `hint: readOnly`; missing or f
 
 ### Evaluation Order
 
-Session override > `deny` > `ask` > built-in/configured `allow` > `defaultMode` (default: `"ask"`). The strictest result across Bash command nodes wins.
+Without a session mode: `deny` > `ask` > built-in/configured `allow` > `defaultMode` (default: `"ask"`). The strictest result across Bash command nodes wins.
 
-Session overrides are final for the whole tool call. In particular, session `allow` deliberately skips Bash parsing and redirect checks.
+Session modes (`/permissions-mode` and auto-accept) never weaken explicit `deny` or `ask` rules. With a session mode, the result is the stricter of the session mode and any matching explicit `deny`/`ask` rule. When no explicit rule matches, the session mode replaces allow rules and `defaultMode`. So a session `deny` always blocks, an explicit `deny` always blocks, and an explicit `ask` still prompts under a session `allow`.
 
-Exact literal `true` and `false` Bash commands are built-in allow rules. Explicit session, deny, or ask rules still take precedence.
+- **Bash:** when no `deny`/`ask` rule targets `bash`, a session mode skips Bash parsing and redirect checks. Otherwise every command node is checked against those rules, and a command that can't be parsed is denied. The redirect check is not an explicit rule, so a session `allow` still skips it.
+- **MCP:** a tool without live catalog metadata can't be matched against rules. Under a session `allow` or `ask` it is denied when any `deny`/`ask` rule is `*` or an `mcp(...)` rule; otherwise the session mode applies. Without a session mode it is always denied.
+
+Exact literal `true` and `false` Bash commands are built-in allow rules. Session modes and explicit deny or ask rules still take precedence.
 
 ### Skill-Derived Rules
 

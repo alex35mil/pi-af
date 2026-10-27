@@ -215,7 +215,7 @@ Conversational gates remain required. Existing `ask` rules can also enforce per-
 
 **Precedence:**
 
-- Ask takes precedence over ordinary allow rules; session overrides take precedence over ask and deny. Headless ask is blocked.
+- Ask takes precedence over ordinary allow rules, and session modes can't bypass explicit ask or deny rules. Headless ask is blocked.
 - Each named checkout operation uses its own native permission: rebase, continuation, publication, additive fix commits, fix publication, and cleanup. None uses a shell route.
 
 **Limits:**
