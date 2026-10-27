@@ -102,12 +102,12 @@ See [Deliverable guidance](references/deliverable.md) for the full flow and [Epi
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
-- Record the approved routing intent at Epic plan acceptance; it stays local.
-- Selecting default doesn't prove delivery: every new or adopted default-target Task requires the planning work to be delivered first.
-- Epic planning commits nothing, so an Epic branch with no commits ahead of its target counts as delivered. Otherwise delivery needs a verified merged GitHub PR, which also covers squash merges, along with repository, branch, and revision checks.
+- The plan records routing as public `Task target:` and `Epic branch:` lines, so every clone reads the same choice.
+- Default-target Tasks don't depend on the Epic branch at all. Epic-target Tasks start from it, so it must exist locally.
 - Changing the strategy affects future Tasks only.
+- A clone without the Epic's local files restores them from the tracker.
 
- See [Epic delivery](references/epic.md) for both switching directions and exact evidence requirements.
+See [Epic routing and restore](references/epic.md).
 
 ## Readable tracker and PR bodies
 

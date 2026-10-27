@@ -31,7 +31,8 @@ export interface PublicationAdapter<I> {
     update(id: I, content: string): NativePublicationCall
     record(evidence: ProviderEvidence, token: string): PublicationIdentity<I>
     recoveryLookups(): NativePublicationCall[]
-    recover(evidence: ProviderEvidence[], token: string): PublicationCandidate<I>[] | RecoveryReads
+    // Without a token (Epic restore), matches any single plan publication marker.
+    recover(evidence: ProviderEvidence[], token?: string): PublicationCandidate<I>[] | RecoveryReads
     verification:
         | { kind: "direct" }
         | {
@@ -45,9 +46,12 @@ export function planPublicationMarker(token: string): string {
     return `<!-- plan-publication:${token} -->`
 }
 
-export function hasPublicationMarker(body: unknown, token: string): body is string {
+// With no token, matches a body carrying exactly one plan publication marker of any token.
+export function hasPublicationMarker(body: unknown, token?: string): body is string {
+    const marker = token === undefined ? /^<!-- plan-publication:[^ >]+ -->$/ : undefined
     return (
         typeof body === "string" &&
-        body.split(/\r?\n/).filter((line) => line === planPublicationMarker(token)).length === 1
+        body.split(/\r?\n/).filter((line) => (marker ? marker.test(line) : line === planPublicationMarker(token!)))
+            .length === 1
     )
 }

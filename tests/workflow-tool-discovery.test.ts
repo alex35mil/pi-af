@@ -73,7 +73,7 @@ describe("workflow tool discovery", () => {
             events: createEventBus(),
             registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
         } as never)
-        assert.equal(tools.length, 9)
+        assert.equal(tools.length, 10)
         assert.ok(!tools.some((tool) => tool.name === "init" || tool.name === "preflight_task"))
         for (const tool of tools) {
             assert.ok(Type.IsObject(tool.parameters))

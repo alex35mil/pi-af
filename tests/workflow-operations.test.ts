@@ -63,7 +63,7 @@ function entity(provider: "github" | "linear", kind: "epic" | "task" | "gig" = "
         createdAt: "2026-01-01T00:00:00Z",
         phase: "planning",
         entity: kind,
-        ...(kind === "epic" ? { taskTarget: "epic" } : { kind: "refactor" }),
+        ...(kind === "epic" ? {} : { kind: "refactor" }),
         branch: {
             state: "ready",
             name: "example",

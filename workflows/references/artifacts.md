@@ -148,9 +148,8 @@ Precedence is in [core approvals](./core.md#approvals).
 
 - `epic.md`, drafts, and review rounds appear only when their gates create them.
 - Each Task is a `### ` section in accepted `epic.md`. Task issue processing tags it with its issue's stable marker, `[#N]` or `[ENG-N]`; starting the Task adds its child directory ([Epic Tasks](./epic-tasks.md)).
-- Metadata holds the immutable branch identity and `taskTarget: epic | default`. Changing the pointer affects only Tasks initialized afterward.
-- The approved Task delivery strategy and its rationale belong in reviewed `epic.md`. The initial pointer is not approval.
-- Selecting default doesn't prove delivery. When initializing a default-target Task, read [Epic delivery](./epic.md).
+- Metadata holds the immutable branch identity. Routing lives in reviewed `epic.md` as `Task target:` and `Epic branch:` lines, published with the plan ([Epic routing](./epic.md#routing)).
+- Every Epic file here is a per-clone copy. A clone without it [restores](./epic.md#restore-an-epic) the Epic from the tracker.
 
 ### Task and Gig (Deliverables)
 
@@ -173,7 +172,7 @@ Precedence is in [core approvals](./core.md#approvals).
 
 - Task and Gig share the Deliverable lifecycle and these meanings. Only a Task has a parent Epic and may update parent Epic artifacts. Its parent identity is the containing Epic directory plus its exact marker.
 - `metadata.branch` records the branch name, start, target, and whether the name was generated or tracker-provided.
-- A Task's stored start and target never change when its Epic later changes `taskTarget`.
+- A Task's stored start and target never change when its Epic's routing later changes.
 - `metadata.json` is authoritative for kind and `phase: planning | execution | selfReview`.
 - Completion artifacts follow the [Deliverable lifecycle](./deliverable.md#completion-artifact). Kind-only updates leave accepted plans, results, and reports unchanged.
 

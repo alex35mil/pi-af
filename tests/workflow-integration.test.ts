@@ -139,7 +139,7 @@ function writeEntity(cwd: string, entity: "epic" | "gig", name: string, tracker:
         slug,
         title: slug,
         entity,
-        ...(entity === "epic" ? { taskTarget: "epic" } : { kind: "feature" }),
+        ...(entity === "epic" ? {} : { kind: "feature" }),
         createdAt: "2026-01-02T03:06:00.000Z",
         phase: "execution",
         branch: {

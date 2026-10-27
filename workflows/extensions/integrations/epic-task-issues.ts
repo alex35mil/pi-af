@@ -177,19 +177,25 @@ function reconcileTask(task: EpicTask, r: Reconciliation): EpicTaskIssueStep[] {
             throw new Error(`${marker} is ${child.status ?? "off the board"}; only a queued Task can be canceled`)
         return r.native.cancel(task.title, marker)
     }
-    if (r.started.has(marker)) return []
+    const child = requireChild(marker, r)
+    // The tracker decides whether a Task has started; it may have started in another clone.
+    const lifecycle = r.lifecycle(child.status)
+    if (lifecycle === "inProgress" || lifecycle === "inReview" || lifecycle === "done") return []
+    if (r.started.has(marker))
+        throw new Error(`${marker} has a local Task directory but its issue is ${child.status ?? "off the board"}`)
     return queuedChild(task.title, marker, r)
 }
 
-// A tagged Task without a directory: a child of this Epic, with its board setup
+// A tagged Task that hasn't started: a child of this Epic, with its board setup
 // completed, still queued or already canceled.
 function queuedChild(title: string, marker: string, r: Reconciliation): EpicTaskIssueStep[] {
     const child = requireChild(marker, r)
-    const steps = r.native.repairBoard(title, child)
-    const status = steps.some((step) => step.effect === "setStatus") ? "todo" : r.lifecycle(child.status)
-    if (status !== "backlog" && status !== "todo" && status !== "canceled")
-        throw new Error(`${marker} is ${child.status ?? "off the board"} but has no Task directory`)
-    return steps
+    const lifecycle = r.lifecycle(child.status)
+    // Canceled on the tracker is a terminal outcome; never pull it back into Todo.
+    if (lifecycle === "canceled") return []
+    if (lifecycle !== undefined && lifecycle !== "backlog" && lifecycle !== "todo")
+        throw new Error(`${marker} is ${child.status} and can't be linked as a queued Task`)
+    return r.native.repairBoard(title, child)
 }
 
 function requireChild(marker: string, r: Reconciliation): EpicChildIssue {
@@ -291,16 +297,16 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
                             issue_number: issueNumber(marker),
                         }),
                     })
-                if (child.status === undefined) {
+                // Automations may add the issue first, e.g. as Backlog with no Priority.
+                if (child.status === undefined || child.status === tracker.fields.status.values.backlog)
                     steps.push({
                         title,
                         marker,
                         effect: "setStatus",
                         mutation: setField(marker, tracker.fields.status.field, tracker.fields.status.values.todo),
                     })
-                    if (child.priority === undefined && epicPriority !== PRIORITY_NOT_SET)
-                        steps.push({ title, marker, effect: "setPriority", mutation: setPriority(marker) })
-                }
+                if (child.priority === undefined && epicPriority !== PRIORITY_NOT_SET)
+                    steps.push({ title, marker, effect: "setPriority", mutation: setPriority(marker) })
                 return steps
             },
             cancel: (title, marker) => [
@@ -331,8 +337,23 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
                 state: statuses.todo,
                 priority: linearPriorityNumber(epicPriority),
             }),
-        // Linear sets state and Priority at create; only the checks apply.
-        repairBoard: () => [],
+        repairBoard(title, child) {
+            const backlog = child.status === undefined || child.status === statuses.backlog
+            const priority = child.priority === undefined && epicPriority !== PRIORITY_NOT_SET
+            if (!backlog && !priority) return []
+            return [
+                {
+                    title,
+                    marker: child.marker,
+                    effect: backlog ? "setStatus" : "setPriority",
+                    mutation: call("save_issue", {
+                        id: child.marker,
+                        ...(backlog ? { state: statuses.todo } : {}),
+                        ...(priority ? { priority: linearPriorityNumber(epicPriority) } : {}),
+                    }),
+                },
+            ]
+        },
         cancel: (title, marker) => [
             { title, marker, effect: "cancel", mutation: call("save_issue", { id: marker, state: statuses.canceled }) },
         ],

@@ -10,9 +10,9 @@ import {
     type InitializedEntity,
     preflightEntity,
     PreflightSchema,
-    setEpicTaskTarget,
     TaskInitializationPropertiesSchema,
 } from "./entity.js"
+import { restoreEpic, restoreEpicPlanSource, RestoreEpicPlanSourceSchema, RestoreEpicSchema } from "./restore.js"
 import { workflowTools } from "../__lib/tools.js"
 import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
 import {
@@ -22,14 +22,6 @@ import {
     LinearTaskIssueObjectSchema,
 } from "../integrations/records.js"
 import { seedInitializedEntityResourceIds } from "./resource-ids.js"
-
-const SetEpicTaskTargetSchema = Type.Object(
-    {
-        entityDir: Type.String({ minLength: 1 }),
-        target: Type.Enum(["epic", "default"], { type: "string" }),
-    },
-    { additionalProperties: false },
-)
 
 export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "initialization")
@@ -101,20 +93,29 @@ export default function (pi: ExtensionAPI): void {
     }
 
     tools.registerTool({
-        name: "set_epic_task_target",
-        label: "set_epic_task_target",
+        name: "restore_epic",
+        label: "restore_epic",
         description:
-            "Record the approved routing intent for future Tasks at Epic plan acceptance; it stays local. This does not prove delivery; every default-target Task initialization verifies delivery independently. Existing Tasks keep their targets.",
-        parameters: SetEpicTaskTargetSchema,
+            "Recreate a missing local Epic from its tracker read and its single published plan: directory, metadata, brief, and epic.md. Never runs over an existing local Epic for the same tracker item, and creates no branch.",
+        parameters: RestoreEpicSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(SetEpicTaskTargetSchema, params)
-            const status = setEpicTaskTarget(input.entityDir, input.target, { cwd: ctx.cwd })
-            if (status.entity !== "epic") throw new Error("updated entity is not an Epic")
-            const branch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
+            const result = restoreEpic(ctx.cwd, Value.Parse(RestoreEpicSchema, params), mcpTools)
             return {
-                content: [{ type: "text" as const, text: `Future Tasks will start from and target ${branch}.` }],
-                details: status,
+                content: [{ type: "text" as const, text: `Restored ${result.directory}.` }],
+                details: result,
             }
+        },
+    })
+
+    tools.registerTool({
+        name: "restore_epic_plan_source",
+        label: "restore_epic_plan_source",
+        description:
+            "Return an existing local Epic's published plan as epic.md source, for comparing with the local copy. Writes nothing.",
+        parameters: RestoreEpicPlanSourceSchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const result = restoreEpicPlanSource(ctx.cwd, Value.Parse(RestoreEpicPlanSourceSchema, params), mcpTools)
+            return { content: [{ type: "text" as const, text: result.source }], details: result }
         },
     })
 }

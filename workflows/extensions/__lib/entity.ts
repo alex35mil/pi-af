@@ -82,12 +82,8 @@ const baseMetadataProperties = {
     tracker: TrackerRecordSchema,
     forge: Type.Optional(ForgeRecordSchema),
 }
-const epicProperties = {
-    entity: Type.Literal("epic"),
-    taskTarget: Type.Union([Type.Literal("epic"), Type.Literal("default")], {
-        description: "Routing intent for future Tasks, not proof of delivery; the initial epic value is not approval",
-    }),
-}
+// Routing lives in the published plan (`Task target:` and `Epic branch:` in epic.md).
+const epicProperties = { entity: Type.Literal("epic") }
 const gigProperties = { entity: Type.Literal("gig"), kind: DeliverableKindSchema }
 const taskProperties = { entity: Type.Literal("task"), kind: DeliverableKindSchema }
 
@@ -214,11 +210,7 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
                   if (status.branch.start !== status.branch.target) {
                       fail("Task start and target must use the same containing-Epic base")
                   }
-                  const parentEpicPath = path.join(actualParentDirectory, "epic.md")
-                  if (!fs.existsSync(parentEpicPath)) fail("Task parent has no accepted epic.md")
-                  const marker = taskMarker(status)
-                  if (!readEpicTasks(parentEpicPath).some((task) => task.marker === marker))
-                      fail(`Task parent epic.md must contain the marker ${marker}`)
+                  // The tracker owns the Task's relationship; the local plan copy may lag.
                   return status.branch.start
               })()
             : status.branch.start
@@ -241,7 +233,8 @@ function assertTaskTrackerParent(task: EntityStatus, parent: EntityStatus, fail:
 }
 
 // Progress for every planned Task, from the plan and fresh tracker lifecycle for every
-// tagged marker. A Task directory exists only once a Task has started.
+// tagged marker. A local Task directory is optional detail: a Task may have started in
+// another clone.
 export function readEpicTaskProgress(
     epicDirectory: string,
     trackerLifecycle: Readonly<Record<string, LifecycleState>> = {},
@@ -252,10 +245,6 @@ export function readEpicTaskProgress(
     if (!fs.existsSync(epicPath)) throw new Error(`Epic has no accepted epic.md: ${epicDirectory}`)
     const planTasks = readEpicTasks(epicPath)
     const directories = readEpicTaskDirectories(epicDirectory)
-    const planned = new Set(planTasks.flatMap((task) => (task.marker ? [task.marker] : [])))
-    for (const marker of directories.keys()) {
-        if (!planned.has(marker)) throw new Error(`${marker} is not referenced by an Epic plan Task`)
-    }
 
     const progress: EpicTaskProgress = {
         epic: entityLabel(epic),
@@ -276,7 +265,6 @@ export function readEpicTaskProgress(
                     return { state: "queued" as const, title, lifecycle, task }
                 case "inProgress":
                 case "inReview":
-                    if (!directory) throw new Error(`${planTask.marker} has started but has no Task directory`)
                     return { state: "initialized" as const, title, lifecycle, task }
                 case "done":
                     return { state: "complete" as const, title, task }

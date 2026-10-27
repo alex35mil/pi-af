@@ -52,6 +52,7 @@ export async function buildEpicReviewPrompt(
         "- Task sections that do not identify their owned outcome, relevant settled contract, and stopping boundary, or whose `Kind:` line doesn't fit the work",
         "- Task sections that are too broad, too granular, or implementation-level",
         "- hidden initiative/domain decisions that must be resolved before the epic is usable",
+        "- a `## Task delivery strategy` section without `Task target: default|epic` and `Epic branch: <name>` lines, or a target that disagrees with the strategy rationale or highlights",
         acceptedEpic
             ? [
                   "- removal or alteration of any existing Task marker ([#N] or [ENG-N]); Task identity must survive title or ordering changes",
