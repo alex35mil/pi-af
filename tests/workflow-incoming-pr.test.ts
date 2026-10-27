@@ -803,7 +803,7 @@ describe("incoming PR entry and existing permissions", () => {
         assert.match(String(messages[0]), /does not authorize publication/)
     })
 
-    it("uses existing ask precedence and explicit session overrides for all posting/merge tools", async () => {
+    it("keeps explicit ask for all posting/merge tools even under a session allow", async () => {
         for (const name of [
             "pull_request_review_write",
             "add_comment_to_pending_review",
@@ -828,7 +828,7 @@ describe("incoming PR entry and existing permissions", () => {
                     undefined,
                     metadata,
                 ),
-                "allow",
+                "ask",
             )
         }
     })

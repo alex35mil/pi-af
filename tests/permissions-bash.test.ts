@@ -221,7 +221,7 @@ describe("Bash parser failures and session overrides", () => {
         )
     })
 
-    it("applies session overrides without invoking the parser", async () => {
+    it("applies session modes without the parser when no restriction targets Bash", async () => {
         let calls = 0
         const analyzer: BashAnalyzer = async () => {
             calls++
@@ -235,6 +235,44 @@ describe("Bash parser failures and session overrides", () => {
         )
         assert.equal(await resolve(settings, "echo hi", undefined, new Map([["bash", "ask"]]), analyzer), "ask")
         assert.equal(await resolve(settings, "echo hi", undefined, new Map([["bash", "deny"]]), analyzer), "deny")
+        assert.equal(
+            await resolve({ deny: ["bash(rm *)"] }, "rm x", undefined, new Map([["bash", "deny"]]), analyzer),
+            "deny",
+        )
         assert.equal(calls, 0)
+    })
+
+    it("never lets a session mode weaken explicit Bash deny or ask rules", async () => {
+        const allow = new Map<string, Mode>([["bash", "allow"]])
+        const ask = new Map<string, Mode>([["bash", "ask"]])
+        const settings: PermissionSettings = {
+            defaultMode: "deny",
+            deny: ["bash(rm *)"],
+            ask: ["bash(git push *)"],
+        }
+
+        assert.equal(await resolve(settings, "echo ok; rm x", undefined, allow), "deny")
+        assert.equal(await resolve(settings, "echo $(rm x)", undefined, ask), "deny")
+        assert.equal(await resolve(settings, "git push origin main", undefined, allow), "ask")
+        assert.equal(await resolve(settings, "echo ok", undefined, allow), "allow")
+        assert.equal(await resolve(settings, "echo ok", undefined, ask), "ask")
+        assert.equal(await resolve(settings, "echo hi > output", undefined, allow), "allow")
+    })
+
+    it("fails closed on parser failure under a session mode when a Bash rule exists", async () => {
+        const failingAnalyzer: BashAnalyzer = async () => {
+            throw new Error("WASM unavailable")
+        }
+
+        assert.equal(
+            await resolve(
+                { ask: ["bash(git push *)"] },
+                "echo ok",
+                undefined,
+                new Map([["bash", "allow"]]),
+                failingAnalyzer,
+            ),
+            "deny",
+        )
     })
 })

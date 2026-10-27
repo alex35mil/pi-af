@@ -73,6 +73,10 @@ describe("built-in bash allow rules", () => {
         assert.equal(await resolve({ defaultMode: "deny" }, "true", new Map([["bash", "ask"]])), "ask")
         assert.equal(
             await resolve({ defaultMode: "deny", deny: ["bash(rm *)"] }, "rm file", new Map([["bash", "allow"]])),
+            "deny",
+        )
+        assert.equal(
+            await resolve({ defaultMode: "deny", deny: ["bash(rm *)"] }, "ls", new Map([["bash", "allow"]])),
             "allow",
         )
     })

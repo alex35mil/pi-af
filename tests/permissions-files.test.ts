@@ -31,13 +31,16 @@ const args = (kind: "edit" | "write"): JsonObject =>
 const textOf = (outcome: Awaited<ReturnType<ReturnType<typeof nativeMcpFixture>["run"]>>) =>
     outcome.result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n")
 
-function fixture(mode: "allow" | "ask" | "deny" = "ask") {
+function fixture(
+    mode: "allow" | "ask" | "deny" = "ask",
+    rules: { ask?: readonly string[]; deny?: readonly string[] } = {},
+) {
     const h = nativeMcpFixture({ servers: [] })
     const file = path.join(h.root, "target.txt")
     fs.mkdirSync(path.join(h.root, ".agents"))
     fs.writeFileSync(
         path.join(h.root, ".agents/permissions.json"),
-        JSON.stringify({ defaultMode: mode, allow: ["codemode", "later"] }),
+        JSON.stringify({ defaultMode: mode, allow: ["codemode", "later"], ...rules }),
     )
     fs.writeFileSync(file, "before")
     registerPermission(h.pi)
@@ -152,6 +155,31 @@ describe("native file permission execution", () => {
                     assert.equal(h.writes(), 0)
                     assert.equal(h.aborted(), mode === "deny")
                 } finally {
+                    await h.cleanup()
+                }
+            }
+        })
+    }
+
+    for (const kind of ["edit", "write"] as const) {
+        it(`auto-accept ${kind} never weakens explicit ask or deny rules`, async () => {
+            for (const testCase of [
+                { defaultMode: "ask", rules: {}, outcome: "applied" },
+                { defaultMode: "allow", rules: { ask: [`${kind}(target.txt)`] }, outcome: "reviewed" },
+                { defaultMode: "allow", rules: { deny: [`${kind}(target.txt)`] }, outcome: "denied" },
+                { defaultMode: "ask", rules: { ask: [`${kind}(other.txt)`] }, outcome: "applied" },
+            ] as const) {
+                const h = fixture(testCase.defaultMode, testCase.rules)
+                let enabled = false
+                try {
+                    await h.command("permissions-toggle-auto-accept")
+                    enabled = true
+                    const outcome = await h.run(kind, args(kind))
+                    assert.equal(outcome.isError, testCase.outcome === "denied", testCase.outcome)
+                    assert.equal(h.prompts(), testCase.outcome === "reviewed" ? 1 : 0, testCase.outcome)
+                    assert.equal(h.content(), testCase.outcome === "denied" ? "before" : "after", testCase.outcome)
+                } finally {
+                    if (enabled) await h.command("permissions-toggle-auto-accept")
                     await h.cleanup()
                 }
             }
