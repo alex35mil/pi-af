@@ -11,12 +11,7 @@ import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { entityName, formatBranchName, readyBranch, slugify } from "../workflows/extensions/__lib/domain.ts"
 import { readEntityStatus, readEpicTaskProgress, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import {
-    EntityInitializationSchema,
-    initializeEntity,
-    preflightEntity,
-    setEpicTaskTarget,
-} from "../workflows/extensions/init/entity.ts"
+import { EntityInitializationSchema, initializeEntity, preflightEntity } from "../workflows/extensions/init/entity.ts"
 import { formatInitializedEntity } from "../workflows/extensions/init/index.ts"
 
 const repository = { owner: "example", repo: "project" }
@@ -126,7 +121,8 @@ const task = (title: string, parentEpicDir: string, object: unknown) => ({
 // One `## Tasks` section; tagged once issue processing has created or linked its issue.
 const planTask = (title: string, marker?: string, kind = "feature", extra = "") =>
     `### ${marker ? `[${marker}] ` : ""}${title}\n\nKind: ${kind}\n${extra}\n${title} outcome.\n`
-const epicPlan = (...tasks: string[]) => `# Epic\n\n## Overview\n\nPlan.\n\n## Tasks\n\n${tasks.join("\n")}`
+const epicPlan = (branch: string, target: "epic" | "default", ...tasks: string[]) =>
+    `# Epic\n\n## Overview\n\nPlan.\n\n## Task delivery strategy\n\nTask target: ${target}\nEpic branch: ${branch}\n\nWhy.\n\n## Tasks\n\n${tasks.join("\n")}`
 
 function init(cwd: string, input: unknown) {
     return initializeEntity(Value.Parse(EntityInitializationSchema, input), {
@@ -223,7 +219,6 @@ describe("workflow domain", () => {
                 planComment: { state: "unpublished" },
             })
             assert.equal(epicStatus.phase, "planning")
-            assert.equal(epicStatus.taskTarget, "epic")
             const epicDir = path.join(cwd, created.directory)
             for (const entry of ["brief.md", "notes.md", "metadata.json", "reviews", "scratch", "tasks"])
                 assert.ok(fs.existsSync(path.join(epicDir, entry)), entry)
@@ -240,6 +235,8 @@ describe("workflow domain", () => {
 
             const epicPath = path.join(epicDir, "epic.md")
             const plan = epicPlan(
+                "12-shared-workflow",
+                "epic",
                 planTask("Build it", "#13", "bugfix"),
                 planTask("Queued", "#14"),
                 planTask("Dropped", "#15", "chore", "Status: canceled\n"),
@@ -279,15 +276,17 @@ describe("workflow domain", () => {
             })
             assert.equal(readEpicTaskProgress(epicDir, { ...lifecycles, "#13": "done" }).items[0].state, "complete")
             assert.throws(() => readEpicTaskProgress(epicDir, { "#13": "done" }), /lifecycle is required for #14/)
-            assert.throws(
-                () => readEpicTaskProgress(epicDir, { ...lifecycles, "#14": "inProgress" }),
-                /#14 has started but has no Task directory/,
-            )
+            // A Task started in another clone has no local directory.
+            assert.deepEqual(readEpicTaskProgress(epicDir, { ...lifecycles, "#14": "inProgress" }).items[1], {
+                state: "initialized",
+                title: "Queued",
+                lifecycle: "inProgress",
+                task: { marker: "#14" },
+            })
 
+            // The tracker owns the relationship; a lagging local plan doesn't break the Task.
             fs.writeFileSync(epicPath, plan.replace("[#13] ", ""))
-            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /must contain the marker #13/)
-            fs.writeFileSync(epicPath, `${plan}\n${planTask("Again", "#13")}`)
-            assert.throws(() => readEntityStatus(path.join(cwd, built.directory)), /duplicate Task marker #13/)
+            assert.deepEqual(readEntityStatus(path.join(cwd, built.directory)), built.status)
             fs.writeFileSync(epicPath, plan.replace("[#13]", "[TASK-01KDVDNA00]"))
             assert.throws(() => readEpicTaskProgress(epicDir), /invalid Task marker/)
         } finally {
@@ -295,50 +294,53 @@ describe("workflow domain", () => {
         }
     })
 
-    it("records routing before delivery and never retargets existing Tasks", () => {
+    it("routes each new Task from the plan's Task target and never retargets existing Tasks", () => {
         const cwd = temporaryRepository()
         try {
             const created = init(cwd, epic("Feature-flag rollout", issue(20)))
             const epicBranch = created.status.branch.name
-            fs.writeFileSync(
-                path.join(cwd, created.directory, "epic.md"),
-                epicPlan(planTask("First Task", "#21"), planTask("Second Task", "#22"), planTask("Third Task", "#23")),
-            )
+            const epicPath = path.join(cwd, created.directory, "epic.md")
+            const tasks = [planTask("First Task", "#21"), planTask("Second Task", "#22"), planTask("Third Task", "#23")]
+            fs.writeFileSync(epicPath, epicPlan(epicBranch, "epic", ...tasks))
             const first = init(cwd, task("First Task", created.directory, issue(21)))
             assert.equal(first.status.branch.target, epicBranch)
 
-            const selected = setEpicTaskTarget(created.directory, "default", { cwd })
-            assert.equal(selected.entity === "epic" && selected.taskTarget, "default")
+            // Default-target Tasks need nothing from the Epic branch, even after it's deleted.
+            fs.writeFileSync(epicPath, epicPlan(epicBranch, "default", ...tasks))
+            git(cwd, ["branch", "-D", epicBranch])
+            const second = init(cwd, task("Second Task", created.directory, issue(22)))
+            assert.equal(second.status.branch.start, "main")
             assert.equal(readEntityStatus(path.join(cwd, first.directory)).branch.target, epicBranch)
-            git(cwd, ["switch", epicBranch])
-            fs.writeFileSync(path.join(cwd, "feature.txt"), "epic work\n")
-            git(cwd, ["add", "feature.txt"])
-            git(cwd, ["commit", "-m", "epic work"])
-            const second = () => init(cwd, task("Second Task", created.directory, issue(22)))
-            assert.throws(second, /has not been merged/)
 
-            git(cwd, ["switch", "main"])
-            git(cwd, ["merge", "--ff-only", epicBranch])
-            const delivered = second()
-            assert.equal(delivered.status.branch.start, "main")
-
-            setEpicTaskTarget(created.directory, "epic", { cwd })
-            const third = init(cwd, task("Third Task", created.directory, issue(23)))
-            assert.equal(third.status.branch.target, epicBranch)
-            assert.equal(readEntityStatus(path.join(cwd, delivered.directory)).branch.target, "main")
+            // An Epic-target Task starts from the Epic branch, so it must exist locally.
+            fs.writeFileSync(epicPath, epicPlan(epicBranch, "epic", ...tasks))
+            const third = () => init(cwd, task("Third Task", created.directory, issue(23)))
+            assert.throws(third, /start from the Epic branch 20-feature-flag-rollout; fetch or create it/)
+            git(cwd, ["branch", epicBranch, "main"])
+            assert.equal(third().status.branch.target, epicBranch)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 
-    it("treats an Epic with no commits ahead of its target as delivered", () => {
+    it("requires routing lines that match the Epic", () => {
         const cwd = temporaryRepository()
         try {
             const created = init(cwd, epic("Planning only", issue(30)))
-            fs.writeFileSync(path.join(cwd, created.directory, "epic.md"), epicPlan(planTask("Ship it", "#31")))
-            setEpicTaskTarget(created.directory, "default", { cwd })
-            const shipped = init(cwd, task("Ship it", created.directory, issue(31)))
-            assert.equal(shipped.status.branch.start, "main")
+            const epicPath = path.join(cwd, created.directory, "epic.md")
+            const start = () => init(cwd, task("Ship it", created.directory, issue(31)))
+            fs.writeFileSync(epicPath, epicPlan("other-branch", "default", planTask("Ship it", "#31")))
+            assert.throws(start, /says `Epic branch: other-branch`/)
+            fs.writeFileSync(
+                epicPath,
+                epicPlan("30-planning-only", "default", planTask("Ship it", "#31")).replace(
+                    "Task target: default\n",
+                    "",
+                ),
+            )
+            assert.throws(start, /needs `Task target: default` or `Task target: epic`/)
+            fs.writeFileSync(epicPath, epicPlan("30-planning-only", "default", planTask("Ship it", "#31")))
+            assert.equal(start().status.branch.start, "main")
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -384,7 +386,10 @@ describe("workflow domain", () => {
                 /workflow branch already exists: 20261003-other-epic/,
             )
 
-            fs.writeFileSync(path.join(cwd, linearEpic.directory, "epic.md"), epicPlan(planTask("Wire it", "ENG-8")))
+            fs.writeFileSync(
+                path.join(cwd, linearEpic.directory, "epic.md"),
+                epicPlan("20261002-rollout", "epic", planTask("Wire it", "ENG-8")),
+            )
             assert.throws(
                 () =>
                     init(

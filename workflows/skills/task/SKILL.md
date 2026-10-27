@@ -3,6 +3,8 @@ name: task
 description: "Use for Deliverable work belonging to exactly one Epic under <repo>/.project/.local/epics/<epic>/tasks/."
 allowed-tools:
     - "init_github_task"
+    - "restore_epic"
+    - "restore_epic_plan_source"
     - "init_linear_task"
     - "review_task"
     - "prepare_task_plan_presentation"
@@ -59,11 +61,7 @@ The Deliverable lifecycle owns the shared flow. This file owns choosing the pare
 Follow the Deliverable resume steps for a Task under its Epic's `tasks/` directory, then:
 
 1. **Find the parent** from the directory the Task lives in. Read its `brief.md`, `metadata.json`, `notes.md` when present, its native tracker lifecycle, and `epic.md`.
-2. **Verify:**
-   - the Task's copied branch is the parent's Epic branch or the repository default;
-   - `epic.md` carries this Task's marker (`[#N]` or `[ENG-N]`).
-
-   The Task's stored target wins when the Epic's current `taskTarget` differs.
+2. **Published plan:** [compare](../../references/epic.md#compare-with-the-published-plan) the parent's `epic.md` with it. The Task's stored start and target never change.
 3. **Parent issues:** run the parent's [Task issue processing](../../references/epic-tasks.md#task-issue-processing), staying on the Task branch, to finish any interrupted parent change.
 4. **Continue** through the Deliverable lifecycle.
 
@@ -71,19 +69,16 @@ Follow the Deliverable resume steps for a Task under its Epic's `tasks/` directo
 
 A Task always starts from the queued issue its parent Epic's [Task issue processing](../../references/epic-tasks.md#task-issue-processing) created or linked. It never creates a tracker issue.
 
-1. **Choose the parent and Task:** the user names one initialized parent Epic under `.project/.local/epics/` and one tagged Task in its accepted `epic.md`, by marker or exact title. Read the parent first. Never infer the selection.
+1. **Choose the parent and Task:** the user names the parent Epic and one tagged Task in its accepted plan, by marker or exact title. Never infer the selection.
+   - When this clone has no local directory for the Epic, [restore it](../../references/epic.md#restore-an-epic). Otherwise [compare](../../references/epic.md#compare-with-the-published-plan) its `epic.md` with the published plan.
    - An untagged Task means issue processing hasn't finished: resume the Epic first.
    - A `Status: canceled` Task can't start.
 2. **Adopt the issue:** read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Task adoption preflight, including the parent check, then follow the adopted intake in [artifacts](../../references/artifacts.md#initialization-inputs). The Kind comes from the plan's `Kind:` line; a conflicting GitHub Kind label stops for a user choice.
-3. **Check the delivery strategy:**
-   - Read the parent's approved Task delivery strategy and rationale in `epic.md`, and its current `taskTarget`. The initial Epic pointer is not approval.
-   - When the strategy is missing or conflicts with the intended target, resolve it with the user through the Epic's planning, acceptance, and routing steps first.
-   - Routing intent is recorded at Epic plan acceptance, and selecting default proves no delivery. When the target is default, read [Epic delivery](../../references/epic.md). An earlier target switch doesn't prove current delivery.
+3. **Routing:** the parent's `Task target:` line decides the target ([Epic routing](../../references/epic.md#routing)). When it's missing or conflicts with the intended target, resolve it through Epic replanning first. An `epic` target needs the Epic branch locally.
 4. **Initialize:** call `init_github_task` or `init_linear_task` with the repo-relative `parentEpicDir`, the title, Request, and slug, and the issue as `object`.
    - The issue's marker selects the plan Task, which supplies the Kind. The plan is never rewritten.
    - The tool names the directory and branch from the issue. The `tracker` format uses the Linear issue's `gitBranchName`.
-5. **Targets:** the Task copies the parent's current `taskTarget` into its immutable `start` and `target`, either the Epic branch or the stored default.
-   - A default target revalidates delivery through local ancestry or `epicDelivery: { kind: "github-pr", evidence }` from the configured forge, which covers squash merges. Pass current PR evidence to initialization when using that route.
+5. **Targets:** the Task copies the routing into its immutable `start` and `target`, either the Epic branch or the repository default. No delivery check runs.
 
 Finish board setup before planning.
 

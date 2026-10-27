@@ -291,7 +291,7 @@ describe("shared workflow Phase", () => {
                         ...common,
                         entity,
                         tracker: tracker(entity),
-                        ...(entity === "epic" ? { taskTarget: "default" } : { kind: "feature" }),
+                        ...(entity === "epic" ? {} : { kind: "feature" }),
                     }
                     if (entity === "epic")
                         fs.writeFileSync(

@@ -7,9 +7,12 @@ import { describe, it } from "node:test"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
-import { parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
+import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
+import { parseEpicRouting, parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
+import { restoreEpic, restoreEpicPlanSource } from "../workflows/extensions/init/restore.ts"
+import { renderProviderBody, restoreProviderSource } from "../workflows/extensions/integrations/projection.ts"
 import {
     type EpicChildIssue,
     planEpicTaskIssues,
@@ -102,7 +105,7 @@ function repo(tracker: "github" | "linear") {
         { cwd: root },
     )
     const epicPath = path.join(root, epic.directory, "epic.md")
-    return { root, directory: epic.directory, epicPath }
+    return { root, directory: epic.directory, epicPath, branch: epic.status.branch.name }
 }
 
 const section = (title: string, marker?: string, extra = "") =>
@@ -304,17 +307,49 @@ describe("Epic Task issue processing", () => {
                 "setPriority",
                 "create",
             ])
-            // Existing Status and Priority are never overwritten.
+            // Auto-added as Backlog with no Priority (Project automation): moved to Todo with the Epic's Priority.
+            const automated = planEpicTaskIssues(
+                root,
+                {
+                    entityDir: directory,
+                    epicPriority: "High",
+                    children: [{ marker: "#11", title: "Parser", onBoard: true, closed: false, status: "Backlog" }],
+                },
+                tools,
+            )
+            const automatedSteps = automated.state === "steps-needed" ? automated.steps : []
+            assert.deepEqual(
+                automatedSteps.map((step) => step.effect),
+                ["setStatus", "setPriority", "create"],
+            )
+            assert.deepEqual(
+                automatedSteps[0].effect === "setStatus" && automatedSteps[0].mutation.arguments.updated_field,
+                { name: "Status", value: "Todo" },
+            )
+            // A Priority already set on the Task is kept, and Todo needs no change.
             const kept = planEpicTaskIssues(
                 root,
                 {
                     entityDir: directory,
                     epicPriority: "High",
-                    children: [child("#11", "Parser", { status: "Backlog", priority: "Low" })],
+                    children: [child("#11", "Parser", { status: "Todo", priority: "Low" })],
                 },
                 tools,
             )
             assert.deepEqual(kept.state === "steps-needed" ? kept.steps.map((step) => step.effect) : [], ["create"])
+            // A Task canceled on the tracker is never pulled back into Todo.
+            const canceled = planEpicTaskIssues(
+                root,
+                {
+                    entityDir: directory,
+                    epicPriority: "High",
+                    children: [{ marker: "#11", title: "Parser", onBoard: true, closed: true, status: "Canceled" }],
+                },
+                tools,
+            )
+            assert.deepEqual(canceled.state === "steps-needed" ? canceled.steps.map((step) => step.effect) : [], [
+                "create",
+            ])
 
             const started = planEpicTaskIssues(
                 root,
@@ -368,6 +403,37 @@ describe("Epic Task issue processing", () => {
         }
     })
 
+    it("moves a Linear queued Task from Backlog to Todo and fills a missing Priority", () => {
+        const { root, directory, epicPath } = repo("linear")
+        try {
+            fs.writeFileSync(epicPath, plan(section("Parser", "ENG-4")))
+            const run = (facts: Partial<EpicChildIssue>) =>
+                planEpicTaskIssues(
+                    root,
+                    {
+                        entityDir: directory,
+                        epicPriority: "High",
+                        children: [{ ...child("ENG-4", "Parser"), ...facts }],
+                    },
+                    tools,
+                )
+            const backlog = run({ status: "Backlog", priority: undefined })
+            assert.deepEqual(
+                backlog.state === "steps-needed" &&
+                    backlog.steps[0].effect !== "tag" &&
+                    backlog.steps[0].mutation.arguments,
+                {
+                    id: "ENG-4",
+                    state: "Todo",
+                    priority: 2,
+                },
+            )
+            assert.deepEqual(run({ status: "Todo", priority: "Low" }), { state: "complete" })
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
     it("creates Linear issues in the Epic's Project with Todo and Priority", () => {
         const { root, directory, epicPath } = repo("linear")
         try {
@@ -406,6 +472,225 @@ describe("Epic Task issue processing", () => {
                 "tagged",
             )
             assert.match(fs.readFileSync(epicPath, "utf-8"), /^### \[ENG-4\] Parser$/m)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+})
+
+const token = "0f6c1b8e-6a51-4d2c-9f3e-2b7a4c5d6e7f"
+const accepted = (branch: string) =>
+    [
+        "# Rollout",
+        "",
+        "## Overview",
+        "",
+        "Why it matters.",
+        "",
+        "### Plan highlights",
+        "",
+        "- Ship it.",
+        "",
+        "## Task delivery strategy",
+        "",
+        "Task target: default",
+        `Epic branch: ${branch}`,
+        "",
+        "Independent Tasks.",
+        "",
+        "## Tasks",
+        "",
+        "### [#11] Parser",
+        "",
+        "Kind: feature",
+        "",
+        "1. nested",
+        "   - list",
+        "",
+        "```md",
+        "## not a section",
+        "```",
+        "",
+        "### CLI",
+        "",
+        "Kind: chore",
+        "",
+        "Wire it.",
+        "",
+    ].join("\n")
+
+describe("Epic routing and restore", () => {
+    it("parses routing lines and rejects missing or invalid ones", () => {
+        assert.deepEqual(parseEpicRouting(accepted("10-rollout")), { taskTarget: "default", epicBranch: "10-rollout" })
+        assert.throws(() => parseEpicRouting("# E\n\n## Tasks\n"), /no `## Task delivery strategy`/)
+        assert.throws(
+            () => parseEpicRouting(accepted("x").replace("Task target: default", "Task target: main")),
+            /needs `Task target: default` or `Task target: epic`/,
+        )
+        assert.throws(() => parseEpicRouting(accepted("x").replace("Epic branch: x\n", "")), /needs `Epic branch:/)
+    })
+
+    it("round-trips accepted epic.md through GitHub and Linear plan rendering", () => {
+        const source = accepted("10-rollout")
+        for (const kind of ["github-plan-comment", "linear-plan-document"] as const) {
+            const footer =
+                kind === "github-plan-comment" ? "<sub>Sent via Pi. Model: a/b.</sub>" : "*Sent via Pi. Model: a/b.*"
+            const body = `${renderProviderBody(source, { kind })}\n\n<!-- plan-publication:tok -->\n\n${footer}`
+            assert.deepEqual(restoreProviderSource(body, { kind }, "Rollout"), { source, token: "tok" })
+        }
+        assert.throws(
+            () =>
+                restoreProviderSource(
+                    renderProviderBody(source, { kind: "github-plan-comment" }),
+                    { kind: "github-plan-comment" },
+                    "R",
+                ),
+            /exactly one plan publication marker/,
+        )
+    })
+
+    it("restores a GitHub Epic in a clone without its local files", () => {
+        const { root, directory, branch } = repo("github")
+        try {
+            const source = accepted(branch)
+            const body = `${renderProviderBody(source, { kind: "github-plan-comment" })}\n\n<!-- plan-publication:${token} -->`
+            const comment = (id: number, text: string) => ({
+                id,
+                body: text,
+                html_url: `https://github.com/example/app/issues/10#issuecomment-${id}`,
+            })
+            const page = (comments: unknown[]) => ({
+                tool: "mcp__github__issue_read",
+                arguments: { method: "get_comments", ...repository, issue_number: 10, page: 1, perPage: 100 },
+                response: comments,
+            })
+            const epic = {
+                tool: "mcp__github__issue_read",
+                arguments: { method: "get", ...repository, issue_number: 10 },
+                response: {
+                    id: 100,
+                    number: 10,
+                    title: "Rollout",
+                    body: "Roll out",
+                    html_url: "https://github.com/example/app/issues/10",
+                    created_at: "2026-10-01T09:00:00Z",
+                },
+            }
+            const pages = [page([comment(7, "discussion"), comment(8, body)])]
+
+            // An existing local Epic for the same issue blocks restore under any slug.
+            assert.throws(() => restoreEpic(root, { slug: "other", epic, pages }, tools), /already exists/)
+            const local = path.join(root, directory)
+            assert.deepEqual(restoreEpicPlanSource(root, { entityDir: directory, pages }, tools).source, source)
+
+            fs.rmSync(local, { recursive: true })
+            assert.throws(
+                () =>
+                    restoreEpic(
+                        root,
+                        { slug: "rollout", epic, pages: [page([comment(8, body), comment(9, body)])] },
+                        tools,
+                    ),
+                /found 2 published plans/,
+            )
+            assert.throws(() => restoreEpic(root, { slug: "rollout", epic, pages: [page([])] }, tools), /found 0/)
+            const noTasks = `${renderProviderBody(source.split("\n## Tasks")[0], { kind: "github-plan-comment" })}\n\n<!-- plan-publication:${token} -->`
+            assert.throws(
+                () => restoreEpic(root, { slug: "rollout", epic, pages: [page([comment(8, noTasks)])] }, tools),
+                /no `## Tasks` section/,
+            )
+            assert.equal(fs.existsSync(local), false)
+
+            // A leftover directory without metadata is never overwritten or removed.
+            fs.mkdirSync(local, { recursive: true })
+            fs.writeFileSync(path.join(local, "notes.md"), "keep")
+            assert.throws(() => restoreEpic(root, { slug: "rollout", epic, pages }, tools), /already exists/)
+            assert.equal(fs.readFileSync(path.join(local, "notes.md"), "utf-8"), "keep")
+            fs.rmSync(local, { recursive: true })
+
+            // The slug only names the directory; the branch comes from the published plan.
+            const restored = restoreEpic(root, { slug: "renamed", epic, pages }, tools)
+            assert.equal(restored.directory, ".project/.local/epics/10-renamed")
+            const status = readEntityStatus(path.join(root, restored.directory))
+            assert.equal(status.branch.name, branch)
+            assert.equal(status.phase, "execution")
+            assert.deepEqual(status.tracker.provider === "github" && status.tracker.planComment, {
+                state: "published",
+                token,
+                id: 8,
+                url: "https://github.com/example/app/issues/10#issuecomment-8",
+            })
+            assert.equal(fs.readFileSync(path.join(root, restored.directory, "epic.md"), "utf-8"), source)
+
+            // A restored clone has no Task directories; started Tasks come from the tracker.
+            const children = [
+                child("#11", "Parser", { status: "In Progress" }),
+                child("#12", "CLI", { status: "Done" }),
+            ]
+            fs.writeFileSync(path.join(root, restored.directory, "epic.md"), source.replace("### CLI", "### [#12] CLI"))
+            assert.deepEqual(
+                planEpicTaskIssues(root, { entityDir: restored.directory, epicPriority: "High", children }, tools),
+                { state: "complete" },
+            )
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+})
+
+describe("Linear Epic restore", () => {
+    it("restores a Linear Epic from its Project read and attached plan document", () => {
+        const { root, directory, branch } = repo("linear")
+        try {
+            const source = accepted(branch).replace("[#11]", "[ENG-11]")
+            const body = `${renderProviderBody(source, { kind: "linear-plan-document" })}\n\n<!-- plan-publication:${token} -->`
+            const project = {
+                tool: "mcp__linear__get_project",
+                arguments: { query: "project-uuid" },
+                response: {
+                    id: "P-ENG-1",
+                    uuid: "project-uuid",
+                    name: "Rollout",
+                    description: "Roll out",
+                    url: "https://linear.app/example/project/rollout",
+                    createdAt: "2026-10-01T09:00:00.000Z",
+                },
+            }
+            const document = {
+                id: "document-uuid",
+                url: "https://linear.app/example/document/plan-slug",
+                content: body,
+                archivedAt: null,
+                issue: null,
+                project: { id: "P-ENG-1" },
+            }
+            const pages = [
+                project,
+                {
+                    tool: "mcp__linear__list_documents",
+                    arguments: {
+                        limit: 50,
+                        includeArchived: true,
+                        orderBy: "createdAt",
+                        fields: ["id", "url", "issue", "project"],
+                        projectId: "project-uuid",
+                    },
+                    response: { documents: [{ ...document, content: undefined }], hasNextPage: false },
+                },
+                { tool: "mcp__linear__get_document", arguments: { id: "document-uuid" }, response: document },
+            ]
+            fs.rmSync(path.join(root, directory), { recursive: true })
+            const restored = restoreEpic(root, { slug: "rollout", epic: project, pages }, tools)
+            assert.equal(restored.directory, ".project/.local/epics/20261001-rollout")
+            const status = readEntityStatus(path.join(root, restored.directory))
+            assert.equal(status.branch.name, branch)
+            assert.deepEqual(status.tracker.provider === "linear" && status.tracker.planDocument, {
+                state: "published",
+                token,
+                id: "document-uuid",
+                url: "https://linear.app/example/document/plan-slug",
+            })
+            assert.equal(fs.readFileSync(path.join(root, restored.directory, "epic.md"), "utf-8"), source)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

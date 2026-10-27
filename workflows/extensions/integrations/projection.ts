@@ -140,6 +140,44 @@ function removeRootHeading(source: string): string {
     return blankLine ? remainder.slice(blankLine[0].length) : remainder
 }
 
+const PUBLICATION_MARKER = /^<!-- plan-publication:([^ >]+) -->$/
+const ATTRIBUTION = /^(?:<sub>Sent via [^\r\n]+<\/sub>|\*Sent via [^\r\n]+\*)$/
+
+export interface RestoredPlan {
+    source: string
+    token: string
+}
+
+// The inverse of tracker plan rendering: rebuilds the reviewed source from a published
+// GitHub comment or Linear document body. The root title comes from the tracker item.
+export function restoreProviderSource(
+    body: string,
+    presentation: Extract<ProviderBodyPresentation, { kind: "github-plan-comment" | "linear-plan-document" }>,
+    title: string,
+): RestoredPlan {
+    const newline = body.includes("\r\n") ? "\r\n" : "\n"
+    const lines = body.split(/\r?\n/)
+    const markers = lines.flatMap((line) => PUBLICATION_MARKER.exec(line.trim())?.[1] ?? [])
+    if (markers.length !== 1) throw new Error("published plan must carry exactly one plan publication marker")
+    const kept = lines.filter((line) => !PUBLICATION_MARKER.test(line.trim()) && !ATTRIBUTION.test(line.trim()))
+    let text = kept.join("\n").replace(/\s+$/, "")
+
+    const fold =
+        presentation.kind === "github-plan-comment"
+            ? /\n*<details>\n<summary>Full plan<\/summary>\n\n([\s\S]*?)\n\n<\/details>$/.exec(text)
+            : /\n*\+\+\+ Full plan\n\n([\s\S]*?)\n\n\+\+\+$/.exec(text)
+    if (!fold) throw new Error("published plan has no Full plan fold to restore from")
+    let overview = text.slice(0, fold.index)
+    const details = fold[1]
+    if (presentation.kind === "github-plan-comment") {
+        if (!/^# Plan\n/.test(overview)) throw new Error("published GitHub plan must start with `# Plan`")
+        overview = overview.replace(/^# Plan\n/, "## Overview\n")
+    } else overview = `## Overview\n\n${overview}`
+    overview = overview.replace(/^## Highlights$/m, "### Plan highlights")
+    text = `# ${title.trim()}\n\n${overview.replace(/\s+$/, "")}\n\n${details}\n`
+    return { source: text.replaceAll("\n", newline), token: markers[0] }
+}
+
 export type ProjectionVerification =
     | { result: "exact"; verified: true; requiresApproval: false }
     | { result: "different"; verified: false; requiresApproval: true; guidance: string }

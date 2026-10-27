@@ -93,7 +93,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
     if (parent)
         fs.writeFileSync(
             path.join(root, parent.directory, "epic.md"),
-            "# Parent\n\n## Overview\n\nParent.\n\n## Tasks\n\n### [#42] Work\n\nKind: feature\n\nWork.\n",
+            `# Parent\n\n## Overview\n\nParent.\n\n## Task delivery strategy\n\nTask target: epic\nEpic branch: ${parent.status.branch.name}\n\n## Tasks\n\n### [#42] Work\n\nKind: feature\n\nWork.\n`,
         )
     const input =
         kind === "epic"

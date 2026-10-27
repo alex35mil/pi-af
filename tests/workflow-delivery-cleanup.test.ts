@@ -409,7 +409,7 @@ describe("Deliverable branch cleanup", () => {
             const epicBranch = epic.status.branch.name
             fs.writeFileSync(
                 path.join(root, epic.directory, "epic.md"),
-                "# Epic\n\n## Tasks\n\n### [#11] Child\n\nKind: feature\n\nImplement it.\n",
+                `# Epic\n\n## Task delivery strategy\n\nTask target: epic\nEpic branch: ${epicBranch}\n\n## Tasks\n\n### [#11] Child\n\nKind: feature\n\nImplement it.\n`,
             )
             git(root, ["push", "origin", epicBranch])
             const task = initializeEntity(

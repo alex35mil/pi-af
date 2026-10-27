@@ -44,8 +44,10 @@ Run it after every accepted `epic.md` revision and on every Epic or Task resume,
 **Rules:**
 
 - Plan acceptance approves these creates, cancellations, and board updates, with no second confirmation. Rerunning after an interruption needs no new approval.
-- Created issues start in Todo with the Epic's Priority. On GitHub they are sub-issues with the Task's Kind label.
-- A tagged Task without a Task directory must be a child of this Epic in Backlog, Todo, or Canceled. Processing completes a missing Project item, Status, or Priority, and never overwrites one that is set.
+- Created issues are sub-issues on GitHub with the Task's Kind label, or Project issues on Linear.
+- A tagged Task whose issue is In Progress, In Review, or Done has started, with or without a local Task directory; it may have started in another clone.
+- A tagged Task that hasn't started must be a child of this Epic in Backlog, Todo, or Canceled. A local Task directory on a queued issue is an error.
+- Processing ensures every queued Task's board state itself, whatever Project automations did first: on the Project, Status Todo (Backlog or empty becomes Todo), and the Epic's Priority when the Task has none. A Priority already set on the Task is kept, and a Canceled issue is left alone. To defer a Task, mark it `Status: canceled` or replan; a manual Backlog move is reverted.
 - A Task that has already started is never canceled.
 - An uncertain create needs no separate recovery: the next run's title lookup finds the issue or confirms it's absent.
 - Creating issues never initializes a Task.

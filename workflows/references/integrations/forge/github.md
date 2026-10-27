@@ -4,15 +4,6 @@ This covers workflow-created PR submission and shipping. Incoming contributions 
 
 This procedure extends [integration roles](../shared.md). Ordinary resume never discovers PRs. Tracker reads use the tracker's registration; PR reads use the forge's. `list_pull_requests` gives addressing, not authoritative merge state.
 
-## Epic planning delivery
-
-[Epic delivery](../../epic.md) keeps the approved routing intent separate from the delivery proof checked at Task initialization.
-
-- Record the routing choice at plan acceptance; it stays local. No target change is needed after a merge.
-- Every default-target Task initialization verifies delivery, including a squash-merged planning PR, from GitHub's merged-PR confirmation plus local revision checks.
-- It creates no forge intent, changes no lifecycle, and authorizes no merge.
-- The Epic skill owns the strategy approval and each delivery operation's approval.
-
 ## Submission
 
 Submission, revisions, and choosing an existing PR are in [Deliverable submission](../../deliverable/submission.md).

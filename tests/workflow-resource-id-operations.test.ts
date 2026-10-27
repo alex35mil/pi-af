@@ -441,7 +441,6 @@ describe("resource ID operations", () => {
                     createdAt: "2026-10-01T00:00:00Z",
                     phase: "execution",
                     entity: "epic",
-                    taskTarget: "epic",
                     branch: { state: "ready", name: "9-rollout", start: "main", target: "main", source: "generated" },
                     tracker: {
                         provider: "github",

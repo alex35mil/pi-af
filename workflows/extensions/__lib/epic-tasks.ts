@@ -137,12 +137,51 @@ function parseTask(section: Line[]): ParsedTask {
     }
 }
 
+export function hasEpicTasksSection(content: string): boolean {
+    return scanLines(content).some((line) => !line.fenced && line.text.trim() === TASKS_HEADING)
+}
+
 export function parseEpicTasks(content: string): EpicTask[] {
     return parse(content).map(({ headingIndex: _, ...task }) => task)
 }
 
 export function readEpicTasks(epicPath: string): EpicTask[] {
     return parseEpicTasks(fs.readFileSync(epicPath, "utf-8"))
+}
+
+// The accepted routing for Tasks started from now on, published with the plan.
+export interface EpicRouting {
+    taskTarget: "default" | "epic"
+    epicBranch: string
+}
+
+const ROUTING_HEADING = "## Task delivery strategy"
+
+// Reads `Task target:` and `Epic branch:` from the `## Task delivery strategy` section.
+export function parseEpicRouting(content: string): EpicRouting {
+    const lines = scanLines(content)
+    const start = lines.find((line) => !line.fenced && line.text.trim() === ROUTING_HEADING)
+    if (!start)
+        throw new Error("Epic has no `## Task delivery strategy` section with `Task target:` and `Epic branch:`")
+    const end = lines.find((line) => line.index > start.index && isLevelOneOrTwo(line))?.index ?? lines.length
+    const fields = new Map<string, string>()
+    for (const line of lines.slice(start.index + 1, end)) {
+        if (line.fenced) continue
+        const field = /^(Task target|Epic branch):\s*(\S+)\s*$/.exec(line.text.trim())
+        if (!field) continue
+        if (fields.has(field[1])) throw new Error(`Epic repeats \`${field[1]}:\``)
+        fields.set(field[1], field[2])
+    }
+    const target = fields.get("Task target")
+    if (target !== "default" && target !== "epic")
+        throw new Error("Epic `## Task delivery strategy` needs `Task target: default` or `Task target: epic`")
+    const branch = fields.get("Epic branch")
+    if (!branch) throw new Error("Epic `## Task delivery strategy` needs `Epic branch: <name>`")
+    return { taskTarget: target, epicBranch: branch }
+}
+
+export function readEpicRouting(epicPath: string): EpicRouting {
+    return parseEpicRouting(fs.readFileSync(epicPath, "utf-8"))
 }
 
 // Tags an untagged Task's heading with its new issue's marker. Re-tagging the same Task

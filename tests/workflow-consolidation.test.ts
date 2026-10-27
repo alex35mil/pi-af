@@ -47,7 +47,7 @@ describe("workflow consolidation contracts", () => {
             const metadata = {
                 ...commonMetadata,
                 entity,
-                ...(entity === "epic" ? { taskTarget: "epic" } : { kind: "feature" }),
+                ...(entity === "epic" ? {} : { kind: "feature" }),
             }
             assert.equal(Value.Check(EntityStatusSchema, metadata), true)
             for (const extra of [
@@ -60,10 +60,11 @@ describe("workflow consolidation contracts", () => {
             ])
                 assert.equal(Value.Check(EntityStatusSchema, { ...metadata, ...extra }), false)
             assert.equal(
-                Value.Check(
-                    EntityStatusSchema,
-                    entity === "epic" ? { ...metadata, kind: "feature" } : { ...metadata, taskTarget: "epic" },
-                ),
+                Value.Check(EntityStatusSchema, {
+                    ...metadata,
+                    ...(entity === "epic" ? { kind: "feature" } : {}),
+                    taskTarget: "epic",
+                }),
                 false,
             )
             const { tracker: _tracker, ...untracked } = metadata

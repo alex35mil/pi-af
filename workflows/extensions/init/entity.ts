@@ -6,7 +6,6 @@ import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
-import { assertEpicDelivered, EpicDeliverySchema } from "./delivery.js"
 import {
     DeliverableKindSchema,
     EPIC_ROOT,
@@ -34,7 +33,7 @@ import {
     resolveEntityDirectory,
     writeEntityStatus,
 } from "../__lib/entity.js"
-import { type EpicTask, readEpicTasks } from "../__lib/epic-tasks.js"
+import { type EpicTask, readEpicRouting, readEpicTasks } from "../__lib/epic-tasks.js"
 import type { ResourceIds } from "../integrations/resource-ids.js"
 import { resourceIdsFromTrackerObject } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
@@ -73,7 +72,6 @@ export const TaskInitializationPropertiesSchema = Type.Object(
     {
         ...baseProperties,
         parentEpicDir: OneLineSchema,
-        epicDelivery: Type.Optional(EpicDeliverySchema),
     },
     { additionalProperties: false },
 )
@@ -146,8 +144,7 @@ function prepare(input: PreflightInput | EntityInitialization, options: Initiali
     const projectConfig = assertArtifactPersistencePrepared(root)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(root))
     const slug = slugify(input.slug)
-    const parent =
-        input.entity === "task" ? readParentEpic(root, input, environment, options.tools ?? new Map()) : undefined
+    const parent = input.entity === "task" ? readParentEpic(root, input) : undefined
     const start = parent ? parent.branch : resolveDefaultBranch(root)
     assertCloneBranch(root, start)
     return { root, projectConfig, environment, slug, start, parent }
@@ -227,7 +224,7 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
         const status = Value.Parse(
             EntityStatusSchema,
             input.entity === "epic"
-                ? { ...common, entity: "epic", taskTarget: "epic" }
+                ? { ...common, entity: "epic" }
                 : { ...common, entity: input.entity, kind: input.entity === "task" ? plannedTask!.kind : input.kind },
         )
         createEntityArtifacts(absoluteDirectory, input, status)
@@ -312,14 +309,8 @@ interface ParentEpic {
     tasks: EpicTask[]
 }
 
-function readParentEpic(
-    root: string,
-    input: TaskInitialization,
-    environment: WorkflowEnvironment,
-    tools: McpToolCatalog,
-): ParentEpic {
-    const { parentEpicDir: rawDirectory, epicDelivery } = input
-    const forge = environment.forge
+function readParentEpic(root: string, input: TaskInitialization): ParentEpic {
+    const { parentEpicDir: rawDirectory } = input
     const epicsRoot = path.join(root, EPIC_ROOT)
     const directory = path.resolve(root, rawDirectory)
     if (!directory.startsWith(`${epicsRoot}${path.sep}`)) {
@@ -331,12 +322,15 @@ function readParentEpic(
     const epicPath = path.join(directory, "epic.md")
     if (!fs.existsSync(epicPath)) throw new Error(`parent Epic has no accepted epic.md: ${rawDirectory}`)
     const tasks = readEpicTasks(epicPath)
-    const taskBranch = status.taskTarget === "epic" ? status.branch.name : status.branch.target
-    if (status.taskTarget === "default") {
-        assertEpicDelivered(root, status.branch, epicDelivery ?? { kind: "git-ancestry" }, forge, tools)
-    } else if (epicDelivery) {
-        throw new Error("Epic delivery evidence is only valid for default-target Tasks")
-    }
+    const routing = readEpicRouting(epicPath)
+    if (routing.epicBranch !== status.branch.name)
+        throw new Error(
+            `epic.md says \`Epic branch: ${routing.epicBranch}\`, but the Epic's branch is ${status.branch.name}`,
+        )
+    // A default-target Task needs nothing from the Epic branch; an Epic-target Task starts from it.
+    const taskBranch = routing.taskTarget === "epic" ? status.branch.name : status.branch.target
+    if (routing.taskTarget === "epic" && !cloneBranchExists(root, taskBranch))
+        throw new Error(`Epic-target Tasks start from the Epic branch ${taskBranch}; fetch or create it locally first`)
     if (status.tracker.provider === "linear" && status.tracker.resource !== "project")
         throw new Error("parent Epic must be bound to a Linear Project")
     const started = readEpicTaskDirectories(directory)
@@ -355,7 +349,7 @@ function readParentEpic(
     }
 }
 
-function resolveDefaultBranch(root: string): string {
+export function resolveDefaultBranch(root: string): string {
     const remoteHead = Git.tryRun(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
     if (remoteHead) {
         const branch = remoteHead.replace(/^origin\//, "")
@@ -436,31 +430,6 @@ function recordedDefaultBranches(root: string): string[] {
         }
     }
     return [...branches]
-}
-
-export interface SetEpicTaskTargetOptions {
-    cwd: string
-}
-
-export function setEpicTaskTarget(
-    rawEntityDirectory: string,
-    target: "epic" | "default",
-    options: SetEpicTaskTargetOptions,
-): EntityStatus {
-    const root = project.resolveRootDir(options.cwd)
-    assertGitRepository(root)
-    assertArtifactPersistencePrepared(root)
-    const entityDirectory = resolveEntityDirectory(root, options.cwd, rawEntityDirectory)
-    const status = readEntityStatus(entityDirectory)
-    if (status.entity !== "epic") throw new Error("Task target can only be changed for an Epic")
-
-    // Routing intent is recorded with planning; every default-target Task checks delivery separately.
-    assertCloneBranch(root, status.branch.name)
-    if (target === "default") assertCloneBranch(root, status.branch.target)
-
-    if (status.taskTarget === target) return status
-    writeEntityStatus(entityDirectory, { ...status, taskTarget: target })
-    return readEntityStatus(entityDirectory)
 }
 
 function assertGitRepository(root: string): void {

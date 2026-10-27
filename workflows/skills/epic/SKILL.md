@@ -10,7 +10,8 @@ allowed-tools:
     - "prepare_artifacts"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
-    - "set_epic_task_target"
+    - "restore_epic"
+    - "restore_epic_plan_source"
     - "plan_epic_task_issues"
     - "record_epic_task_issue"
     - "render_provider_body"
@@ -51,11 +52,11 @@ An Epic is an initiative and an ordered plan of Tasks. Epic work shapes and main
 
 When reviewing, read [review](../../references/review.md). When writing human-facing text or prose artifacts, read [communication](../../references/communication.md).
 
-**Commits:** use the available `commit` skill for any explicitly authorized Epic commit. An Epic may have several commits within its accepted scope.
+**Commits:** use the available `commit` skill for any explicitly authorized Epic commit, such as the empty commit that lets the Epic branch open a PR.
 
 ## Start or resume
 
-Follow the preparation and entity-selection gates in [artifacts](../../references/artifacts.md#initialization-inputs) for an Epic under `.project/.local/epics/`.
+Follow the preparation and entity-selection gates in [artifacts](../../references/artifacts.md#initialization-inputs) for an Epic under `.project/.local/epics/`. When this clone has no local directory for the Epic, [restore it](../../references/epic.md#restore-an-epic) first.
 
 1. **Read:**
    - `brief.md`, `metadata.json`, `notes.md` when present, and accepted `epic.md`;
@@ -64,8 +65,8 @@ Follow the preparation and entity-selection gates in [artifacts](../../reference
    - `scratch/` only when that context is relevant.
 
    Create missing notes when continuing local work.
-2. **Lifecycle:** read lifecycle and Priority fresh from the tracker.
-3. **Branch:** switch to the Epic's stored branch before editing its artifacts. This doesn't apply when a Task updates its parent Epic from the Task branch.
+2. **Lifecycle:** read lifecycle and Priority fresh from the tracker. Epic artifacts live outside Git, so no branch switch is needed.
+3. **Published plan:** [compare](../../references/epic.md#compare-with-the-published-plan) the local `epic.md` with it.
 4. **Integrations:** reuse the `resume_integration` result from the artifact gate. Read [integration roles](../../references/integrations/shared.md), then the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md) or [Linear tracker](../../references/integrations/tracker/linear.md), and [GitHub forge](../../references/integrations/forge/github.md).
 5. **Task issues:** with an accepted `epic.md`, run [Task issue processing](../../references/epic-tasks.md#task-issue-processing) before any publication. It finishes interrupted runs and is safe to repeat.
 6. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project, with document and parent verification before updates.
@@ -78,8 +79,8 @@ Follow the preparation and entity-selection gates in [artifacts](../../reference
    - New work: call `preflight_epic`, then create the GitHub issue or Linear Project as the tracker reference describes.
    - Call `init_github_epic` or `init_linear_epic` with the approved values, the Request as `request`, the slug, and the issue or Project as `object`.
 
-   The tool names the directory and branch from the object (a Linear Epic is dated by its Project's creation), starts from and targets the repository default, and sets `taskTarget: epic`.
-3. **Set up the board:** switch to the stored branch, call `initialize_integration` with `entityDir`, and follow the provider reference. A board failure is reconciled on resume and never rolls back working-tree work.
+   The tool names the directory and branch from the object (a Linear Epic is dated by its Project's creation) and starts from and targets the repository default.
+3. **Set up the board:** call `initialize_integration` with `entityDir`, and follow the provider reference. A board failure is reconciled on resume and never rolls back working-tree work.
 
 ## Working state
 
@@ -95,20 +96,14 @@ Each Task is a `### ` section under `## Tasks`, in the [Epic Task format](../../
 
 ### Task delivery strategy
 
-1. **Recommend.** Before the first Task is initialized, explain the tradeoff:
+1. **Recommend.** Before the first Task starts, explain the tradeoff:
    - independently shippable Tasks can target the repository default branch;
    - intermediate work that needs integration can target the Epic branch.
 
    Recommend one from the decomposition and get explicit approval.
-2. **Record.** Put the approved strategy and rationale in reviewed `epic.md`, both in Plan highlights and in a Task delivery strategy section. The initial `taskTarget: epic` is a provisioning value, not approval.
-3. **Apply.** Call `set_epic_task_target` when the plan is accepted; when doing so, read [Epic delivery](../../references/epic.md).
+2. **Record.** Put the approved strategy in reviewed `epic.md`: the `Task target:` and `Epic branch:` lines and the rationale in the Task delivery strategy section, and the choice in Plan highlights. [Epic routing](../../references/epic.md#routing) owns the format and how Tasks apply it.
 
-**Notes:**
-
-- `taskTarget: default` means future Tasks target default. It doesn't mean this revision is delivered; every default-target Task initialization checks delivery.
-- Strategy approval doesn't authorize a commit, push, PR, merge, fetch, or cleanup.
-- An existing Epic with no recorded decision must record one through plan review and acceptance before its next Task.
-- Material strategy changes go through material replanning. Never retarget existing Tasks.
+Material strategy changes go through material replanning. Never retarget existing Tasks.
 
 Minimum shape:
 
@@ -129,7 +124,10 @@ Minimum shape:
 
 ## Task delivery strategy
 
-<Approved Epic/default strategy, rationale from the decomposition, and delivery prerequisites.>
+Task target: <default | epic>
+Epic branch: <the Epic's branch name>
+
+<Rationale from the decomposition and delivery prerequisites.>
 
 ## Tasks
 
@@ -160,7 +158,6 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 1. **Review.** Follow plan review in [planning](../../references/planning.md#plan-review-and-acceptance) with `review_epic`, this Epic's `entityDir`, and `phase: "plan"`. `prepare_epic_plan_presentation` returns the reviewed snapshot and the `epic.md` target for the write tool's approval diff.
 2. **Wait.** Don't accept or act on the Epic until the user accepts that reviewed diff. Phase stays Planning until then.
 3. **On acceptance:**
-   - record the routing choice with `set_epic_task_target`;
    - set Execution ([Phase](../../references/phase.md)); lifecycle stays `inProgress`;
    - run [Task issue processing](../../references/epic-tasks.md#task-issue-processing); plan acceptance approves its creates, cancellations, and board updates;
    - publish `epic.md` through the same integration steps as on resume.
@@ -168,14 +165,11 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 
 ## Ongoing synchronization and completion
 
-### Branch and delivery
+### Epic branch
 
-- The Epic's branch identity never changes.
-- With explicit user approval, it may be merged into its default target before the Epic completes, for example to deliver planning first or to deliver Tasks behind feature flags.
-- Per [Epic delivery](../../references/epic.md), record `target: default` or `target: epic` at plan acceptance, without delivery evidence. Never change the pointer after a merge just to record delivery.
-- Every default-target Task initialization checks current-revision delivery itself. Epic planning commits nothing, so an Epic branch with no commits ahead of its target counts as delivered; otherwise it needs merged GitHub PR evidence, which covers squash merges. Undelivered Epic work blocks those initializations without changing the approved routing.
-- Only future Tasks follow a changed pointer; existing Tasks keep their start and target.
-- Never delete the Epic branch while an active Task targets it.
+- The Epic's branch identity never changes, and the plan's `Epic branch:` line records it for every clone.
+- It's the merge target for Epic-target Tasks. With explicit user approval, it merges into its default target through its own PR.
+- Default-target Tasks never depend on it. Never delete it while a Task targets it.
 
 ### Task markers and progress
 
