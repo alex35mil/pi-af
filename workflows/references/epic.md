@@ -27,7 +27,7 @@ During Epic planning, get the strategy approved and record it in reviewed `epic.
 
 ## Choose delivery evidence
 
-`preflight_task`, `init_github_task`, and `init_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
+`init_github_task` and `init_linear_task` share one delivery check for default-target Tasks. Pass `epicDelivery` only to these tools, and only when targeting default, never to the setter. The local Epic and target branches must exist in this clone.
 
 ### Local ancestry
 

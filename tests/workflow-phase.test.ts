@@ -296,7 +296,7 @@ describe("shared workflow Phase", () => {
                     if (entity === "epic")
                         fs.writeFileSync(
                             path.join(directory, "epic.md"),
-                            `## Ordered Tasks\n\n1. [${provider === "github" ? "#2" : "ENG-2"}] Example\n`,
+                            `## Tasks\n\n### [${provider === "github" ? "#2" : "ENG-2"}] Example\n\nKind: feature\n\nExample.\n`,
                         )
                     for (const phase of ["planning", "execution", "selfReview"]) {
                         fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))

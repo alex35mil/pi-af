@@ -124,7 +124,7 @@ function fixture(tracker: "github" | "linear" = "github", delivered = true) {
     const epicPath = path.join(root, epic.directory, "epic.md")
     fs.writeFileSync(
         epicPath,
-        "# Epic\n\n## Overview\n\nShip independently.\n\n## Task delivery\n\nApproved strategy: default.\n\n## Ordered Tasks\n\n1. **First** — independent outcome.\n2. **Second** — another outcome.\n",
+        `# Epic\n\n## Overview\n\nShip independently.\n\n## Task delivery\n\nApproved strategy: default.\n\n## Tasks\n\n### [${tracker === "linear" ? "ENG-9" : "#9"}] First\n\nKind: feature\n\nIndependent outcome.\n\n### Second\n\nKind: chore\n\nAnother outcome.\n`,
     )
     git("switch", branch.name)
     setEpicTaskTarget(epic.directory, "default", { cwd: root })
@@ -168,10 +168,8 @@ function fixture(tracker: "github" | "linear" = "github", delivered = true) {
         title: "First",
         slug: "first",
         request: "Ship first",
-        kind: "feature",
         object: tracker === "linear" ? linearTask : githubTask,
         parentEpicDir: epic.directory,
-        epicItemTitle: "First",
         ...(epicDelivery ? { epicDelivery } : {}),
     })
     const snapshot = () => ({

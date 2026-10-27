@@ -136,7 +136,7 @@ Precedence is in [core approvals](./core.md#approvals).
 .project/.local/epics/<reference>-<slug>/   # <YYYYMMDD>-<slug> for a Linear Project
   brief.md             # Approved Request.
   metadata.json        # Tracker identity, Phase, branch contract, Task target.
-  epic.md              # Accepted initiative contract and ordered Tasks.
+  epic.md              # Accepted initiative contract and its `## Tasks` sections.
   resource-ids.json    # Scoped Resource IDs; disposable, never lifecycle authority.
   notes.md
   draft.md
@@ -147,7 +147,7 @@ Precedence is in [core approvals](./core.md#approvals).
 ```
 
 - `epic.md`, drafts, and review rounds appear only when their gates create them.
-- A prospective Task is an untagged ordered line in accepted `epic.md`. Initialization adds its stable marker, `[#N]` or `[ENG-N]`, and child directory.
+- Each Task is a `### ` section in accepted `epic.md`. Task issue processing tags it with its issue's stable marker, `[#N]` or `[ENG-N]`; starting the Task adds its child directory ([Epic Tasks](./epic-tasks.md)).
 - Metadata holds the immutable branch identity and `taskTarget: epic | default`. Changing the pointer affects only Tasks initialized afterward.
 - The approved Task delivery strategy and its rationale belong in reviewed `epic.md`. The initial pointer is not approval.
 - Selecting default doesn't prove delivery. When initializing a default-target Task, read [Epic delivery](./epic.md).

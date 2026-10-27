@@ -35,6 +35,12 @@ import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { registerWorkflowOperations } from "./operations.js"
 import { registerWorkflowPublication } from "./publication-mcp.js"
 import { registerTrackerPublication } from "./tracker-publication.js"
+import {
+    planEpicTaskIssues,
+    PlanEpicTaskIssuesSchema,
+    recordEpicTaskIssue,
+    RecordEpicTaskIssueSchema,
+} from "./epic-task-issues.js"
 import { incomingPullRequestContext } from "./forge/github/incoming-pr-context.js"
 import {
     IncomingMergeContextSchema,
@@ -78,7 +84,8 @@ export const IntegrationContextSchema = Type.Union([
         {
             operation: Type.Literal("queueIntake"),
             target: ContextTargetSchema,
-            entity: ContextEntitySchema,
+            // Tasks are never queued directly; accepted Epic plans create their issues.
+            entity: Type.Enum(["epic", "gig"], { type: "string" }),
             priority: Type.String({ minLength: 1 }),
             kind: Type.Enum(["not set", "feature", "bugfix", "research", "refactor", "audit", "chore", "epic"], {
                 type: "string",
@@ -173,6 +180,32 @@ export default function (pi: ExtensionAPI): void {
             },
         })
     }
+
+    toolsApi.registerTool({
+        name: "plan_epic_task_issues",
+        label: "plan_epic_task_issues",
+        description:
+            "Reconcile an Epic's accepted Tasks with fresh child-issue facts. Returns the next native creates, tags, board repairs, and cancellations in plan order, `complete`, or `blocked` with the failing Task. Keeps no saved progress; rerun after applying steps. Never calls providers.",
+        parameters: PlanEpicTaskIssuesSchema,
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+            const input = Value.Parse(PlanEpicTaskIssuesSchema, params)
+            const result = planEpicTaskIssues(ctx.cwd, input, tools)
+            return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+        },
+    })
+
+    toolsApi.registerTool({
+        name: "record_epic_task_issue",
+        label: "record_epic_task_issue",
+        description:
+            "Tag one untagged Epic plan Task with its issue's marker, from clear-success create evidence or a matched existing child. Refuses a marker the plan already carries; repeating the same tag is a no-op.",
+        parameters: RecordEpicTaskIssueSchema,
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+            const input = Value.Parse(RecordEpicTaskIssueSchema, params)
+            const result = recordEpicTaskIssue(ctx.cwd, input, tools)
+            return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+        },
+    })
 
     toolsApi.registerTool({
         name: "render_provider_body",

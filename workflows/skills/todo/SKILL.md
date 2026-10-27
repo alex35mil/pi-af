@@ -18,4 +18,4 @@ Todo is work we've committed to and can pick up next. Use destination `todo`.
 - [Core rules](../../references/core.md)
 - [Queue](../../references/queue.md)
 
-The work stays uninitialized until the user starts it through `/epic`, `/task`, or `/gig`.
+Todo holds Epics and Gigs. Tasks come only from accepted Epic plans. The work stays uninitialized until the user starts it through `/epic`, `/task`, or `/gig`.

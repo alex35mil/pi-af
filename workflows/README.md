@@ -2,7 +2,7 @@
 
 Reusable Epic/Task/Gig planning and delivery for pi.
 
-- **Epic**: an initiative and ordered plan of prospective Tasks; it does not implement them.
+- **Epic**: an initiative and ordered plan of Tasks; accepting it creates a queued tracker issue per Task, so Epic progress reflects the whole plan. It does not implement them.
 - **Task**: a Deliverable belonging to exactly one Epic.
 - **Gig**: a standalone Deliverable.
 - **Deliverable**: the shared Task/Gig lifecycle, with Feature, Bugfix, Refactor, Research, Audit, and Chore strategies.
@@ -22,7 +22,7 @@ Reusable Epic/Task/Gig planning and delivery for pi.
 /pr <GitHub PR URL or #NN>
 ```
 
-New work creates the tracker object first; the local entity is named after it (`12-<slug>`, `ENG-12-<slug>`, or `<YYYYMMDD>-<slug>` for a Linear Epic, dated by the Project's creation). Prospective Tasks and queued Backlog/Todo objects get a local entity only when explicitly initialized.
+New work creates the tracker object first; the local entity is named after it (`12-<slug>`, `ENG-12-<slug>`, or `<YYYYMMDD>-<slug>` for a Linear Epic, dated by the Project's creation). Planned Tasks and queued Backlog/Todo objects get a local entity only when explicitly started. `/todo` and `/backlog` queue only Epics and Gigs; a new Task comes from replanning its Epic.
 
 `/pr` reviews an existing contribution privately. It uses the configured GitHub forge and needs no initialized entity.
 

@@ -339,7 +339,7 @@ Example:
 ```markdown
 # Project Policies
 
-- During Epic plan review, additionally check that every prospective Task identifies its rollout stage.
+- During Epic plan review, additionally check that every planned Task identifies its rollout stage.
 - During Deliverable final review, additionally check the completion artifact against the repository's release checklist.
 - Override automatic submission after final-artifact acceptance: commit locally, then wait for a separate explicit user request before pushing or creating a PR.
 ```

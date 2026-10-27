@@ -73,8 +73,8 @@ describe("workflow tool discovery", () => {
             events: createEventBus(),
             registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
         } as never)
-        assert.equal(tools.length, 10)
-        assert.ok(!tools.some((tool) => tool.name === "init"))
+        assert.equal(tools.length, 9)
+        assert.ok(!tools.some((tool) => tool.name === "init" || tool.name === "preflight_task"))
         for (const tool of tools) {
             assert.ok(Type.IsObject(tool.parameters))
             assert.ok(!("anyOf" in tool.parameters))
@@ -101,15 +101,11 @@ describe("workflow tool discovery", () => {
             }),
         )
         const task = tools.find((tool) => tool.name === "init_github_task")!.parameters
-        assert.ok(!accepts(task, { ...input, object: issue }))
-        assert.ok(
-            accepts(task, {
-                ...input,
-                object: issue,
-                parentEpicDir: ".project/.local/epics/example",
-                epicItemTitle: "Example",
-            }),
-        )
+        const { kind: _kind, ...taskInput } = input
+        assert.ok(!accepts(task, { ...taskInput, object: issue }))
+        assert.ok(accepts(task, { ...taskInput, object: issue, parentEpicDir: ".project/.local/epics/example" }))
+        // A Task takes its Kind from the plan section, never from initialization input.
+        assert.ok(!accepts(task, { ...input, object: issue, parentEpicDir: ".project/.local/epics/example" }))
     })
 
     it("discovers initialization through native Codemode without declaring or inlining the catalog", async () => {

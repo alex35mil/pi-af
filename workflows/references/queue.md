@@ -21,8 +21,8 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 1. **Read configuration.** Call `inspect_integrations` with the `target`. Stop and report a missing or invalid tracker.
 2. **Read the guides.** Read [communication](./communication.md) and the provider guide: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md). When it refers to shared rules, read [integration roles](./integrations/shared.md).
 3. **Draft the intake:** the title, the description, the tracker destination, Backlog or Todo, and a configured Priority or `not set`.
-4. **Entity type.** Require `epic`, `task`, or `gig` before checking mutation capability.
-   - A Task needs its initialized parent Epic and the provider relationship in the selected project, not another checkout.
+4. **Entity type.** Require `epic` or `gig` before checking mutation capability.
+   - Never queue a Task. To add one, replan its Epic; acceptance creates the Task's issue ([Epic Tasks](./epic-tasks.md#progress-and-replanning)).
    - Recommend a standalone Gig for independent workflow reports.
 5. **Kind** (GitHub with configured Kind labels only): `inspect_integrations` shows `labels.kind`. Reuse the Kind the request states (Epic, or a Deliverable kind); otherwise recommend the best fit and present it, or `not set`, with the other fields.
 6. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
@@ -35,8 +35,8 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 **Creating:**
 
 - An approved intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
-- **GitHub:** create an ordinary issue with, for a Task, the parent. Add it to the configured Project and set Status and Priority with named writes. The Task parent and issue-scoped fields are separate calls.
-- **Linear:** create only the selected Project, Task issue with parent Project, or projectless Gig, with team, state, and Priority together.
+- **GitHub:** create an ordinary issue. Add it to the configured Project and set Status and Priority with named writes.
+- **Linear:** create only the selected Project or projectless Gig, with team, state, and Priority together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
 Apart from that optional Kind label, adding work assigns no native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.

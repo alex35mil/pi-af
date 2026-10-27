@@ -10,13 +10,13 @@ import {
     EPIC_ROOT,
     entityName,
     GIG_ROOT,
-    type InitializedLifecycleState,
-    LINEAR_IDENTIFIER_PATTERN,
+    type LifecycleState,
     PROJECT_ROOT,
     slugify,
     PhaseSchema,
     trackerReferenceLabel,
 } from "./domain.js"
+import { readEpicTasks } from "./epic-tasks.js"
 import { writeTextAtomically } from "./files.js"
 import {
     assertTrackerRecordInvariants,
@@ -112,46 +112,54 @@ export function expectedEntityDirectoryName(status: EntityStatus): string {
     return entityName(trackerReference(status.tracker), status.slug)
 }
 
-// The Epic plan marker that relates a Task to its plan line.
+// The Epic plan marker that relates a Task to its plan section.
 export function taskMarker(status: EntityStatus): string {
     const label = trackerReferenceLabel(trackerReference(status.tracker))
     if (!label || status.entity !== "task") throw new Error("only a Task has a plan marker")
     return label
 }
 
-const ActiveTaskLifecycleSchema = Type.Union([Type.Literal("inProgress"), Type.Literal("inReview")])
+// A tagged Task's issue and, once started, its local Task directory.
 const ProgressTaskSchema = Type.Object(
     {
         marker: OneLineSchema,
-        directory: OneLineSchema,
+        directory: Type.Optional(OneLineSchema),
     },
     { additionalProperties: false },
 )
+const strict = { additionalProperties: false } as const
 export const EpicTaskProgressSchema = Type.Object(
     {
         epic: OneLineSchema,
         items: Type.Array(
             Type.Union([
+                // Issue processing hasn't created or linked this Task's issue yet.
+                Type.Object({ state: Type.Literal("unpublished"), title: OneLineSchema }, strict),
                 Type.Object(
-                    { state: Type.Literal("prospective"), display: OneLineSchema },
-                    { additionalProperties: false },
+                    {
+                        state: Type.Literal("queued"),
+                        title: OneLineSchema,
+                        lifecycle: Type.Union([Type.Literal("backlog"), Type.Literal("todo")]),
+                        task: ProgressTaskSchema,
+                    },
+                    strict,
                 ),
                 Type.Object(
                     {
                         state: Type.Literal("initialized"),
-                        display: OneLineSchema,
-                        lifecycle: ActiveTaskLifecycleSchema,
+                        title: OneLineSchema,
+                        lifecycle: Type.Union([Type.Literal("inProgress"), Type.Literal("inReview")]),
                         task: ProgressTaskSchema,
                     },
-                    { additionalProperties: false },
+                    strict,
                 ),
                 Type.Object(
-                    { state: Type.Literal("complete"), display: OneLineSchema, task: ProgressTaskSchema },
-                    { additionalProperties: false },
+                    { state: Type.Literal("complete"), title: OneLineSchema, task: ProgressTaskSchema },
+                    strict,
                 ),
                 Type.Object(
-                    { state: Type.Literal("canceled"), display: OneLineSchema, task: ProgressTaskSchema },
-                    { additionalProperties: false },
+                    { state: Type.Literal("canceled"), title: OneLineSchema, task: ProgressTaskSchema },
+                    strict,
                 ),
             ]),
         ),
@@ -209,10 +217,8 @@ function assertEntityStatusInvariants(status: EntityStatus, entityDirectory: str
                   const parentEpicPath = path.join(actualParentDirectory, "epic.md")
                   if (!fs.existsSync(parentEpicPath)) fail("Task parent has no accepted epic.md")
                   const marker = taskMarker(status)
-                  const matching = readOrderedTaskEntries(parentEpicPath).filter(
-                      (entry) => entry.state === "initialized" && entry.marker === marker,
-                  )
-                  if (matching.length !== 1) fail(`Task parent epic.md must contain exactly one marker for ${marker}`)
+                  if (!readEpicTasks(parentEpicPath).some((task) => task.marker === marker))
+                      fail(`Task parent epic.md must contain the marker ${marker}`)
                   return status.branch.start
               })()
             : status.branch.start
@@ -234,16 +240,60 @@ function assertTaskTrackerParent(task: EntityStatus, parent: EntityStatus, fail:
         fail("Linear Task Project does not match its parent Epic Project")
 }
 
+// Progress for every planned Task, from the plan and fresh tracker lifecycle for every
+// tagged marker. A Task directory exists only once a Task has started.
 export function readEpicTaskProgress(
     epicDirectory: string,
-    trackerLifecycle: Readonly<Record<string, InitializedLifecycleState>> = {},
+    trackerLifecycle: Readonly<Record<string, LifecycleState>> = {},
 ): EpicTaskProgress {
     const epic = readEntityStatus(epicDirectory)
     if (epic.entity !== "epic") throw new Error(`Task progress requires an Epic directory: ${epicDirectory}`)
     const epicPath = path.join(epicDirectory, "epic.md")
     if (!fs.existsSync(epicPath)) throw new Error(`Epic has no accepted epic.md: ${epicDirectory}`)
-    const planItems = readOrderedTaskEntries(epicPath)
-    const tasks = new Map<string, { directory: string; lifecycle: InitializedLifecycleState }>()
+    const planTasks = readEpicTasks(epicPath)
+    const directories = readEpicTaskDirectories(epicDirectory)
+    const planned = new Set(planTasks.flatMap((task) => (task.marker ? [task.marker] : [])))
+    for (const marker of directories.keys()) {
+        if (!planned.has(marker)) throw new Error(`${marker} is not referenced by an Epic plan Task`)
+    }
+
+    const progress: EpicTaskProgress = {
+        epic: entityLabel(epic),
+        items: planTasks.map((planTask) => {
+            if (!planTask.marker) return { state: "unpublished" as const, title: planTask.title }
+            const lifecycle =
+                trackerLifecycle[planTask.marker] ??
+                (() => {
+                    throw new Error(`tracker lifecycle is required for ${planTask.marker}`)
+                })()
+            const directory = directories.get(planTask.marker)
+            const task = { marker: planTask.marker, ...(directory ? { directory } : {}) }
+            const title = planTask.title
+            switch (lifecycle) {
+                case "backlog":
+                case "todo":
+                    if (directory) throw new Error(`${planTask.marker} has a Task directory but is still queued`)
+                    return { state: "queued" as const, title, lifecycle, task }
+                case "inProgress":
+                case "inReview":
+                    if (!directory) throw new Error(`${planTask.marker} has started but has no Task directory`)
+                    return { state: "initialized" as const, title, lifecycle, task }
+                case "done":
+                    return { state: "complete" as const, title, task }
+                case "canceled":
+                    return { state: "canceled" as const, title, task }
+            }
+        }),
+    }
+    if (!Value.Check(EpicTaskProgressSchema, progress)) {
+        throw new Error(`generated invalid Task progress for ${epicDirectory}`)
+    }
+    return progress
+}
+
+// The repo-relative directory of every started Task, keyed by its marker.
+export function readEpicTaskDirectories(epicDirectory: string): Map<string, string> {
+    const tasks = new Map<string, string>()
     const tasksDirectory = path.join(epicDirectory, "tasks")
     const entries = fs.existsSync(tasksDirectory)
         ? fs
@@ -257,84 +307,9 @@ export function readEpicTaskProgress(
         if (task.entity !== "task") throw new Error(`non-Task directory under Epic tasks: ${taskDirectory}`)
         const marker = taskMarker(task)
         if (tasks.has(marker)) throw new Error(`multiple Task directories use ${marker}`)
-        const lifecycle =
-            trackerLifecycle[marker] ??
-            (() => {
-                throw new Error(`tracker lifecycle is required for ${marker}`)
-            })()
-        tasks.set(marker, {
-            directory: path.join(EPIC_ROOT, path.basename(epicDirectory), "tasks", entry.name),
-            lifecycle,
-        })
+        tasks.set(marker, path.join(EPIC_ROOT, path.basename(epicDirectory), "tasks", entry.name))
     }
-
-    const referenced = new Set<string>()
-    const progress: EpicTaskProgress = {
-        epic: entityLabel(epic),
-        items: planItems.map((planItem) => {
-            if (planItem.state === "prospective") {
-                return { state: "prospective" as const, display: planItem.display }
-            }
-            referenced.add(planItem.marker)
-            const task = tasks.get(planItem.marker)
-            if (!task) throw new Error(`Epic plan item references missing Task ${planItem.marker}`)
-            const taskReference = { marker: planItem.marker, directory: task.directory }
-            if (task.lifecycle === "done") {
-                return { state: "complete" as const, display: planItem.display, task: taskReference }
-            }
-            if (task.lifecycle === "canceled") {
-                return { state: "canceled" as const, display: planItem.display, task: taskReference }
-            }
-            return {
-                state: "initialized" as const,
-                display: planItem.display,
-                lifecycle: task.lifecycle,
-                task: taskReference,
-            }
-        }),
-    }
-    for (const marker of tasks.keys()) {
-        if (!referenced.has(marker)) throw new Error(`${marker} is not referenced by an Epic plan item`)
-    }
-    if (!Value.Check(EpicTaskProgressSchema, progress)) {
-        throw new Error(`generated invalid Task progress for ${epicDirectory}`)
-    }
-    return progress
-}
-
-export type OrderedTaskEntry =
-    | { state: "prospective"; line: string; display: string }
-    | { state: "initialized"; line: string; display: string; marker: string }
-
-// A Task marker is the Task's tracker reference: `[#12]` on GitHub, `[ENG-7]` on Linear.
-const TASK_MARKER = new RegExp(`^\\[(#[1-9][0-9]*|${LINEAR_IDENTIFIER_PATTERN.slice(1, -1)})\\]\\s+(\\S.*)$`)
-
-export function readOrderedTaskEntries(epicPath: string): OrderedTaskEntry[] {
-    const planLines = fs.readFileSync(epicPath, "utf-8").split(/\r?\n/)
-    let inOrderedTasks = false
-    const entries: OrderedTaskEntry[] = []
-    for (const candidate of planLines) {
-        const line = candidate.trim()
-        if (/^##\s+/.test(line)) {
-            inOrderedTasks = line === "## Ordered Tasks"
-            continue
-        }
-        if (!inOrderedTasks) continue
-        const ordered = /^\d+\.\s+(\S.*)$/.exec(line)
-        if (!ordered) continue
-        const marker = TASK_MARKER.exec(ordered[1])
-        if (/^\[[^\]]*\]\s/.test(ordered[1]) && !marker) {
-            throw new Error(`Epic contains an invalid Task marker: ${JSON.stringify(line)}`)
-        }
-        entries.push(
-            marker
-                ? { state: "initialized", line, marker: marker[1], display: marker[2] }
-                : { state: "prospective", line, display: ordered[1] },
-        )
-    }
-    const markers = entries.flatMap((entry) => (entry.state === "initialized" ? [entry.marker] : []))
-    if (new Set(markers).size !== markers.length) throw new Error(`Epic contains duplicate Task markers: ${epicPath}`)
-    return entries
+    return tasks
 }
 
 export function writeEntityStatus(entityDirectory: string, status: EntityStatus): void {

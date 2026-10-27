@@ -10,7 +10,7 @@ Adoption applies only to an explicitly selected existing issue, before initializ
 2. Read the configured repository and issue number to get:
    - title, description, URL, and labels;
    - issue-scoped Priority, when Priority is issue-scoped;
-   - Task hierarchy evidence.
+   - for a Task, its parent: it must be a sub-issue of the parent Epic's issue.
 
    Reuse facts already returned together.
 3. Read every discussion page. Treat contributor messages as proposals and evidence, and resolve material requirements with the maintainer before changing scope.
@@ -21,7 +21,7 @@ Adoption applies only to an explicitly selected existing issue, before initializ
    - Priority is a configured value, or `not set` when empty.
 
    The Project item can supply a numeric issue ID that the issue read omits.
-5. Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title, description, copied Priority, and any configured Kind without another confirmation. Ask only for missing or conflicting information.
+5. Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title, description, copied Priority, and any configured Kind without another confirmation. A Task's Kind comes from its plan section. Ask only for missing or conflicting information.
 6. Call `init_github_epic`, `init_github_task`, or `init_github_gig` with the numeric issue ID, number, URL, and Project-item ID as `object`.
 
 **Stops adoption:** the wrong repository, Project, or parent, a non-queue Status, ambiguity, denied access, or an unconfigured Priority.
@@ -34,7 +34,7 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 **Create new work** (after preflight):
 
-- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, and, for a Task, the parent issue number. Include issue-scoped Priority, except for a Task: a parent and issue fields can't share the create call.
+- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, and issue-scoped Priority. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing).
 - No duplicate, label, or option preflight. Pass the returned numeric ID, number, and URL to `init_github_<entity>` as `object`. A minimal ID-and-URL success isn't automatically uncertain.
 
 **Board setup** (after initialization, for new and adopted work):

@@ -11,6 +11,8 @@ allowed-tools:
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
     - "set_epic_task_target"
+    - "plan_epic_task_issues"
+    - "record_epic_task_issue"
     - "render_provider_body"
     - "prepare_tracker_publication"
     - "prepare_tracker_publication_update"
@@ -39,7 +41,7 @@ allowed-tools:
 
 # Epic
 
-An Epic is an initiative and an ordered plan of prospective Tasks. Epic work shapes and maintains that plan; only separately initialized Tasks implement it.
+An Epic is an initiative and an ordered plan of Tasks. Epic work shapes and maintains that plan and keeps one tracker issue per planned Task; only separately started Tasks implement it.
 
 ## Read first
 
@@ -65,8 +67,9 @@ Follow the preparation and entity-selection gates in [artifacts](../../reference
 2. **Lifecycle:** read lifecycle and Priority fresh from the tracker.
 3. **Branch:** switch to the Epic's stored branch before editing its artifacts. This doesn't apply when a Task updates its parent Epic from the Task branch.
 4. **Integrations:** reuse the `resume_integration` result from the artifact gate. Read [integration roles](../../references/integrations/shared.md), then the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md) or [Linear tracker](../../references/integrations/tracker/linear.md), and [GitHub forge](../../references/integrations/forge/github.md).
-5. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project, with document and parent verification before updates.
-6. **Summarize** the current state and continue. Never create another Epic.
+5. **Task issues:** with an accepted `epic.md`, run [Task issue processing](../../references/epic-tasks.md#task-issue-processing) before any publication. It finishes interrupted runs and is safe to repeat.
+6. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project, with document and parent verification before updates.
+7. **Summarize** the current state and continue. Never create another Epic.
 
 ## Initialize
 
@@ -88,7 +91,7 @@ When the Epic is the active workflow, write workflow artifacts only inside its d
 
 After research and inquiry, write `draft.md` in the shape below and check it against the document gate. Apply Project Policies to planning, decomposition, review, and completion.
 
-A prospective Task is only an ordered plan line, with no Task ID, directory, branch, or external issue. Never initialize Tasks from the Epic workflow.
+Each Task is a `### ` section under `## Tasks`, in the [Epic Task format](../../references/epic-tasks.md#epic-task-format). Accepting the plan creates its tracker issue, but never a Task directory, branch, or artifact. Never initialize Tasks from the Epic workflow.
 
 ### Task delivery strategy
 
@@ -128,10 +131,13 @@ Minimum shape:
 
 <Approved Epic/default strategy, rationale from the decomposition, and delivery prerequisites.>
 
-## Ordered Tasks
+## Tasks
 
-1. **<Task-sized unit>** — owned outcome, relevant settled behavior/constraints, and scope boundary.
-2. **<Task-sized unit>** — owned outcome, relevant settled behavior/constraints, and scope boundary.
+### <Task-sized unit>
+
+Kind: <feature | bugfix | refactor | research | audit | chore>
+
+<Owned outcome, relevant settled behavior and constraints, and scope boundary. Any Markdown.>
 ```
 
 ### Epic document gate
@@ -145,7 +151,7 @@ Before review, revise the draft until it meets every condition:
 - **Delivery strategy:** the approved strategy and rationale are recorded, and the highlights agree with that section and the decomposition.
 - **Examples:** concrete ones, where needed to understand an agreed behavior or configuration.
 - **Right altitude:** architecture stays high-level. No implementation recipes, detailed test plans, status tracking, risk-register boilerplate, or empty sections.
-- **Good Tasks:** each states its outcome, relevant contract, stopping boundary, and material prerequisites or exclusions, with enough context to stand alone. They're ordered so prerequisites come first, without avoidable overlap. Never add Tasks just to lengthen the list.
+- **Good Tasks:** each states its Kind, outcome, relevant contract, stopping boundary, and material prerequisites or exclusions, with enough context to stand alone. Its body becomes the Task issue's description. They're ordered so prerequisites come first, without avoidable overlap. Never add Tasks just to lengthen the list.
 
 A fresh reader must be able to see what changes, why it matters, the rules and boundaries, how exceptional cases behave, and how the Tasks deliver the initiative.
 
@@ -156,6 +162,7 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 3. **On acceptance:**
    - record the routing choice with `set_epic_task_target`;
    - set Execution ([Phase](../../references/phase.md)); lifecycle stays `inProgress`;
+   - run [Task issue processing](../../references/epic-tasks.md#task-issue-processing); plan acceptance approves its creates, cancellations, and board updates;
    - publish `epic.md` through the same integration steps as on resume.
 4. **Stop** without initializing or implementing a Task.
 
@@ -170,19 +177,9 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 - Only future Tasks follow a changed pointer; existing Tasks keep their start and target.
 - Never delete the Epic branch while an active Task targets it.
 
-### Task markers
+### Task markers and progress
 
-- Initializing a Task changes its plan line once, from `1. **Title** — …` to `1. [#12] **Title** — …` on GitHub or `1. [ENG-12] **Title** — …` on Linear.
-- That marker is the Task's tracker reference and the permanent relation; title and order are display-only and may change. Every later candidate must keep existing markers exactly.
-
-**Progress** comes from each marker's child lifecycle, read fresh from the tracker.
-
-| Plan line | Meaning |
-| --- | --- |
-| No marker | prospective |
-| In Progress or In Review | initialized |
-| Done | complete |
-| Canceled | a distinct terminal outcome |
+Issue processing tags each Task heading once with its issue's marker, `[#12]` on GitHub or `[ENG-12]` on Linear. The marker is the permanent relation; title and order are display-only. Every later candidate keeps existing markers exactly. [Epic Tasks](../../references/epic-tasks.md#progress-and-replanning) defines progress states and how to remove a Task.
 
 Changes to the accepted contract go through [material replanning](../../references/planning.md#material-replanning) and another review and acceptance. Implementation detail never rewrites it.
 
@@ -190,7 +187,7 @@ Changes to the accepted contract go through [material replanning](../../referenc
 
 When the user explicitly resumes the Epic and asks to complete it:
 
-1. Resolve every Task marker through its child lifecycle. When any Task is neither `done` nor `canceled`, report them and stop.
+1. Resolve every Task through its issue's lifecycle. When any Task is untagged, queued, or started but neither `done` nor `canceled`, report them and stop.
 2. Reconcile finished Task outcomes against the Epic contract and Project Policies. When drift remains, present it and stop without changing lifecycle; resolve it through Epic planning and acceptance first.
 3. Set native Status straight from In Progress to the configured `done` value and clear native Phase ([Phase](../../references/phase.md)). Keep the last metadata Phase.
 4. Report the completion evidence. Change no committed file; Epic completion never creates a commit, push, PR, or CI run.
