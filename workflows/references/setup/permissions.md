@@ -15,12 +15,12 @@ Offer these only for selected, active integration providers, replacing `<server>
 | Any active integration server | `mcp(<server>, hint: readOnly)` | All tools that server advertises with explicit `readOnlyHint: true`; useful for repeated tracker and PR reads. Trusts the server's annotation; missing or false hints don't match. |
 | GitHub tracker | `mcp(<server>, projects_write)` | The entire Project mutation tool, including item and field updates for Status, Phase, and Priority, and its other mutations. |
 | GitHub tracker | `mcp(<server>, issue_write)` | The entire issue create and update tool, including body, labels, fields, and state; useful for intake and metadata. |
-| GitHub tracker | `mcp(<server>, add_issue_comment)` | The entire comment create and reaction tool; used for the first plan publication, Epic plan announcements, and discussion. |
+| GitHub tracker | `mcp(<server>, add_issue_comment)` | The entire comment create and reaction tool; used for the first plan publication, plan update announcements, and discussion. |
 | GitHub tracker | `mcp(<server>, update_issue_comment)` | The entire comment update tool; used to update the managed plan comment. |
 | Linear tracker | `mcp(<server>, save_issue)` | The entire issue save tool, including creation, descriptions, labels, lifecycle, Priority, and relationships. |
 | Linear tracker | `mcp(<server>, save_project)` | The entire Project save tool for Epics, including creation, description, labels, lifecycle, Priority, and other updates. |
 | Linear tracker | `mcp(<server>, save_document)` | The entire document create and update tool, including attachment and reparenting; used for plan documents. Workflow updates omit parent arguments. |
-| Linear tracker | `mcp(<server>, save_comment)` | The entire comment create and update tool on any reachable object; used for Epic plan announcements. |
+| Linear tracker | `mcp(<server>, save_comment)` | The entire comment create and update tool on any reachable object; used for plan update announcements. |
 
 **Limits:**
 

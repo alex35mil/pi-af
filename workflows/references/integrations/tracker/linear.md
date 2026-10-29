@@ -101,7 +101,7 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
    - A pending creation needs recovery, never a create of your own.
 3. **Updates to a published document:**
    - Run the returned `get_document` and parent reads, then call `prepare_tracker_publication_update` with the full source and those reads. The parent read must prove that its display identifier maps to the stored UUID.
-   - An Epic update also posts an [announcement](../shared.md#epic-plan-announcements) as a Project comment with `save_comment`.
+   - Every update also posts an [announcement](../shared.md#plan-update-announcements) with `save_comment`: a Project comment for an Epic, an issue comment for a Task or Gig.
    - Run the resulting full-content update by document ID only, without title or parent arguments, so publication never renames or reparents it.
    - A missing, moved, archived, or conflicting document stops for maintainer direction.
 4. **Recovery.** When creation is pending or an update is uncertain, read [recovery](../recovery.md#linear-document). An issue has no listing filter, so recovery scans every accessible document. Trust clear success after updates, without routine confirmation reads.

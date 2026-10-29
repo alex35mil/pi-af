@@ -21,7 +21,6 @@ import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js
 import {
     type AnnouncementInput,
     AnnouncementInputSchema,
-    type AnnouncementOrigin,
     hasAnnouncementMarker,
     type PlanAnnouncement,
     planFingerprint,
@@ -69,13 +68,13 @@ interface PublicationContext<I> {
     status: EntityStatus
     announcement: PlanAnnouncement | undefined
     saveAnnouncement(state: PlanAnnouncement | undefined): void
-    resolveOrigin(input: AnnouncementInput["origin"]): AnnouncementOrigin
+    // The heading's Task marker for an Epic update made from one of its Tasks; rejects a Task origin otherwise.
+    resolveOrigin(input: AnnouncementInput["origin"]): string | undefined
 }
 
 function runPublication<I>(input: TrackerPublicationInput, context: PublicationContext<I>) {
     const { adapter, status, announcement } = context
     const saved = adapter.state
-    const epic = status.entity === "epic"
     const render = (source: string, token: string) =>
         `${renderProviderBody(source, { kind: adapter.presentation })}\n\n${planPublicationMarker(token)}`
     const announcements = () => adapter.announcements()
@@ -101,13 +100,8 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             adapter.save({ state: "pending", token })
             return { state: "mutation-needed" as const, mutation }
         }
-        // An Epic compares with the published plan to announce the change.
-        if (epic || adapter.updateCheck === "current-reads")
-            return { state: "reads-required" as const, lookups: adapter.currentReads(saved.id) }
-        return {
-            state: "mutation-needed" as const,
-            mutation: adapter.update(saved.id, render(input.source, saved.token)),
-        }
+        // Every update to a published plan compares with it, to announce the change.
+        return { state: "reads-required" as const, lookups: adapter.currentReads(saved.id) }
     }
 
     if (input.action === "prepareUpdate") {
@@ -115,10 +109,6 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
         if (announcement?.state === "announcing") return announcementPending()
         const current = adapter.currentBody(input.reads, saved)
         const update = adapter.update(saved.id, render(input.source, saved.token))
-        if (!epic) {
-            if (input.announcement) throw new Error("only an Epic announces plan updates")
-            return { state: "mutation-needed" as const, mutation: update }
-        }
         const published = restoreProviderSource(current, { kind: adapter.presentation }, status.title).source
         // An earlier update landed without being recorded; finish its announcement.
         if (announcement?.state === "plan-update" && planFingerprint(published) === announcement.after) {
@@ -132,12 +122,10 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             return { state: "unchanged" as const }
         }
         if (!input.announcement)
-            throw new Error(
-                "an update to a published Epic plan needs an announcement: the approved summary and its origin",
-            )
+            throw new Error("an update to a published plan needs an announcement: the approved summary")
         const token = randomUUID()
         const body = renderAnnouncement({
-            origin: context.resolveOrigin(input.announcement.origin),
+            fromTask: context.resolveOrigin(input.announcement.origin),
             summary: input.announcement.summary,
             plan: adapter.announcementPlan(saved),
             diff,
@@ -225,39 +213,37 @@ export async function trackerPublication(cwd: string, raw: TrackerPublicationInp
         const tracker = status.tracker
         const server = environment.tracker.mcpServer
         const save = (record: TrackerRecord) => writeEntityStatus(directory, { ...status, tracker: record })
-        // The origin Task must belong to this Epic; its issue marker names it.
-        const resolveOrigin = (origin: AnnouncementInput["origin"]): AnnouncementOrigin => {
-            if (origin.kind === "epic") return { kind: "epic" }
-            const task = resolveEntityDirectory(root, cwd, origin.entityDir)
-            if (path.dirname(task) !== path.join(directory, "tasks"))
-                throw new Error("the announcing Task must be a Task of this Epic")
-            return { kind: "task", marker: taskMarker(readEntityStatus(task)) }
+        // Only an Epic update can come from a Task, and the Task must be one of its own.
+        const resolveOrigin = (origin: AnnouncementInput["origin"]): string | undefined => {
+            if (origin === undefined) return undefined
+            switch (status.entity) {
+                case "epic": {
+                    const task = resolveEntityDirectory(root, cwd, origin.entityDir)
+                    if (path.dirname(task) !== path.join(directory, "tasks"))
+                        throw new Error("the announcing Task must be a Task of this Epic")
+                    return taskMarker(readEntityStatus(task))
+                }
+                case "task":
+                case "gig":
+                    throw new Error(`a ${status.entity} plan update has no Task origin; omit origin`)
+            }
         }
-        // Only records that can belong to an Epic carry an announcement.
-        const announcing = <R extends Extract<TrackerRecord, { planAnnouncement?: PlanAnnouncement }>>(record: R) => ({
+        const announcing = (record: TrackerRecord) => ({
             announcement: record.planAnnouncement,
             saveAnnouncement: (state: PlanAnnouncement | undefined) => {
                 const { planAnnouncement: _, ...rest } = record
                 save((state ? { ...rest, planAnnouncement: state } : rest) as TrackerRecord)
             },
         })
-        const context = { status, resolveOrigin }
+        const context = { status, resolveOrigin, ...announcing(tracker) }
         if (tracker.provider === "github")
             return runPublication(input, {
                 ...context,
-                ...announcing(tracker),
                 adapter: githubPublication(tracker, server, tools, (planComment) => save({ ...tracker, planComment })),
             })
-        const adapter = linearPublication(tracker, server, tools, (planDocument) => save({ ...tracker, planDocument }))
-        if (tracker.resource === "project")
-            return runPublication(input, { ...context, ...announcing(tracker), adapter })
         return runPublication(input, {
             ...context,
-            announcement: undefined,
-            saveAnnouncement: () => {
-                throw new Error("only an Epic announces plan updates")
-            },
-            adapter,
+            adapter: linearPublication(tracker, server, tools, (planDocument) => save({ ...tracker, planDocument })),
         })
     })
 }
@@ -276,7 +262,7 @@ export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatal
         toolsApi.registerTool({
             name,
             label: name,
-            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. The first prepare for an unpublished plan saves pending state before returning its create; run that create immediately. When prepare returns reads-required, run those reads and call prepare_tracker_publication_update with them. An update to a published Epic plan requires the approved announcement; record the plan update's clear success with record_tracker_publication, run the returned announcement comment, and record it too. Recovery takes the approved source and complete comment pages, or the Linear parent read, complete document listing pages, and full document reads; for a pending announcement, complete comment pages. One match identifies it; no match returns the same create; several matches stop. Saves local authoritative state only; never calls providers or authorizes publication.`,
+            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. The first prepare for an unpublished plan saves pending state before returning its create; run that create immediately. When prepare returns reads-required, run those reads and call prepare_tracker_publication_update with them. An update to any published plan requires the approved announcement; record the plan update's clear success with record_tracker_publication, run the returned announcement comment, and record it too. Recovery takes the approved source and complete comment pages, or the Linear parent read, complete document listing pages, and full document reads; for a pending announcement, complete comment pages. One match identifies it; no match returns the same create; several matches stop. Saves local authoritative state only; never calls providers or authorizes publication.`,
             parameters,
             async execute(_id, input, _signal, _onUpdate, ctx) {
                 const result = await trackerPublication(

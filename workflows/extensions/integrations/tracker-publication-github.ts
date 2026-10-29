@@ -70,7 +70,6 @@ export function githubPublication(
         save,
         create: (body) => call("add_issue_comment", { ...address, body }),
         update: (id, body) => call("update_issue_comment", { ...tracker.repository, comment_id: id, body }),
-        updateCheck: "direct",
         recordUpdate(evidence, saved) {
             requireCall(evidence, "update_issue_comment", { ...tracker.repository, comment_id: saved.id })
             if (!hasPublicationMarker(evidence.arguments.body, saved.token))

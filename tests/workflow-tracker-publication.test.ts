@@ -189,7 +189,19 @@ describe("managed GitHub plan comments", () => {
                         url: full.html_url,
                     })
                     f.read()
-                    const updated = await f.prepare(source.replace("Update the plan.", "Updated scope."))
+                    const revised = source.replace("Update the plan.", "Updated scope.")
+                    assert.equal((await f.prepare(revised)).state, "reads-required")
+                    const updated = await trackerPublication(
+                        f.root,
+                        {
+                            action: "prepareUpdate",
+                            entityDir: f.directory,
+                            source: revised,
+                            reads: [f.page([full])],
+                            announcement: { summary: "Scope changed." },
+                        },
+                        tools,
+                    )
                     assert.ok(updated.state === "mutation-needed")
                     assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
                     assert.equal(updated.mutation.arguments.comment_id, 123)
@@ -306,24 +318,21 @@ describe("managed GitHub plan comments", () => {
                     const identity = f.saved().tracker.planComment
                     assert.equal(identity.state, "published")
                     const revised = source.replace("Update the plan.", "Updated scope.")
-                    const prepared2 = await f.prepare(revised)
-                    // An Epic reads its published plan first, to announce the change.
-                    const updated =
-                        kind === "epic"
-                            ? await trackerPublication(
-                                  f.root,
-                                  {
-                                      action: "prepareUpdate",
-                                      entityDir: f.directory,
-                                      source: revised,
-                                      reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
-                                      announcement: { origin: { kind: "epic" }, summary: "Scope changed." },
-                                  },
-                                  tools,
-                              )
-                            : prepared2
-                    assert.equal(prepared2.state, kind === "epic" ? "reads-required" : "mutation-needed")
-                    assert.ok(updated.state === "mutation-needed")
+                    // Every published plan reads its current version first, to announce the change.
+                    assert.equal((await f.prepare(revised)).state, "reads-required")
+                    const updated = await trackerPublication(
+                        f.root,
+                        {
+                            action: "prepareUpdate",
+                            entityDir: f.directory,
+                            source: revised,
+                            reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
+                            announcement: { summary: "Scope changed." },
+                        },
+                        tools,
+                    )
+                    assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
+                    assert.match(updated.announcement as string, /^\*\*Plan updated\*\*\n\nScope changed\./)
                     assert.ok(typeof updated.mutation.arguments.body === "string")
                     assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
                     assert.ok("comment_id" in updated.mutation.arguments)
@@ -452,51 +461,82 @@ describe("managed GitHub plan comments", () => {
         }
     })
 
-    it("finishes an announcement when the plan update landed without being recorded", async () => {
-        const f = fixture("epic")
+    it("rejects a Gig plan update without an announcement or with a Task origin", async () => {
+        const f = fixture("gig")
         try {
-            const run = (input: Record<string, unknown>) =>
-                trackerPublication(f.root, { entityDir: f.directory, ...input } as TrackerPublicationInput, tools)
             const prepared = await f.prepare()
             assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.body === "string")
             await f.record({ ...prepared.mutation, response: f.remote(prepared.mutation.arguments.body) })
             const revised = source.replace("Update the plan.", "Revised.")
-            const announcement = { origin: { kind: "epic" }, summary: "Revised." }
-            const updated = await run({
-                action: "prepareUpdate",
-                source: revised,
-                reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
-                announcement,
-            })
-            assert.ok(updated.state === "mutation-needed" && typeof updated.mutation.arguments.body === "string")
-            assert.match(updated.announcement as string, /from Epic replanning/)
-            // The update's outcome was uncertain; the published plan shows it landed.
-            const resumed = await run({
-                action: "prepareUpdate",
-                source: revised,
-                reads: [f.page([f.remote(updated.mutation.arguments.body)])],
-            })
-            assert.ok(resumed.state === "mutation-needed")
-            assert.equal(resumed.mutation.tool, "mcp__github__add_issue_comment")
-            assert.equal(resumed.mutation.arguments.body, updated.announcement)
+            const update = (announcement?: Record<string, unknown>) =>
+                trackerPublication(
+                    f.root,
+                    {
+                        action: "prepareUpdate",
+                        entityDir: f.directory,
+                        source: revised,
+                        reads: [f.page([f.remote(prepared.mutation.arguments.body as string)])],
+                        ...(announcement ? { announcement } : {}),
+                    } as TrackerPublicationInput,
+                    tools,
+                )
+            await assert.rejects(update(), /needs an announcement/)
             await assert.rejects(
-                f.record({
-                    ...resumed.mutation,
-                    arguments: { ...resumed.mutation.arguments, body: "other" },
-                    response: { id: 900 },
-                }),
-                /marker/,
+                update({ origin: { kind: "task", entityDir: f.directory }, summary: "Revised." }),
+                /gig plan update has no Task origin/,
             )
-            const done = await f.record({
-                ...resumed.mutation,
-                response: { id: "900", url: "https://github.com/example/project/issues/42#issuecomment-900" },
-            })
-            assert.equal(done.state, "announced")
             assert.equal("planAnnouncement" in f.saved().tracker, false)
         } finally {
             f.dispose()
         }
     })
+
+    for (const kind of ["epic", "gig"] as const)
+        it(`finishes a ${kind} announcement when the plan update landed without being recorded`, async () => {
+            const f = fixture(kind)
+            try {
+                const run = (input: Record<string, unknown>) =>
+                    trackerPublication(f.root, { entityDir: f.directory, ...input } as TrackerPublicationInput, tools)
+                const prepared = await f.prepare()
+                assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.body === "string")
+                await f.record({ ...prepared.mutation, response: f.remote(prepared.mutation.arguments.body) })
+                const revised = source.replace("Update the plan.", "Revised.")
+                const announcement = { summary: "Revised." }
+                const updated = await run({
+                    action: "prepareUpdate",
+                    source: revised,
+                    reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
+                    announcement,
+                })
+                assert.ok(updated.state === "mutation-needed" && typeof updated.mutation.arguments.body === "string")
+                assert.match(updated.announcement as string, /^\*\*Plan updated\*\*\n\nRevised\./)
+                // The update's outcome was uncertain; the published plan shows it landed.
+                const resumed = await run({
+                    action: "prepareUpdate",
+                    source: revised,
+                    reads: [f.page([f.remote(updated.mutation.arguments.body)])],
+                })
+                assert.ok(resumed.state === "mutation-needed")
+                assert.equal(resumed.mutation.tool, "mcp__github__add_issue_comment")
+                assert.equal(resumed.mutation.arguments.body, updated.announcement)
+                await assert.rejects(
+                    f.record({
+                        ...resumed.mutation,
+                        arguments: { ...resumed.mutation.arguments, body: "other" },
+                        response: { id: 900 },
+                    }),
+                    /marker/,
+                )
+                const done = await f.record({
+                    ...resumed.mutation,
+                    response: { id: "900", url: "https://github.com/example/project/issues/42#issuecomment-900" },
+                })
+                assert.equal(done.state, "announced")
+                assert.equal("planAnnouncement" in f.saved().tracker, false)
+            } finally {
+                f.dispose()
+            }
+        })
 
     it("resolves availability and validates source before saving a creation attempt", async () => {
         const f = fixture()

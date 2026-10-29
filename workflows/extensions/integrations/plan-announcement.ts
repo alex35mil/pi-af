@@ -5,8 +5,8 @@ import { type Static, Type } from "typebox"
 
 import { unifiedDiff } from "./plan-diff.js"
 
-// Announcing an update to a published Epic plan, so the change reaches the team instead of
-// silently editing the plan in place.
+// Announcing an update to a published plan, for any entity, so the change reaches the people
+// watching the issue instead of silently editing the plan in place.
 //
 // - `plan-update`: the announcement is drafted and the plan update isn't confirmed. `after`
 //   fingerprints the updated plan: a published plan matching it proves the update landed;
@@ -24,30 +24,26 @@ export const PlanAnnouncementSchema = Type.Union([
 ])
 export type PlanAnnouncement = Static<typeof PlanAnnouncementSchema>
 
-// Where the approved contract change came from: one of the Epic's Tasks, or Epic replanning.
-export const AnnouncementOriginSchema = Type.Union([
-    Type.Object(
-        {
-            kind: StringEnum(["task"] as const),
-            entityDir: Type.String({ minLength: 1, description: "The Task's directory under this Epic" }),
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object({ kind: StringEnum(["epic"] as const) }, { additionalProperties: false }),
-])
+// An Epic update made from one of its Tasks names that Task. Every other update has no origin.
+export const AnnouncementOriginSchema = Type.Object(
+    {
+        kind: StringEnum(["task"] as const),
+        entityDir: Type.String({ minLength: 1, description: "The Task's directory under this Epic" }),
+    },
+    { additionalProperties: false },
+)
 export const AnnouncementInputSchema = Type.Object(
     {
-        origin: AnnouncementOriginSchema,
+        origin: Type.Optional(AnnouncementOriginSchema),
         summary: Type.String({
             minLength: 1,
-            description: "The approved Markdown summary of what changed in the contract and why",
+            description:
+                "The approved Markdown summary of what changed and why, including when the change is only editorial",
         }),
     },
     { additionalProperties: false },
 )
 export type AnnouncementInput = Static<typeof AnnouncementInputSchema>
-
-export type AnnouncementOrigin = { kind: "task"; marker: string } | { kind: "epic" }
 // Where the announcement's plan link points. GitHub's plan comment is on the same issue, so a
 // bare fragment keeps the reader in the same view; Linear's plan is a separate document.
 export type AnnouncementPlan = { presentation: "github"; commentId: number } | { presentation: "linear"; url: string }
@@ -111,15 +107,16 @@ function fenced(diff: string): string {
 }
 
 export function renderAnnouncement(input: {
-    origin: AnnouncementOrigin
+    // The marker of the Task an Epic update came from.
+    fromTask?: string
     summary: string
     plan: AnnouncementPlan
     diff: string
     token: string
 }): string {
-    const origin = input.origin.kind === "task" ? `from Task ${input.origin.marker}` : "from Epic replanning"
+    // The comment is always on the entity's own issue, so the heading needs no entity name.
     const head = [
-        `**Epic plan updated** ${origin}`,
+        input.fromTask === undefined ? "**Plan updated**" : `**Plan updated** from Task ${input.fromTask}`,
         input.summary.trim(),
         `[View the updated plan](${planLink(input.plan)})`,
     ]

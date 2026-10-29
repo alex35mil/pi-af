@@ -92,13 +92,14 @@ At every material Task decision, and before final review, compare the outcome wi
 | --- | --- |
 | The Epic contract is still accurate | Keep implementation details in Task artifacts. Don't rewrite the Epic's Task section; progress comes from the Task's lifecycle. |
 | A mismatch or domain decision is unresolved | Explain it and ask before changing any Epic artifact. |
-| The user approves an Epic contract change | Update the Epic's notes, revise its `draft.md`, run `review_epic` with `phase: "plan"`, then present the approved snapshot through the `epic.md` diff gate, with the [announcement](../../references/integrations/shared.md#epic-plan-announcements) summary. |
+| The user approves an Epic contract change | Update the Epic's notes, revise its `draft.md`, run `review_epic` with `phase: "plan"`, then present the approved snapshot through the `epic.md` diff gate, with the [announcement](../../references/integrations/shared.md#plan-update-announcements) summary. |
 
 **After an accepted `epic.md` change:**
 
 - Run the parent's [Task issue processing](../../references/epic-tasks.md#task-issue-processing) first, on the Task branch.
 - Publish that parent's accepted source by calling `prepare_tracker_publication` with the parent's `entityDir`, and announce it with this Task as the origin. Never update the published Epic plan silently.
 - The Task's own document belongs to its issue, not the parent Project. Stay on the Task branch.
+- A change to the Task's own published `plan.md` is announced on the Task's issue, with no origin. When one replan changes both plans, each issue gets its own announcement.
 
 **Unsynchronized changes:**
 

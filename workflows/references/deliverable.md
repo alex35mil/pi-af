@@ -29,7 +29,7 @@ Initialization starts from the tracker object ([integration roles](./integration
 - Read [integration roles](./integrations/shared.md), then the provider reference for each role: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md), and [GitHub forge](./integrations/forge/github.md). Report an unavailable role without blocking the other.
 - Permission denial, invalid configuration, or provider failure: follow the [MCP boundary](./core.md#mcp-boundary). Nothing local replaces an unavailable tracker.
 
-After every accepted `plan.md` change, publish the plan as described in [provider bodies](./integrations/shared.md#provider-bodies).
+After every accepted `plan.md` change, publish the plan as described in [provider bodies](./integrations/shared.md#provider-bodies). Once the plan is published, every change to it, editorial or from replanning, needs an [announcement](./integrations/shared.md#plan-update-announcements) summary shown with the `plan.md` diff.
 
 ## Kind strategy
 
