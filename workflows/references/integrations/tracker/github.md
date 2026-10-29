@@ -76,7 +76,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 - For an accepted `epic.md` or `plan.md`, call `prepare_integration_projection`, then `prepare_tracker_publication` with `entityDir` and the full source. Approval follows [provider bodies](../shared.md#provider-bodies).
 - Run the returned comment call, never an issue body or title update.
 - The first publication saves `planComment: pending`, then returns one `add_issue_comment`. Run it immediately, then record it with `record_tracker_publication`.
-- Once published, updates use `update_issue_comment` on that same comment. An Epic first reads its comments, and its update also posts an [announcement](../shared.md#epic-plan-announcements) as a new issue comment.
+- Once published, updates first read the issue's comments, then use `update_issue_comment` on that same comment. Every update also posts an [announcement](../shared.md#plan-update-announcements) as a new issue comment.
 - A pending attempt returns `recovery-required`; read [recovery](../recovery.md#github-comment).
 - Don't read just to confirm a successful update. Plan-comment state lives in authoritative metadata, and Resource IDs and Phase are unaffected.
 - Resume reuses saved state and never republishes on its own.

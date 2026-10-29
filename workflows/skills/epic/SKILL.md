@@ -69,7 +69,7 @@ Follow the preparation and entity-selection gates in [artifacts](../../reference
 3. **Published plan:** [compare](../../references/epic.md#compare-with-the-published-plan) the local `epic.md` with it.
 4. **Integrations:** reuse the `resume_integration` result from the artifact gate. Read [integration roles](../../references/integrations/shared.md), then the provider reference: [GitHub tracker](../../references/integrations/tracker/github.md) or [Linear tracker](../../references/integrations/tracker/linear.md), and [GitHub forge](../../references/integrations/forge/github.md).
 5. **Task issues:** with an accepted `epic.md`, run [Task issue processing](../../references/epic-tasks.md#task-issue-processing) before any publication. It finishes interrupted runs and is safe to repeat.
-6. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project. Every update to the published plan is announced, with `epic` as the origin when it comes from replanning.
+6. **Publication:** after accepted `epic.md` changes, call `prepare_integration_projection` and publish as described in [provider bodies](../../references/integrations/shared.md#provider-bodies). GitHub keeps one managed plan comment; Linear keeps one document attached to the Project. Every update to the published plan is announced. Pass an origin only when the update came from one of the Epic's Tasks.
 7. **Summarize** the current state and continue. Never create another Epic.
 
 ## Initialize
@@ -155,7 +155,7 @@ A fresh reader must be able to see what changes, why it matters, the rules and b
 
 ## Review and acceptance
 
-1. **Review.** Follow plan review in [planning](../../references/planning.md#plan-review-and-acceptance) with `review_epic`, this Epic's `entityDir`, and `phase: "plan"`. `prepare_epic_plan_presentation` returns the reviewed snapshot and the `epic.md` target for the write tool's approval diff. When the plan is already published, show the [announcement](../../references/integrations/shared.md#epic-plan-announcements) summary with that diff.
+1. **Review.** Follow plan review in [planning](../../references/planning.md#plan-review-and-acceptance) with `review_epic`, this Epic's `entityDir`, and `phase: "plan"`. `prepare_epic_plan_presentation` returns the reviewed snapshot and the `epic.md` target for the write tool's approval diff. When the plan is already published, show the [announcement](../../references/integrations/shared.md#plan-update-announcements) summary with that diff.
 2. **Wait.** Don't accept or act on the Epic until the user accepts that reviewed diff. Phase stays Planning until then.
 3. **On acceptance:**
    - set Execution ([Phase](../../references/phase.md)); lifecycle stays `inProgress`;

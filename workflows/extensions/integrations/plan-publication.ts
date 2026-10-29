@@ -24,7 +24,7 @@ export type NativePublicationCall = { tool: string; arguments: Record<string, un
 export type PublicationCandidate<I> = PublicationIdentity<I> & { body: string }
 export type RecoveryReads = { state: "recovery-read-required"; lookups: NativePublicationCall[] }
 
-// Discussion comments on the tracker item that announce an Epic plan update.
+// Discussion comments on the entity's own tracker item that announce an update to its published plan.
 export interface AnnouncementAdapter {
     create(body: string): NativePublicationCall
     lookups(): NativePublicationCall[]
@@ -40,9 +40,6 @@ export interface PublicationAdapter<I> {
     save(state: PublicationState<I>): void
     create(content: string): NativePublicationCall
     update(id: I, content: string): NativePublicationCall
-    // `direct`: an unannounced update needs no reads first. `current-reads`: every update first
-    // proves the published plan's identity and scope through `currentReads`.
-    updateCheck: "direct" | "current-reads"
     // Validates clear-success evidence of an update to the published plan; returns the sent body.
     recordUpdate(evidence: ProviderEvidence, saved: PublishedPlan<I>): string
     // The reads that prove the published plan's identity and current content.

@@ -101,16 +101,17 @@ export function linearPublication(
             throw new Error("saved document is archived or its identity conflicts; preserve state and investigate")
         return observed.body
     }
-    const commentListing = { projectId: parent.id, limit: 250 }
+    // Announcements are comments on the plan's own parent: the Epic's Project, or the Task or Gig issue.
+    const commentParent = parent.kind === "project" ? { projectId: parent.id } : { issueId: parent.id }
+    const commentListing = { ...commentParent, limit: 250 }
     const announcements = (): AnnouncementAdapter => {
-        if (parent.kind !== "project") throw new Error("only an Epic Project announces plan updates")
         return {
-            create: (body) => call("save_comment", { projectId: parent.id, body }),
+            create: (body) => call("save_comment", { ...commentParent, body }),
             lookups: () => [call("list_comments", commentListing)],
             record(evidence, token) {
-                requireCall(evidence, "save_comment", { projectId: parent.id })
+                requireCall(evidence, "save_comment", commentParent)
                 if (Object.hasOwn(evidence.arguments, "id") || Object.hasOwn(evidence.arguments, "parentId"))
-                    throw new Error("announcement evidence must create a new Project comment")
+                    throw new Error("announcement evidence must create a new comment on the plan's parent")
                 if (!hasAnnouncementMarker(evidence.arguments.body, token))
                     throw new Error("announcement arguments lack the pending announcement marker")
                 const response = mcpResponsePayload(evidence.response)
@@ -153,7 +154,6 @@ export function linearPublication(
         create: (content) =>
             call("save_document", { title: LINEAR_PLAN_DOCUMENT_TITLE, content, [parent.kind]: parent.id }),
         update: (id, content) => call("save_document", { id, content }),
-        updateCheck: "current-reads",
         recordUpdate(evidence, saved) {
             requireCall(evidence, "save_document", { id: saved.id })
             if (

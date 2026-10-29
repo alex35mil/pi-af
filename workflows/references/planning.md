@@ -47,6 +47,6 @@ When accepted behavior, strategy, scope, or decomposition must change after exec
 1. Refuse when lifecycle is `done`; separately initialized work owns later changes.
 2. When lifecycle is `inReview`, restore `inProgress`: update and re-read native Status.
 3. Set Planning with the Phase tool and apply any returned native assignment.
-4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance.
+4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance. Show the [announcement](./integrations/shared.md#plan-update-announcements) summary with the diff.
 
-Editorial changes that don't alter behavior, strategy, scope, or decomposition skip replanning.
+Editorial changes that don't alter behavior, strategy, scope, or decomposition skip replanning. A published plan's editorial change is still announced; its summary says it's editorial.

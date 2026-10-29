@@ -52,8 +52,8 @@ Context tools return configuration, addressing, evidence requirements, or native
 - **PR creation:** `begin_resource_creation` saves the PR intent, then `record_resource_creation` takes the PR create's evidence.
 - **Resource IDs:** `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and `select_pull_request_resource` for an approved choice of existing PR.
 - **Plans:**
-  - `prepare_tracker_publication`, and `prepare_tracker_publication_update` when it returns `reads-required`: always for a published Linear document or Epic plan;
-  - `record_tracker_publication` for a first creation, an Epic plan update, and its announcement ([Epic plan announcements](./integrations/shared.md#epic-plan-announcements));
+  - `prepare_tracker_publication`, and `prepare_tracker_publication_update` when it returns `reads-required`: always for a published plan, any entity and provider;
+  - `record_tracker_publication` for a first creation, a plan update, and its announcement ([plan update announcements](./integrations/shared.md#plan-update-announcements));
   - `recover_tracker_publication` for pending or uncertain identity, or a pending announcement ([recovery](./integrations/recovery.md)).
 - **Bodies:** `render_provider_body`, `verify_artifact_projection`.
 

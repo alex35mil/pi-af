@@ -241,13 +241,13 @@ describe("managed Linear plan documents", () => {
                 assert.equal(f.saved().tracker.planDocument.state, "published")
                 const verify = await f.prepare()
                 assert.equal(verify.state, "reads-required")
-                // An Epic update compares with the published plan; the same source is unchanged.
-                if (kind === "epic") assert.equal((await f.update(f.read(args.content))).state, "unchanged")
+                // Every update compares with the published plan; the same source is unchanged.
+                assert.equal((await f.update(f.read(args.content))).state, "unchanged")
                 const updated = await f.update(
                     f.read(args.content),
                     f.parent(),
-                    kind === "epic" ? source.replace("All supporting", "Revised supporting") : source,
-                    kind === "epic" ? { origin: { kind: "epic" }, summary: "Revised details." } : undefined,
+                    source.replace("All supporting", "Revised supporting"),
+                    { summary: "Revised details." },
                 )
                 assert.ok(updated.state === "mutation-needed")
                 assert.deepEqual(Object.keys(updated.mutation.arguments).sort(), ["content", "id"])
@@ -489,49 +489,77 @@ describe("managed Linear plan documents", () => {
         }
     })
 
-    it("announces an Epic plan update as a Project comment with a folded diff", async () => {
-        const f = fixture("epic")
+    for (const kind of ["epic", "task", "gig"] as const)
+        it(`announces a ${kind} plan update as a comment on its own parent with a folded diff`, async () => {
+            const f = fixture(kind)
+            const parentArgument = kind === "epic" ? { projectId: "project-uuid" } : { issueId: "issue-uuid" }
+            try {
+                const prepared = await f.prepare()
+                assert.ok(
+                    prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.content === "string",
+                )
+                await f.record({ ...prepared.mutation, response: { id: documentId, url } })
+                // Linear normalizes bullets on save; that alone isn't a change.
+                const stored = prepared.mutation.arguments.content.replace(
+                    "- One maintained plan.",
+                    "* One maintained plan.",
+                )
+                const revised = source.replace("All supporting details.", "All supporting details, revised.")
+                const updated = await f.update(f.read(stored), f.parent(), revised, { summary: "Details revised." })
+                assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
+                const body = updated.announcement as string
+                assert.match(body, /^\*\*Plan updated\*\*\n\nDetails revised\./)
+                assert.match(body, /\n\+\+\+ Plan diff\n\n```diff\n/)
+                assert.match(body, /\n-All supporting details\.\n\+All supporting details, revised\.\n/)
+                assert.doesNotMatch(body, /^[-+]. One maintained plan/m)
+                const announce = await f.record({ ...updated.mutation, response: { id: documentId, url } })
+                assert.ok(announce.state === "mutation-needed")
+                assert.equal(announce.mutation.tool, "mcp__linear__save_comment")
+                assert.deepEqual(announce.mutation.arguments, { ...parentArgument, body })
+                const comments = (items: Record<string, unknown>[]): ProviderEvidence => ({
+                    tool: "mcp__linear__list_comments",
+                    arguments: { ...parentArgument, limit: 250 },
+                    response: { comments: items, hasNextPage: false },
+                })
+                const recovered = await f.recover([comments([])])
+                assert.ok(recovered.state === "mutation-needed")
+                assert.deepEqual(recovered.mutation, announce.mutation)
+                await assert.rejects(
+                    f.record({
+                        ...announce.mutation,
+                        arguments: { ...announce.mutation.arguments, id: "c" },
+                        response: {},
+                    }),
+                    /new comment on the plan's parent/,
+                )
+                assert.equal(
+                    (await f.record({ ...announce.mutation, response: { id: "comment-1" } })).state,
+                    "announced",
+                )
+                assert.equal("planAnnouncement" in f.saved().tracker, false)
+            } finally {
+                f.dispose()
+            }
+        })
+
+    it("lets a Task record carry an announcement only once its plan is published", async () => {
+        const f = fixture("task")
         try {
-            const prepared = await f.prepare()
-            assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.content === "string")
-            await f.record({ ...prepared.mutation, response: { id: documentId, url } })
-            // Linear normalizes bullets on save; that alone isn't a change.
-            const stored = prepared.mutation.arguments.content.replace(
-                "- One maintained plan.",
-                "* One maintained plan.",
-            )
-            const revised = source.replace("All supporting details.", "All supporting details, revised.")
-            const updated = await f.update(f.read(stored), f.parent(), revised, {
-                origin: { kind: "epic" },
-                summary: "Details revised.",
-            })
-            assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
-            const body = updated.announcement as string
-            assert.match(body, /\n\+\+\+ Plan diff\n\n```diff\n/)
-            assert.match(body, /\n-All supporting details\.\n\+All supporting details, revised\.\n/)
-            assert.doesNotMatch(body, /^[-+]. One maintained plan/m)
-            const announce = await f.record({ ...updated.mutation, response: { id: documentId, url } })
-            assert.ok(announce.state === "mutation-needed")
-            assert.equal(announce.mutation.tool, "mcp__linear__save_comment")
-            assert.deepEqual(announce.mutation.arguments, { projectId: "project-uuid", body })
-            const comments = (items: Record<string, unknown>[]): ProviderEvidence => ({
-                tool: "mcp__linear__list_comments",
-                arguments: { projectId: "project-uuid", limit: 250 },
-                response: { comments: items, hasNextPage: false },
-            })
-            const recovered = await f.recover([comments([])])
-            assert.ok(recovered.state === "mutation-needed")
-            assert.deepEqual(recovered.mutation, announce.mutation)
-            await assert.rejects(
-                f.record({
-                    ...announce.mutation,
-                    arguments: { ...announce.mutation.arguments, id: "c" },
-                    response: {},
-                }),
-                /new Project comment/,
-            )
-            assert.equal((await f.record({ ...announce.mutation, response: { id: "comment-1" } })).state, "announced")
-            assert.equal("planAnnouncement" in f.saved().tracker, false)
+            const pending = { state: "announcing", token, body: "**Plan updated**" }
+            const write = (planDocument: Record<string, unknown>) => {
+                const metadata = f.saved()
+                fs.writeFileSync(
+                    f.file,
+                    JSON.stringify({
+                        ...metadata,
+                        tracker: { ...metadata.tracker, planDocument, planAnnouncement: pending },
+                    }),
+                )
+            }
+            write({ state: "unpublished" })
+            assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
+            write({ state: "published", token, id: documentId, url })
+            assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, pending)
         } finally {
             f.dispose()
         }

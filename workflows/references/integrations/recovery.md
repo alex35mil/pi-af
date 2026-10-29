@@ -36,7 +36,7 @@ For a published comment, document, or PR body, read the exact saved body and com
 
 ## Pending announcement
 
-An [Epic plan announcement](./shared.md#epic-plan-announcements) carries an opaque marker. Its saved state decides recovery:
+A [plan update announcement](./shared.md#plan-update-announcements) carries an opaque marker. Its saved state decides recovery:
 
 - **Uncertain plan update:** call `prepare_tracker_publication`, run its reads, and pass them to `prepare_tracker_publication_update` with the same source. When the update landed, it returns the saved announcement to post. Otherwise it prepares the update again with the same announcement.
 - **Uncertain announcement:** `prepare_tracker_publication` returns `recovery-required` with the comment reads. Read every page, GitHub `issue_read` `get_comments` or Linear `list_comments` with cursors until `hasNextPage: false`, and pass them to `recover_tracker_publication`. One match is recorded; none returns the same comment to post; several stop for the maintainer.

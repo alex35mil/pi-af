@@ -172,11 +172,11 @@ describe("plan update announcements", () => {
         const common = { summary: "Changed.", token: "t", diff: "@@ -1 +1 @@\n-a\n+b" }
         const githubPlan = { presentation: "github", commentId: 555 } as const
         const linearPlan = { presentation: "linear", url: "https://linear.app/x/document/plan" } as const
-        const github = renderAnnouncement({ ...common, origin: { kind: "task", marker: "ENG-4" }, plan: githubPlan })
+        const github = renderAnnouncement({ ...common, fromTask: "ENG-4", plan: githubPlan })
         // GitHub links by fragment, so the reader stays on the issue.
         assert.match(
             github,
-            /^\*\*Epic plan updated\*\* from Task ENG-4\n\nChanged\.\n\n\[View the updated plan\]\(#issuecomment-555\)/,
+            /^\*\*Plan updated\*\* from Task ENG-4\n\nChanged\.\n\n\[View the updated plan\]\(#issuecomment-555\)/,
         )
         assert.doesNotMatch(github, /https?:/)
         assert.match(
@@ -184,27 +184,23 @@ describe("plan update announcements", () => {
             /<details>\n<summary>Plan diff<\/summary>\n\n```diff\n@@ -1 \+1 @@\n-a\n\+b\n```\n\n<\/details>/,
         )
         assert.ok(github.endsWith("<!-- plan-announcement:t -->"))
-        const linear = renderAnnouncement({ ...common, origin: { kind: "epic" }, plan: linearPlan })
-        assert.match(linear, /from Epic replanning/)
+        // Without a Task origin, the heading names none.
+        const linear = renderAnnouncement({ ...common, plan: linearPlan })
+        assert.match(linear, /^\*\*Plan updated\*\*\n\nChanged\./)
         assert.ok(linear.includes("[View the updated plan](https://linear.app/x/document/plan)"))
         assert.match(linear, /\+\+\+ Plan diff\n\n```diff\n[\s\S]*\n```\n\n\+\+\+/)
         // A `+++` diff line would end Linear's fold early, so that diff stays unfolded.
         const unfolded = renderAnnouncement({
             ...common,
             diff: "+++ added",
-            origin: { kind: "epic" },
             plan: linearPlan,
         })
         assert.doesNotMatch(unfolded, /Plan diff/)
         // A fence inside the diff gets a longer outer fence.
-        assert.match(
-            renderAnnouncement({ ...common, diff: "+```", origin: { kind: "epic" }, plan: githubPlan }),
-            /````diff/,
-        )
+        assert.match(renderAnnouncement({ ...common, diff: "+```", plan: githubPlan }), /````diff/)
         const huge = renderAnnouncement({
             ...common,
             diff: "+x".repeat(40_000),
-            origin: { kind: "epic" },
             plan: githubPlan,
         })
         assert.doesNotMatch(huge, /```diff/)
