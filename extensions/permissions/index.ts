@@ -29,6 +29,9 @@
  * the result is the stricter of the session mode and any matching explicit deny/ask rule.
  * Without a matching explicit rule, the session mode replaces allow rules and defaultMode.
  *
+ * A deny blocks only that call and returns its cause (matched rule, session mode, defaultMode, ...)
+ * to the model; the turn continues. Rejecting an ask prompt ends the turn.
+ *
  * Argument matching depends on the tool:
  *   bash  — matched against command string
  *   edit/write/read — matched against file path
@@ -228,7 +231,8 @@ export default function (pi: ExtensionAPI) {
             ctx.abort()
             throw new Error(`${STATUS_REJECTED} ${formatPermissionSettingsError(result.error)}`)
         }
-        return callMode(result.settings, kind, input, ctx)
+        const decision = await callMode(result.settings, kind, input, ctx)
+        return decision.mode === "deny" ? { mode: "deny", reason: denyReason(kind, decision.cause) } : decision
     })
 
     pi.on("tool_call", async (event, ctx) => {
@@ -243,24 +247,21 @@ export default function (pi: ExtensionAPI) {
         }
 
         const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>)
-        const mode = await callMode(
+        const decision = await callMode(
             settingsResult.settings,
             event.toolName,
             event.input as Record<string, unknown>,
             ctx,
         )
 
-        switch (mode) {
+        switch (decision.mode) {
             case "allow": {
                 return undefined
             }
 
+            // A deny blocks only this call; the model gets the cause and the turn continues.
             case "deny": {
-                ctx.abort()
-                return {
-                    block: true,
-                    reason: `${STATUS_REJECTED} Denied by permission settings (${event.toolName})`,
-                }
+                return { block: true, reason: denyReason(event.toolName, decision.cause) }
             }
 
             case "ask": {
@@ -671,8 +672,14 @@ function matchesMcpRule(rule: ParsedMcpRule, tool: McpToolMetadata): boolean {
     return rule.selector.value === "*" || rule.selector.value === tool.serverToolName
 }
 
-function matchesAnyRule(rules: string[], toolName: string, argValue: string, mcpTool?: McpToolMetadata): boolean {
-    return rules.some((rule) => {
+/** The first rule in `rules` that matches the call, if any. */
+function matchingRule(
+    rules: string[],
+    toolName: string,
+    argValue: string,
+    mcpTool?: McpToolMetadata,
+): string | undefined {
+    return rules.find((rule) => {
         if (mcpTool) {
             if (rule === "*") return true
             const parsedMcpRule = parseMcpRule(rule)
@@ -685,6 +692,10 @@ function matchesAnyRule(rules: string[], toolName: string, argValue: string, mcp
         if (parsed.argPattern) return matchPattern(parsed.argPattern, argValue)
         return true
     })
+}
+
+function matchesAnyRule(rules: string[], toolName: string, argValue: string, mcpTool?: McpToolMetadata): boolean {
+    return matchingRule(rules, toolName, argValue, mcpTool) !== undefined
 }
 
 function getMatchValue(tool: string, input: Record<string, unknown>): string | undefined {
@@ -706,7 +717,44 @@ function getMatchValue(tool: string, input: Record<string, unknown>): string | u
     }
 }
 
-type Restriction = "deny" | "ask" | undefined
+/** Why a call was denied. Bash variants name the command node that caused it. */
+export type DenyCause =
+    | { kind: "rule"; rule: string }
+    | { kind: "bashRule"; rule: string; command: string }
+    | { kind: "session" }
+    | { kind: "default" }
+    | { kind: "bashDefault"; command: string }
+    | { kind: "unparsedBash" }
+    | { kind: "mcpMetadata" }
+
+export type Decision = { mode: "allow" } | { mode: "ask" } | { mode: "deny"; cause: DenyCause }
+
+const ALLOW = { mode: "allow" } as const
+const ASK = { mode: "ask" } as const
+const deny = (cause: DenyCause): Decision => ({ mode: "deny", cause })
+
+/** The reason returned to the model when a call is denied. */
+export function denyReason(toolName: string, cause: DenyCause): string {
+    switch (cause.kind) {
+        case "rule":
+            return `${STATUS_REJECTED} Denied by permission rule \`${cause.rule}\``
+        case "bashRule":
+            return `${STATUS_REJECTED} Denied by permission rule \`${cause.rule}\` for command \`${cause.command}\``
+        case "session":
+            return `${STATUS_REJECTED} Denied by session permission mode for \`${toolName}\``
+        case "default":
+            return `${STATUS_REJECTED} Denied by defaultMode \`deny\` (no allow rule matched)`
+        case "bashDefault":
+            return `${STATUS_REJECTED} Denied by defaultMode \`deny\`: no allow rule matched command \`${cause.command}\``
+        case "unparsedBash":
+            return `${STATUS_REJECTED} Denied: the shell command could not be parsed`
+        case "mcpMetadata":
+            return `${STATUS_REJECTED} Denied: no live MCP metadata for \`${toolName}\`, so permission rules can't be checked`
+    }
+}
+
+// An explicit deny or ask rule matching the call; a deny carries its rule.
+type Restriction = { mode: "deny"; rule: string } | { mode: "ask" } | undefined
 
 function explicitRestriction(
     settings: PermissionSettings,
@@ -714,8 +762,9 @@ function explicitRestriction(
     argValue: string,
     mcpTool?: McpToolMetadata,
 ): Restriction {
-    if (matchesAnyRule(settings.deny ?? [], toolName, argValue, mcpTool)) return "deny"
-    if (matchesAnyRule(settings.ask ?? [], toolName, argValue, mcpTool)) return "ask"
+    const denied = matchingRule(settings.deny ?? [], toolName, argValue, mcpTool)
+    if (denied !== undefined) return { mode: "deny", rule: denied }
+    if (matchesAnyRule(settings.ask ?? [], toolName, argValue, mcpTool)) return { mode: "ask" }
     return undefined
 }
 
@@ -735,10 +784,36 @@ function mayRestrictTool(settings: PermissionSettings, toolName: string): boolea
     )
 }
 
-function withSession(session: Mode, restriction: Restriction): Mode {
-    if (session === "deny" || restriction === "deny") return "deny"
-    if (restriction === "ask") return "ask"
-    return session
+// A non-deny session mode combined with an explicit restriction; the restriction can only tighten it.
+function withSession(session: "allow" | "ask", restriction: Restriction, deniedBy: (rule: string) => DenyCause) {
+    if (restriction?.mode === "deny") return deny(deniedBy(restriction.rule))
+    if (restriction?.mode === "ask" || session === "ask") return ASK
+    return ALLOW
+}
+
+// One call or Bash node without a session mode. `default` marks a defaultMode deny.
+type SingleDecision = { mode: "allow" } | { mode: "ask" } | { mode: "deny"; rule: string } | { mode: "default" }
+
+function resolveSingle(
+    settings: PermissionSettings,
+    toolName: string,
+    argValue: string,
+    mcpTool?: McpToolMetadata,
+): SingleDecision {
+    const restriction = explicitRestriction(settings, toolName, argValue, mcpTool)
+    if (restriction) return restriction
+    if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue, mcpTool)) return ALLOW
+    if (matchesAnyRule(settings.allow ?? [], toolName, argValue, mcpTool)) return ALLOW
+
+    const fallback = settings.defaultMode ?? "ask"
+    switch (fallback) {
+        case "allow":
+            return ALLOW
+        case "ask":
+            return ASK
+        case "deny":
+            return { mode: "default" }
+    }
 }
 
 function resolveSingleMode(
@@ -747,18 +822,26 @@ function resolveSingleMode(
     argValue: string,
     mcpTool?: McpToolMetadata,
 ): Mode {
-    const restriction = explicitRestriction(settings, toolName, argValue, mcpTool)
-    if (restriction) return restriction
-    if (matchesAnyRule(BUILT_IN_ALLOW_RULES, toolName, argValue, mcpTool)) return "allow"
-    if (matchesAnyRule(settings.allow ?? [], toolName, argValue, mcpTool)) return "allow"
+    const decision = resolveSingle(settings, toolName, argValue, mcpTool)
+    return decision.mode === "default" ? "deny" : decision.mode
+}
 
-    return settings.defaultMode ?? "ask"
+function wholeCallDecision(decision: SingleDecision): Decision {
+    switch (decision.mode) {
+        case "allow":
+        case "ask":
+            return decision
+        case "deny":
+            return deny({ kind: "rule", rule: decision.rule })
+        case "default":
+            return deny({ kind: "default" })
+    }
 }
 
 /**
- * Resolve the permission mode for a tool call.
+ * Resolve the permission decision for a tool call.
  * Bash commands are extracted from their syntax tree and evaluated separately.
- * The strictest mode wins: deny > ask > allow.
+ * The strictest mode wins: deny > ask > allow. A deny carries its cause.
  * A session mode is combined with explicit deny/ask rules and can never weaken them.
  */
 export async function resolveMode(
@@ -769,45 +852,56 @@ export async function resolveMode(
     sessionOverrides: ReadonlyMap<string, Mode> = SessionModeOverrides,
     bashAnalyzer: BashAnalyzer = analyzeBash,
     mcpTool?: McpToolMetadata,
-): Promise<Mode> {
+): Promise<Decision> {
     const session = sessionOverrides.get(toolName)
-    if (session === "deny") return "deny"
+    if (session === "deny") return deny({ kind: "session" })
+    const wholeRule = (rule: string): DenyCause => ({ kind: "rule", rule })
 
     if (toolName.startsWith("mcp__") && !mcpTool) {
         // Rules can't be matched without metadata: fail closed unless no rule could apply.
-        return session && !mayRestrictMcp(settings) ? session : "deny"
+        if (session && !mayRestrictMcp(settings)) return { mode: session }
+        return deny({ kind: "mcpMetadata" })
     }
 
     if (toolName !== "bash" || !argValue) {
         return session
-            ? withSession(session, explicitRestriction(settings, toolName, argValue, mcpTool))
-            : resolveSingleMode(settings, toolName, argValue, mcpTool)
+            ? withSession(session, explicitRestriction(settings, toolName, argValue, mcpTool), wholeRule)
+            : wholeCallDecision(resolveSingle(settings, toolName, argValue, mcpTool))
     }
 
-    if (session && !mayRestrictTool(settings, toolName)) return session
+    if (session && !mayRestrictTool(settings, toolName)) return { mode: session }
 
     let analysis
     try {
         analysis = await bashAnalyzer(argValue, cwd)
     } catch {
-        return "deny"
+        return deny({ kind: "unparsedBash" })
     }
 
     if (session) {
-        let restriction: Restriction
+        let asked = false
         for (const command of analysis.commands) {
-            const mode = explicitRestriction(settings, toolName, command)
-            if (mode === "deny") return "deny"
-            if (mode === "ask") restriction = "ask"
+            const restriction = explicitRestriction(settings, toolName, command)
+            if (restriction?.mode === "deny") return deny({ kind: "bashRule", rule: restriction.rule, command })
+            if (restriction?.mode === "ask") asked = true
         }
-        return withSession(session, restriction)
+        return withSession(session, asked ? { mode: "ask" } : undefined, wholeRule)
     }
 
-    let worst: Mode = analysis.writesFile ? "ask" : "allow"
+    let worst: Decision = analysis.writesFile ? ASK : ALLOW
     for (const command of analysis.commands) {
-        const mode = resolveSingleMode(settings, toolName, command)
-        if (mode === "deny") return "deny"
-        if (mode === "ask") worst = "ask"
+        const decision = resolveSingle(settings, toolName, command)
+        switch (decision.mode) {
+            case "deny":
+                return deny({ kind: "bashRule", rule: decision.rule, command })
+            case "default":
+                return deny({ kind: "bashDefault", command })
+            case "ask":
+                worst = ASK
+                break
+            case "allow":
+                break
+        }
     }
 
     return worst

@@ -10,7 +10,7 @@ function resolve(
     command: string,
     sessionOverrides: ReadonlyMap<string, Mode> = noOverrides,
 ): Promise<Mode> {
-    return resolveMode(settings, "bash", command, undefined, sessionOverrides)
+    return resolveMode(settings, "bash", command, undefined, sessionOverrides).then((decision) => decision.mode)
 }
 
 describe("built-in bash allow rules", () => {
@@ -36,10 +36,11 @@ describe("built-in bash allow rules", () => {
         const settings: PermissionSettings = { defaultMode: "ask" }
         const cwd = process.cwd()
 
-        assert.equal(await resolveMode(settings, "bash", "cd . && true", cwd, noOverrides), "allow")
-        assert.equal(await resolveMode(settings, "bash", "cd . && \tfalse\t ", cwd, noOverrides), "allow")
-        assert.equal(await resolveMode(settings, "bash", `cd . && true\u00a0`, cwd, noOverrides), "ask")
-        assert.equal(await resolveMode(settings, "bash", "cd . && true\r", cwd, noOverrides), "ask")
+        const mode = async (command: string) => (await resolveMode(settings, "bash", command, cwd, noOverrides)).mode
+        assert.equal(await mode("cd . && true"), "allow")
+        assert.equal(await mode("cd . && \tfalse\t "), "allow")
+        assert.equal(await mode(`cd . && true\u00a0`), "ask")
+        assert.equal(await mode("cd . && true\r"), "ask")
     })
 
     it("does not allow non-literal forms", async () => {

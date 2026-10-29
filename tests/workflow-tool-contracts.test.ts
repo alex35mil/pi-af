@@ -293,7 +293,9 @@ describe("workflow model-facing contracts", () => {
             const outcome = json(result)
             assert.equal(outcome.isError, true)
             assert.equal(outcome.details.calls[0].name, "preflight_gig")
-            assert.equal(outcome.details.calls[0].status, "cancelled")
+            // A deny fails only the nested call; it doesn't cancel the turn.
+            assert.equal(outcome.details.calls[0].status, "error")
+            assert.ok(JSON.stringify(outcome).includes("Denied by permission rule `preflight_gig`"))
             assert.equal(fs.existsSync(path.join(h.root, ".project/.local/gigs")), false)
         } finally {
             await h.cleanup()
