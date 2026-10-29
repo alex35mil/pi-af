@@ -48,7 +48,18 @@ export const AnnouncementInputSchema = Type.Object(
 export type AnnouncementInput = Static<typeof AnnouncementInputSchema>
 
 export type AnnouncementOrigin = { kind: "task"; marker: string } | { kind: "epic" }
-export type AnnouncementPresentation = "github" | "linear"
+// Where the announcement's plan link points. GitHub's plan comment is on the same issue, so a
+// bare fragment keeps the reader in the same view; Linear's plan is a separate document.
+export type AnnouncementPlan = { presentation: "github"; commentId: number } | { presentation: "linear"; url: string }
+
+function planLink(plan: AnnouncementPlan): string {
+    switch (plan.presentation) {
+        case "github":
+            return `#issuecomment-${plan.commentId}`
+        case "linear":
+            return plan.url
+    }
+}
 
 // Comment bodies on both trackers stay well under GitHub's 65,536-character limit.
 const MAX_BODY = 60_000
@@ -102,22 +113,27 @@ function fenced(diff: string): string {
 export function renderAnnouncement(input: {
     origin: AnnouncementOrigin
     summary: string
-    planUrl: string
+    plan: AnnouncementPlan
     diff: string
     token: string
-    presentation: AnnouncementPresentation
 }): string {
     const origin = input.origin.kind === "task" ? `from Task ${input.origin.marker}` : "from Epic replanning"
-    const head = [`**Epic plan updated** ${origin}`, input.summary.trim(), `[View the updated plan](${input.planUrl})`]
+    const head = [
+        `**Epic plan updated** ${origin}`,
+        input.summary.trim(),
+        `[View the updated plan](${planLink(input.plan)})`,
+    ]
     const marker = planAnnouncementMarker(input.token)
     const block = fenced(input.diff)
     // A diff line starting with `+++` would close a Linear fold early, so it stays unfolded.
-    const folded =
-        input.presentation === "github"
-            ? `<details>\n<summary>Plan diff</summary>\n\n${block}\n\n</details>`
-            : /^\+\+\+/m.test(input.diff)
-              ? block
-              : `+++ Plan diff\n\n${block}\n\n+++`
+    const folded = (() => {
+        switch (input.plan.presentation) {
+            case "github":
+                return `<details>\n<summary>Plan diff</summary>\n\n${block}\n\n</details>`
+            case "linear":
+                return /^\+\+\+/m.test(input.diff) ? block : `+++ Plan diff\n\n${block}\n\n+++`
+        }
+    })()
     const full = [...head, folded, marker].join("\n\n")
     if (full.length <= MAX_BODY) return full
     return [...head, "The plan diff is too large to include here; see the updated plan.", marker].join("\n\n")

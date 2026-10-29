@@ -171,6 +171,7 @@ export function linearPublication(
         currentReads: (id) => [call("get_document", { id }), parentRead()],
         currentBody,
         announcements,
+        announcementPlan: (saved) => ({ presentation: "linear", url: saved.url }),
         record(evidence, token) {
             requireCall(evidence, "save_document", { title: LINEAR_PLAN_DOCUMENT_TITLE, [parent.kind]: parent.id })
             if (
