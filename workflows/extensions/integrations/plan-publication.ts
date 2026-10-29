@@ -1,5 +1,6 @@
 import { type TSchema, Type } from "typebox"
 
+import type { AnnouncementPlan } from "./plan-announcement.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
 export function publicationStateSchema<I extends TSchema>(id: I) {
@@ -49,6 +50,8 @@ export interface PublicationAdapter<I> {
     // The published plan's current body, from those reads, after checking its identity.
     currentBody(reads: ProviderEvidence[], saved: PublishedPlan<I>): string
     announcements(): AnnouncementAdapter
+    // Where an announcement's plan link points for the published plan.
+    announcementPlan(saved: PublishedPlan<I>): AnnouncementPlan
     record(evidence: ProviderEvidence, token: string): PublicationIdentity<I>
     recoveryLookups(): NativePublicationCall[]
     // Without a token (Epic restore), matches any single plan publication marker.

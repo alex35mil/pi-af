@@ -139,10 +139,9 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
         const body = renderAnnouncement({
             origin: context.resolveOrigin(input.announcement.origin),
             summary: input.announcement.summary,
-            planUrl: saved.url,
+            plan: adapter.announcementPlan(saved),
             diff,
             token,
-            presentation: adapter.presentation === "github-plan-comment" ? "github" : "linear",
         })
         // Resolve the native tool before saving, so an unavailable tool changes nothing.
         announcements().create(body)

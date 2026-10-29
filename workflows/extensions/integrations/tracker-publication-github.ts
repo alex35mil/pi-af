@@ -88,6 +88,7 @@ export function githubPublication(
                 )
             return matches[0].body
         },
+        announcementPlan: (saved) => ({ presentation: "github", commentId: saved.id }),
         announcements: () => ({
             create: (body) => call("add_issue_comment", { ...address, body }),
             lookups: commentPages,

@@ -407,7 +407,8 @@ describe("managed GitHub plan comments", () => {
             const body = updated.announcement as string
             assert.match(body, /from Task #42/)
             assert.match(body, /- Limits per workspace\./)
-            assert.ok(body.includes(`(${planUrl})`))
+            assert.ok(body.includes("[View the updated plan](#issuecomment-555)"))
+            assert.ok(!body.includes(planUrl))
             assert.match(body, /<details>\n<summary>Plan diff<\/summary>\n\n```diff\n@@ /)
             assert.match(body, /\n-Update the plan\.\n\+Update the plan per workspace\.\n/)
             assert.doesNotMatch(body, /^[-+]# /m)
