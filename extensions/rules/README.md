@@ -47,7 +47,7 @@ Supports `*`, `**`, `?`, and brace expansion (`{a,b}`). Paths are matched relati
 
 ### System Prompt
 
-- Always-on rules enter the system prompt with their full body.
+- Always-on rules enter the system prompt with their full body, in a `project_rules` section. The extension sets that one section instead of replacing the whole prompt, so other extensions' sections still reach the model.
 - Path-scoped rules stay lazy. Guidance tells the model to read relevant files before composing an editing script; unrelated rule bodies are not injected at startup.
 
 ### Queued and Model-Visible Rules

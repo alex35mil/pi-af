@@ -3,9 +3,12 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
+import { getCurrentSystemMessage, getSystemMessageText } from "@earendil-works/pi-ai"
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent"
 import registerPermission from "../extensions/permissions/index.ts"
 import registerRules from "../extensions/rules/index.ts"
+import registerIntegrations from "../workflows/extensions/integrations/index.ts"
+import { WORKFLOW_CONTEXT } from "../workflows/extensions/integrations/workflow-context.ts"
 import { answer, call, failure, nativeSessionFixture, requestText } from "./native-session-fixture.ts"
 
 const body = "Scoped fixture rule: name the contract before replacing its implementation."
@@ -60,6 +63,40 @@ describe("native rules model delivery", () => {
             await h.cleanup()
         }
     })
+
+    for (const configured of [true, false])
+        it(`sends rules ${configured ? "and" : "without"} the workflows section in the provider prompt`, async () => {
+            const h = await nativeSessionFixture({
+                extensions: [...extensions, registerIntegrations],
+                setup(root) {
+                    setup(root)
+                    if (configured) {
+                        fs.mkdirSync(path.join(root, ".project"), { recursive: true })
+                        fs.writeFileSync(path.join(root, ".project/integrations.json"), "{}")
+                    }
+                },
+                tools: ["read", "codemode"],
+            })
+            try {
+                h.respond((context) => {
+                    const system = getCurrentSystemMessage(context.messages)
+                    assert.ok(system, "the request has a system message")
+                    const text = getSystemMessageText(system)
+                    // The rules sit in their own section; pi's built-in `rules` section stays.
+                    assert.match(
+                        text,
+                        /<project_rules>\n[\s\S]*Always-on fixture instruction\.[\s\S]*\n<\/project_rules>/,
+                    )
+                    assert.match(text, /<rules>\n/)
+                    if (configured) assert.ok(text.includes(`<workflows>\n${WORKFLOW_CONTEXT}\n</workflows>`))
+                    else assert.doesNotMatch(text, /<workflows>/)
+                    return answer("Done")
+                })
+                await h.prompt("What should I know?")
+            } finally {
+                await h.cleanup()
+            }
+        })
 
     it("returns discarded nested rules to the model and retains them for later requests and known scopes", async () => {
         const h = await nativeSessionFixture({ extensions, setup })
