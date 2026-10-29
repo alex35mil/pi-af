@@ -35,6 +35,7 @@ import { EvidenceSchema, registerResourceIds } from "./resource-id-tool.js"
 import { registerWorkflowOperations } from "./operations.js"
 import { registerWorkflowPublication } from "./publication-mcp.js"
 import { registerTrackerPublication } from "./tracker-publication.js"
+import { registerWorkflowContext } from "./workflow-context.js"
 import {
     planEpicTaskIssues,
     PlanEpicTaskIssuesSchema,
@@ -142,6 +143,7 @@ export default function (pi: ExtensionAPI): void {
     registerResourceIds(pi, resourceIdsMemo, tools)
     registerTrackerPublication(pi, tools)
     registerWorkflowOperations(pi)
+    registerWorkflowContext(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
     for (const queue of [

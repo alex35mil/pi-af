@@ -115,9 +115,11 @@ export default function (pi: ExtensionAPI) {
     pi.on("before_agent_start", async (event, ctx) => {
         runtime.deliveryRuleIds.clear()
         syncState(ctx)
+        // A named section, not a whole-prompt override, so other extensions' sections still reach the model.
+        // Not `rules`: that's pi's built-in section of agent guidelines.
         const prompt = buildRulesSystemPrompt(runtime)
-        if (!prompt) return
-        return { systemPrompt: event.systemPrompt + prompt }
+        if (prompt) event.systemPromptOptions.sections.project_rules = prompt
+        else delete event.systemPromptOptions.sections.project_rules
     })
 
     pi.on("turn_end", (event, ctx) => {
@@ -375,7 +377,6 @@ function buildRulesSystemPrompt(runtime: RuntimeState): string {
     if (alwaysOnRules.length === 0 && conditionalRules.length === 0) return ""
 
     const lines: string[] = []
-    lines.push("## Rules")
     lines.push("Follow the active rules below when working in this project.")
 
     if (alwaysOnRules.length > 0) {
@@ -396,7 +397,7 @@ function buildRulesSystemPrompt(runtime: RuntimeState): string {
         )
     }
 
-    return `\n\n${lines.join("\n")}`
+    return lines.join("\n")
 }
 
 function buildRuleText(rule: RuleFile): string {

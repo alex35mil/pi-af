@@ -5,6 +5,7 @@ import * as path from "node:path"
 
 import {
     createAssistantMessageEventStream,
+    getSystemMessageText,
     type AssistantMessage,
     type JsonObject,
     type Model,
@@ -64,12 +65,15 @@ export function answer(text: string) {
 export function failure(text: string) {
     return { ...message([], "error"), errorMessage: text }
 }
+// The text the provider receives: system messages render with their named sections, as pi sends them.
 export function requestText(context: TranscriptContext) {
     return context.messages
         .flatMap((message) =>
-            typeof message.content === "string"
-                ? [message.content]
-                : message.content.filter((part) => part.type === "text").map((part) => part.text),
+            message.role === "system"
+                ? [getSystemMessageText(message)]
+                : typeof message.content === "string"
+                  ? [message.content]
+                  : message.content.filter((part) => part.type === "text").map((part) => part.text),
         )
         .join("\n")
 }
