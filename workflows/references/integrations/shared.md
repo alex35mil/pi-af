@@ -111,8 +111,9 @@ The tracker object comes first; the local entity is named from it. New work and 
 3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full approved source.
    - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output; a second call returns `recovery-required` and needs recovery reads.
    - Record a first creation with `record_tracker_publication`, passing the actual call as `evidence`.
-   - For a published Linear document, preparation asks for verification reads. Read the saved document and its bound issue or Project, then call `prepare_tracker_publication_update` with `source`, `document`, and `parent` evidence. The parent read maps the native display identifier to the bound UUID. Run the returned update by document ID only, never with parent or title arguments.
+   - `reads-required`: run the returned reads, then call `prepare_tracker_publication_update` with the source and those reads. Linear documents always need them; the parent read maps the display identifier to the bound UUID. Run a Linear update by document ID only, never with parent or title arguments.
    - A missing, moved, archived, or conflicting document stops for maintainer direction, never reattachment or replacement.
+   - Updates to a published Epic plan are [announced](#epic-plan-announcements).
 4. **PR bodies:** call `render_provider_body` with `destination: pullRequest` and publish its returned Markdown unchanged.
 5. **Rendering:** `projection.ts` owns presentation and closing references.
    - GitHub plans render `# Plan`, the overview prose, `## Highlights`, and a folded Full plan.
@@ -125,6 +126,18 @@ The tracker object comes first; the local entity is named from it. New work and 
 8. **Uncertain updates and pending creates:** read [recovery](./recovery.md#pending-plan-publication).
 
 The same contract applies when an open PR's synchronized `result.md` or `report.md` changes.
+
+### Epic plan announcements
+
+Editing a published plan notifies nobody, so every update to a published Epic plan also posts one discussion comment on the Epic: a GitHub issue comment, or a Linear Project comment. The first publication isn't announced.
+
+1. **Draft** a short summary of what changed in the contract and why. Show it with the `epic.md` diff; accepting the diff approves the plan update and the announcement together.
+2. **Prepare.** `prepare_tracker_publication` returns `reads-required` for a published Epic plan. Pass the reads to `prepare_tracker_publication_update` with `announcement`: the summary and its origin, the Task's `entityDir` or `epic`.
+3. **Rendering** is code-owned: the origin, the summary, a link to the plan, and a folded diff of the published plan against the new one. An oversized diff is left out.
+4. **Run** the returned plan update, then record its clear success with `record_tracker_publication`. That returns the announcement comment; run it and record it the same way.
+5. **Until it's recorded**, every publication of that Epic returns the pending announcement. When the outcome is uncertain, read [recovery](./recovery.md#pending-announcement).
+
+Identical source returns `unchanged`; nothing is published or announced.
 
 **Publication state:**
 

@@ -6,7 +6,14 @@ import {
     type McpToolCatalog,
 } from "../../../extensions/__lib/mcp.js"
 import { assertPlanDocumentUrl, type PlanDocument } from "./plan-document.js"
-import { hasPublicationMarker, type PublicationAdapter, type PublicationIdentity } from "./plan-publication.js"
+import { hasAnnouncementMarker } from "./plan-announcement.js"
+import {
+    type AnnouncementAdapter,
+    hasPublicationMarker,
+    type PublicationAdapter,
+    type PublicationIdentity,
+    type PublishedPlan,
+} from "./plan-publication.js"
 import { LINEAR_PLAN_DOCUMENT_TITLE } from "./projection.js"
 import { requirePublicationCall } from "./publication-evidence.js"
 import type { LinearTrackerRecord } from "./records.js"
@@ -86,6 +93,59 @@ export function linearPublication(
             throw new Error("full document read lacks content or archive facts")
         return { ...observed, body: response.content, archivedAt: response.archivedAt }
     }
+    // The saved document, still on its parent and not archived, with its full content.
+    const currentBody = (reads: ProviderEvidence[], saved: PublishedPlan<string>) => {
+        if (reads.length !== 2) throw new Error("plan reads must be exactly the get_document and parent reads")
+        const observed = documentRead(reads[0], saved.id, parentAliases(reads[1]))
+        if (observed.url !== saved.url || observed.archivedAt !== null)
+            throw new Error("saved document is archived or its identity conflicts; preserve state and investigate")
+        return observed.body
+    }
+    const commentListing = { projectId: parent.id, limit: 250 }
+    const announcements = (): AnnouncementAdapter => {
+        if (parent.kind !== "project") throw new Error("only an Epic Project announces plan updates")
+        return {
+            create: (body) => call("save_comment", { projectId: parent.id, body }),
+            lookups: () => [call("list_comments", commentListing)],
+            record(evidence, token) {
+                requireCall(evidence, "save_comment", { projectId: parent.id })
+                if (Object.hasOwn(evidence.arguments, "id") || Object.hasOwn(evidence.arguments, "parentId"))
+                    throw new Error("announcement evidence must create a new Project comment")
+                if (!hasAnnouncementMarker(evidence.arguments.body, token))
+                    throw new Error("announcement arguments lack the pending announcement marker")
+                const response = mcpResponsePayload(evidence.response)
+                if (typeof response.id !== "string" || !response.id)
+                    throw new Error("comment response lacks a native ID; recover through comment reads")
+            },
+            bodies(pages) {
+                const bodies: string[] = []
+                let cursor: string | undefined
+                const seen = new Set<string>()
+                for (const [index, page] of pages.entries()) {
+                    requireCall(page, "list_comments", { ...commentListing, cursor })
+                    const response = mcpResponsePayload(page.response)
+                    if (
+                        !Array.isArray(response.comments) ||
+                        !response.comments.every(isMcpRecord) ||
+                        typeof response.hasNextPage !== "boolean"
+                    )
+                        throw new Error("comment reads require native comment pages and explicit completion facts")
+                    for (const comment of response.comments)
+                        if (typeof comment.body === "string") bodies.push(comment.body)
+                    const last = index === pages.length - 1
+                    if (response.hasNextPage === last)
+                        throw new Error("comment reads must follow cursors until hasNextPage is false, and stop there")
+                    if (response.hasNextPage) {
+                        if (typeof response.cursor !== "string" || !response.cursor || seen.has(response.cursor))
+                            throw new Error("comment reads require an advancing native cursor")
+                        cursor = response.cursor
+                        seen.add(cursor)
+                    }
+                }
+                return bodies
+            },
+        }
+    }
     return {
         state: tracker.planDocument,
         presentation: "linear-plan-document",
@@ -93,6 +153,24 @@ export function linearPublication(
         create: (content) =>
             call("save_document", { title: LINEAR_PLAN_DOCUMENT_TITLE, content, [parent.kind]: parent.id }),
         update: (id, content) => call("save_document", { id, content }),
+        updateCheck: "current-reads",
+        recordUpdate(evidence, saved) {
+            requireCall(evidence, "save_document", { id: saved.id })
+            if (
+                Object.hasOwn(evidence.arguments, "title") ||
+                Object.hasOwn(evidence.arguments, "patch") ||
+                parentArguments.some((key) => Object.hasOwn(evidence.arguments, key))
+            )
+                throw new Error("document update evidence must be a content-only update by ID")
+            if (!hasPublicationMarker(evidence.arguments.content, saved.token))
+                throw new Error("updated document arguments lack the plan publication marker")
+            const observed = identity(mcpResponsePayload(evidence.response))
+            if (observed.id !== saved.id) throw new Error("document update response names another document")
+            return evidence.arguments.content
+        },
+        currentReads: (id) => [call("get_document", { id }), parentRead()],
+        currentBody,
+        announcements,
         record(evidence, token) {
             requireCall(evidence, "save_document", { title: LINEAR_PLAN_DOCUMENT_TITLE, [parent.kind]: parent.id })
             if (
@@ -106,17 +184,6 @@ export function linearPublication(
             if (!hasPublicationMarker(evidence.arguments.content, token))
                 throw new Error("created document arguments lack the pending publication marker")
             return identity(mcpResponsePayload(evidence.response))
-        },
-        verification: {
-            kind: "document-parent",
-            lookups: (id) => [call("get_document", { id }), parentRead()],
-            verify(document, parentEvidence, saved) {
-                const observed = documentRead(document, saved.id, parentAliases(parentEvidence))
-                if (observed.url !== saved.url || observed.archivedAt !== null)
-                    throw new Error(
-                        "saved document is archived or its identity conflicts; preserve state and investigate",
-                    )
-            },
         },
         recoveryLookups: () => [parentRead(), call("list_documents", listing)],
         recover(evidence, token) {

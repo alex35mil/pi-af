@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
+import { planSourceDiff, renderAnnouncement } from "../workflows/extensions/integrations/plan-announcement.ts"
+import { unifiedDiff } from "../workflows/extensions/integrations/plan-diff.ts"
 import { renderProviderBody } from "../workflows/extensions/integrations/projection.ts"
 
 const overview = "## Overview\n\nMake entries easy to scan.\n\n### Plan highlights\n\n- Preserve all details."
@@ -129,5 +131,83 @@ describe("workflow provider body renderer", () => {
                 () => renderProviderBody(invalid, { kind: "github-plan-comment" }),
                 /requires a nonempty ## Overview/,
             )
+    })
+})
+
+describe("plan update announcements", () => {
+    const lines = (count: number) => Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n")
+
+    it("diffs lines into separate hunks with three lines of context", () => {
+        const before = lines(20)
+        const after = before.replace("line 2\n", "line two\n").replace("line 18", "line 18\nadded")
+        assert.equal(
+            unifiedDiff(before, after),
+            [
+                "@@ -1,5 +1,5 @@",
+                " line 1",
+                "-line 2",
+                "+line two",
+                " line 3",
+                " line 4",
+                " line 5",
+                "@@ -16,5 +16,6 @@",
+                " line 16",
+                " line 17",
+                " line 18",
+                "+added",
+                " line 19",
+                " line 20",
+            ].join("\n"),
+        )
+        assert.equal(unifiedDiff(before, before), "")
+    })
+
+    it("ignores the root title, blank lines and bullet markers, but not fenced code", () => {
+        const plan = "# Old title\n\n## Overview\n\n- A\n\n```\n* kept\n\n```\n"
+        assert.equal(planSourceDiff(plan, "# New title\n## Overview\n* A\n```\n* kept\n\n```\n"), "")
+        assert.match(planSourceDiff(plan, plan.replace("* kept", "- kept")), /^-\* kept\n\+- kept$/m)
+    })
+
+    it("renders the origin, summary, plan link and a provider-folded diff", () => {
+        const common = { summary: "Changed.", planUrl: "https://x/plan", token: "t", diff: "@@ -1 +1 @@\n-a\n+b" }
+        const github = renderAnnouncement({
+            ...common,
+            origin: { kind: "task", marker: "ENG-4" },
+            presentation: "github",
+        })
+        assert.match(
+            github,
+            /^\*\*Epic plan updated\*\* from Task ENG-4\n\nChanged\.\n\n\[View the updated plan\]\(https:\/\/x\/plan\)/,
+        )
+        assert.match(
+            github,
+            /<details>\n<summary>Plan diff<\/summary>\n\n```diff\n@@ -1 \+1 @@\n-a\n\+b\n```\n\n<\/details>/,
+        )
+        assert.ok(github.endsWith("<!-- plan-announcement:t -->"))
+        const linear = renderAnnouncement({ ...common, origin: { kind: "epic" }, presentation: "linear" })
+        assert.match(linear, /from Epic replanning/)
+        assert.match(linear, /\+\+\+ Plan diff\n\n```diff\n[\s\S]*\n```\n\n\+\+\+/)
+        // A `+++` diff line would end Linear's fold early, so that diff stays unfolded.
+        const unfolded = renderAnnouncement({
+            ...common,
+            diff: "+++ added",
+            origin: { kind: "epic" },
+            presentation: "linear",
+        })
+        assert.doesNotMatch(unfolded, /Plan diff/)
+        // A fence inside the diff gets a longer outer fence.
+        assert.match(
+            renderAnnouncement({ ...common, diff: "+```", origin: { kind: "epic" }, presentation: "github" }),
+            /````diff/,
+        )
+        const huge = renderAnnouncement({
+            ...common,
+            diff: "+x".repeat(40_000),
+            origin: { kind: "epic" },
+            presentation: "github",
+        })
+        assert.doesNotMatch(huge, /```diff/)
+        assert.match(huge, /too large/)
+        assert.ok(huge.endsWith("<!-- plan-announcement:t -->"))
     })
 })

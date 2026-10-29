@@ -11,6 +11,7 @@ import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
+import type { AnnouncementInput } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { PlanDocumentSchema } from "../workflows/extensions/integrations/plan-document.ts"
 import { planPublicationMarker } from "../workflows/extensions/integrations/plan-publication.ts"
 import { trackerPublication } from "../workflows/extensions/integrations/tracker-publication.ts"
@@ -149,15 +150,20 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
             ...(more ? { cursor: "next" } : {}),
         },
     })
-    const update = (document: ProviderEvidence, parentEvidence = parent(), content = source) =>
+    const update = (
+        document: ProviderEvidence,
+        parentEvidence = parent(),
+        content = source,
+        announcement?: AnnouncementInput,
+    ) =>
         trackerPublication(
             root,
             {
                 entityDir: directory,
                 action: "prepareUpdate",
                 source: content,
-                document,
-                parent: parentEvidence,
+                reads: [document, parentEvidence],
+                ...(announcement ? { announcement } : {}),
             },
             tools,
         )
@@ -234,8 +240,15 @@ describe("managed Linear plan documents", () => {
                 })
                 assert.equal(f.saved().tracker.planDocument.state, "published")
                 const verify = await f.prepare()
-                assert.equal(verify.state, "verification-required")
-                const updated = await f.update(f.read(args.content))
+                assert.equal(verify.state, "reads-required")
+                // An Epic update compares with the published plan; the same source is unchanged.
+                if (kind === "epic") assert.equal((await f.update(f.read(args.content))).state, "unchanged")
+                const updated = await f.update(
+                    f.read(args.content),
+                    f.parent(),
+                    kind === "epic" ? source.replace("All supporting", "Revised supporting") : source,
+                    kind === "epic" ? { origin: { kind: "epic" }, summary: "Revised details." } : undefined,
+                )
                 assert.ok(updated.state === "mutation-needed")
                 assert.deepEqual(Object.keys(updated.mutation.arguments).sort(), ["content", "id"])
                 assert.equal(updated.mutation.arguments.id, documentId)
@@ -471,6 +484,54 @@ describe("managed Linear plan documents", () => {
             assert.equal(prepared.mutation.arguments.project, "project-uuid")
             assert.equal("issue" in prepared.mutation.arguments, false)
             assert.equal(fs.readFileSync(f.file, "utf8"), child)
+        } finally {
+            f.dispose()
+        }
+    })
+
+    it("announces an Epic plan update as a Project comment with a folded diff", async () => {
+        const f = fixture("epic")
+        try {
+            const prepared = await f.prepare()
+            assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.content === "string")
+            await f.record({ ...prepared.mutation, response: { id: documentId, url } })
+            // Linear normalizes bullets on save; that alone isn't a change.
+            const stored = prepared.mutation.arguments.content.replace(
+                "- One maintained plan.",
+                "* One maintained plan.",
+            )
+            const revised = source.replace("All supporting details.", "All supporting details, revised.")
+            const updated = await f.update(f.read(stored), f.parent(), revised, {
+                origin: { kind: "epic" },
+                summary: "Details revised.",
+            })
+            assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
+            const body = updated.announcement as string
+            assert.match(body, /\n\+\+\+ Plan diff\n\n```diff\n/)
+            assert.match(body, /\n-All supporting details\.\n\+All supporting details, revised\.\n/)
+            assert.doesNotMatch(body, /^[-+]. One maintained plan/m)
+            const announce = await f.record({ ...updated.mutation, response: { id: documentId, url } })
+            assert.ok(announce.state === "mutation-needed")
+            assert.equal(announce.mutation.tool, "mcp__linear__save_comment")
+            assert.deepEqual(announce.mutation.arguments, { projectId: "project-uuid", body })
+            const comments = (items: Record<string, unknown>[]): ProviderEvidence => ({
+                tool: "mcp__linear__list_comments",
+                arguments: { projectId: "project-uuid", limit: 250 },
+                response: { comments: items, hasNextPage: false },
+            })
+            const recovered = await f.recover([comments([])])
+            assert.ok(recovered.state === "mutation-needed")
+            assert.deepEqual(recovered.mutation, announce.mutation)
+            await assert.rejects(
+                f.record({
+                    ...announce.mutation,
+                    arguments: { ...announce.mutation.arguments, id: "c" },
+                    response: {},
+                }),
+                /new Project comment/,
+            )
+            assert.equal((await f.record({ ...announce.mutation, response: { id: "comment-1" } })).state, "announced")
+            assert.equal("planAnnouncement" in f.saved().tracker, false)
         } finally {
             f.dispose()
         }

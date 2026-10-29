@@ -23,24 +23,39 @@ export type NativePublicationCall = { tool: string; arguments: Record<string, un
 export type PublicationCandidate<I> = PublicationIdentity<I> & { body: string }
 export type RecoveryReads = { state: "recovery-read-required"; lookups: NativePublicationCall[] }
 
+// Discussion comments on the tracker item that announce an Epic plan update.
+export interface AnnouncementAdapter {
+    create(body: string): NativePublicationCall
+    lookups(): NativePublicationCall[]
+    // Validates creation evidence for the announcement carrying this token.
+    record(evidence: ProviderEvidence, token: string): void
+    // Every comment body on the item, from complete pages.
+    bodies(pages: ProviderEvidence[]): string[]
+}
+
 export interface PublicationAdapter<I> {
     state: PublicationState<I>
     presentation: "github-plan-comment" | "linear-plan-document"
     save(state: PublicationState<I>): void
     create(content: string): NativePublicationCall
     update(id: I, content: string): NativePublicationCall
+    // `direct`: an unannounced update needs no reads first. `current-reads`: every update first
+    // proves the published plan's identity and scope through `currentReads`.
+    updateCheck: "direct" | "current-reads"
+    // Validates clear-success evidence of an update to the published plan; returns the sent body.
+    recordUpdate(evidence: ProviderEvidence, saved: PublishedPlan<I>): string
+    // The reads that prove the published plan's identity and current content.
+    currentReads(id: I): NativePublicationCall[]
+    // The published plan's current body, from those reads, after checking its identity.
+    currentBody(reads: ProviderEvidence[], saved: PublishedPlan<I>): string
+    announcements(): AnnouncementAdapter
     record(evidence: ProviderEvidence, token: string): PublicationIdentity<I>
     recoveryLookups(): NativePublicationCall[]
     // Without a token (Epic restore), matches any single plan publication marker.
     recover(evidence: ProviderEvidence[], token?: string): PublicationCandidate<I>[] | RecoveryReads
-    verification:
-        | { kind: "direct" }
-        | {
-              kind: "document-parent"
-              lookups(id: I): NativePublicationCall[]
-              verify(document: ProviderEvidence, parent: ProviderEvidence, identity: PublicationIdentity<I>): void
-          }
 }
+
+export type PublishedPlan<I> = Extract<PublicationState<I>, { state: "published" }>
 
 export function planPublicationMarker(token: string): string {
     return `<!-- plan-publication:${token} -->`
