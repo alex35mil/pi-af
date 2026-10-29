@@ -241,6 +241,142 @@ describe("workflow reviewer isolation", () => {
         }
     })
 
+    it("rejects a failed precondition before creating a review round", async () => {
+        const repository = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-preconditions-"))
+        try {
+            cp.execFileSync("git", ["init", "-q", repository])
+            fs.mkdirSync(path.join(repository, ".project"), { recursive: true })
+            fs.writeFileSync(path.join(repository, ".gitignore"), "/.project/.local/\n")
+            fs.writeFileSync(
+                path.join(repository, ".project/config.json"),
+                JSON.stringify({ branches: { format: "identifier-title" } }),
+            )
+            prepareArtifactPersistence(repository)
+            const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
+            registerReviewTools({
+                events: createEventBus(),
+                on() {},
+                registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+            } as never)
+            const ctx = { cwd: repository } as never
+            const stopBeforeRunner = new Error("Reached the reviewer subprocess boundary")
+            const entity = (
+                relative: string,
+                fields: Record<string, unknown>,
+                files: Record<string, string>,
+            ): string => {
+                const directory = path.join(repository, relative)
+                fs.mkdirSync(directory, { recursive: true })
+                fs.writeFileSync(
+                    path.join(directory, "metadata.json"),
+                    JSON.stringify({
+                        title: "Example",
+                        // The directory is named `7-<slug>`.
+                        slug: path.basename(directory).replace(/^7-/, ""),
+                        createdAt: "2026-01-01T00:00:00Z",
+                        branch: {
+                            state: "ready",
+                            name: path.basename(directory),
+                            start: "main",
+                            target: "main",
+                            source: "generated",
+                        },
+                        tracker: {
+                            provider: "github",
+                            repository: { owner: "example", repo: "project" },
+                            external: { issueNumber: 7 },
+                            planComment: { state: "unpublished" },
+                        },
+                        ...fields,
+                    }),
+                )
+                for (const [name, content] of Object.entries(files))
+                    fs.writeFileSync(path.join(directory, name), content)
+                return directory
+            }
+            // Runs the registered tool and returns its error, or stops at the reviewer boundary.
+            const run = async (tool: string, directory: string, phase: "plan" | "final", expected: RegExp | Error) => {
+                const before = fs.existsSync(path.join(directory, "reviews"))
+                    ? fs.readdirSync(path.join(directory, "reviews"))
+                    : []
+                await assert.rejects(
+                    tools
+                        .find((candidate) => candidate.name === tool)!
+                        .execute(
+                            "test",
+                            { entityDir: path.relative(repository, directory), phase },
+                            undefined,
+                            () => {
+                                throw stopBeforeRunner
+                            },
+                            ctx,
+                        ),
+                    expected instanceof Error ? (error: unknown) => error === expected : expected,
+                )
+                const after = fs.existsSync(path.join(directory, "reviews"))
+                    ? fs.readdirSync(path.join(directory, "reviews"))
+                    : []
+                return after.filter((entry) => !before.includes(entry))
+            }
+            const gig = (kind: string, phase: string, files: Record<string, string>, slug: string) =>
+                entity(`.project/.local/gigs/7-${slug}`, { entity: "gig", kind, phase }, files)
+            const result = { "result.md": "# Result\n\nDone.\n" }
+
+            // Each rejected precondition leaves no new round behind.
+            for (const [tool, directory, phase, message] of [
+                ["review_gig", gig("feature", "planning", {}, "no-draft"), "plan", /Planning draft does not exist/],
+                [
+                    "review_gig",
+                    gig("feature", "selfReview", {}, "no-result"),
+                    "final",
+                    /requires a non-empty result\.md/,
+                ],
+                [
+                    "review_gig",
+                    gig("research", "selfReview", result, "no-report"),
+                    "final",
+                    /requires a non-empty report\.md/,
+                ],
+                [
+                    "review_gig",
+                    gig("feature", "selfReview", { ...result, "pending.md": "# Pending\n\n- [ ] Open\n" }, "pending"),
+                    "final",
+                    /requires zero unchecked pending entries/,
+                ],
+                [
+                    "review_epic",
+                    entity(
+                        ".project/.local/epics/7-example",
+                        { entity: "epic", phase: "planning" },
+                        { "draft.md": "# Draft\n" },
+                    ),
+                    "plan",
+                    /review requires brief\.md/,
+                ],
+                [
+                    "review_task",
+                    entity(
+                        ".project/.local/gigs/orphan/tasks/7-example",
+                        { entity: "task", kind: "feature", phase: "planning" },
+                        { "draft.md": "# Draft\n" },
+                    ),
+                    "plan",
+                    // Reading a Task's metadata already requires its containing Epic.
+                    /Task is not contained under/,
+                ],
+            ] as const)
+                assert.deepEqual(await run(tool, directory, phase, message), [], `${tool} ${phase}: ${message}`)
+
+            // Once fixed, the first real review takes round 001.
+            const fixed = gig("feature", "selfReview", {}, "fixed")
+            assert.deepEqual(await run("review_gig", fixed, "final", /requires a non-empty result\.md/), [])
+            fs.writeFileSync(path.join(fixed, "result.md"), result["result.md"])
+            assert.deepEqual(await run("review_gig", fixed, "final", stopBeforeRunner), ["final-001"])
+        } finally {
+            fs.rmSync(repository, { recursive: true, force: true })
+        }
+    })
+
     it("uses one canonical finding renderer for persisted and chat output", () => {
         const report = parseReviewReport(JSON.stringify(reviewReport("blocked")))
         const findings = renderReviewFindings(report.findings)
