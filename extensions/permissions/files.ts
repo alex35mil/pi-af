@@ -11,15 +11,16 @@ import {
 import { Value } from "typebox/value"
 import type { TSchema } from "typebox"
 
-import type { Mode } from "./index.js"
 import { EditorChoiceSchema, fileReviewResult, isFileReviewDetails, type FileReviewDetails } from "./review.js"
 
 type FileKind = "edit" | "write"
+// A deny carries the reason returned to the model.
+export type FilePermission = { mode: "allow" } | { mode: "ask" } | { mode: "deny"; reason: string }
 export type FilePermissionResolver = (
     kind: FileKind,
     input: Record<string, unknown>,
     ctx: ExtensionToolContext,
-) => Promise<Mode>
+) => Promise<FilePermission>
 
 // A native operation hook returns an editor-owned outcome without continuing the file mutation.
 class ReviewedFile extends Error {
@@ -109,12 +110,10 @@ function wrapFileTool<TParams extends TSchema, TDetails, TRenderState>(
             : undefined,
         async execute(id, input, signal, onUpdate, ctx) {
             if (!isFileInput(input)) throw new Error("Expected a file path")
-            const mode = await resolvePermission(kind, input, ctx)
-            if (mode === "deny") {
-                ctx.abort()
-                throw new Error(`[rejected] Denied by permission settings (${native.name})`)
-            }
-            if (mode === "allow") return native.execute(id, input, signal, onUpdate, ctx)
+            const permission = await resolvePermission(kind, input, ctx)
+            // A deny fails only this call; the turn continues.
+            if (permission.mode === "deny") throw new Error(permission.reason)
+            if (permission.mode === "allow") return native.execute(id, input, signal, onUpdate, ctx)
             if (!ctx.hasUI) throw new Error(`[rejected] Blocked (no UI for confirmation): ${native.name}`)
             const reviewed = makeReviewed(ctx.cwd, () => reviewFile(kind, input, ctx, signal))
             try {

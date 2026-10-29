@@ -13,7 +13,7 @@ function resolve(
     overrides: ReadonlyMap<string, Mode> = noOverrides,
     analyzer: BashAnalyzer = analyzeBash,
 ): Promise<Mode> {
-    return resolveMode(settings, "bash", command, cwd, overrides, analyzer)
+    return resolveMode(settings, "bash", command, cwd, overrides, analyzer).then((decision) => decision.mode)
 }
 
 describe("Bash syntax analysis", () => {

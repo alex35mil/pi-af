@@ -60,6 +60,11 @@ Session modes (`/permissions-mode` and auto-accept) never weaken explicit `deny`
 
 Exact literal `true` and `false` Bash commands are built-in allow rules. Session modes and explicit deny or ask rules still take precedence.
 
+**What a block does:**
+
+- A `deny` blocks only that call and returns the cause to the model without ending the turn, so the model can recover. The reason names the matched rule, plus the command node for Bash, or the session mode, `defaultMode`, an unparseable command, or missing MCP metadata.
+- Rejecting an `ask` prompt ends the turn: it's a deliberate stop. A file-review rejection with notes returns the notes and keeps the turn.
+
 ### Skill-Derived Rules
 
 Trusted local skills (global + project) can contribute allow rules via YAML frontmatter:
@@ -90,6 +95,7 @@ Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into
 - Parser/WASM failures and trees containing `ERROR` or `MISSING` nodes are denied without fallback; this includes valid syntax unsupported by the grammar, such as `<>`
 - Bash wildcard rules match across newlines within a command node
 - Headless mode (no UI) blocks all `"ask"` calls
+- A deny blocks the call and returns its matched rule or cause to the model without ending the turn; rejecting an ask prompt ends the turn
 - Invalid JSON, malformed MCP rules, unknown hints, invalid MCP names, and legacy MCP rules fail closed
 - With invalid settings, ordinary prompts and all agent tools are blocked; slash commands and user-entered `!` shell commands remain available for recovery
 - Interactive sessions show a persistent error widget above the editor until valid settings are loaded

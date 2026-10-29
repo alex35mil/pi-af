@@ -814,22 +814,10 @@ describe("incoming PR entry and existing permissions", () => {
             const metadata: McpToolMetadata = { serverName: "contributions", serverToolName: name } as McpToolMetadata
             const toolName = fixtureToolName(metadata.serverName, name)
             const settings = { allow: ["mcp(contributions, *)"], ask: [`mcp(contributions, ${name})`] }
-            assert.equal(
-                await resolveMode(settings, toolName, "", undefined, new Map<string, Mode>(), undefined, metadata),
-                "ask",
-            )
-            assert.equal(
-                await resolveMode(
-                    settings,
-                    toolName,
-                    "",
-                    undefined,
-                    new Map<string, Mode>([[toolName, "allow"]]),
-                    undefined,
-                    metadata,
-                ),
-                "ask",
-            )
+            const mode = async (overrides: Map<string, Mode>) =>
+                (await resolveMode(settings, toolName, "", undefined, overrides, undefined, metadata)).mode
+            assert.equal(await mode(new Map()), "ask")
+            assert.equal(await mode(new Map([[toolName, "allow"]])), "ask")
         }
     })
 })

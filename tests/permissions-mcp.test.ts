@@ -144,7 +144,9 @@ function resolveMcp(
     sessionOverrides: ReadonlyMap<string, Mode> = noOverrides,
 ): Promise<Mode> {
     const toolName = fixtureToolName(tool.serverName, tool.serverToolName)
-    return resolveMode(settings, toolName, "", undefined, sessionOverrides, analyzeBash, tool)
+    return resolveMode(settings, toolName, "", undefined, sessionOverrides, analyzeBash, tool).then(
+        (decision) => decision.mode,
+    )
 }
 
 function createEventBusHarness() {
@@ -335,7 +337,7 @@ describe("MCP permission rules", () => {
         const toolName = fixtureToolName("github", "get_issue")
         const allow = new Map<string, Mode>([[toolName, "allow"]])
         const resolveUnknown = (settings: PermissionSettings, overrides: ReadonlyMap<string, Mode>) =>
-            resolveMode(settings, toolName, "", undefined, overrides, analyzeBash)
+            resolveMode(settings, toolName, "", undefined, overrides, analyzeBash).then((decision) => decision.mode)
 
         assert.equal(await resolveUnknown({ deny: ["mcp(other, *)"] }, allow), "deny")
         assert.equal(await resolveUnknown({ ask: ["*"] }, allow), "deny")
@@ -398,10 +400,16 @@ describe("MCP permission lifecycle", () => {
         )
     })
 
-    it("aborts MCP calls on configured denial and user rejection", async () => {
+    it("keeps the turn on configured denial and aborts on user rejection", async () => {
         for (const testCase of [
-            { settings: { defaultMode: "deny" }, approval: true, reason: /Denied by permission settings/ },
-            { settings: { defaultMode: "ask" }, approval: false, reason: /Rejected by user/ },
+            { settings: { defaultMode: "deny" }, approval: true, reason: /Denied by defaultMode `deny`/, aborts: 0 },
+            {
+                settings: { deny: ["mcp(github, issue_write)"] },
+                approval: true,
+                reason: /Denied by permission rule `mcp\(github, issue_write\)`/,
+                aborts: 0,
+            },
+            { settings: { defaultMode: "ask" }, approval: false, reason: /Rejected by user/, aborts: 1 },
         ] as const) {
             const project = createProjectSettings(JSON.stringify(testCase.settings))
             try {
@@ -414,7 +422,7 @@ describe("MCP permission lifecycle", () => {
                 )) as { block: boolean; reason: string }
                 assert.equal(blocked.block, true)
                 assert.match(blocked.reason, testCase.reason)
-                assert.equal(context.aborts(), 1)
+                assert.equal(context.aborts(), testCase.aborts)
             } finally {
                 project.cleanup()
             }
@@ -431,8 +439,8 @@ describe("MCP permission lifecycle", () => {
                 context.ctx,
             )) as { block: boolean; reason: string }
             assert.equal(blocked.block, true)
-            assert.match(blocked.reason, /Denied by permission settings/)
-            assert.equal(context.aborts(), 1)
+            assert.match(blocked.reason, /no live MCP metadata/)
+            assert.equal(context.aborts(), 0)
         } finally {
             project.cleanup()
         }
@@ -639,4 +647,145 @@ describe("MCP permission lifecycle", () => {
             }
         })
     })
+})
+
+// Runs with an empty global agent directory, so the developer's own settings never apply.
+async function withIsolatedAgent<T>(run: () => Promise<T>): Promise<T> {
+    const agent = mkdtempSync(join(tmpdir(), "permission-agent-"))
+    const previous = process.env.PI_CODING_AGENT_DIR
+    process.env.PI_CODING_AGENT_DIR = agent
+    try {
+        return await run()
+    } finally {
+        if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+        else process.env.PI_CODING_AGENT_DIR = previous
+        rmSync(agent, { recursive: true, force: true })
+    }
+}
+
+describe("deny keeps the turn and names its cause", () => {
+    const call = (settings: PermissionSettings, toolName: string, input: Record<string, unknown>, approval = true) =>
+        withIsolatedAgent(async () => {
+            const project = createProjectSettings(JSON.stringify(settings))
+            try {
+                const context = createContext(project.cwd, approval)
+                const result = (await createPermissionHarness().handler("tool_call")(
+                    { toolName, toolCallId: "call-1", input },
+                    context.ctx,
+                )) as { block: boolean; reason: string } | undefined
+                return { result, aborts: context.aborts() }
+            } finally {
+                project.cleanup()
+            }
+        })
+
+    it("blocks a Bash node deny with its rule and command, without aborting", async () => {
+        const { result, aborts } = await call({ defaultMode: "allow", deny: ["bash(grep *)"] }, "bash", {
+            command: "echo hi && grep -n x file",
+        })
+        assert.equal(result?.block, true)
+        assert.ok(result?.reason.includes("Denied by permission rule `bash(grep *)` for command `grep -n x file`"))
+        assert.equal(aborts, 0)
+    })
+
+    it("blocks a rule deny on a non-file tool with its rule, without aborting", async () => {
+        const { result, aborts } = await call({ defaultMode: "allow", deny: ["read(secret/*)"] }, "read", {
+            path: "secret/key",
+        })
+        assert.equal(result?.block, true)
+        assert.ok(result?.reason.includes("Denied by permission rule `read(secret/*)`"))
+        assert.equal(aborts, 0)
+    })
+
+    it("names the Bash node that matched no allow rule under defaultMode deny", async () => {
+        const { result, aborts } = await call({ defaultMode: "deny", allow: ["bash(git *)"] }, "bash", {
+            command: "git status && grep x file",
+        })
+        assert.ok(result?.reason.includes("no allow rule matched command `grep x file`"))
+        assert.equal(aborts, 0)
+    })
+
+    it("still aborts when the user rejects a Bash ask", async () => {
+        const { result, aborts } = await call({ defaultMode: "ask" }, "bash", { command: "make" }, false)
+        assert.match(result?.reason ?? "", /Rejected by user/)
+        assert.equal(aborts, 1)
+    })
+
+    it("still aborts when the user rejects a generic ask", async () => {
+        const { result, aborts } = await call({ defaultMode: "ask" }, "read", { path: "README.md" }, false)
+        assert.match(result?.reason ?? "", /Rejected by user/)
+        assert.equal(aborts, 1)
+    })
+})
+
+describe("deny causes from resolveMode", () => {
+    const resolve = (
+        settings: PermissionSettings,
+        toolName: string,
+        arg: string,
+        overrides: ReadonlyMap<string, Mode> = noOverrides,
+        analyzer = analyzeBash,
+    ) => resolveMode(settings, toolName, arg, undefined, overrides, analyzer)
+
+    it("returns the cause for each kind of deny", async () => {
+        assert.deepEqual(await resolve({ deny: ["edit(secret/*)"] }, "edit", "secret/a"), {
+            mode: "deny",
+            cause: { kind: "rule", rule: "edit(secret/*)" },
+        })
+        assert.deepEqual(await resolve({ deny: ["bash(rm *)"] }, "bash", "ls; rm -rf x"), {
+            mode: "deny",
+            cause: { kind: "bashRule", rule: "bash(rm *)", command: "rm -rf x" },
+        })
+        assert.deepEqual(
+            await resolve({ deny: ["bash(rm *)"] }, "bash", "ls; rm -rf x", new Map([["bash", "allow"]])),
+            { mode: "deny", cause: { kind: "bashRule", rule: "bash(rm *)", command: "rm -rf x" } },
+        )
+        assert.deepEqual(await resolve({ defaultMode: "deny", allow: ["bash(ls *)"] }, "bash", "ls && make"), {
+            mode: "deny",
+            cause: { kind: "bashDefault", command: "make" },
+        })
+        assert.deepEqual(await resolve({}, "read", "a", new Map([["read", "deny"]])), {
+            mode: "deny",
+            cause: { kind: "session" },
+        })
+        assert.deepEqual(await resolve({ defaultMode: "deny" }, "read", "a"), {
+            mode: "deny",
+            cause: { kind: "default" },
+        })
+        const failing = async () => {
+            throw new Error("parse")
+        }
+        assert.deepEqual(await resolve({ defaultMode: "allow" }, "bash", "ls", noOverrides, failing), {
+            mode: "deny",
+            cause: { kind: "unparsedBash" },
+        })
+        assert.deepEqual(await resolve({ defaultMode: "allow" }, fixtureToolName("github", "get_issue"), ""), {
+            mode: "deny",
+            cause: { kind: "mcpMetadata" },
+        })
+    })
+
+    it("keeps the turn for a session deny", () =>
+        withIsolatedAgent(async () => {
+            // Session overrides are process-wide and can't be cleared, so use a tool no other test calls.
+            const tool = "session_deny_probe"
+            const project = createProjectSettings(JSON.stringify({ defaultMode: "allow" }))
+            try {
+                const harness = createPermissionHarness()
+                const context = createContext(project.cwd)
+                const ui = context.ctx.ui as unknown as Record<string, unknown>
+                ui.input = async () => tool
+                ui.select = async () => "deny"
+                await harness.registeredCommands.get("permissions-mode")!.handler("", context.ctx as never)
+                const blocked = (await harness.handler("tool_call")(
+                    { toolName: tool, toolCallId: "call-1", input: {} },
+                    context.ctx,
+                )) as { block: boolean; reason: string }
+                assert.equal(blocked.block, true)
+                assert.ok(blocked.reason.includes(`Denied by session permission mode for \`${tool}\``))
+                assert.equal(context.aborts(), 0)
+            } finally {
+                project.cleanup()
+            }
+        }))
 })

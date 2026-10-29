@@ -153,10 +153,24 @@ describe("native file permission execution", () => {
                     assert.equal(h.content(), "before")
                     assert.equal(h.prompts(), 0)
                     assert.equal(h.writes(), 0)
-                    assert.equal(h.aborted(), mode === "deny")
+                    // Neither a deny nor a no-UI ask ends the turn.
+                    assert.equal(h.aborted(), false)
                 } finally {
                     await h.cleanup()
                 }
+            }
+        })
+        it(`${kind} rule denial names the rule and keeps the turn`, async () => {
+            const h = fixture("allow", { deny: [`${kind}(target.txt)`] })
+            try {
+                const outcome = await h.run(kind, args(kind))
+                assert.equal(outcome.isError, true)
+                assert.ok(textOf(outcome).includes(`Denied by permission rule \`${kind}(target.txt)\``))
+                assert.equal(h.content(), "before")
+                assert.equal(h.writes(), 0)
+                assert.equal(h.aborted(), false)
+            } finally {
+                await h.cleanup()
             }
         })
     }
