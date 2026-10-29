@@ -172,6 +172,7 @@ export default function (pi: ExtensionAPI) {
                 }
                 assertReviewEntity(entityDir, input.entity)
                 assertReviewPhase(entityDir, phase)
+                assertReviewPreconditions(entityDir, phase)
 
                 const round = await nextReviewRound(entityDir, phase)
                 const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
@@ -312,6 +313,37 @@ export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
             `${entityLabel(status)} ${phase} review requires Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
         )
     }
+}
+
+/**
+ * Every input a review round needs, checked before the round directory exists, so a rejected
+ * review leaves `reviews/` unchanged and doesn't consume a round number.
+ */
+export function assertReviewPreconditions(directory: string, phase: ReviewPhase): void {
+    const status = readEntityStatus(directory)
+    if (phase === "plan" && !fs.existsSync(path.join(directory, LOCAL_DRAFT_FILE)))
+        throw new Error(`Planning draft does not exist: ${LOCAL_DRAFT_FILE}`)
+    // A Task's parent Epic needs no check here: reading its metadata already requires it.
+    switch (status.entity) {
+        case "epic":
+            if (!fs.existsSync(path.join(directory, "brief.md")))
+                throw new Error(`${entityLabel(status)} review requires brief.md`)
+            return
+        case "task":
+        case "gig":
+            break
+    }
+    if (phase !== "final") return
+    const pendingEntries = readPendingEntries(directory)
+    if (pendingEntries.length > 0)
+        throw new Error(
+            `${entityLabel(status)} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
+        )
+    const artifact = deliverableKindRequiresReport(status.kind) ? "report.md" : "result.md"
+    const content = fs.existsSync(path.join(directory, artifact))
+        ? fs.readFileSync(path.join(directory, artifact), "utf-8")
+        : ""
+    if (!content.trim()) throw new Error(`${status.kind} final review requires a non-empty ${artifact}`)
 }
 
 function assertReviewEntity(directory: string, expected: ReviewEntity): void {
@@ -580,19 +612,8 @@ export async function buildDeliverableReviewPrompt(
     if (entityStatus.entity === "epic") throw new Error(`expected Deliverable status in ${gigDir}`)
     const report = await readOptional(path.join(gigDir, "report.md"))
     const result = await readOptional(path.join(gigDir, "result.md"))
-    if (phase === "final") {
-        const pendingEntries = readPendingEntries(gigDir)
-        if (pendingEntries.length > 0) {
-            throw new Error(
-                `${entityLabel(entityStatus)} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
-            )
-        }
-        if (deliverableKindRequiresReport(entityStatus.kind)) {
-            if (!report.trim()) throw new Error(`${entityStatus.kind} final review requires a non-empty report.md`)
-        } else if (!result.trim()) {
-            throw new Error(`${entityStatus.kind} final review requires a non-empty result.md`)
-        }
-    }
+    // The tool already ran this before creating the round; it's the one owner of these rules.
+    if (phase === "final") assertReviewPreconditions(gigDir, phase)
     const parentEpic = await readParentEpicContext(ctx.cwd, gigDir)
     const projectPolicies = await readProjectPolicies(ctx.cwd)
     const previousReviews = await readPreviousReviewArtifacts(gigDir, phase)
