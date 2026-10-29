@@ -28,6 +28,8 @@ const workflowOperations = [
     "save_document",
     "get_document",
     "list_documents",
+    "save_comment",
+    "list_comments",
 ]
 
 export function workflowMcpCatalog(...servers: string[]): McpToolCatalog {

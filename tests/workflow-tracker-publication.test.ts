@@ -15,7 +15,10 @@ import { PlanCommentSchema } from "../workflows/extensions/integrations/plan-com
 import { planPublicationMarker } from "../workflows/extensions/integrations/plan-publication.ts"
 import { signPublication } from "../workflows/extensions/integrations/publication.ts"
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
-import { trackerPublication } from "../workflows/extensions/integrations/tracker-publication.ts"
+import {
+    trackerPublication,
+    type TrackerPublicationInput,
+} from "../workflows/extensions/integrations/tracker-publication.ts"
 import type { ProviderEvidence } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
@@ -302,7 +305,24 @@ describe("managed GitHub plan comments", () => {
                     })
                     const identity = f.saved().tracker.planComment
                     assert.equal(identity.state, "published")
-                    const updated = await f.prepare(source.replace("Update the plan.", "Updated scope."))
+                    const revised = source.replace("Update the plan.", "Updated scope.")
+                    const prepared2 = await f.prepare(revised)
+                    // An Epic reads its published plan first, to announce the change.
+                    const updated =
+                        kind === "epic"
+                            ? await trackerPublication(
+                                  f.root,
+                                  {
+                                      action: "prepareUpdate",
+                                      entityDir: f.directory,
+                                      source: revised,
+                                      reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
+                                      announcement: { origin: { kind: "epic" }, summary: "Scope changed." },
+                                  },
+                                  tools,
+                              )
+                            : prepared2
+                    assert.equal(prepared2.state, kind === "epic" ? "reads-required" : "mutation-needed")
                     assert.ok(updated.state === "mutation-needed")
                     assert.ok(typeof updated.mutation.arguments.body === "string")
                     assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
@@ -336,56 +356,142 @@ describe("managed GitHub plan comments", () => {
                 }
             })
 
-    it("publishes a synchronized parent Epic using its own comment state", async () => {
+    it("publishes a synchronized parent Epic update and announces it from the Task", async () => {
         const f = fixture("task")
         try {
             assert.ok(f.parentDirectory)
-            const parentFile = path.join(f.root, f.parentDirectory, "metadata.json")
-            assert.equal(JSON.parse(fs.readFileSync(parentFile, "utf8")).tracker.external.issueNumber, 41)
+            const epicDir = f.parentDirectory
+            const parentFile = path.join(f.root, epicDir, "metadata.json")
+            const parentSaved = () => JSON.parse(fs.readFileSync(parentFile, "utf8"))
+            assert.equal(parentSaved().tracker.external.issueNumber, 41)
             const childBefore = f.saved()
-            const prepared = await trackerPublication(
-                f.root,
-                {
-                    action: "prepare",
-                    entityDir: f.parentDirectory,
-                    source,
-                },
-                tools,
-            )
+            const run = (input: Record<string, unknown>) =>
+                trackerPublication(f.root, { entityDir: epicDir, ...input } as TrackerPublicationInput, tools)
+            const prepared = await run({ action: "prepare", source })
             assert.ok(prepared.state === "mutation-needed")
             assert.ok(typeof prepared.mutation.arguments.body === "string")
-            assert.ok("issue_number" in prepared.mutation.arguments)
             assert.equal(prepared.mutation.arguments.issue_number, 41)
-            await trackerPublication(
-                f.root,
-                {
-                    action: "record",
-                    entityDir: f.parentDirectory,
-                    evidence: {
-                        tool: prepared.mutation.tool,
-                        arguments: prepared.mutation.arguments,
-                        response: {
-                            id: 555,
-                            html_url: "https://github.com/example/project/issues/41#issuecomment-555",
-                        },
-                    },
-                },
-                tools,
+            const planUrl = "https://github.com/example/project/issues/41#issuecomment-555"
+            await run({
+                action: "record",
+                evidence: { ...prepared.mutation, response: { id: 555, html_url: planUrl } },
+            })
+            const comments = (bodies: Record<string, unknown>[]): ProviderEvidence => ({
+                tool: "mcp__github__issue_read",
+                arguments: { method: "get_comments", ...repository, issue_number: 41, page: 1, perPage: 100 },
+                response: bodies,
+            })
+            const planComment = { id: 555, html_url: planUrl, body: prepared.mutation.arguments.body }
+            const revised = source.replace("Update the plan.", "Update the plan per workspace.")
+
+            const reads = await run({ action: "prepare", source: revised })
+            assert.ok(reads.state === "reads-required")
+            assert.equal(reads.lookups[0].arguments.issue_number, 41)
+            await assert.rejects(
+                run({ action: "prepareUpdate", source: revised, reads: [comments([planComment])] }),
+                /announcement/,
             )
-            const updated = await trackerPublication(
-                f.root,
-                {
-                    action: "prepare",
-                    entityDir: f.parentDirectory,
-                    source,
-                },
-                tools,
-            )
-            assert.ok(updated.state === "mutation-needed")
-            assert.ok(typeof updated.mutation.arguments.body === "string")
-            assert.ok("comment_id" in updated.mutation.arguments)
+            const announcement = {
+                origin: { kind: "task", entityDir: f.directory },
+                summary: "- Limits per workspace.",
+            }
+            const updated = await run({
+                action: "prepareUpdate",
+                source: revised,
+                reads: [comments([planComment])],
+                announcement,
+            })
+            assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
+            assert.equal(updated.mutation.tool, "mcp__github__update_issue_comment")
             assert.equal(updated.mutation.arguments.comment_id, 555)
+            const body = updated.announcement as string
+            assert.match(body, /from Task #42/)
+            assert.match(body, /- Limits per workspace\./)
+            assert.ok(body.includes(`(${planUrl})`))
+            assert.match(body, /<details>\n<summary>Plan diff<\/summary>\n\n```diff\n@@ /)
+            assert.match(body, /\n-Update the plan\.\n\+Update the plan per workspace\.\n/)
+            assert.doesNotMatch(body, /^[-+]# /m)
+            assert.equal(parentSaved().tracker.planAnnouncement.state, "plan-update")
+
+            // A Task outside this Epic can't be the origin.
+            await assert.rejects(
+                run({
+                    action: "prepareUpdate",
+                    source: revised,
+                    reads: [comments([planComment])],
+                    announcement: { ...announcement, origin: { kind: "task", entityDir: epicDir } },
+                }),
+                /Task of this Epic/,
+            )
+
+            const announce = await run({
+                action: "record",
+                evidence: { ...updated.mutation, response: { id: 555, html_url: planUrl } },
+            })
+            assert.ok(announce.state === "mutation-needed")
+            assert.equal(announce.mutation.tool, "mcp__github__add_issue_comment")
+            assert.deepEqual(announce.mutation.arguments, { ...repository, issue_number: 41, body })
+            assert.equal(parentSaved().tracker.planAnnouncement.state, "announcing")
+
+            // Nothing else publishes until the announcement is confirmed.
+            const blocked = await run({ action: "prepare", source: revised })
+            assert.equal(blocked.state, "recovery-required")
+            const absent = await run({ action: "recover", source: revised, pages: [comments([planComment])] })
+            assert.ok(absent.state === "mutation-needed")
+            assert.deepEqual(absent.mutation, announce.mutation)
+            const posted = { id: 777, html_url: "https://github.com/example/project/issues/41#issuecomment-777", body }
+            assert.equal(
+                (await run({ action: "recover", source: revised, pages: [comments([planComment, posted])] })).state,
+                "announced",
+            )
+            assert.equal("planAnnouncement" in parentSaved().tracker, false)
             assert.deepEqual(f.saved(), childBefore)
+        } finally {
+            f.dispose()
+        }
+    })
+
+    it("finishes an announcement when the plan update landed without being recorded", async () => {
+        const f = fixture("epic")
+        try {
+            const run = (input: Record<string, unknown>) =>
+                trackerPublication(f.root, { entityDir: f.directory, ...input } as TrackerPublicationInput, tools)
+            const prepared = await f.prepare()
+            assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.body === "string")
+            await f.record({ ...prepared.mutation, response: f.remote(prepared.mutation.arguments.body) })
+            const revised = source.replace("Update the plan.", "Revised.")
+            const announcement = { origin: { kind: "epic" }, summary: "Revised." }
+            const updated = await run({
+                action: "prepareUpdate",
+                source: revised,
+                reads: [f.page([f.remote(prepared.mutation.arguments.body)])],
+                announcement,
+            })
+            assert.ok(updated.state === "mutation-needed" && typeof updated.mutation.arguments.body === "string")
+            assert.match(updated.announcement as string, /from Epic replanning/)
+            // The update's outcome was uncertain; the published plan shows it landed.
+            const resumed = await run({
+                action: "prepareUpdate",
+                source: revised,
+                reads: [f.page([f.remote(updated.mutation.arguments.body)])],
+            })
+            assert.ok(resumed.state === "mutation-needed")
+            assert.equal(resumed.mutation.tool, "mcp__github__add_issue_comment")
+            assert.equal(resumed.mutation.arguments.body, updated.announcement)
+            await assert.rejects(
+                f.record({
+                    ...resumed.mutation,
+                    arguments: { ...resumed.mutation.arguments, body: "other" },
+                    response: { id: 900 },
+                }),
+                /marker/,
+            )
+            const done = await f.record({
+                ...resumed.mutation,
+                response: { id: "900", url: "https://github.com/example/project/issues/42#issuecomment-900" },
+            })
+            assert.equal(done.state, "announced")
+            assert.equal("planAnnouncement" in f.saved().tracker, false)
         } finally {
             f.dispose()
         }

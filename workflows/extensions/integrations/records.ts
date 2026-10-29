@@ -6,6 +6,7 @@ import {
     TIMESTAMP_PATTERN,
     type TrackerReference,
 } from "../__lib/domain.js"
+import { PlanAnnouncementSchema } from "./plan-announcement.js"
 import { assertPlanCommentUrl, PlanCommentSchema } from "./plan-comment.js"
 import { assertPlanDocumentUrl, PlanDocumentSchema } from "./plan-document.js"
 
@@ -89,6 +90,8 @@ export const GitHubTrackerRecordSchema = Type.Object(
         repository: GitHubRepositorySchema,
         external: Type.Object({ issueNumber: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
         planComment: PlanCommentSchema,
+        // Only an Epic announces plan updates; present while one is in flight.
+        planAnnouncement: Type.Optional(PlanAnnouncementSchema),
     },
     { additionalProperties: false },
 )
@@ -101,6 +104,8 @@ export const LinearProjectRecordSchema = Type.Object(
             { additionalProperties: false },
         ),
         planDocument: PlanDocumentSchema,
+        // Present while an Epic plan update's announcement is in flight.
+        planAnnouncement: Type.Optional(PlanAnnouncementSchema),
     },
     { additionalProperties: false },
 )
@@ -229,9 +234,14 @@ export function assertTrackerRecordInvariants(
         const comment = tracker.planComment
         if (comment.state === "published")
             assertPlanCommentUrl(tracker.repository, tracker.external.issueNumber, comment.id, comment.url)
+        if (tracker.planAnnouncement && entity !== "epic") fail("only an Epic announces plan updates")
+        if (tracker.planAnnouncement && comment.state !== "published")
+            fail("a plan announcement requires a published plan")
         return
     }
     const expected = entity === "epic" ? "project" : entity === "task" ? "task-issue" : "gig-issue"
     if (tracker.resource !== expected) fail(`Linear tracker resource must be ${expected} for ${entity}`)
     if (tracker.planDocument.state === "published") assertPlanDocumentUrl(tracker.planDocument.url)
+    if (tracker.resource === "project" && tracker.planAnnouncement && tracker.planDocument.state !== "published")
+        fail("a plan announcement requires a published plan")
 }
