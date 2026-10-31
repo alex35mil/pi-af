@@ -1,3 +1,5 @@
+import "./host-runtime.ts"
+
 import assert from "node:assert/strict"
 import * as cp from "node:child_process"
 import * as fs from "node:fs"

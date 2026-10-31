@@ -1,3 +1,5 @@
+import "./host-runtime.ts"
+
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import * as fs from "node:fs"
@@ -36,6 +38,18 @@ describe("runtime selection", () => {
         assert.match(invalid.error.message, /PI_AF_RUNTIME "sandboxed"/)
         assert.equal(requireRuntime({ PI_AF_RUNTIME: "sandbox" }), "sandbox")
         assert.throws(() => requireRuntime({ PI_AF_RUNTIME: "Sandbox" }), /invalid PI_AF_RUNTIME/)
+    })
+
+    it("runs every test file in the host runtime regardless of the launching runtime", () => {
+        const testsDir = import.meta.dirname
+        const files = fs.readdirSync(testsDir).filter((file) => file.endsWith(".test.ts"))
+        assert.ok(files.length > 0)
+        const missing = files.filter((file) => {
+            const source = fs.readFileSync(path.join(testsDir, file), "utf8")
+            const firstImport = source.match(/^import\b.*$/m)?.[0]
+            return firstImport !== 'import "./host-runtime.ts"'
+        })
+        assert.deepEqual(missing, [])
     })
 })
 
