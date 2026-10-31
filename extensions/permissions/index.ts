@@ -888,6 +888,19 @@ function wholeCallDecision(decision: SingleDecision): Decision {
     }
 }
 
+// Starting Bash decision from writable redirects. The check stops narrow allow rules
+// from writing files, so it adds nothing when the effective defaultMode is `allow`.
+function redirectDecision(settings: PermissionSettings, writesFile: boolean): Decision {
+    const fallback = settings.defaultMode ?? "ask"
+    switch (fallback) {
+        case "allow":
+            return ALLOW
+        case "ask":
+        case "deny":
+            return writesFile ? ASK : ALLOW
+    }
+}
+
 /**
  * Resolve the permission decision for a tool call.
  * Bash commands are extracted from their syntax tree and evaluated separately.
@@ -938,7 +951,7 @@ export async function resolveMode(
         return withSession(session, asked ? { mode: "ask" } : undefined, wholeRule)
     }
 
-    let worst: Decision = analysis.writesFile ? ASK : ALLOW
+    let worst = redirectDecision(settings, analysis.writesFile)
     for (const command of analysis.commands) {
         const decision = resolveSingle(settings, toolName, command)
         switch (decision.mode) {
