@@ -35,20 +35,21 @@ const textOf = (outcome: Awaited<ReturnType<ReturnType<typeof nativeMcpFixture>[
 
 function fixture(
     mode: "allow" | "ask" | "deny" = "ask",
-    rules: { ask?: readonly string[]; deny?: readonly string[] } = {},
+    rules: { allow?: readonly string[]; ask?: readonly string[]; deny?: readonly string[] } = {},
 ) {
     const h = nativeMcpFixture({ servers: [] })
     const file = path.join(h.root, "target.txt")
     fs.mkdirSync(path.join(h.root, ".agents"))
     fs.writeFileSync(
         path.join(h.root, ".agents/permissions.json"),
-        JSON.stringify({ defaultMode: mode, allow: ["codemode", "later"], ...rules }),
+        JSON.stringify({ defaultMode: mode, ...rules, allow: ["codemode", "later", ...(rules.allow ?? [])] }),
     )
     fs.writeFileSync(file, "before")
     registerPermission(h.pi)
     let choice: string | undefined = "Accept"
     let editorContent: string | undefined
     let prompts = 0
+    let status: string | undefined
     let later = 0
     let writes = 0
     const writeFile = fs.promises.writeFile
@@ -57,6 +58,9 @@ function fixture(
         return writeFile(...parameters)
     }
     syncBuiltinESMExports()
+    h.context.ui.setStatus = (key: string, text: string | undefined) => {
+        if (key === "permissions") status = text
+    }
     h.context.ui.select = async () => {
         prompts++
         if (editorContent !== undefined) fs.writeFileSync(file, editorContent)
@@ -80,6 +84,7 @@ function fixture(
             editorContent = applied
         },
         prompts: () => prompts,
+        status: () => status,
         writes: () => writes,
         later: () => later,
         content: () => fs.readFileSync(file, "utf-8"),
@@ -177,30 +182,198 @@ describe("native file permission execution", () => {
         })
     }
 
-    for (const kind of ["edit", "write"] as const) {
-        it(`auto-accept ${kind} never weakens explicit ask or deny rules`, async () => {
-            for (const testCase of [
-                { defaultMode: "ask", rules: {}, outcome: "applied" },
-                { defaultMode: "allow", rules: { ask: [`${kind}(target.txt)`] }, outcome: "reviewed" },
-                { defaultMode: "allow", rules: { deny: [`${kind}(target.txt)`] }, outcome: "denied" },
-                { defaultMode: "ask", rules: { ask: [`${kind}(other.txt)`] }, outcome: "applied" },
-            ] as const) {
-                const h = fixture(testCase.defaultMode, testCase.rules)
-                let enabled = false
-                try {
+    describe("auto-accept toggle", () => {
+        const AUTO = "▶︎ Auto-accept edits"
+        const REVIEW = "◉ Review edits"
+        type Outcome = "applied" | "reviewed" | "denied"
+        type Rules = Parameters<typeof fixture>[1]
+
+        // Session overrides are process-wide: track them so every test leaves none behind.
+        function toggler(h: ReturnType<typeof fixture>) {
+            let overridden = false
+            return {
+                async toggle() {
                     await h.command("permissions-toggle-auto-accept")
-                    enabled = true
-                    const outcome = await h.run(kind, args(kind))
-                    assert.equal(outcome.isError, testCase.outcome === "denied", testCase.outcome)
-                    assert.equal(h.prompts(), testCase.outcome === "reviewed" ? 1 : 0, testCase.outcome)
-                    assert.equal(h.content(), testCase.outcome === "denied" ? "before" : "after", testCase.outcome)
-                } finally {
-                    if (enabled) await h.command("permissions-toggle-auto-accept")
-                    await h.cleanup()
-                }
+                    overridden = !overridden
+                },
+                async mode() {
+                    await h.command("permissions-mode")
+                    overridden = true
+                },
+                async reset() {
+                    if (overridden) await h.command("permissions-toggle-auto-accept")
+                },
+            }
+        }
+
+        // Runs one call against a fresh target and reports what happened to it.
+        async function attempt(h: ReturnType<typeof fixture>, kind: "edit" | "write"): Promise<Outcome> {
+            fs.writeFileSync(h.file, "before")
+            const prompts = h.prompts()
+            const outcome = await h.run(kind, args(kind))
+            if (outcome.isError) {
+                assert.equal(h.content(), "before")
+                return "denied"
+            }
+            assert.equal(h.content(), "after")
+            return h.prompts() > prompts ? "reviewed" : "applied"
+        }
+
+        // Outcome and status before toggling, after the first toggle, and after the second.
+        const cases: {
+            name: string
+            mode: "allow" | "ask"
+            rules: (kind: "edit" | "write") => Rules
+            steps: [Outcome, string | undefined][]
+        }[] = [
+            {
+                name: "review default turns auto-accept on, then back to review",
+                mode: "ask",
+                rules: () => ({}),
+                steps: [
+                    ["reviewed", undefined],
+                    ["applied", AUTO],
+                    ["reviewed", undefined],
+                ],
+            },
+            {
+                name: "auto-accept default turns review on, then back to auto-accept",
+                mode: "ask",
+                rules: () => ({ allow: ["edit", "write"] }),
+                steps: [
+                    ["applied", undefined],
+                    ["reviewed", REVIEW],
+                    ["applied", undefined],
+                ],
+            },
+            {
+                name: "defaultMode allow is an auto-accept default",
+                mode: "allow",
+                rules: () => ({}),
+                steps: [
+                    ["applied", undefined],
+                    ["reviewed", REVIEW],
+                    ["applied", undefined],
+                ],
+            },
+            {
+                name: "tool(*) allows count as an auto-accept default",
+                mode: "ask",
+                rules: () => ({ allow: ["edit(*)", "write(*)"] }),
+                steps: [
+                    ["applied", undefined],
+                    ["reviewed", REVIEW],
+                    ["applied", undefined],
+                ],
+            },
+            {
+                name: "path-scoped allows leave a review default",
+                mode: "ask",
+                rules: () => ({ allow: ["edit(target.txt)", "write(target.txt)"] }),
+                steps: [
+                    ["applied", undefined],
+                    ["applied", AUTO],
+                    ["applied", undefined],
+                ],
+            },
+            {
+                name: "allowing only the other tool leaves a review default",
+                mode: "ask",
+                rules: (kind) => ({ allow: [kind === "edit" ? "write" : "edit"] }),
+                steps: [
+                    ["reviewed", undefined],
+                    ["applied", AUTO],
+                    ["reviewed", undefined],
+                ],
+            },
+            {
+                name: "an explicit path ask still prompts with auto-accept on",
+                mode: "ask",
+                rules: (kind) => ({ ask: [`${kind}(target.txt)`] }),
+                steps: [
+                    ["reviewed", undefined],
+                    ["reviewed", AUTO],
+                    ["reviewed", undefined],
+                ],
+            },
+            {
+                name: "a blanket ask keeps review and shows no auto-accept status",
+                mode: "allow",
+                rules: (kind) => ({ ask: [kind] }),
+                steps: [
+                    ["reviewed", undefined],
+                    ["reviewed", undefined],
+                    ["reviewed", undefined],
+                ],
+            },
+            {
+                name: "an explicit deny blocks with auto-accept on",
+                mode: "ask",
+                rules: (kind) => ({ deny: [`${kind}(target.txt)`] }),
+                steps: [
+                    ["denied", undefined],
+                    ["denied", AUTO],
+                    ["denied", undefined],
+                ],
+            },
+            {
+                name: "an explicit deny blocks with review on",
+                mode: "ask",
+                rules: (kind) => ({ allow: ["edit", "write"], deny: [`${kind}(target.txt)`] }),
+                steps: [
+                    ["denied", undefined],
+                    ["denied", REVIEW],
+                    ["denied", undefined],
+                ],
+            },
+        ]
+
+        for (const kind of ["edit", "write"] as const) {
+            for (const testCase of cases) {
+                it(`${kind}: ${testCase.name}`, async () => {
+                    const h = fixture(testCase.mode, testCase.rules(kind))
+                    const t = toggler(h)
+                    try {
+                        await h.start()
+                        for (const [index, [outcome, status]] of testCase.steps.entries()) {
+                            if (index > 0) await t.toggle()
+                            assert.equal(h.status(), status, `status at step ${index}`)
+                            assert.equal(await attempt(h, kind), outcome, `outcome at step ${index}`)
+                        }
+                    } finally {
+                        await t.reset()
+                        await h.cleanup()
+                    }
+                })
+            }
+        }
+
+        it("refreshes the status after /permissions-mode and shows none for a session deny", async () => {
+            const h = fixture("ask", { allow: ["edit", "write"] })
+            const t = toggler(h)
+            const selections = ["ask", "deny"]
+            Object.assign(h.context.ui, {
+                input: async () => "write",
+                select: async () => selections.shift(),
+            })
+            try {
+                await h.start()
+                assert.equal(h.status(), undefined)
+                await t.mode()
+                assert.equal(h.status(), REVIEW)
+                await t.mode()
+                assert.equal(h.status(), undefined)
+                // Toggling clears the session deny and returns to the default.
+                await t.toggle()
+                assert.equal(h.status(), undefined)
+                await t.toggle()
+                assert.equal(h.status(), REVIEW)
+            } finally {
+                await t.reset()
+                await h.cleanup()
             }
         })
-    }
+    })
 
     it("preserves native schemas, preparation, prompt contributions, and rendering", async () => {
         const h = fixture()

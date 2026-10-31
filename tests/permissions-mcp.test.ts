@@ -221,6 +221,7 @@ function createContext(cwd: string, approval = true) {
                 if (content === undefined) widgets.delete(key)
                 else widgets.set(key, content)
             },
+            setStatus() {},
             async confirm() {
                 return approval
             },
