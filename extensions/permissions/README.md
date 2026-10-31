@@ -114,9 +114,26 @@ Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into
 
 | Command                           | Description                                                        |
 | --------------------------------- | ------------------------------------------------------------------ |
-| `/permissions-toggle-auto-accept` | Toggle auto-accept for edit/write tools in the current session     |
+| `/permissions-toggle-auto-accept` | Switch edit/write away from the settings' default for the session  |
 | `/permissions-mode`               | Set permission mode for a specific tool (session only)             |
 | `/permissions-settings`           | Show resolved settings, skill-derived rules, and session overrides |
+
+### Auto-accept toggle
+
+`/permissions-toggle-auto-accept` (and the `autoAcceptEdits` keybinding) switches `edit` and `write` away from what the settings resolve to, for the current session. Toggling again returns to the settings' default.
+
+- **Review default** (the usual host setup, where edits ask): the toggle turns auto-accept on.
+- **Auto-accept default** (both `edit` and `write` allowed, for example a sandbox's `permissions.sandbox.json` with `"allow": ["edit", "write"]`): the toggle turns diff review on.
+
+The default comes from the merged settings, skill-derived allows included, using only rules that apply to every path: `"edit"`, `"edit(*)"`, or `"*"`, in the usual `deny` > `ask` > `allow` > `defaultMode` order. It's auto-accept only when both tools resolve to `allow`. Path-scoped rules such as `edit(/tmp/*)` don't change the default and keep applying per call.
+
+The toggle sets session modes, so explicit `ask` and `deny` rules still win either way: with `"ask": ["edit(*.lock)"]`, lock files still prompt while auto-accept is on. Toggling back clears every `edit`/`write` session mode, including ones set with `/permissions-mode`.
+
+The status line shows only a switch away from the default; the default itself, review or auto-accept, shows nothing:
+
+- `▶︎ Auto-accept edits`: the default is review, and the toggle has turned auto-accept on.
+- `◉ Review edits`: the default is auto-accept, and the toggle has turned review on.
+- Nothing: the default applies, the toggle has no effect (for example a blanket `ask: ["edit"]` beats it), or a session or blanket `deny` blocks edits.
 
 ## Neovim Integration
 

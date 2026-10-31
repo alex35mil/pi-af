@@ -152,8 +152,30 @@ export default function (pi: ExtensionAPI) {
         displayedSettingsError = message
     }
 
+    const updateEditStatus = (result: SettingsResult, ctx: ExtensionContext): void => {
+        const status = "settings" in result ? editStatus(result.settings, SessionModeOverrides) : "none"
+        ctx.ui.setStatus(EXTENSION, editStatusText(status))
+    }
+
+    // Switch edit/write away from the settings' resolved default for this session, or back to it.
+    const toggleAutoAcceptEdits = (ctx: ExtensionContext): void => {
+        const result = loadResolvedPermissionSettings(pi, ctx.cwd)
+        updatePermissionSettingsErrorDisplay(result, ctx)
+        if ("settings" in result) {
+            if (EDIT_TOOLS.some((tool) => SessionModeOverrides.has(tool))) {
+                for (const tool of EDIT_TOOLS) SessionModeOverrides.delete(tool)
+            } else {
+                const mode = toggledEditMode(editDefault(result.settings))
+                for (const tool of EDIT_TOOLS) SessionModeOverrides.set(tool, mode)
+            }
+        }
+        updateEditStatus(result, ctx)
+    }
+
     pi.on("session_start", async (_event, ctx) => {
-        updatePermissionSettingsErrorDisplay(loadResolvedPermissionSettings(pi, ctx.cwd), ctx)
+        const result = loadResolvedPermissionSettings(pi, ctx.cwd)
+        updatePermissionSettingsErrorDisplay(result, ctx)
+        updateEditStatus(result, ctx)
     })
 
     pi.on("session_shutdown", async () => {
@@ -182,6 +204,7 @@ export default function (pi: ExtensionAPI) {
             if (!mode) return
             SessionModeOverrides.set(tool, mode as Mode)
             ctx.ui.notify(`Permission mode for "${tool}" set to "${mode}" (current session only)`, "info")
+            updateEditStatus(loadResolvedPermissionSettings(pi, ctx.cwd), ctx)
         },
     })
 
@@ -217,6 +240,7 @@ export default function (pi: ExtensionAPI) {
     pi.on("input", async (_event, ctx) => {
         const result = loadResolvedPermissionSettings(pi, ctx.cwd)
         updatePermissionSettingsErrorDisplay(result, ctx)
+        updateEditStatus(result, ctx)
         return "settings" in result ? { action: "continue" } : { action: "handled" }
     })
 
@@ -514,18 +538,72 @@ function formatPermissionSettingsError(error: Error): string {
     return `Invalid permission settings: ${error.message}`
 }
 
-function toggleAutoAcceptEdits(ctx: ExtensionContext) {
-    const editCurrent = SessionModeOverrides.get("edit")
-    const writeCurrent = SessionModeOverrides.get("write")
+const EDIT_TOOLS = ["edit", "write"] as const
 
-    if (editCurrent === "allow" && writeCurrent === "allow") {
-        SessionModeOverrides.delete("edit")
-        SessionModeOverrides.delete("write")
-        ctx.ui.setStatus(EXTENSION, undefined)
-    } else {
-        SessionModeOverrides.set("edit", "allow")
-        SessionModeOverrides.set("write", "allow")
-        ctx.ui.setStatus(EXTENSION, "▶︎ Auto-accept edits")
+/** What the settings alone do with edits: auto-accept only when both edit tools resolve to allow. */
+type EditDefault = "autoAccept" | "review"
+
+/** What the status line reports about edits. */
+type EditStatus = "autoAccept" | "review" | "none"
+
+// A rule that applies to every call of a non-MCP tool: no argument pattern, or exactly `*`.
+function matchesBlanketRule(rules: string[], toolName: string): boolean {
+    return rules.some((rule) => {
+        if (parseMcpRule(rule)) return false
+        const parsed = parseRule(rule)
+        return (
+            matchPattern(parsed.toolPattern, toolName) && (parsed.argPattern === undefined || parsed.argPattern === "*")
+        )
+    })
+}
+
+/**
+ * A tool's mode for calls that no path-scoped rule matches, with resolveMode's precedence:
+ * session deny, deny, ask, other session modes, allow, defaultMode.
+ */
+function blanketMode(settings: PermissionSettings, toolName: string, session: Mode | undefined): Mode {
+    if (session === "deny") return "deny"
+    if (matchesBlanketRule(settings.deny ?? [], toolName)) return "deny"
+    if (matchesBlanketRule(settings.ask ?? [], toolName)) return "ask"
+    if (session) return session
+    if (matchesBlanketRule(settings.allow ?? [], toolName)) return "allow"
+    return settings.defaultMode ?? "ask"
+}
+
+function editDefault(settings: PermissionSettings): EditDefault {
+    return EDIT_TOOLS.every((tool) => blanketMode(settings, tool, undefined) === "allow") ? "autoAccept" : "review"
+}
+
+// The session mode that switches edits away from the default.
+function toggledEditMode(fallback: EditDefault): Mode {
+    switch (fallback) {
+        case "autoAccept":
+            return "ask"
+        case "review":
+            return "allow"
+    }
+}
+
+function editStatus(settings: PermissionSettings, sessionOverrides: ReadonlyMap<string, Mode>): EditStatus {
+    // Only a switch away from the default shows a status; the default itself shows none.
+    const modes = EDIT_TOOLS.map((tool) => blanketMode(settings, tool, sessionOverrides.get(tool)))
+    switch (editDefault(settings)) {
+        case "review":
+            return modes.every((mode) => mode === "allow") ? "autoAccept" : "none"
+        // Review was turned back on, unless a deny blocks edits instead.
+        case "autoAccept":
+            return modes.every((mode) => mode !== "deny") && modes.includes("ask") ? "review" : "none"
+    }
+}
+
+function editStatusText(status: EditStatus): string | undefined {
+    switch (status) {
+        case "autoAccept":
+            return "▶︎ Auto-accept edits"
+        case "review":
+            return "◉ Review edits"
+        case "none":
+            return undefined
     }
 }
 
