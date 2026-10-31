@@ -97,21 +97,30 @@ describe("Bash redirections", () => {
         allow: ["bash(echo *)", "bash(tee *)"],
     }
 
-    it("escalates writable file redirects", async () => {
-        const commands = [
-            "echo hi > output",
-            "echo hi >| output",
-            "echo hi >> output",
-            "echo hi &> output",
-            "echo hi &>> output",
-            "echo hi 2> output",
-            "echo hi >&output",
-            "if true; then echo hi > output; fi",
-        ]
+    const writableRedirects = [
+        "echo hi > output",
+        "echo hi >| output",
+        "echo hi >> output",
+        "echo hi &> output",
+        "echo hi &>> output",
+        "echo hi 2> output",
+        "echo hi >&output",
+        "if true; then echo hi > output; fi",
+    ]
 
-        for (const command of commands) {
+    it("escalates writable file redirects", async () => {
+        for (const command of writableRedirects) {
             assert.equal(await resolve(settings, command), "ask", command)
         }
+    })
+
+    it("skips redirect escalation when defaultMode is allow", async () => {
+        for (const command of writableRedirects) {
+            assert.equal(await resolve({ defaultMode: "allow" }, command), "allow", command)
+        }
+        assert.equal(await resolve({ defaultMode: "allow", ask: ["bash(echo *)"] }, "echo hi > output"), "ask")
+        assert.equal(await resolve({ defaultMode: "allow", deny: ["bash(echo *)"] }, "echo hi > output"), "deny")
+        assert.equal(await resolve({ defaultMode: "ask", allow: ["bash(echo *)"] }, "echo hi > output"), "ask")
     })
 
     it("reconstructs commands around interspersed redirects", async () => {

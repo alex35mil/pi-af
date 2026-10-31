@@ -65,7 +65,7 @@ Without a session mode: `deny` > `ask` > built-in/configured `allow` > `defaultM
 
 Session modes (`/permissions-mode` and auto-accept) never weaken explicit `deny` or `ask` rules. With a session mode, the result is the stricter of the session mode and any matching explicit `deny`/`ask` rule. When no explicit rule matches, the session mode replaces allow rules and `defaultMode`. So a session `deny` always blocks, an explicit `deny` always blocks, and an explicit `ask` still prompts under a session `allow`.
 
-- **Bash:** when no `deny`/`ask` rule targets `bash`, a session mode skips Bash parsing and redirect checks. Otherwise every command node is checked against those rules, and a command that can't be parsed is denied. The redirect check is not an explicit rule, so a session `allow` still skips it.
+- **Bash:** when no `deny`/`ask` rule targets `bash`, a session mode skips Bash parsing and redirect checks. Otherwise every command node is checked against those rules, and a command that can't be parsed is denied. The redirect check is not an explicit rule, so a session `allow` still skips it, and so does an effective (merged) `defaultMode` of `"allow"`.
 - **MCP:** a tool without live catalog metadata can't be matched against rules. Under a session `allow` or `ask` it is denied when any `deny`/`ask` rule is `*` or an `mcp(...)` rule; otherwise the session mode applies. Without a session mode it is always denied.
 
 Exact literal `true` and `false` Bash commands are built-in allow rules. Session modes and explicit deny or ask rules still take precedence.
@@ -100,7 +100,7 @@ Setup's `configure_permissions` merges approved MCP `allow` and `ask` lists into
 - Runtime indirection such as `eval`, `bash -c`, `source`, aliases, functions, and dynamic command names is checked as the outer invocation only
 - Shell-state-only assignments/declarations emit no outer command, while syntax-visible commands nested inside them are still checked
 - A leading `cd <dir> &&` is ignored only when `<dir>` resolves to the current directory
-- Writable file redirects (`>`, `>|`, `>>`, `&>`, `&>>`, and filename-targeted `>&word`) escalate otherwise-allowed Bash calls to `"ask"`
+- Writable file redirects (`>`, `>|`, `>>`, `&>`, `&>>`, and filename-targeted `>&word`) escalate otherwise-allowed Bash calls to `"ask"`, unless the effective `defaultMode` is `"allow"` or a session mode applies
 - Exact `/dev/null` targets, input redirects, fd duplication/closing, and process-substitution targets do not add a redirect prompt; nested process-substitution commands are still checked
 - Parser/WASM failures and trees containing `ERROR` or `MISSING` nodes are denied without fallback; this includes valid syntax unsupported by the grammar, such as `<>`
 - Bash wildcard rules match across newlines within a command node
