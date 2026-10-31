@@ -93,7 +93,7 @@ function fixture() {
     git("init", "-b", "main")
     git("config", "user.name", "Fixture")
     git("config", "user.email", "fixture@example.com")
-    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local\n")
     fs.writeFileSync(path.join(root, "README.md"), "Trusted fixture\n")
     git("add", ".gitignore", "README.md")
     git("commit", "-m", "fixture")
@@ -298,10 +298,10 @@ describe("incoming PR identity and context", () => {
                 fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true })
                 fs.writeFileSync(path.join(f.root, file), "Private incoming PR evidence\n")
                 const ignored = f.git("check-ignore", "-v", file)
-                assert.match(ignored, /\/\.project\/\.local\//)
+                assert.match(ignored, /^\.gitignore:1:\/\.project\/\.local\t/)
             }
             assert.equal(f.git("status", "--porcelain", "--untracked-files=all"), before)
-            assert.equal(fs.readFileSync(path.join(f.root, ".gitignore"), "utf-8"), "/.project/.local/\n")
+            assert.equal(fs.readFileSync(path.join(f.root, ".gitignore"), "utf-8"), "/.project/.local\n")
         } finally {
             f.close()
         }
@@ -373,6 +373,53 @@ describe("incoming PR identity and context", () => {
                 path.join(f.root, input.dossierPath),
             )
         } finally {
+            f.close()
+        }
+    })
+
+    it("refuses incoming-PR evidence in a sandboxed worker without a linked local root", () => {
+        const f = fixture()
+        const source = fs.mkdtempSync(path.join(os.tmpdir(), "incoming-local-source-"))
+        const previous = process.env.PI_AF_RUNTIME
+        try {
+            process.env.PI_AF_RUNTIME = "sandbox"
+            const local = path.join(f.root, ".project", ".local")
+            fs.mkdirSync(local, { recursive: true })
+            assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools), /isn't linked/)
+            fs.cpSync(local, source, { recursive: true })
+            fs.rmSync(local, { recursive: true })
+            fs.symlinkSync(source, local)
+            assert.doesNotThrow(() => incomingPullRequestContext(f.root, "#12", mcpTools))
+        } finally {
+            if (previous === undefined) delete process.env.PI_AF_RUNTIME
+            else process.env.PI_AF_RUNTIME = previous
+            fs.rmSync(source, { recursive: true, force: true })
+            f.close()
+        }
+    })
+
+    it("accepts a worker's linked local root and still rejects deeper or dangling links", () => {
+        const f = fixture()
+        const source = fs.mkdtempSync(path.join(os.tmpdir(), "incoming-local-source-"))
+        try {
+            const input = inspection(f.root)
+            const selected = parseIncomingReference("#12", forge.repository)
+            const local = path.join(f.root, ".project", ".local")
+            fs.cpSync(local, source, { recursive: true })
+            fs.rmSync(local, { recursive: true })
+            fs.symlinkSync(source, local)
+            assert.equal(
+                resolveIncomingLocalPath(f.root, selected, input.dossierPath),
+                path.join(f.root, input.dossierPath),
+            )
+            const alias = path.join(f.root, incomingLocalDirectory(selected), "alias")
+            fs.symlinkSync(path.join(f.root, "README.md"), alias)
+            assert.throws(() => resolveIncomingLocalPath(f.root, selected, alias), /symlinks/)
+            fs.rmSync(local)
+            fs.symlinkSync(path.join(source, "missing"), local)
+            assert.throws(() => resolveIncomingLocalPath(f.root, selected, input.dossierPath), /symlinks/)
+        } finally {
+            fs.rmSync(source, { recursive: true, force: true })
             f.close()
         }
     })

@@ -6,6 +6,7 @@ import { type Static, type TSchema, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
+import { requireRuntime } from "../../../extensions/__lib/runtime.js"
 import { type BranchFormat, BranchFormatSchema, PROJECT_LOCAL_ROOT, PROJECT_ROOT } from "./domain.js"
 import * as Git from "./git.js"
 
@@ -17,7 +18,10 @@ export const LOCAL_PROJECT_CONFIG_PATH = `${PROJECT_ROOT}/config.local.json`
 export const GLOBAL_WORKFLOW_SETTINGS_NAME = "workflows"
 export const LOCAL_PROJECT_CONFIG_EXCLUDE = `/${LOCAL_PROJECT_CONFIG_PATH}`
 // The single repository rule that keeps every workflow entity and private evidence out of Git.
-export const PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}/`
+// No trailing slash, so it also matches a worker's symlink to its source checkout's directory.
+export const PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}`
+// The rule setup wrote before workers existed; it matches only a real directory.
+export const LEGACY_PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}/`
 
 const BranchConfigurationSchema = Type.Object({ format: BranchFormatSchema }, { additionalProperties: false })
 const ReviewConfigurationSchema = Type.Object(
@@ -126,6 +130,10 @@ export function prepareArtifactPersistence(cwd: string) {
         appendExcludeEntry(excludePath, missing.comment, missing.entry)
         assertArtifactPersistencePrepared(cwd)
     }
+    // A configured project always has the folder, so worker tooling can link it before the first entity.
+    // Created only after the ignore check passed, so Git already ignores it.
+    const localRoot = path.join(project.resolveRootDir(cwd), PROJECT_LOCAL_ROOT)
+    if (!fs.existsSync(localRoot) && !isSymbolicLink(localRoot)) fs.mkdirSync(localRoot, { recursive: true })
     return { state: "ready" as const, excludePath }
 }
 
@@ -133,6 +141,28 @@ export function assertArtifactPersistencePrepared(cwd: string): ProjectConfig {
     const { config, missing } = inspectArtifactPersistence(cwd)
     if (missing) throw new Error(`${missing.label} are not prepared; call prepare_artifacts before continuing`)
     return config
+}
+
+/**
+ * In a sandboxed worker, workflow artifacts must reach the source checkout through the
+ * `.project/.local` symlink. A missing or real directory would keep them only in the
+ * disposable copy, so they'd be lost when the worker is deleted.
+ */
+export function assertSandboxArtifactsLinked(cwd: string): void {
+    if (requireRuntime() !== "sandbox") return
+    const localRoot = path.join(project.resolveRootDir(cwd), PROJECT_LOCAL_ROOT)
+    if (isSymbolicLink(localRoot) && isDirectory(localRoot)) return
+    throw new Error(
+        `this worker's ${PROJECT_LOCAL_ROOT} isn't linked to its source checkout, so workflow artifacts would be lost when the worker is deleted; run project setup in the source checkout, then recreate the worker`,
+    )
+}
+
+function isDirectory(file: string): boolean {
+    try {
+        return fs.statSync(file).isDirectory()
+    } catch {
+        return false
+    }
 }
 
 function inspectArtifactPersistence(cwd: string) {
@@ -199,6 +229,8 @@ function persistenceInputs(root: string, config: ProjectConfig) {
             head,
             config,
             files: files.map(fileFingerprint),
+            // The ignore check depends on whether the local root is a symlink.
+            linkedLocalRoot: isSymbolicLink(path.join(root, PROJECT_LOCAL_ROOT)),
         }),
     }
 }
@@ -234,11 +266,29 @@ function formatUsesUsername(format: BranchFormat): boolean {
     return format.startsWith("username")
 }
 
+// Ask Git, so the answer matches what Git will actually stage. Only the committed root .gitignore
+// counts: .git/info/exclude and global excludes are local to one clone.
 function assertProjectLocalIgnored(root: string): void {
-    if (!hasExcludeEntry(path.join(root, ".gitignore"), PROJECT_LOCAL_IGNORE)) {
-        throw new Error(
-            `workflow artifacts require ${PROJECT_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing`,
-        )
+    const linked = isSymbolicLink(path.join(root, PROJECT_LOCAL_ROOT))
+    // A trailing-slash rule applies only to paths Git knows are directories. Query a missing or real
+    // directory in directory form, so the legacy rule still covers fresh clones; a symlink is a file to Git.
+    const query = linked ? PROJECT_LOCAL_ROOT : `${PROJECT_LOCAL_ROOT}/`
+    const match = Git.tryRun(root, ["check-ignore", "--verbose", "--no-index", "--", query])
+    const source = match.split("\t")[0]?.split(":")[0]
+    if (source === ".gitignore") return
+    throw new Error(
+        linked
+            ? `${PROJECT_LOCAL_ROOT} is a symlink, which requires ${PROJECT_LOCAL_IGNORE} (no trailing slash) in .gitignore; update it through project setup before continuing`
+            : `workflow artifacts require ${PROJECT_LOCAL_IGNORE} in .gitignore; add it through project setup before continuing`,
+    )
+}
+
+function isSymbolicLink(file: string): boolean {
+    try {
+        return fs.lstatSync(file).isSymbolicLink()
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+        throw error
     }
 }
 

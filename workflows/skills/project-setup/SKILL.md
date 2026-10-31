@@ -275,10 +275,10 @@ GitHub provisioning has its own preview and hash approval and must finish first.
 - **`.project/integrations.json`**, exactly, or that it will be absent.
 - **`.project/policies.md`**, exactly, or that it will be absent.
 - **Fork-only intake**, when opted in: the rendered `.github/workflows/incoming-pr-project.yml` diff, the Project and repository, the secret name, and the prerequisites. Otherwise the path stays unchanged.
-- **`.gitignore`:** an explicit no-op when `/.project/.local/` is already there, or this exact append:
+- **`.gitignore`:** follow the setup context's `projectLocalIgnore`: an explicit no-op for `present`, the exact line replacement for `replace`, or this exact append for `append`:
 
     ```gitignore
-    /.project/.local/
+    /.project/.local
     ```
 
   Mention the `/.project/config.local.json` exclusion only when that local file exists or is proposed, either as an existing no-op or as the exact append.
@@ -292,7 +292,7 @@ Require explicit approval. Workflow JSON must match the documented shapes, conta
 After approval:
 
 1. Create or edit only the approved files, preserving unrelated content. Create `.project/` when absent.
-2. Add `/.project/.local/` to `.gitignore` when it's missing.
+2. Apply the approved `.gitignore` change: replace the old `/.project/.local/` line, or append `/.project/.local` when neither is present.
 3. When permissions are selected, call `configure_permissions` once with the approved `target`, `allow`, and `ask` (use `[]` for an unselected list). Report actual additions, skips, and conflicts; a skipped rule grants nothing. A changed conflict needing a different grant needs approval again.
 4. Call `prepare_artifacts`. Stop on any Git-membership or exclusion conflict; never fix it by changing the index.
 5. With integrations, call `inspect_integrations` with `target: "current"`.

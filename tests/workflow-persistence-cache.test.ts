@@ -111,7 +111,7 @@ describe("artifact persistence revalidation", () => {
         const f = fixture()
         try {
             fs.writeFileSync(path.join(f.root, ".gitignore"), "")
-            assert.throws(() => assertArtifactPersistencePrepared(f.root), /\/\.project\/\.local\/ in \.gitignore/)
+            assert.throws(() => assertArtifactPersistencePrepared(f.root), /in \.gitignore/)
             fs.writeFileSync(path.join(f.root, ".gitignore"), "/.project/.local/\n")
             assertArtifactPersistencePrepared(f.root)
             fs.writeFileSync(

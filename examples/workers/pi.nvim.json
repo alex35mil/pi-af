@@ -1,0 +1,11 @@
+{
+    "process": {
+        "kind": "spawned",
+        "cmd": [
+            "mise", "exec", "--",
+            "nono", "run", "-s", "--profile", "pi-agent", "--allow-cwd",
+            "--allow", "/Users/me/Projects/app/.project/.local",
+            "--", "pi", "--mode", "rpc"
+        ]
+    }
+}

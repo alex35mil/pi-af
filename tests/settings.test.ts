@@ -6,6 +6,7 @@ import { describe, it } from "node:test"
 
 import { getMcpSettingsPaths, readMcpConfiguration } from "../extensions/__lib/mcp.ts"
 import { getExtensionSettingsPaths } from "../extensions/__lib/project.ts"
+import { requireRuntime, resolveRuntime } from "../extensions/__lib/runtime.ts"
 import { inspectPersistentPermissions } from "../extensions/permissions/index.ts"
 import registerWebSearch from "../extensions/web-search/index.ts"
 import { getWorkflowSettingsPaths } from "../workflows/extensions/__lib/project-config.ts"
@@ -24,6 +25,19 @@ function fixture() {
     fs.mkdirSync(nested, { recursive: true })
     return { ...h, nested, repositoryRoot: fs.realpathSync(h.root) }
 }
+
+describe("runtime selection", () => {
+    it("reads PI_AF_RUNTIME as host, sandbox, or invalid", () => {
+        assert.deepEqual(resolveRuntime({}), { runtime: "host" })
+        assert.deepEqual(resolveRuntime({ PI_AF_RUNTIME: "" }), { runtime: "host" })
+        assert.deepEqual(resolveRuntime({ PI_AF_RUNTIME: "sandbox" }), { runtime: "sandbox" })
+        const invalid = resolveRuntime({ PI_AF_RUNTIME: "sandboxed" })
+        assert.ok("error" in invalid)
+        assert.match(invalid.error.message, /PI_AF_RUNTIME "sandboxed"/)
+        assert.equal(requireRuntime({ PI_AF_RUNTIME: "sandbox" }), "sandbox")
+        assert.throws(() => requireRuntime({ PI_AF_RUNTIME: "Sandbox" }), /invalid PI_AF_RUNTIME/)
+    })
+})
 
 describe("shared settings contract", () => {
     it("uses literal global/project/local filenames from a nested repository directory", async () => {
@@ -123,10 +137,18 @@ describe("shared settings contract", () => {
             write(files.global, { defaultMode: "deny", allow: ["read"] })
             write(files.project, { allow: ["bash(npm test *)"], ask: ["write(plan.md)"] })
             write(files.local, { defaultMode: "ask", deny: ["bash(rm *)"] })
-            const inspected = inspectPersistentPermissions(h.nested)
+            const inspected = inspectPersistentPermissions(h.nested, "host")
+            const runtimeFile = (file: string) => file.replace(/(\.local)?\.json$/, ".host$1.json")
             assert.deepEqual(
                 inspected.sources.map(({ path: file }) => file),
-                [files.global, files.project, files.local],
+                [
+                    files.global,
+                    runtimeFile(files.global),
+                    files.project,
+                    runtimeFile(files.project),
+                    files.local,
+                    runtimeFile(files.local),
+                ],
             )
             assert.deepEqual(inspected.settings, {
                 defaultMode: "ask",
@@ -135,6 +157,46 @@ describe("shared settings contract", () => {
                 deny: ["bash(rm *)"],
                 keybindings: {},
             })
+        } finally {
+            await h.cleanup()
+        }
+    })
+
+    it("merges only the current runtime's files, each right after its tier's shared file", async () => {
+        const h = fixture()
+        try {
+            const files = getExtensionSettingsPaths("permissions", h.nested)
+            const runtimeFile = (file: string, runtime: string) =>
+                file.replace(/(\.local)?\.json$/, `.${runtime}$1.json`)
+            write(files.global, { defaultMode: "ask", allow: ["read"] })
+            write(runtimeFile(files.global, "sandbox"), { defaultMode: "allow", allow: ["bash(npm *)"] })
+            write(runtimeFile(files.global, "host"), { deny: ["bash(host-only *)"] })
+            write(files.project, { defaultMode: "deny" })
+            write(runtimeFile(files.local, "sandbox"), { ask: ["bash(git push *)"] })
+
+            const sandbox = inspectPersistentPermissions(h.nested, "sandbox")
+            assert.equal(sandbox.runtime, "sandbox")
+            assert.deepEqual(
+                sandbox.sources.map(({ tier, scope }) => `${tier}:${scope}`),
+                [
+                    "global:shared",
+                    "global:sandbox",
+                    "project:shared",
+                    "project:sandbox",
+                    "local:shared",
+                    "local:sandbox",
+                ],
+            )
+            // The project's shared file is more specific than the global runtime file, so its defaultMode wins.
+            assert.equal(sandbox.settings.defaultMode, "deny")
+            assert.deepEqual(sandbox.settings.allow, ["read", "bash(npm *)"])
+            assert.deepEqual(sandbox.settings.ask, ["bash(git push *)"])
+            assert.deepEqual(sandbox.settings.deny, [])
+
+            const host = inspectPersistentPermissions(h.nested, "host")
+            assert.deepEqual(host.settings.allow, ["read"])
+            assert.deepEqual(host.settings.deny, ["bash(host-only *)"])
+            assert.deepEqual(host.settings.ask, [])
         } finally {
             await h.cleanup()
         }

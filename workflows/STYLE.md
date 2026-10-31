@@ -8,7 +8,7 @@ This guide is for people and agents editing `workflows/skills/` and `workflows/r
 - **One owner per rule.** Before writing a rule, check whether [core](references/core.md) or another reference already owns it. If one does, link to it; don't restate it.
 - **Rare paths live in step files.** Procedures used only in one situation (shipping, recovery, migrations, design artifacts) go in their own file, linked conditionally.
 - **Schemas own input shapes.** Don't describe tool argument fields, fact shapes, or pagination details that `describeTool()` returns. Say which tool to call and what it decides.
-- **Shared state lives on the tracker or forge.** Anything another clone or developer needs must be recoverable from the tracker or forge. `.project/.local/` is a per-clone working copy; never make a check depend on it or on local branches when a shared fact exists.
+- **Shared state lives on the tracker or forge.** Anything another clone or developer needs must be recoverable from the tracker or forge. `.project/.local/` is a per-checkout working copy (a worker may link it to its source checkout); never make a check depend on it or on local branches when a shared fact exists.
 - **Maintainer notes go in extension READMEs.** Module ownership, file inventories, and naming policy don't belong in agent instructions.
 
 ## Sentences

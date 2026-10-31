@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import * as cp from "node:child_process"
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { createInitialSystemMessage, getCurrentTools, type Model, type TranscriptContext } from "@earendil-works/pi-ai"
@@ -334,100 +335,136 @@ describe("workflow model-facing contracts", () => {
         }
     })
 
-    it("keeps discovery, setup, real initialization and Phase transitions working through reload and resume", async () => {
-        const h = await nativeSessionFixture({
-            extensions: [...codingFactories, ...workflowFactories],
-            tools: ["+codemode"],
-            setup(root) {
-                git(root, "init", "-q", "-b", "main")
-                git(root, "config", "user.name", "Fixture")
-                git(root, "config", "user.email", "fixture@example.invalid")
-                fs.writeFileSync(path.join(root, "seed.txt"), "fixture")
-                git(root, "add", "seed.txt")
-                git(root, "commit", "-qm", "Initial fixture")
-                fs.writeFileSync(path.join(root, "agent/permissions.json"), JSON.stringify({ defaultMode: "allow" }))
-                fs.mkdirSync(path.join(root, ".project"))
-                fs.writeFileSync(
-                    path.join(root, ".project/config.json"),
-                    JSON.stringify({ branches: { format: "identifier-title" } }),
-                )
-                const repository = { owner: "fixture", repo: "app" }
-                const statuses = {
-                    backlog: "Backlog",
-                    todo: "Todo",
-                    inProgress: "In Progress",
-                    inReview: "In Review",
-                    done: "Done",
-                    canceled: "Canceled",
-                }
-                fs.writeFileSync(
-                    path.join(root, ".project/integrations.json"),
-                    JSON.stringify({
-                        tracker: {
-                            provider: "github",
-                            mcpServer: "github",
-                            repository,
-                            project: { owner: "fixture", ownerType: "user", number: 1 },
-                            fields: {
-                                status: { field: "Status", values: statuses },
-                                phase: {
-                                    field: "Phase",
-                                    values: { planning: "Planning", execution: "Execution", selfReview: "Self-Review" },
+    // "linked" is a sandboxed worker whose .project/.local is a symlink to its source checkout's directory;
+    // "unlinked" is a sandboxed worker without that link, where the workflow must refuse to start.
+    for (const layout of ["directory", "linked", "unlinked"] as const)
+        it(`keeps discovery, setup, real initialization and Phase transitions working through reload and resume (${layout} local root)`, async () => {
+            const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-contract-source-"))
+            const previousRuntime = process.env.PI_AF_RUNTIME
+            if (layout === "directory") delete process.env.PI_AF_RUNTIME
+            else process.env.PI_AF_RUNTIME = "sandbox"
+            const h = await nativeSessionFixture({
+                extensions: [...codingFactories, ...workflowFactories],
+                tools: ["+codemode"],
+                setup(root) {
+                    git(root, "init", "-q", "-b", "main")
+                    git(root, "config", "user.name", "Fixture")
+                    git(root, "config", "user.email", "fixture@example.invalid")
+                    fs.writeFileSync(path.join(root, "seed.txt"), "fixture")
+                    git(root, "add", "seed.txt")
+                    git(root, "commit", "-qm", "Initial fixture")
+                    fs.writeFileSync(
+                        path.join(root, "agent/permissions.json"),
+                        JSON.stringify({ defaultMode: "allow" }),
+                    )
+                    fs.mkdirSync(path.join(root, ".project"))
+                    fs.writeFileSync(
+                        path.join(root, ".project/config.json"),
+                        JSON.stringify({ branches: { format: "identifier-title" } }),
+                    )
+                    const repository = { owner: "fixture", repo: "app" }
+                    const statuses = {
+                        backlog: "Backlog",
+                        todo: "Todo",
+                        inProgress: "In Progress",
+                        inReview: "In Review",
+                        done: "Done",
+                        canceled: "Canceled",
+                    }
+                    fs.writeFileSync(
+                        path.join(root, ".project/integrations.json"),
+                        JSON.stringify({
+                            tracker: {
+                                provider: "github",
+                                mcpServer: "github",
+                                repository,
+                                project: { owner: "fixture", ownerType: "user", number: 1 },
+                                fields: {
+                                    status: { field: "Status", values: statuses },
+                                    phase: {
+                                        field: "Phase",
+                                        values: {
+                                            planning: "Planning",
+                                            execution: "Execution",
+                                            selfReview: "Self-Review",
+                                        },
+                                    },
+                                    priority: { scope: "project", field: "Priority", values: ["High"] },
                                 },
-                                priority: { scope: "project", field: "Priority", values: ["High"] },
                             },
-                        },
-                        forge: { provider: "github", mcpServer: "github", repository },
-                    }),
-                )
-                fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local/\n")
-            },
-        })
-        async function invoke(code: string) {
-            h.respond(call({ name: "codemode", arguments: { code } }), answer("Done."))
-            await h.prompt("Continue the workflow fixture.")
-        }
-        try {
-            await invoke(
-                'text(await tools.inspect_project_setup({})); text(await tools.prepare_artifacts({})); text(await describeTool("init_github_gig"));',
-            )
-            await invoke(
-                'text(await tools.preflight_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor"})); text(await tools.init_github_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor",object:{issueId:900,issueNumber:9,issueUrl:"https://github.com/fixture/app/issues/9"}}));',
-            )
-            const directory = ".project/.local/gigs/9-fixture-work"
-            assert.ok(fs.existsSync(path.join(h.root, directory, "metadata.json")))
-            const metadataPath = path.join(h.root, directory, "metadata.json")
-            const initial = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
-            git(h.root, "switch", initial.branch.name)
-            await invoke(`text(await tools.initialize_integration({entityDir:${JSON.stringify(directory)}}));`)
-            const native = JSON.stringify({
-                field: { name: "Phase", dataType: "SINGLE_SELECT", options: ["Planning", "Execution", "Self-Review"] },
+                            forge: { provider: "github", mcpServer: "github", repository },
+                        }),
+                    )
+                    fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local\n")
+                    if (layout === "linked") fs.symlinkSync(source, path.join(root, ".project/.local"))
+                },
             })
-            for (const phase of ["execution", "selfReview", "planning"]) {
+            async function invoke(code: string) {
+                h.respond(call({ name: "codemode", arguments: { code } }), answer("Done."))
+                await h.prompt("Continue the workflow fixture.")
+            }
+            try {
                 await invoke(
-                    `text(await tools.set_github_workflow_phase({entityDir:${JSON.stringify(directory)},phase:${JSON.stringify(phase)},lifecycle:"inProgress",native:${native}}));`,
+                    'text(await tools.inspect_project_setup({})); text(await tools.prepare_artifacts({})); text(await describeTool("init_github_gig"));',
                 )
-                assert.equal(JSON.parse(fs.readFileSync(metadataPath, "utf8")).phase, phase)
+                await invoke(
+                    'text(await tools.preflight_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor"})); text(await tools.init_github_gig({title:"Fixture work",slug:"fixture-work",request:"Do fixture work.",kind:"refactor",object:{issueId:900,issueNumber:9,issueUrl:"https://github.com/fixture/app/issues/9"}}));',
+                )
+                const directory = ".project/.local/gigs/9-fixture-work"
+                if (layout === "unlinked") {
+                    // prepare_artifacts created a real .project/.local, which a sandbox must not write entities into.
+                    assert.ok(fs.statSync(path.join(h.root, ".project/.local")).isDirectory())
+                    assert.equal(fs.existsSync(path.join(h.root, directory)), false)
+                    assert.match(JSON.stringify(h.requests.at(-1)), /isn't linked to its source checkout/)
+                    return
+                }
+                assert.ok(fs.existsSync(path.join(h.root, directory, "metadata.json")))
+                const metadataPath = path.join(h.root, directory, "metadata.json")
+                const initial = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
+                git(h.root, "switch", initial.branch.name)
+                await invoke(`text(await tools.initialize_integration({entityDir:${JSON.stringify(directory)}}));`)
+                const native = JSON.stringify({
+                    field: {
+                        name: "Phase",
+                        dataType: "SINGLE_SELECT",
+                        options: ["Planning", "Execution", "Self-Review"],
+                    },
+                })
+                for (const phase of ["execution", "selfReview", "planning"]) {
+                    await invoke(
+                        `text(await tools.set_github_workflow_phase({entityDir:${JSON.stringify(directory)},phase:${JSON.stringify(phase)},lifecycle:"inProgress",native:${native}}));`,
+                    )
+                    assert.equal(JSON.parse(fs.readFileSync(metadataPath, "utf8")).phase, phase)
+                }
+                await h.session.reload()
+                await invoke(
+                    `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("review_gig"));`,
+                )
+                await h.reopen()
+                await invoke(
+                    `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("prepare_gig_plan_presentation"));`,
+                )
+                const names = new Set(expectedWorkflowTools)
+                for (const request of h.requests) {
+                    const m = measurement(request)
+                    assert.ok(m.count <= 10)
+                    assert.ok(m.tokens <= 2500)
+                    assert.ok(m.tools.every((t) => !names.has(t.name as (typeof expectedWorkflowTools)[number])))
+                }
+                assert.deepEqual(JSON.parse(fs.readFileSync(metadataPath, "utf8")).tracker, initial.tracker)
+                assert.equal(fs.existsSync(path.join(h.root, directory, "status.md")), false)
+                if (layout === "linked") {
+                    assert.ok(fs.existsSync(path.join(source, "gigs/9-fixture-work/metadata.json")))
+                    assert.equal(
+                        git(h.root, "status", "--porcelain", "--untracked-files=all", "--", ".project/.local"),
+                        "",
+                    )
+                }
+            } finally {
+                await h.cleanup()
+                fs.rmSync(source, { recursive: true, force: true })
+                if (previousRuntime === undefined) delete process.env.PI_AF_RUNTIME
+                else process.env.PI_AF_RUNTIME = previousRuntime
             }
-            await h.session.reload()
-            await invoke(
-                `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("review_gig"));`,
-            )
-            await h.reopen()
-            await invoke(
-                `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("prepare_gig_plan_presentation"));`,
-            )
-            const names = new Set(expectedWorkflowTools)
-            for (const request of h.requests) {
-                const m = measurement(request)
-                assert.ok(m.count <= 10)
-                assert.ok(m.tokens <= 2500)
-                assert.ok(m.tools.every((t) => !names.has(t.name as (typeof expectedWorkflowTools)[number])))
-            }
-            assert.deepEqual(JSON.parse(fs.readFileSync(metadataPath, "utf8")).tracker, initial.tracker)
-            assert.equal(fs.existsSync(path.join(h.root, directory, "status.md")), false)
-        } finally {
-            await h.cleanup()
-        }
-    })
+        })
 })

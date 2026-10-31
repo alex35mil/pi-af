@@ -278,13 +278,13 @@ describe("project setup permissions", () => {
             f.write("global", { defaultMode: "deny", allow: [hint], ask: [gate] })
             f.write("project", { defaultMode: "ask", allow: [writeRule] })
             f.write("local", { defaultMode: "allow", deny: [writeRule] })
-            const snapshot = inspectPersistentPermissions(f.root)
+            const snapshot = inspectPersistentPermissions(f.root, "host")
             assert.equal(snapshot.settings.defaultMode, "allow")
             assert.deepEqual(snapshot.settings.allow, [hint, writeRule])
             assert.deepEqual(snapshot.settings.deny, [writeRule])
             assert.deepEqual(
-                snapshot.sources.map((source) => source.tier),
-                ["global", "project", "local"],
+                snapshot.sources.map((source) => `${source.tier}:${source.scope}`),
+                ["global:shared", "global:host", "project:shared", "project:host", "local:shared", "local:host"],
             )
         } finally {
             f.cleanup()

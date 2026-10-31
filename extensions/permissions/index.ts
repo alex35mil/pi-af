@@ -1,10 +1,12 @@
 /**
  * Permissions Extension
  *
- * Controls tool execution via settings files:
+ * Controls tool execution via settings files, each tier followed by its runtime file:
  *   ~/<agent-dir>/permissions.json             (global)
  *   <repo-root>/.agents/permissions.json       (project, committed)
  *   <repo-root>/.agents/permissions.local.json (project, gitignored)
+ * Runtime files insert the runtime before `.json` / `.local.json`, e.g. `permissions.sandbox.json`.
+ * PI_AF_RUNTIME selects the runtime: unset = host, `sandbox` = sandboxed worker; other values are invalid.
  *
  * Schema:
  * {
@@ -45,6 +47,7 @@ import { parseFrontmatter, type ExtensionAPI, type ExtensionContext } from "@ear
 
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog, type McpToolMetadata, validateMcpName } from "../__lib/mcp.js"
 import * as project from "../__lib/project.js"
+import { requireRuntime, type Runtime } from "../__lib/runtime.js"
 import { analyzeBash, type BashAnalyzer } from "./bash.js"
 import { registerPermissionFiles } from "./files.js"
 import { registerReviewCodemode } from "./review.js"
@@ -78,7 +81,14 @@ interface ParsedMcpRule {
     selector: McpSelector
 }
 
-type SettingsResult = { settings: PermissionSettings } | { error: Error }
+interface ResolvedPermissions {
+    settings: PermissionSettings
+    runtime: Runtime
+    // Files that exist and were merged, in merge order.
+    files: { tier: PermissionTier; scope: PermissionScope; path: string }[]
+}
+
+type SettingsResult = ResolvedPermissions | { error: Error }
 
 interface SkillCommandInfo {
     name: string
@@ -114,7 +124,7 @@ export default function (pi: ExtensionAPI) {
         mcpCatalog = data instanceof Map ? new Map(data as McpToolCatalog) : new Map()
     })
 
-    const initSettings = tryLoadPermissionSettings(() => validatePermissionSettings(loadSettings(process.cwd())))
+    const initSettings = tryLoadPermissionSettings(() => loadSettings(process.cwd()))
     const keybindings = "settings" in initSettings ? (initSettings.settings.keybindings ?? {}) : {}
     let displayedSettingsError: string | undefined
 
@@ -190,6 +200,8 @@ export default function (pi: ExtensionAPI) {
             const overrides = Object.fromEntries(SessionModeOverrides)
             const output = JSON.stringify(
                 {
+                    runtime: result.runtime,
+                    files: result.files,
                     settings: result.settings,
                     derivedSkillAllowRules: derivedSkillAllowState.rules,
                     skillRuleSources: derivedSkillAllowState.sources,
@@ -316,10 +328,35 @@ function mergePermissions(
     }
 }
 
+export type PermissionTier = "global" | "project" | "local"
+
+// A tier's shared file applies everywhere; its runtime file applies only in that runtime.
+export type PermissionScope = "shared" | Runtime
+
 export interface PermissionSource {
-    tier: "global" | "project" | "local"
+    tier: PermissionTier
+    scope: PermissionScope
     path: string
     settings: PermissionSettings
+}
+
+// `permissions.json` -> `permissions.sandbox.json`; `permissions.local.json` -> `permissions.sandbox.local.json`.
+function runtimeSettingsPath(sharedPath: string, tier: PermissionTier, runtime: Runtime): string {
+    const suffix = tier === "local" ? ".local.json" : ".json"
+    if (!sharedPath.endsWith(suffix)) throw new Error(`unexpected permission settings path ${sharedPath}`)
+    return `${sharedPath.slice(0, -suffix.length)}.${runtime}${suffix}`
+}
+
+/**
+ * Every permission file for the runtime, in merge order: each tier's shared file, then its runtime file.
+ * The more specific location wins for single values; rule lists from all files are combined.
+ */
+export function permissionSourcePaths(cwd: string, runtime: Runtime) {
+    const paths = project.getExtensionSettingsPaths(EXTENSION, cwd)
+    return (["global", "project", "local"] as const).flatMap((tier) => [
+        { tier, scope: "shared" as PermissionScope, path: paths[tier] },
+        { tier, scope: runtime as PermissionScope, path: runtimeSettingsPath(paths[tier], tier, runtime) },
+    ])
 }
 
 export function readPermissionSettings(file: string): PermissionSettings {
@@ -336,14 +373,13 @@ export function readPermissionSettings(file: string): PermissionSettings {
     return validatePermissionSettings(value as PermissionSettings)
 }
 
-export function inspectPersistentPermissions(cwd: string) {
-    const paths = project.getExtensionSettingsPaths(EXTENSION, cwd)
-    const sources = (["global", "project", "local"] as const).map((tier) => ({
-        tier,
-        path: paths[tier],
-        settings: readPermissionSettings(paths[tier]),
+export function inspectPersistentPermissions(cwd: string, runtime: Runtime = requireRuntime()) {
+    const sources: PermissionSource[] = permissionSourcePaths(cwd, runtime).map((source) => ({
+        ...source,
+        settings: readPermissionSettings(source.path),
     }))
     return {
+        runtime,
         sources,
         settings: sources.reduce<PermissionSettings>(
             (settings, source) => mergePermissions(settings, source.settings),
@@ -352,8 +388,15 @@ export function inspectPersistentPermissions(cwd: string) {
     }
 }
 
-function loadSettings(cwd: string) {
-    return inspectPersistentPermissions(cwd).settings
+function loadSettings(cwd: string): ResolvedPermissions {
+    const { runtime, sources, settings } = inspectPersistentPermissions(cwd)
+    return {
+        runtime,
+        settings: validatePermissionSettings(settings),
+        files: sources
+            .filter((source) => fs.existsSync(source.path))
+            .map(({ tier, scope, path: file }) => ({ tier, scope, path: file })),
+    }
 }
 
 // These checks describe persistent policy, never temporary session or skill grants.
@@ -361,7 +404,13 @@ export function inspectMcpAllowRules(rules: string[], sources: readonly Permissi
     validatePermissionSettings({ allow: rules })
     const configured = sources.flatMap((source) =>
         (["allow", "ask", "deny"] as const).flatMap((mode) =>
-            (source.settings[mode] ?? []).map((rule) => ({ tier: source.tier, path: source.path, mode, rule })),
+            (source.settings[mode] ?? []).map((rule) => ({
+                tier: source.tier,
+                scope: source.scope,
+                path: source.path,
+                mode,
+                rule,
+            })),
         ),
     )
     const settings = sources.reduce<PermissionSettings>(
@@ -444,9 +493,9 @@ function mcpRulesMayOverlap(left: ParsedMcpRule, right: ParsedMcpRule, catalog: 
     return left.selector.value === "*" || right.selector.value === "*" || left.selector.value === right.selector.value
 }
 
-function tryLoadPermissionSettings(load: () => PermissionSettings): SettingsResult {
+function tryLoadPermissionSettings(load: () => ResolvedPermissions): SettingsResult {
     try {
-        return { settings: load() }
+        return load()
     } catch (error) {
         return { error: error instanceof Error ? error : new Error(String(error)) }
     }
@@ -455,8 +504,9 @@ function tryLoadPermissionSettings(load: () => PermissionSettings): SettingsResu
 function loadResolvedPermissionSettings(pi: ExtensionAPI, cwd: string): SettingsResult {
     return tryLoadPermissionSettings(() => {
         const derivedSkillAllowState = getDerivedSkillAllowState(pi)
-        const settings = mergeSkillAllowRules(loadSettings(cwd), derivedSkillAllowState.rules)
-        return validatePermissionSettings(settings)
+        const resolved = loadSettings(cwd)
+        const settings = mergeSkillAllowRules(resolved.settings, derivedSkillAllowState.rules)
+        return { ...resolved, settings: validatePermissionSettings(settings) }
     })
 }
 
