@@ -9,6 +9,7 @@ A request to ship authorizes the whole remaining sequence without another merge 
 commit approved work → push the stored branch → create or update the PR → merge → set Done → clean up the local branch.
 
 - Carry shipping intent through [submission](./submission.md) even when no PR exists yet.
+- A ship request covers the approved work and the head that shipping builds from it. Any head produced afterward, such as by resolving a conflict, needs new approval.
 - Complete every required verification, review, and merge-protection gate first.
 - Accepting the final completion artifact authorizes submission, not shipping. An ordinary resume or an externally changed tracker status is not a request to ship.
 - Shipping never authorizes merging an Epic, choosing a different target or merge method, or deleting remote or Epic branches.
@@ -27,6 +28,15 @@ Follow the [repository merge contract](../integrations/forge/merge.md).
 5. Call `cleanup_delivery_branch` once with the merged PR read as `evidence`.
 
 Never merge locally or merge an Epic.
+
+## Merge conflicts
+
+When GitHub rejects the merge because the PR conflicts with its target, stop shipping.
+
+1. Fetch the target and report what conflicts. Don't change the branch.
+2. When the resolution changes accepted behavior or wording, use [material replanning](../planning.md#material-replanning). Otherwise, the user still decides how to resolve it.
+3. Resolving creates a new head. Apply it as a [revision on an open PR](./submission.md#revisions-on-an-open-pr). Rebasing or pushing the branch needs explicit user approval, shown with the resolved diff.
+4. After the approved push, merging the new head needs a new request to ship.
 
 ## What cleanup does
 
