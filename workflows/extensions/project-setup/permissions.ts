@@ -35,7 +35,7 @@ export function inspectProjectPermissions(cwd: string, input: unknown, catalog: 
     const parsed = Value.Parse(PermissionInspectionSchema, input)
     const { sources } = inspectPersistentPermissions(cwd)
     return {
-        scope: "Persistent global, project, and local settings only; excludes session overrides and skill-derived allows.",
+        scope: "Persistent global, project, and local settings, shared and current-runtime files; excludes session overrides and skill-derived allows.",
         rules: inspectMcpAllowRules(parsed.rules, sources, catalog),
     }
 }
@@ -46,7 +46,8 @@ export function configureProjectPermissions(cwd: string, input: unknown, catalog
     validatePermissionSettings({ allow: parsed.allow, ask: parsed.ask })
     const root = resolveRootDir(cwd)
     const { sources } = inspectPersistentPermissions(root)
-    const target = sources.find((source) => source.tier === parsed.target)!
+    // Setup writes only the tier's shared file; runtime files are maintained by hand.
+    const target = sources.find((source) => source.tier === parsed.target && source.scope === "shared")!
     const settingsPath = target.path
     const existing = target.settings
     const added = { allow: [] as string[], ask: parsed.ask.filter((rule) => !(existing.ask ?? []).includes(rule)) }

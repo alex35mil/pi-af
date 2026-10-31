@@ -108,7 +108,7 @@ Present one score for the exact PR, base, and head identity, using the context's
 
 ## Local evidence and independent review
 
-All evidence stays outside Git under the returned `.project/.local/pull-requests/<number>/` directory. The `/.project/.local/` ignore rule covers it; no extra ignore rule is needed. Full base and fork-head identities stay in metadata.
+All evidence stays outside Git under the returned `.project/.local/pull-requests/<number>/` directory. The `/.project/.local` ignore rule covers it; no extra ignore rule is needed. Evidence paths never traverse a symlink, except a worker's linked `.project/.local` itself. Full base and fork-head identities stay in metadata.
 
 ### The dossier
 

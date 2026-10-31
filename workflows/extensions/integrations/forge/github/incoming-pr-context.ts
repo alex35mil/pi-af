@@ -11,7 +11,7 @@ import {
 } from "../../../../../extensions/__lib/mcp.js"
 import * as project from "../../../../../extensions/__lib/project.js"
 import { PROJECT_LOCAL_ROOT } from "../../../__lib/domain.js"
-import { assertArtifactPersistencePrepared } from "../../../__lib/project-config.js"
+import { assertArtifactPersistencePrepared, assertSandboxArtifactsLinked } from "../../../__lib/project-config.js"
 import { loadIntegrationConfig, type GitHubForge } from "../../config.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 
@@ -69,6 +69,7 @@ function normalizeRepository(repository: Repository): Repository {
 export function incomingPullRequestContext(cwd: string, reference: string, tools: McpToolCatalog) {
     const root = project.resolveRootDir(cwd)
     assertArtifactPersistencePrepared(root)
+    assertSandboxArtifactsLinked(root)
     const { forge, tracker } = loadIntegrationConfig(root)
     const selected = parseIncomingReference(reference, forge.repository)
     const board =
@@ -236,21 +237,36 @@ export function incomingRevisionDirectory(revision: IncomingRevision): string {
 }
 
 // Evidence and responses must stay in this PR's ignored local area, including through symlinks.
+// The one allowed link is a worker's `.project/.local` pointing at its source checkout's directory.
 export function resolveIncomingLocalPath(root: string, selected: IncomingPullRequest, raw: string): string {
     const local = path.resolve(root, incomingLocalDirectory(selected))
     const resolved = path.resolve(root, raw.replace(/^@/, ""))
     if (resolved !== local && !resolved.startsWith(local + path.sep))
         throw new Error("PR evidence path must be inside the selected PR's private directory")
+    const linkedLocalRoot = path.join(root, PROJECT_LOCAL_ROOT)
     let current = root
     for (const part of path.relative(root, resolved).split(path.sep)) {
         current = path.join(current, part)
+        let link: boolean
         try {
-            if (fs.lstatSync(current).isSymbolicLink()) throw new Error("PR evidence paths must not traverse symlinks")
+            link = fs.lstatSync(current).isSymbolicLink()
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") break
+            throw error
         }
+        if (!link) continue
+        if (current === linkedLocalRoot && isDirectory(current)) continue
+        throw new Error("PR evidence paths must not traverse symlinks")
     }
     return resolved
+}
+
+function isDirectory(file: string): boolean {
+    try {
+        return fs.statSync(file).isDirectory()
+    } catch {
+        return false
+    }
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {

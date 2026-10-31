@@ -11,7 +11,12 @@ import { getExtensionSettingsPaths } from "../../../extensions/__lib/project.js"
 import { EXTENSION as PERMISSIONS_EXTENSION } from "../../../extensions/permissions/index.js"
 import { EPIC_ROOT, GIG_ROOT } from "../__lib/domain.js"
 import * as Git from "../__lib/git.js"
-import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../__lib/project-config.js"
+import {
+    getWorkflowSettingsPaths,
+    LEGACY_PROJECT_LOCAL_IGNORE,
+    prepareArtifactPersistence,
+    PROJECT_LOCAL_IGNORE,
+} from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
 import { inspectLinearWorkspace, LinearWorkspaceInspectionToolSchema } from "../integrations/tracker/linear.js"
 import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-project.js"
@@ -226,6 +231,7 @@ export function inspectProjectSetup(cwd: string, projectTrusted: boolean) {
         localExclude: snapshotAbsoluteFile(root, excludePath),
         mcp: inspectProjectMcp(cwd, projectTrusted),
         boundEntityTrackers: inspectBoundEntityTrackers(root),
+        projectLocalIgnore: inspectProjectLocalIgnore(root),
         projectPathsInGit: splitLines(Git.run(root, ["ls-files", "--cached", "--", ".project"])),
         stagedProjectPaths: splitLines(Git.run(root, ["diff", "--cached", "--name-only", "--", ".project"])),
     }
@@ -293,6 +299,17 @@ function snapshotAbsoluteFile(root: string, absolute: string) {
 
 function fileContent(file: string): { exists: false } | { exists: true; content: string } {
     return fs.existsSync(file) ? { exists: true, content: fs.readFileSync(file, "utf-8") } : { exists: false }
+}
+
+// What setup must do to .gitignore: nothing, replace the directory-only legacy line, or append the rule.
+function inspectProjectLocalIgnore(root: string) {
+    const file = path.join(root, ".gitignore")
+    const lines = fs.existsSync(file) ? fs.readFileSync(file, "utf-8").split(/\r?\n/) : []
+    if (lines.includes(PROJECT_LOCAL_IGNORE)) return { state: "present" as const, rule: PROJECT_LOCAL_IGNORE }
+    if (lines.includes(LEGACY_PROJECT_LOCAL_IGNORE)) {
+        return { state: "replace" as const, from: LEGACY_PROJECT_LOCAL_IGNORE, rule: PROJECT_LOCAL_IGNORE }
+    }
+    return { state: "append" as const, rule: PROJECT_LOCAL_IGNORE }
 }
 
 function splitLines(value: string): string[] {

@@ -22,7 +22,7 @@ import { fixtureToolName } from "./mcp-catalog-fixture.ts"
 const noOverrides = new Map<string, Mode>()
 
 function source(settings: PermissionSettings, tier: PermissionSource["tier"] = "global"): PermissionSource {
-    return { tier, path: `/${tier}/permissions.json`, settings }
+    return { tier, scope: "shared", path: `/${tier}/permissions.json`, settings }
 }
 
 function catalog(...tools: McpToolMetadata[]): McpToolCatalog {
@@ -545,6 +545,40 @@ describe("MCP permission lifecycle", () => {
                 })
                 assert.equal(context.widgets.has("permissions:invalid-settings"), false)
             } finally {
+                project.cleanup()
+            }
+        })
+    })
+
+    it("blocks tools under an invalid runtime and recovers when it is fixed", async () => {
+        await suppressErrors(async () => {
+            const project = createProjectSettings(JSON.stringify({ defaultMode: "allow" }))
+            const previous = process.env.PI_AF_RUNTIME
+            try {
+                const harness = createPermissionHarness()
+                const context = createContext(project.cwd)
+                process.env.PI_AF_RUNTIME = "sandboxed"
+
+                const blocked = (await harness.handler("tool_call")(
+                    { toolName: "read", toolCallId: "call-1", input: { path: "README.md" } },
+                    context.ctx,
+                )) as { block: boolean; reason: string }
+                assert.equal(blocked.block, true)
+                assert.match(blocked.reason, /PI_AF_RUNTIME/)
+                assert.ok(context.widgets.has("permissions:invalid-settings"))
+
+                process.env.PI_AF_RUNTIME = "sandbox"
+                assert.equal(
+                    await harness.handler("tool_call")(
+                        { toolName: "read", toolCallId: "call-2", input: { path: "README.md" } },
+                        context.ctx,
+                    ),
+                    undefined,
+                )
+                assert.equal(context.widgets.has("permissions:invalid-settings"), false)
+            } finally {
+                if (previous === undefined) delete process.env.PI_AF_RUNTIME
+                else process.env.PI_AF_RUNTIME = previous
                 project.cleanup()
             }
         })

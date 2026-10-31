@@ -37,7 +37,11 @@ import { type EpicTask, readEpicRouting, readEpicTasks } from "../__lib/epic-tas
 import type { ResourceIds } from "../integrations/resource-ids.js"
 import { resourceIdsFromTrackerObject } from "./resource-ids.js"
 import * as Git from "../__lib/git.js"
-import { assertArtifactPersistencePrepared, type ProjectConfig } from "../__lib/project-config.js"
+import {
+    assertArtifactPersistencePrepared,
+    assertSandboxArtifactsLinked,
+    type ProjectConfig,
+} from "../__lib/project-config.js"
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "../integrations/policy.js"
 import { loadIntegrationConfig } from "../integrations/config.js"
 import {
@@ -142,6 +146,7 @@ function prepare(input: PreflightInput | EntityInitialization, options: Initiali
     const root = project.resolveRootDir(options.cwd)
     assertGitRepository(root)
     const projectConfig = assertArtifactPersistencePrepared(root)
+    assertSandboxArtifactsLinked(root)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(root))
     const slug = slugify(input.slug)
     const parent = input.entity === "task" ? readParentEpic(root, input) : undefined

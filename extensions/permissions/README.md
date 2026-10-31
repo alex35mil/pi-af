@@ -4,13 +4,23 @@ Controls tool execution with configurable allow/deny/ask rules. Prompts the user
 
 ## Configuration
 
-Settings file: `permissions.json` (3-tier loading):
+Settings file: `permissions.json` (3 tiers, each with a runtime-specific file):
 
-| Tier    | Path                                         |
-| ------- | -------------------------------------------- |
-| Global  | `~/<agent-dir>/permissions.json`             |
-| Project | `<repo-root>/.agents/permissions.json`       |
-| Local   | `<repo-root>/.agents/permissions.local.json` |
+| Tier    | Shared                                       | Runtime                                                |
+| ------- | -------------------------------------------- | ------------------------------------------------------ |
+| Global  | `~/<agent-dir>/permissions.json`             | `~/<agent-dir>/permissions.<runtime>.json`             |
+| Project | `<repo-root>/.agents/permissions.json`       | `<repo-root>/.agents/permissions.<runtime>.json`       |
+| Local   | `<repo-root>/.agents/permissions.local.json` | `<repo-root>/.agents/permissions.<runtime>.local.json` |
+
+### Runtime
+
+`PI_AF_RUNTIME` says where Pi runs: unset (or empty) means `host`, `sandbox` means a sandboxed worker such as a [nono worker](../../examples/workers/). Any other value is invalid: tools are blocked until it's fixed, like invalid settings.
+
+Only the current runtime's files load. They merge in this order, the more specific location winning: global, global runtime, project, project runtime, local, local runtime. `allow`, `ask`, and `deny` lists from every loaded file are combined, and deny or ask beats allow wherever it comes from. Only `defaultMode` and keybindings take the last value set.
+
+For example, a global `permissions.sandbox.json` with `"defaultMode": "allow"` relaxes confirmations in every worker, unless a project's `permissions.json` sets its own `defaultMode`. Keep `.agents/permissions.<runtime>.local.json` out of Git, like `.agents/permissions.local.json`. Project setup's `configure_permissions` writes only the shared project or local file; runtime files are edited by hand.
+
+`/permissions-settings` shows the runtime and the files that were loaded.
 
 ### Schema
 

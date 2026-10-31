@@ -149,7 +149,7 @@ Precedence is in [core approvals](./core.md#approvals).
 - `epic.md`, drafts, and review rounds appear only when their gates create them.
 - Each Task is a `### ` section in accepted `epic.md`. Task issue processing tags it with its issue's stable marker, `[#N]` or `[ENG-N]`; starting the Task adds its child directory ([Epic Tasks](./epic-tasks.md)).
 - Metadata holds the immutable branch identity. Routing lives in reviewed `epic.md` as `Task target:` and `Epic branch:` lines, published with the plan ([Epic routing](./epic.md#routing)).
-- Every Epic file here is a per-clone copy. A clone without it [restores](./epic.md#restore-an-epic) the Epic from the tracker.
+- Every Epic file here is a per-checkout copy, shared only when a worker links `.project/.local` to its source checkout. A checkout without it [restores](./epic.md#restore-an-epic) the Epic from the tracker.
 
 ### Task and Gig (Deliverables)
 
@@ -202,12 +202,13 @@ Each `reviews/<phase>-NNN/` directory holds:
 
 ## Persistence and authority
 
-The shared guard validates `.project/config.json` and persistence safety, reusing a successful check while the relevant local inputs are unchanged. `prepare_artifacts` forces a full check during setup or repair and adds only the permitted exclusions below. Neither changes the Git index.
+The shared guard validates `.project/config.json` and persistence safety, reusing a successful check while the relevant local inputs are unchanged. `prepare_artifacts` forces a full check during setup or repair, adds only the permitted exclusions below, and creates an empty `.project/.local` when it's missing. Neither changes the Git index.
 
 - **In Git:** only `.project/config.json`, `policies.md`, and non-secret `integrations.json`.
-- **Kept out by:** the `/.project/.local/` rule in `.gitignore`, which setup writes, and `/.project/config.local.json` in `.git/info/exclude`.
-- **Preparation stops when** the ignore rule is missing, or any path under `.project/.local/` or `.project/config.local.json` is in Git or staged.
-- Never stage, commit, push, or link a path under `.project/.local/`.
+- **Kept out by:** the `/.project/.local` rule in `.gitignore`, which setup writes, and `/.project/config.local.json` in `.git/info/exclude`. Without a trailing slash, the rule also covers a worker's `.project/.local` symlink to its source checkout. Setup replaces an older `/.project/.local/` line.
+- **Preparation stops when** the committed `.gitignore` doesn't ignore `.project/.local`, or any path under `.project/.local/` or `.project/config.local.json` is in Git or staged.
+- **In a sandboxed worker** (`PI_AF_RUNTIME=sandbox`), starting or resuming an entity, and recording incoming-PR evidence, stop unless `.project/.local` is a symlink to the source checkout's folder; otherwise the artifacts would be lost with the worker. Run setup in the source checkout and recreate the worker.
+- Never stage, commit, or push a path under `.project/.local/`, or link to one from published text.
 - Removing a path from Git needs separate user approval and is never automatic.
 
 **Authority:**

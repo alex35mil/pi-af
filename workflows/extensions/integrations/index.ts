@@ -19,7 +19,11 @@ import {
     phaseProjectionContract,
     planPhaseMutation,
 } from "./phase.js"
-import { assertArtifactPersistencePrepared, resolveWorkflowProject } from "../__lib/project-config.js"
+import {
+    assertArtifactPersistencePrepared,
+    assertSandboxArtifactsLinked,
+    resolveWorkflowProject,
+} from "../__lib/project-config.js"
 import * as Git from "../__lib/git.js"
 import {
     resolveWorkflowEnvironment,
@@ -403,6 +407,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     const forgeOnly = ["pullRequest", "shippingRead", "shippingMerge"].includes(operation)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(cwd))
     assertArtifactPersistencePrepared(cwd)
+    assertSandboxArtifactsLinked(cwd)
     const entity = entityDir ? readWorkflowEntity(cwd, entityDir) : undefined
     if (entity) assertEntityEnvironment(entity.status, environment)
     if ((operation === "shippingRead" || operation === "shippingMerge") && entity?.status.entity === "epic")

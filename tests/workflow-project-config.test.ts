@@ -16,8 +16,10 @@ import {
 } from "../workflows/extensions/project-setup/permissions.ts"
 import {
     assertArtifactPersistencePrepared,
+    assertSandboxArtifactsLinked,
     loadProjectConfig,
     LOCAL_PROJECT_CONFIG_EXCLUDE,
+    LEGACY_PROJECT_LOCAL_IGNORE,
     prepareArtifactPersistence,
     PROJECT_LOCAL_IGNORE,
     resolveWorkflowProject,
@@ -247,6 +249,24 @@ describe("workflow project configuration", () => {
             )
             assert.deepEqual(fs.readFileSync(path.join(root, ".git/config")), before)
             assert.equal(git(root, ["ls-files", "--stage"]), index)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("tells setup whether to append, replace, or keep the project-local ignore rule", () => {
+        const root = repository()
+        try {
+            const ignore = () => inspectProjectSetup(root, true).projectLocalIgnore
+            assert.deepEqual(ignore(), { state: "append", rule: PROJECT_LOCAL_IGNORE })
+            fs.writeFileSync(path.join(root, ".gitignore"), `node_modules/\n${LEGACY_PROJECT_LOCAL_IGNORE}\n`)
+            assert.deepEqual(ignore(), {
+                state: "replace",
+                from: LEGACY_PROJECT_LOCAL_IGNORE,
+                rule: PROJECT_LOCAL_IGNORE,
+            })
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            assert.deepEqual(ignore(), { state: "present", rule: PROJECT_LOCAL_IGNORE })
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
@@ -678,8 +698,8 @@ describe("workflow project configuration", () => {
         try {
             writeConfig(root, config())
             const indexBefore = git(root, ["ls-files", "--stage"])
-            assert.throws(() => prepareArtifactPersistence(root), /\/\.project\/\.local\/ in \.gitignore/)
-            assert.throws(() => assertArtifactPersistencePrepared(root), /\/\.project\/\.local\/ in \.gitignore/)
+            assert.throws(() => prepareArtifactPersistence(root), /\/\.project\/\.local in \.gitignore/)
+            assert.throws(() => assertArtifactPersistencePrepared(root), /\/\.project\/\.local in \.gitignore/)
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
 
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
@@ -688,6 +708,118 @@ describe("workflow project configuration", () => {
             assert.equal(git(root, ["ls-files", "--stage"]), indexBefore)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("accepts the committed ignore rule for a missing, real, or linked local root", () => {
+        type Shape = "missing" | "directory" | "symlink"
+        const cases: { rule: string; shape: Shape; ok: boolean }[] = [
+            { rule: LEGACY_PROJECT_LOCAL_IGNORE, shape: "missing", ok: true },
+            { rule: LEGACY_PROJECT_LOCAL_IGNORE, shape: "directory", ok: true },
+            { rule: LEGACY_PROJECT_LOCAL_IGNORE, shape: "symlink", ok: false },
+            { rule: PROJECT_LOCAL_IGNORE, shape: "missing", ok: true },
+            { rule: PROJECT_LOCAL_IGNORE, shape: "directory", ok: true },
+            { rule: PROJECT_LOCAL_IGNORE, shape: "symlink", ok: true },
+        ]
+        for (const { rule, shape, ok } of cases) {
+            const root = repository()
+            const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-local-source-"))
+            try {
+                writeConfig(root, config())
+                fs.writeFileSync(path.join(root, ".gitignore"), `${rule}\n`)
+                const local = path.join(root, ".project", ".local")
+                if (shape === "directory") fs.mkdirSync(local)
+                if (shape === "symlink") fs.symlinkSync(source, local)
+                if (ok) assert.equal(prepareArtifactPersistence(root).state, "ready", `${rule} ${shape}`)
+                else
+                    assert.throws(
+                        () => prepareArtifactPersistence(root),
+                        /symlink.*no trailing slash/,
+                        `${rule} ${shape}`,
+                    )
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true })
+                fs.rmSync(source, { recursive: true, force: true })
+            }
+        }
+    })
+
+    it("ignores local excludes when checking for the committed ignore rule", () => {
+        const root = repository()
+        try {
+            writeConfig(root, config())
+            fs.appendFileSync(path.join(root, ".git", "info", "exclude"), `${PROJECT_LOCAL_IGNORE}\n`)
+            assert.throws(() => prepareArtifactPersistence(root), /in \.gitignore/)
+            fs.writeFileSync(path.join(root, "global-ignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            git(root, ["config", "core.excludesFile", path.join(root, "global-ignore")])
+            assert.throws(() => prepareArtifactPersistence(root), /in \.gitignore/)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("revalidates when the local root changes from a directory to a symlink", () => {
+        const root = repository()
+        const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-local-source-"))
+        try {
+            writeConfig(root, config())
+            fs.writeFileSync(path.join(root, ".gitignore"), `${LEGACY_PROJECT_LOCAL_IGNORE}\n`)
+            const local = path.join(root, ".project", ".local")
+            fs.mkdirSync(local)
+            assertArtifactPersistencePrepared(root)
+            fs.rmSync(local, { recursive: true })
+            fs.symlinkSync(source, local)
+            assert.throws(() => assertArtifactPersistencePrepared(root), /symlink/)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+            fs.rmSync(source, { recursive: true, force: true })
+        }
+    })
+
+    it("creates a missing project-local folder once the ignore rule is in place", () => {
+        const root = repository()
+        try {
+            writeConfig(root, config())
+            const local = path.join(root, ".project", ".local")
+            assert.throws(() => prepareArtifactPersistence(root), /in \.gitignore/)
+            assert.equal(fs.existsSync(local), false)
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            prepareArtifactPersistence(root)
+            assert.ok(fs.statSync(local).isDirectory())
+            assert.equal(git(root, ["status", "--porcelain", "--untracked-files=all", "--", ".project/.local"]), "")
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("requires a linked project-local folder only in the sandbox runtime", () => {
+        const root = repository()
+        const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-local-source-"))
+        const previous = process.env.PI_AF_RUNTIME
+        try {
+            writeConfig(root, config())
+            fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
+            const local = path.join(root, ".project", ".local")
+
+            delete process.env.PI_AF_RUNTIME
+            assertSandboxArtifactsLinked(root)
+            fs.mkdirSync(local)
+            assertSandboxArtifactsLinked(root)
+
+            process.env.PI_AF_RUNTIME = "sandbox"
+            assert.throws(() => assertSandboxArtifactsLinked(root), /isn't linked to its source checkout/)
+            fs.rmSync(local, { recursive: true })
+            assert.throws(() => assertSandboxArtifactsLinked(root), /isn't linked to its source checkout/)
+            fs.symlinkSync(path.join(source, "missing"), local)
+            assert.throws(() => assertSandboxArtifactsLinked(root), /isn't linked to its source checkout/)
+            fs.rmSync(local)
+            fs.symlinkSync(source, local)
+            assertSandboxArtifactsLinked(root)
+        } finally {
+            if (previous === undefined) delete process.env.PI_AF_RUNTIME
+            else process.env.PI_AF_RUNTIME = previous
+            fs.rmSync(root, { recursive: true, force: true })
+            fs.rmSync(source, { recursive: true, force: true })
         }
     })
 
