@@ -98,6 +98,7 @@ Entity files sit directly in the entity directory.
   - Final review requires zero active entries.
   - A missing file, for example after a fresh checkout, counts as empty.
 - **`draft.md`:** the mutable candidate. It never substitutes for accepted `epic.md` or `plan.md`.
+- **`result-draft.md`** or **`report-draft.md`** (Task and Gig): the completion artifact's working draft. Final review reviews it; it never substitutes for accepted `result.md` or `report.md`.
 - **`scratch/`:** temporary research, probes, scripts, and data.
 - **`designs/`:** design sketches and iterations.
 - Initialization creates the entity directory, `brief.md`, `metadata.json`, `notes.md`, `reviews/`, and `scratch/`. Task and Gig also get `pending.md` and `designs/`. Later gates create the rest.
@@ -165,6 +166,7 @@ Precedence is in [core approvals](./core.md#approvals).
   notes.md
   pending.md
   draft.md
+  result-draft.md      # Or report-draft.md: the completion artifact's working draft.
   designs/
   scratch/
   reviews/<phase>-NNN/ # Review round files, below.
@@ -182,7 +184,7 @@ Each `reviews/<phase>-NNN/` directory holds:
 
 | File | Contents |
 | --- | --- |
-| `candidate.md` | Plan rounds only: the exact candidate reviewed. |
+| `candidate.md` | Plan and final rounds only: the exact draft reviewed. |
 | `review.md` | Rendered reviewer findings and signoff. |
 | `report.json` | Validated structured report used by the renderer. |
 | `response.md` | Rendered adjudication, written by `record_review_response`. |

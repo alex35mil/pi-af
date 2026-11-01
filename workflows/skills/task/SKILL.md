@@ -8,6 +8,7 @@ allowed-tools:
     - "init_linear_task"
     - "review_task"
     - "prepare_task_plan_presentation"
+    - "prepare_task_completion_presentation"
     - "review_epic"
     - "prepare_epic_plan_presentation"
     - "plan_epic_task_issues"

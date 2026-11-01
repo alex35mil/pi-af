@@ -227,8 +227,18 @@ describe("workflow guidance structure", () => {
         // inventory only rejects unknown names, so missing grants are checked here.
         const required: Record<string, string[]> = {
             epic: ["prepare_epic_plan_presentation", "prepare_tracker_publication", "render_provider_body"],
-            task: ["prepare_task_plan_presentation", "prepare_tracker_publication", "render_provider_body"],
-            gig: ["prepare_gig_plan_presentation", "prepare_tracker_publication", "render_provider_body"],
+            task: [
+                "prepare_task_plan_presentation",
+                "prepare_task_completion_presentation",
+                "prepare_tracker_publication",
+                "render_provider_body",
+            ],
+            gig: [
+                "prepare_gig_plan_presentation",
+                "prepare_gig_completion_presentation",
+                "prepare_tracker_publication",
+                "render_provider_body",
+            ],
             "project-setup": ["inspect_permissions", "inspect_project_setup"],
         }
         for (const [skill, tools] of Object.entries(required)) {
