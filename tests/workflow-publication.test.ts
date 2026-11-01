@@ -18,6 +18,7 @@ import {
     publicationToolDescription,
     publicationToolSchema,
     publicationWireArguments,
+    REVIEW_GUIDANCE,
     signPublication,
     type PublicationOperation,
     type PublicationProvider,
@@ -224,6 +225,8 @@ describe("workflow publication policy", () => {
             /automatically when the user supplies the complete message/,
         )
         assert.match(AUTHORSHIP_GUIDANCE, /no special opt-out wording/)
+        assert.ok(publicationToolDescription(tool, "Comment").includes(REVIEW_GUIDANCE))
+        assert.equal((schema.properties as any)[AUTHORSHIP_PARAMETER].description, AUTHORSHIP_GUIDANCE)
         const other = operation("other", "save_comment")
         assert.deepEqual(publicationBinding(other), { kind: "none" })
         assert.deepEqual(publicationToolSchema(other), other.inputSchema)

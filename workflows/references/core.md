@@ -31,5 +31,6 @@ Call providers only through the configured registered MCP tools, under normal pe
 ## Approvals
 
 - An approval covers exactly the operation or set of operations it names. Commit, push, PR creation, merge, branch deletion, and worktree operations each need approval unless an approved set already includes them.
+- Sending or editing a message to people, such as an issue, PR, review, or Linear comment, body, description, document, or status update, needs approval of its text and destination. When sending one, read [sending messages](./communication.md#sending-messages).
 - Discovering a tool, preparing arguments, or a passing review grants no approval.
 - Current explicit user instructions override `.project/policies.md`, which overrides these reusable workflow files.

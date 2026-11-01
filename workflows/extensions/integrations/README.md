@@ -45,6 +45,8 @@ Coverage includes GitHub issue/PR bodies, comments, replies, textual reviews and
 
 Content edits require complete text. Patch-only or template-only content writes stop locally with a request for complete text; needed reads remain explicit registered calls under normal permissions. Nonempty AI-assisted text requires current model identity. Signing adds no prompt, preview, approval lane, hidden provider call, retry, or permission bypass. Existing workflow lanes and permission settings alone govern confirmations.
 
+Mapped tools also carry `REVIEW_GUIDANCE` in their description, ahead of the authorship guidance: before a call that creates or changes message text, the agent shows the user the complete text and destination and waits for approval, except for explicit send-without-review, content from an already approved artifact or workflow step (including its code-rendered body), or an unchanged user-supplied message. This is agent guidance only; the publication code still adds no prompt and doesn't block unapproved sends. The `__pi_authorship` schema description carries only the authorship guidance. The shared rule lives in [sending messages](../../references/communication.md#sending-messages).
+
 ### Publication boundaries
 
 Publication policy belongs to `publication.ts`; the reusable Pi wrapper and runtime identity reader live in `publication-tool.ts`; MCP attachment lives in `publication-mcp.ts`. These modules prepare attribution, not the generic transport or agent-written prose. Provider recognition is shared with workflow MCP setup inspection.
