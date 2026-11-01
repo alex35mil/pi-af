@@ -10,6 +10,8 @@ export const AUTHORSHIP_PARAMETER = "__pi_authorship"
 export type PublicationAuthorship = "ai-assisted" | "user-verbatim"
 export const AUTHORSHIP_GUIDANCE =
     "AI-assisted communication is signed automatically. Set __pi_authorship to user-verbatim automatically when the user supplies the complete message and you relay it unchanged; no special opt-out wording is needed. Preserve that text exactly. Use ai-assisted (the default) for content you compose, reword, expand, or generate around a user quotation. Never add a signature yourself. Content edits require complete text, not patches."
+export const REVIEW_GUIDANCE =
+    "User review before sending: when a call creates or changes message text (the body, description, or content), first show the user the complete text and the destination, then wait for explicit approval. Skip the text review only when the user explicitly approved sending without review, the content comes from an artifact or workflow step the user already approved (including bodies rendered by workflow code from it; anything beyond that rendering needs new approval), or the user supplied the complete message and you relay it unchanged; the destination must still be clear. A request to tell, reply to, or update someone asks for a draft, not a send. Metadata-only calls are unaffected."
 
 interface PublicationDefinition {
     field: "body" | "description" | "content"
@@ -78,7 +80,9 @@ export function publicationToolSchema(tool: PublicationOperation): Record<string
 }
 
 export function publicationToolDescription(tool: PublicationOperation, description: string): string {
-    return publicationBinding(tool).kind === "none" ? description : `${description}\n\n${AUTHORSHIP_GUIDANCE}`
+    return publicationBinding(tool).kind === "none"
+        ? description
+        : `${description}\n\n${REVIEW_GUIDANCE}\n\n${AUTHORSHIP_GUIDANCE}`
 }
 
 export interface PublicationIdentity {

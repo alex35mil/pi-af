@@ -36,6 +36,20 @@ The example must make the concern easy to judge. Don't rely on a theoretical sce
 - Record conclusions and useful evidence, not transcripts. Explain implementation only to the depth the reader needs.
 - Tighten wording while drafting and reviewing. Once the user accepts text, keep its meaning and content unless they approve a change that the text's workflow requires.
 
+## Sending messages
+
+A message is any text sent to people through a provider: issue and PR bodies and comments, review comments and replies, Linear descriptions, comments, and documents, and status updates. Metadata-only operations, such as labels, Status, Priority, Phase, and titles, are unaffected.
+
+1. Show the user the complete text as it will be sent, without the code-added signature, and the destination: provider, repository or workspace, the issue, PR, comment, or document, and whether it's new or an edit.
+2. Send only after explicit approval. A change to the text or destination needs approval again.
+3. Treat "tell X", "let X know", "reply to X", or "update X on …" as a request to draft, not to send.
+
+Skip the text review only when:
+
+- the user explicitly says to send without review, for that message or as a standing instruction for the session. Never infer it from urgency or earlier approvals.
+- the content comes from an artifact or workflow step the user already approved, such as an accepted plan, a plan diff with its announcement, a completion artifact for a PR body, an intake, or an incoming PR review package. Code-rendered bodies from it need no second approval; anything beyond that rendering does.
+- the user supplied the complete message and you relay it unchanged. The destination must still be clear; ask when it isn't.
+
 ## Offering a workflow report
 
 After meaningfully advancing the task, briefly offer to report a workflow problem when the evidence shows a reproducible workflow defect or recurring friction.
