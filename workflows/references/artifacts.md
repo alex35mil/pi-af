@@ -209,7 +209,7 @@ The shared guard validates `.project/config.json` and persistence safety, reusin
 - **In Git:** only `.project/config.json`, `policies.md`, and non-secret `integrations.json`.
 - **Kept out by:** the `/.project/.local` rule in `.gitignore`, which setup writes, and `/.project/config.local.json` in `.git/info/exclude`. Without a trailing slash, the rule also covers a worker's `.project/.local` symlink to its source checkout. Setup replaces an older `/.project/.local/` line.
 - **Preparation stops when** the committed `.gitignore` doesn't ignore `.project/.local`, or any path under `.project/.local/` or `.project/config.local.json` is in Git or staged.
-- **In a sandboxed worker** (`PI_AF_RUNTIME=sandbox`), starting or resuming an entity, and recording incoming-PR evidence, stop unless `.project/.local` is a symlink to the source checkout's folder; otherwise the artifacts would be lost with the worker. Run setup in the source checkout and recreate the worker.
+- **In a sandboxed worker** (`PI_AF_RUNTIME=sandbox`), starting or resuming an entity, and recording incoming-PR evidence, stop unless `.project/.local` is a symlink to the source checkout's folder; otherwise the artifacts would be lost with the worker. Run setup in the source checkout and recreate the worker. Project inspection and queue intake create no artifacts, so they aren't guarded, including against the workflow source project.
 - Never stage, commit, or push a path under `.project/.local/`, or link to one from published text.
 - Removing a path from Git needs separate user approval and is never automatic.
 
