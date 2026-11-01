@@ -11,7 +11,7 @@ commit approved work → push the stored branch → create or update the PR → 
 - Carry shipping intent through [submission](./submission.md) even when no PR exists yet.
 - A ship request covers the approved work and the head that shipping builds from it. Any head produced afterward, such as by resolving a conflict, needs new approval.
 - Complete every required verification, review, and merge-protection gate first.
-- Accepting the final completion artifact authorizes submission, not shipping. An ordinary resume or an externally changed tracker status is not a request to ship.
+- Accepting the final completion artifact authorizes neither submission nor shipping. An ordinary resume or an externally changed tracker status is not a request to ship.
 - Shipping never authorizes merging an Epic, choosing a different target or merge method, or deleting remote or Epic branches.
 
 ## Merge and clean up

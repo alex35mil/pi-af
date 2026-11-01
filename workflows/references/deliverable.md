@@ -71,7 +71,7 @@ Every plan, interim, and final review follows [review](./review.md).
 
 - The reviewer only critiques, the main agent makes changes, and the user owns product decisions and approval.
 - Reviews and correction loops run automatically once their prerequisites are met. Pause for unresolved user decisions and for the configured blocked-review checkpoint.
-- Accepting the reviewed plan and accepting the final result are separate approvals.
+- Accepting the reviewed plan, accepting the final result, and submitting are separate approvals.
 
 ## Implementation and verification
 
@@ -84,7 +84,7 @@ Every plan, interim, and final review follows [review](./review.md).
 7. Set Self-Review, then call `review_task` or `review_gig` with `phase: "final"`. It reviews a snapshot of the draft. Repeat review and correction until approved, keeping the draft current.
 8. When final review approves, call `prepare_task_completion_presentation` or `prepare_gig_completion_presentation`. Write the returned snapshot's exact content to the target, `result.md` or `report.md`, with the write tool. That diff is the user's review; stay in Self-Review while waiting.
 9. When user review leads to changes, return to Execution and keep editing the draft. When the user accepted the presentation with their own edits, first copy the target into the draft. Then go back to Self-Review, rerun final review, and present again.
-10. When the user accepts, read [submission](./deliverable/submission.md). When the user asks to ship, read [shipping](./deliverable/shipping.md).
+10. When the user accepts, say the work is ready to submit, and wait in Self-Review while they review the code. Requested changes follow step 9. When they ask to submit, read [submission](./deliverable/submission.md); when they ask to ship, read [shipping](./deliverable/shipping.md).
 
 **When the plan defines commit steps:**
 

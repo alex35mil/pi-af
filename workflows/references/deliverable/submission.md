@@ -1,10 +1,13 @@
 # Deliverable submission
 
-Read this when final subagent review has approved, its snapshot has been presented as `result.md` or `report.md`, and the user has reviewed the final work.
+Read this when the user has accepted the final `result.md` or `report.md` and explicitly asks to submit or ship the work.
 
-## What acceptance authorizes
+## What authorizes submission
 
-- Accepting the final `result.md` or `report.md` diff, the presentation write after final review, starts submission. Submission means committing the work, pushing the stored branch, and creating or recovering the PR for the stored head and target. Don't ask again about delivery, title, or body.
+Submission means committing the work, pushing the stored branch, and creating or recovering the PR for the stored head and target.
+
+- Accepting the `result.md` or `report.md` diff accepts only that artifact. It authorizes no commit, push, or PR, so the user can review the code first.
+- Submission starts only on an explicit request, such as "submit" or "commit and open the PR". Once requested, don't ask again about delivery, title, or body.
 - An explicit request to ship ("ship it", "ship this", "finish it") covers submission and then shipping. When you reach that point, read [shipping](./shipping.md).
 - When the user asks for commit-only, no push, or no PR, stop after committing.
 
@@ -39,8 +42,9 @@ Every Deliverable ships through a merged PR.
 ## Revisions on an open PR
 
 - Return to In Progress and Execution for corrections, then Self-Review for interim, final, and user review.
-- After an approved post-creation change to `result.md` or `report.md`, render and publish the complete PR body again.
-- Return to In Review after successful approved resubmission. Reuse native automation outcomes and skip writes that are already applied.
+- Accepting a re-presented `result.md` or `report.md` authorizes no commit, push, or PR body update. Resubmit only on an explicit request.
+- When resubmitting after a change to `result.md` or `report.md`, render and publish the complete PR body again.
+- Return to In Review after successful resubmission. Reuse native automation outcomes and skip writes that are already applied.
 
 ## Choosing an existing PR
 

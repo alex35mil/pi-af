@@ -92,7 +92,7 @@ Canceled:    terminal unsuccessful status for queued or initialized work
 
 **Submitting and shipping:**
 
-- After final review passes, you review the work and decide whether to submit it. Approving an earlier draft or file write isn't submission approval.
+- After final review passes, you review the work and decide whether to submit it. Accepting the result, an earlier draft, or a file write isn't submission approval; ask for submission explicitly.
 - A Deliverable may have several commits within its accepted scope. When the plan defines commit steps, each step is reviewed and then committed before the next.
 - Submitting and shipping are separate. Submission commits the work and opens or updates a PR; work with no repository changes gets one empty commit so the PR can open. An explicit request to ship merges, marks the work Done, and cleans up the local branch.
 
