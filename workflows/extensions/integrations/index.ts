@@ -400,6 +400,29 @@ function buildWorkflowIntegrationContext(ctx: ExtensionContext, input: WorkflowC
     }
 }
 
+/**
+ * Whether an operation starts, resumes, or addresses an entity whose artifacts a sandboxed
+ * worker must keep in its source checkout. Project inspection and queue intake create no
+ * entity or artifacts, so the sandbox link guard doesn't apply, including when they target
+ * the workflow source project, whose `.project/.local` is a real directory.
+ */
+function persistsEntityArtifacts(operation: WorkflowContextInput["operation"]): boolean {
+    switch (operation) {
+        case "inspect":
+        case "queueIntake":
+            return false
+        case "adopt":
+        case "initialize":
+        case "resume":
+        case "artifactProjection":
+        case "pullRequest":
+        case "shippingRead":
+        case "shippingMerge":
+        case "trackerMutation":
+            return true
+    }
+}
+
 function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput, tools: McpToolCatalog) {
     const operation = input.operation
     const entityDir = "entityDir" in input ? input.entityDir : undefined
@@ -407,7 +430,7 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     const forgeOnly = ["pullRequest", "shippingRead", "shippingMerge"].includes(operation)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(cwd))
     assertArtifactPersistencePrepared(cwd)
-    assertSandboxArtifactsLinked(cwd)
+    if (persistsEntityArtifacts(operation)) assertSandboxArtifactsLinked(cwd)
     const entity = entityDir ? readWorkflowEntity(cwd, entityDir) : undefined
     if (entity) assertEntityEnvironment(entity.status, environment)
     if ((operation === "shippingRead" || operation === "shippingMerge") && entity?.status.entity === "epic")

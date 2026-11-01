@@ -341,6 +341,45 @@ describe("workflow-source queue context", () => {
         assert.deepEqual(fileSnapshot(f.root), before)
     })
 
+    it("inspects and queues from a sandboxed worker without guarding artifact-free operations", (t) => {
+        const f = workflowFixture(t)
+        const previous = process.env.PI_AF_RUNTIME
+        t.after(() => {
+            if (previous === undefined) delete process.env.PI_AF_RUNTIME
+            else process.env.PI_AF_RUNTIME = previous
+        })
+        // The source checkout owns a real .project/.local; the worker links to it.
+        prepareWorkflowProject(f.source)
+        prepareArtifactPersistence(f.source)
+        prepareWorkflowProject(f.consumer)
+        fs.writeFileSync(path.join(f.consumer, ".gitignore"), "/.project/.local\n")
+        fs.symlinkSync(path.join(f.source, ".project/.local"), path.join(f.consumer, ".project/.local"))
+        prepareArtifactPersistence(f.consumer)
+        process.env.PI_AF_RUNTIME = "sandbox"
+
+        const before = fileSnapshot(f.source)
+        for (const input of [
+            { operation: "inspect" as const, target: "workflow" as const },
+            { ...queueSelection, target: "workflow" as const },
+        ]) {
+            const context = buildIntegrationContext(f.ctx, input, mcpTools)
+            assert.equal(context.projectRoot, f.source)
+            assert.equal(context.roles.tracker?.provider, "github")
+        }
+        assert.deepEqual(fileSnapshot(f.source), before)
+
+        // An unlinked worker still inspects and queues, but can't address an entity.
+        fs.rmSync(path.join(f.consumer, ".project/.local"))
+        fs.mkdirSync(path.join(f.consumer, ".project/.local"))
+        for (const input of [{ operation: "inspect" as const, target: "current" as const }, queueSelection])
+            assert.equal(buildIntegrationContext(f.ctx, input, mcpTools).state, "enabled")
+        for (const input of [
+            { operation: "adopt" as const, entity: "gig" as const },
+            { operation: "resume" as const, entityDir: ".project/.local/gigs/1-work" },
+        ])
+            assert.throws(() => buildIntegrationContext(f.ctx, input, mcpTools), /isn't linked to its source checkout/)
+    })
+
     it("names source config errors without falling back or preparing artifacts", (t) => {
         const f = workflowFixture(t)
         prepareWorkflowProject(f.source)
