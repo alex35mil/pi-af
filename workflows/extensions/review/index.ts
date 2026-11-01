@@ -19,6 +19,8 @@ import {
     resolveEntityPath,
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import type { PublicationState } from "../integrations/plan-publication.js"
+import { trackerPlanPublication } from "../integrations/records.js"
 import { executeReviewRound, recordRoundResponse } from "./round.js"
 import { reviewerEnvironment } from "./model.js"
 import { registerPullRequestReview } from "./pull-request.js"
@@ -262,7 +264,7 @@ export default function (pi: ExtensionAPI) {
             name: `prepare_${entity}_plan_presentation`,
             label: `prepare_${entity}_plan_presentation`,
             description:
-                "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff.",
+                "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff. When the plan is already published, or its first publication is pending, the result also asks for the plan-update announcement summary to show with the diff.",
             parameters,
 
             async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -278,6 +280,7 @@ export default function (pi: ExtensionAPI) {
                 }
                 assertReviewEntity(entityDir, input.entity)
                 assertReviewPhase(entityDir, "plan")
+                const publication = trackerPlanPublication(readEntityStatus(entityDir).tracker)
 
                 const snapshotPath = input.snapshot
                     ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
@@ -294,7 +297,7 @@ export default function (pi: ExtensionAPI) {
                     path.join(entityDir, input.entity === "epic" ? "epic.md" : "plan.md"),
                 )
 
-                return textResult(planPresentationInstructions(relSnapshot, relPlan))
+                return textResult(planPresentationInstructions(relSnapshot, relPlan, publication.state))
             },
         })
     }
@@ -554,14 +557,41 @@ export async function latestApprovedPlanSnapshot(entityDir: string): Promise<str
     return undefined
 }
 
-function planPresentationInstructions(relSnapshot: string, relPlan: string): string {
-    return [
+function planPresentationInstructions(
+    relSnapshot: string,
+    relPlan: string,
+    publication: PublicationState<unknown>["state"],
+): string {
+    const lines = [
         "Reviewed plan snapshot is ready for user diff review.",
         "Next: read Snapshot, then write its exact content to Target using the write tool. Do not print the plan in chat.",
         "",
         `Snapshot: ${relSnapshot}`,
         `Target: ${relPlan}`,
-    ].join("\n")
+    ]
+    const announcement = planUpdateAnnouncementInstructions(publication)
+    return (announcement.length ? [...lines, "", ...announcement] : lines).join("\n")
+}
+
+const ANNOUNCEMENT_SUMMARY_INSTRUCTION =
+    "Before writing Target, draft a short summary of what changed and why; say so when the change is only editorial. Show it in the same message as the diff: accepting the diff approves the plan update and its announcement together. Pass that summary as the announcement when publishing."
+
+// A published plan's update is announced on its tracker item, so the summary is approved with the diff.
+function planUpdateAnnouncementInstructions(publication: PublicationState<unknown>["state"]): string[] {
+    switch (publication) {
+        case "unpublished":
+            return []
+        case "published":
+            return [
+                "Plan update announcement: this plan is already published on its tracker item, so this update will be announced there.",
+                ANNOUNCEMENT_SUMMARY_INSTRUCTION,
+            ]
+        case "pending":
+            return [
+                "Plan update announcement: the plan's first publication is pending and may already have landed. If recovery confirms it, this update will be announced on the tracker item.",
+                ANNOUNCEMENT_SUMMARY_INSTRUCTION,
+            ]
+    }
 }
 
 function deliverableKindRequiresReport(kind: DeliverableKind): boolean {

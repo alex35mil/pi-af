@@ -7,8 +7,8 @@ import {
     type TrackerReference,
 } from "../__lib/domain.js"
 import { PlanAnnouncementSchema } from "./plan-announcement.js"
-import { assertPlanCommentUrl, PlanCommentSchema } from "./plan-comment.js"
-import { assertPlanDocumentUrl, PlanDocumentSchema } from "./plan-document.js"
+import { assertPlanCommentUrl, type PlanComment, PlanCommentSchema } from "./plan-comment.js"
+import { assertPlanDocumentUrl, type PlanDocument, PlanDocumentSchema } from "./plan-document.js"
 
 const LINEAR_PRIORITIES = {
     Urgent: 1,
@@ -175,6 +175,11 @@ export function trackerReference(record: TrackerRecord | TrackerObject): Tracker
         provider: "linear",
         identifier: "external" in record ? record.external.identifier : record.identifier,
     }
+}
+
+// The entity's plan-publication state on its tracker item: a GitHub comment or a Linear document.
+export function trackerPlanPublication(record: TrackerRecord): PlanComment | PlanDocument {
+    return record.provider === "github" ? record.planComment : record.planDocument
 }
 
 export function trackerRecordFromObject(

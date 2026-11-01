@@ -224,10 +224,78 @@ describe("workflow reviewer isolation", () => {
                         assert.match(JSON.stringify(result.content), /plan-001/)
                         assert.match(JSON.stringify(result.content), /Snapshot:.*candidate\.md/)
                         assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
+                        assert.doesNotMatch(JSON.stringify(result.content), /announce/)
                     } else await assert.rejects(invoke(), /plan review requires Phase Planning/)
                     assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
                     assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
                 }
+                // A published plan's update is announced, so the summary is asked for with the diff.
+                const token = "0b6c1f2e-3d4a-4b5c-8d6e-7f8091a2b3c4"
+                const planComments = {
+                    published: {
+                        state: "published",
+                        token,
+                        id: 5,
+                        url: "https://github.com/example/project/issues/7#issuecomment-5",
+                    },
+                    pending: { state: "pending", token },
+                }
+                for (const [state, planComment] of Object.entries(planComments)) {
+                    fs.writeFileSync(
+                        metadataPath,
+                        JSON.stringify({
+                            ...metadata,
+                            phase: "planning",
+                            tracker: { ...metadata.tracker, planComment },
+                        }),
+                    )
+                    const content = JSON.stringify(
+                        (await preparePresentation.execute("test", { entityDir }, undefined, undefined, ctx)).content,
+                    )
+                    assert.match(content, /Target:.*plan\.md/)
+                    assert.match(content, /Plan update announcement:/)
+                    assert.match(content, state === "pending" ? /first publication is pending/ : /already published/)
+                    assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
+                }
+                const linearEntityDir = ".project/.local/gigs/ENG-7-example"
+                const linearDirectory = path.join(repository, linearEntityDir)
+                fs.mkdirSync(linearDirectory)
+                fs.writeFileSync(path.join(linearDirectory, "draft.md"), plan)
+                fs.mkdirSync(path.dirname(reviewRoundDir(linearDirectory, "plan", 1)), { recursive: true })
+                fs.cpSync(reviewRoundDir(directory, "plan", 1), reviewRoundDir(linearDirectory, "plan", 1), {
+                    recursive: true,
+                })
+                fs.writeFileSync(
+                    path.join(linearDirectory, "metadata.json"),
+                    JSON.stringify({
+                        ...metadata,
+                        phase: "planning",
+                        branch: { ...metadata.branch, name: "eng-7-example" },
+                        tracker: {
+                            provider: "linear",
+                            resource: "gig-issue",
+                            external: { issueId: "issue-7", identifier: "ENG-7" },
+                            planDocument: {
+                                state: "published",
+                                token,
+                                id: "document-7",
+                                url: "https://linear.app/example/document/plan-7",
+                            },
+                        },
+                    }),
+                )
+                const linearContent = JSON.stringify(
+                    (
+                        await preparePresentation.execute(
+                            "test",
+                            { entityDir: linearEntityDir },
+                            undefined,
+                            undefined,
+                            ctx,
+                        )
+                    ).content,
+                )
+                assert.match(linearContent, /Plan update announcement:.*already published/)
                 fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase: "planning" }))
                 writeReviewRound(directory, "plan", 2, "blocked")
                 const blockedSnapshot = path.join(reviewRoundDir(directory, "plan", 2), "candidate.md")
