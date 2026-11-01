@@ -524,7 +524,7 @@ describe("workflow project configuration", () => {
                 url: "https://api.githubcopilot.com/mcp/",
                 headers: {
                     Authorization: "Bearer ${GITHUB_WORKFLOW_TOKEN}",
-                    "X-MCP-Toolsets": "issues,projects,pull_requests",
+                    "X-MCP-Toolsets": "context,issues,projects,pull_requests",
                 },
             })
 
@@ -539,6 +539,12 @@ describe("workflow project configuration", () => {
                             credentialEnv: "GITHUB_WORKFLOW_TOKEN",
                             roles: ["forge"],
                         },
+                        {
+                            provider: "github",
+                            name: "github-tracker",
+                            credentialEnv: "GITHUB_WORKFLOW_TOKEN",
+                            roles: ["tracker"],
+                        },
                     ],
                 },
                 { globalSettingsPath },
@@ -552,6 +558,7 @@ describe("workflow project configuration", () => {
                     "X-MCP-Toolsets": "pull_requests",
                 },
             })
+            assert.equal(project.mcpServers["github-tracker"].headers["X-MCP-Toolsets"], "context,issues,projects")
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

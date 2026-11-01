@@ -39,7 +39,7 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 - **Linear:** create only the selected Project or projectless Gig, with team, state, and Priority together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
-Apart from that optional Kind label, adding work assigns no native issue Type, Linear label or kind, native Phase, branch, artifact, or pending record.
+Apart from that optional Kind label, adding work assigns no native issue Type, Linear label or kind, native Phase, assignee, branch, artifact, or pending record. Starting the work assigns it.
 
 ## Prepare a workflow report
 

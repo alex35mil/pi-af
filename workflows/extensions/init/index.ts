@@ -126,6 +126,6 @@ export function formatInitializedEntity(initialized: Pick<InitializedEntity, "di
         `Initialized ${initialized.directory}.`,
         `Branch: ${branch.name}`,
         `Start/target: ${branch.start}`,
-        "Next: set up the board (Project membership, Status, Priority, Phase, Kind label when configured). Switch to the stored branch before implementation. Do not push it automatically.",
+        "Next: set up the board (Project membership, Status, Priority, Phase, Assignee, Kind label when configured). Switch to the stored branch before implementation. Do not push it automatically.",
     ].join("\n")
 }

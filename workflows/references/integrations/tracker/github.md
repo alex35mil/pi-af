@@ -34,16 +34,20 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 **Create new work** (after preflight):
 
-- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, and issue-scoped Priority. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing).
+- Call registered `get_me` once and use its `login` as the authenticated user for this operation.
+- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, issue-scoped Priority, and that login as the only assignee. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing), with no assignee.
 - No duplicate, label, or option preflight. Pass the returned numeric ID, number, and URL to `init_github_<entity>` as `object`. A minimal ID-and-URL success isn't automatically uncertain.
 
 **Board setup** (after initialization, for new and adopted work):
 
 1. Add the issue to the configured Project unless that's already proven, and record the returned IDs with `record_resource_ids`.
 2. Set In Progress, Priority, and Planning in the Phase field with Project writes addressed by the issue. Combine supported issue-field writes.
-3. Reuse labels and parent assignment proven at creation. Otherwise read current labels or hierarchy, keep unrelated labels, and call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed.
+3. For adopted work and a started Task, call registered `get_me` once, then run one `issue_write` update that sets its login as the only assignee. A new issue already has it.
+4. Reuse labels and parent assignment proven at creation. Otherwise read current labels or hierarchy, keep unrelated labels, and call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed.
 
-A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes. Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority.
+**When `get_me` is unavailable or fails:** start the work without an assignee. Report that assignment was skipped and that the GitHub registration needs the `context` toolset.
+
+A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes. Assignment is the exception: `issue_write` doesn't confirm assignees, and nothing reads them back. Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority.
 
 When a create result is uncertain, read [recovery](../recovery.md#uncertain-tracker-creation).
 
@@ -65,6 +69,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 - For Phase, use `prepare_github_phase_mutation` with fresh facts and apply only a changed field value.
 - Priority follows its configured Project or issue scope.
 - Lifecycle and Priority are provider authority: never cached and never replaced by a local fallback.
+- A user's request to assign an issue is an ordinary `issue_write` update; resume never reads or repairs assignees.
 
 ## Queue and plan publication
 

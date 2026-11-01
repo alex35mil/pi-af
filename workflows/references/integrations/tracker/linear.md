@@ -60,11 +60,12 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 - the approved title and Request;
 - native In Progress and Priority, the configured team, and the Task's parent Epic Project;
-- the Planning label from the configured Phase group.
+- the Planning label from the configured Phase group;
+- the authenticated user (`me`) as the issue assignee, or as the Project lead for an Epic.
 
 Pass the returned UUID, identifier, URL, and, with tracker naming, `gitBranchName` to `init_linear_<entity>` as `object`. For an Epic, pass the Project UUID, URL, and `createdAt`; when the create response lacks `createdAt`, read the Project.
 
-**Board setup** (after initialization): for adopted objects, move to In Progress and apply Planning, reading and keeping the full applied label set and replacing only managed Phase labels. Reuse state, Priority, and relationship proof from the create response; read only missing required facts.
+**Board setup** (after initialization): for adopted objects and a started Task, move to In Progress, set `me` as the issue assignee or Project lead, and apply Planning, reading and keeping the full applied label set and replacing only managed Phase labels. Reuse state, Priority, and relationship proof from the create response; read only missing required facts.
 
 Tracker records hold the object's identity, never branch copies or cached lifecycle or Priority.
 
@@ -86,6 +87,7 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
 - On resume, read fresh lifecycle, Priority, and the complete applied label set by UUID.
 - Use `prepare_tracker_mutation` for one lifecycle or Priority change, applied with `save_project` (Epic) or `save_issue` (Task, Gig).
 - Planning, Execution, and Self-Review all stay In Progress. In Review starts only after external submission; confirmed delivery is Done, and canceled work uses the configured Canceled status. Kind changes project nothing.
+- A user's request to assign an issue or set a Project lead is an ordinary `save_issue` or `save_project` update; resume never reads or repairs it.
 
 **Phase:**
 

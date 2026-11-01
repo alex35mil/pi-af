@@ -131,7 +131,8 @@ function registrationConfig(registration: Registration): Record<string, unknown>
 
     const roles = new Set(registration.roles)
     const toolsets = [
-        ...(roles.has("tracker") ? ["issues", "projects"] : []),
+        // `context` provides get_me, which resolves the login that starting work assigns.
+        ...(roles.has("tracker") ? ["context", "issues", "projects"] : []),
         ...(roles.has("forge") ? ["pull_requests"] : []),
     ]
     return {
