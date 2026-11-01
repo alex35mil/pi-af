@@ -40,8 +40,8 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 **Board setup** (after initialization, for new and adopted work):
 
-1. Add the issue to the configured Project unless that's already proven, and record the returned IDs with `record_resource_ids`.
-2. Set In Progress, Priority, and Planning in the Phase field with Project writes addressed by the issue. Combine supported issue-field writes.
+1. Add the issue to the configured Project unless that's already proven, and record the add evidence with `record_resource_ids`. Follow the [Project item ID rule](#project-item-ids).
+2. Set In Progress, Priority, and Planning in the Phase field with Project writes addressed by the issue, not by item ID. Combine supported issue-field writes.
 3. For adopted work and a started Task, call registered `get_me` once, then run one `issue_write` update that sets its login as the only assignee. A new issue already has it.
 4. Reuse labels and parent assignment proven at creation. Otherwise read current labels or hierarchy, keep unrelated labels, and call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed.
 
@@ -50,6 +50,12 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 A clear success proves only what that tool's contract returns; read required missing facts and reconcile partial outcomes. Assignment is the exception: `issue_write` doesn't confirm assignees, and nothing reads them back. Adopted Backlog or Todo work moves straight to In Progress, keeping the same issue and its Priority.
 
 When a create result is uncertain, read [recovery](../recovery.md#uncertain-tracker-creation).
+
+### Project item IDs
+
+- The `add_project_item` response's `id` is the GraphQL node ID (`PVTI_…`). Its numeric Project item ID is `item_id`. Never pass `id` as `item_id`.
+- Every other Project item response returns the numeric ID in `id`.
+- Right after an add, address Project writes by issue (`item_owner`, `item_repo`, `issue_number`); they need no item ID.
 
 ## Resume and mutations
 

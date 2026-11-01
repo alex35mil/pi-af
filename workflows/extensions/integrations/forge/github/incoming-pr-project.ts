@@ -146,23 +146,14 @@ function item(
     fieldId: number,
     tools: McpToolCatalog,
 ) {
+    // An add response carries only the node `id` and numeric `item_id`, never the PR or Status, so it is no item evidence.
     const mutation = isMcpTool(evidence.tool, board.mcpServer, "projects_write", tools)
-    const adding = mutation && evidence.arguments.method === "add_project_item"
-    const expected = adding
-        ? {
-              method: "add_project_item",
-              ...address(board),
-              item_owner: repository.split("/")[0],
-              item_repo: repository.split("/")[1],
-              item_type: "pull_request",
-              pull_request_number: number,
-          }
-        : { method: mutation ? "update_project_item" : "get_project_item", ...address(board) }
+    const expected = { method: mutation ? "update_project_item" : "get_project_item", ...address(board) }
     const response = call(evidence, board.mcpServer, mutation ? "projects_write" : "projects_get", expected, tools)
     const id = integer(response.id)
     const content = object(response.content, "Project content")
     if (
-        (!adding && evidence.arguments.item_id !== id) ||
+        evidence.arguments.item_id !== id ||
         response.content_type !== "PullRequest" ||
         text(content.repository).toLowerCase() !== repository ||
         content.number !== number
@@ -184,7 +175,7 @@ function item(
         throw new Error("Mutation success lacks required Status facts; obtain the exact item read")
     const value = fields[0]?.value
     const status = value == null ? null : text(object(value, "Status value").name)
-    if (mutation && !adding) {
+    if (mutation) {
         const changed = object(evidence.arguments.updated_field, "updated Project field")
         if (changed.name !== board.status.field || changed.value !== status)
             throw new Error("Mutation does not confirm this exact absolute Status outcome")
@@ -322,7 +313,8 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                 )
                 if (input.membership.state === "added") {
                     const added = mcpResponsePayload(input.membership.creation.response)
-                    if (integer(added.id) !== observed.id)
+                    // The add response's `id` is the GraphQL node ID; `item_id` is the numeric item ID.
+                    if (integer(added.item_id) !== observed.id)
                         throw new Error("Added Project item does not match current membership")
                 }
             }

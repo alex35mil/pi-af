@@ -35,7 +35,7 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 **Creating:**
 
 - An approved intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
-- **GitHub:** create an ordinary issue. Add it to the configured Project and set Status and Priority with named writes.
+- **GitHub:** create an ordinary issue. Add it to the configured Project, then set Status and Priority with named writes addressed by issue. When an item ID is needed, follow the [Project item ID rule](./integrations/tracker/github.md#project-item-ids).
 - **Linear:** create only the selected Project or projectless Gig, with team, state, and Priority together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
