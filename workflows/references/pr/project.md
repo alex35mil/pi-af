@@ -20,7 +20,7 @@ Track the selected PR itself on the configured GitHub Project.
      - `added`, with that item evidence and the successful native add `creation` evidence;
      - intake only: `reconciled`, after an uncertain add, with fresh item `evidence` and `attempt` holding that add's actual `tool` and `arguments`, without a success response.
 
-     A complete scoped add or Status-write success can supply the item evidence; otherwise read only the missing identity and Status facts.
+     A complete scoped Status-write success can supply the item evidence. An add response can't; it carries no PR identity or Status. Otherwise read only the missing identity and Status facts.
    - intake also takes the user's `choice`, `backlog` or `todo`.
 3. **What the planner does:**
    - It validates consistency and returns the required native MCP arguments, an unchanged state, or a blocker.
@@ -41,7 +41,7 @@ Track the selected PR itself on the configured GitHub Project.
 **Adding a missing item:**
 
 1. Run only the planned `add_project_item` with `item_type: pull_request` and `pull_request_number`.
-2. Reuse its clear-success ID, read the exact scoped item, and continue with `membership.state: added` plus the actual creation evidence.
+2. Its numeric `item_id` identifies the new item; its `id` is the GraphQL node ID ([Project item IDs](../integrations/tracker/github.md#project-item-ids)). Read the exact scoped item, and continue with `membership.state: added` plus the actual creation evidence.
 3. Complete the already-chosen initial Status without asking for another queue choice. Existing In Review or terminal progress is kept.
 
 The planner updates only the configured Status, never labels, Priority, Phase, linked issues, or unrelated items.

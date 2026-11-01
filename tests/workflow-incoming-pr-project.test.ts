@@ -103,7 +103,13 @@ function added(status = "Backlog") {
                 item_type: "pull_request",
                 pull_request_number: 12,
             },
-            response: { id: 99 },
+            // Real add_project_item shape: `id` is the GraphQL node ID; `item_id` is the numeric item ID.
+            response: {
+                id: "PVTI_example",
+                message: "Successfully added pull_request upstream/app#12 to project board-owner/2",
+                full_database_id: "99",
+                item_id: 99,
+            },
         },
     }
 }
@@ -207,6 +213,21 @@ describe("maintainer-controlled incoming PR Project", () => {
                 item_id: 99,
                 updated_field: { name: "Status", value: "Todo" },
             })
+            const otherItem = added()
+            otherItem.creation.response.item_id = 100
+            assert.deepEqual(f.plan({ action: "intake", choice: "todo", membership: otherItem }), {
+                state: "blocked",
+                reason: "Added Project item does not match current membership",
+            })
+            const addAsItem = added()
+            assert.equal(
+                f.plan({
+                    action: "intake",
+                    choice: "todo",
+                    membership: { ...addAsItem, evidence: addAsItem.creation },
+                }).state,
+                "blocked",
+            )
             assert.equal(fs.existsSync(path.join(f.root, ".project/.local/gigs")), false)
         } finally {
             f.close()
