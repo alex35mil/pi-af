@@ -7,6 +7,7 @@ allowed-tools:
     - "init_linear_gig"
     - "review_gig"
     - "prepare_gig_plan_presentation"
+    - "prepare_gig_completion_presentation"
     - "prepare_artifacts"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"

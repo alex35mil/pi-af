@@ -1,10 +1,10 @@
 # Deliverable submission
 
-Read this when final subagent review has approved, `result.md` or `report.md` is synchronized, and the user has reviewed the final work.
+Read this when final subagent review has approved, its snapshot has been presented as `result.md` or `report.md`, and the user has reviewed the final work.
 
 ## What acceptance authorizes
 
-- Accepting the final `result.md` or `report.md` diff starts submission. Submission means committing the work, pushing the stored branch, and creating or recovering the PR for the stored head and target. Don't ask again about delivery, title, or body.
+- Accepting the final `result.md` or `report.md` diff, the presentation write after final review, starts submission. Submission means committing the work, pushing the stored branch, and creating or recovering the PR for the stored head and target. Don't ask again about delivery, title, or body.
 - An explicit request to ship ("ship it", "ship this", "finish it") covers submission and then shipping. When you reach that point, read [shipping](./shipping.md).
 - When the user asks for commit-only, no push, or no PR, stop after committing.
 
@@ -13,7 +13,7 @@ Read this when final subagent review has approved, `result.md` or `report.md` is
 These rules apply to every Deliverable commit, including an accepted intermediate commit step before final review.
 
 - A Deliverable may have several commits. Each must stay within the accepted plan's scope.
-- When the plan defines commit steps, complete each step's cycle in order: implement, interim review, user review, then commit.
+- When the plan defines commit steps, complete each step's cycle in order: implement, interim review, the user's explicit acceptance in chat, then commit.
 - Use the available `commit` skill for selection and message rules. Without one, use plain Git and follow repository conventions.
 - Stage only the reviewed implementation. Workflow artifacts under `.project/.local/` are never committed. Preserve every unrelated staged change and every unrelated path, in Git or outside it. Never amend another commit unless the user asks.
 - **No repository changes:** when the branch has no commits ahead of its target at submission (typically research or audit), make one empty commit (`git commit --allow-empty`) with the commit skill's message rules, so GitHub can open the PR. The completion artifact is the PR body.

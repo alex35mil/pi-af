@@ -92,6 +92,8 @@ export const expectedWorkflowTools = [
     "prepare_epic_plan_presentation",
     "prepare_task_plan_presentation",
     "prepare_gig_plan_presentation",
+    "prepare_task_completion_presentation",
+    "prepare_gig_completion_presentation",
     "prepare_incoming_pr_checkout",
     "checkout_incoming_pr",
     "inspect_incoming_pr_checkout",

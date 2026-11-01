@@ -18,6 +18,7 @@ import {
     type ReviewReport,
 } from "../workflows/extensions/review/findings.ts"
 import registerReviewTools, {
+    assertReviewPreconditions,
     blockedReviewGate,
     buildDeliverableReviewPrompt,
     createReviewRoundDirectory,
@@ -25,8 +26,8 @@ import registerReviewTools, {
     formatBlockedReviewPause,
     latestApprovedPlanSnapshot,
     ReviewRequestSchema,
-    requireApprovedPlanSnapshot,
-    snapshotPlan,
+    requireApprovedSnapshot,
+    snapshotCandidate,
 } from "../workflows/extensions/review/index.ts"
 import registerEpic from "../workflows/extensions/epic/index.ts"
 import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
@@ -136,6 +137,8 @@ describe("workflow reviewer isolation", () => {
             "prepare_epic_plan_presentation",
             "prepare_task_plan_presentation",
             "prepare_gig_plan_presentation",
+            "prepare_task_completion_presentation",
+            "prepare_gig_completion_presentation",
         ])
     })
 
@@ -178,7 +181,8 @@ describe("workflow reviewer isolation", () => {
                 fs.writeFileSync(path.join(directory, "draft.md"), plan)
                 const acceptedPlan = "# Previously accepted plan\n"
                 fs.writeFileSync(path.join(directory, "plan.md"), acceptedPlan)
-                fs.writeFileSync(path.join(directory, "result.md"), "# Result\n\nDelivered work.\n")
+                const completion = "# Result\n\nDelivered work.\n"
+                fs.writeFileSync(path.join(directory, "result-draft.md"), completion)
                 const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
                 registerReviewTools({
                     events: createEventBus(),
@@ -187,6 +191,7 @@ describe("workflow reviewer isolation", () => {
                 } as never)
                 const review = tools.find((tool) => tool.name === "review_gig")!
                 const preparePresentation = tools.find((tool) => tool.name === "prepare_gig_plan_presentation")!
+                const prepareCompletion = tools.find((tool) => tool.name === "prepare_gig_completion_presentation")!
                 const ctx = { cwd: repository } as never
                 const stopBeforeRunner = new Error("Reached the reviewer subprocess boundary")
                 for (const category of ["plan", "interim", "final"] as const) {
@@ -313,9 +318,71 @@ describe("workflow reviewer isolation", () => {
                     ),
                     /Plan snapshot review is blocked/,
                 )
+
+                // The final round snapshotted the working draft and never wrote the gated root artifact.
+                const finalSnapshot = path.join(reviewRoundDir(directory, "final", 1), "candidate.md")
+                assert.equal(fs.readFileSync(finalSnapshot, "utf-8"), completion)
+                assert.equal(fs.existsSync(path.join(directory, "result.md")), false)
+                const presentCompletion = (snapshot?: string) =>
+                    prepareCompletion.execute(
+                        "test",
+                        snapshot ? { entityDir, snapshot } : { entityDir },
+                        undefined,
+                        undefined,
+                        ctx,
+                    )
+                fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase: "selfReview" }))
+                // A round still running, or never recorded, has no review document yet.
+                await assert.rejects(
+                    presentCompletion(),
+                    /Completion snapshot has no matching review document: final-001/,
+                )
+                writeReviewRound(directory, "final", 1, "approved")
+                for (const phase of ["planning", "execution", "selfReview"]) {
+                    fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase }))
+                    if (phase === "selfReview") {
+                        const text = JSON.stringify((await presentCompletion()).content)
+                        assert.match(text, /Reviewed completion snapshot is ready/)
+                        assert.match(text, /Snapshot:.*final-001\/candidate\.md/)
+                        assert.match(text, /Target:.*7-example\/result\.md/)
+                    } else await assert.rejects(presentCompletion(), /final review requires Phase Self-Review/)
+                }
+                // A research Gig presents into report.md.
+                fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, kind: "research", phase: "selfReview" }))
+                assert.match(JSON.stringify((await presentCompletion()).content), /Target:.*7-example\/report\.md/)
+                fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase: "selfReview" }))
+
+                // A newer blocked or failed final round stops presentation; no fallback to final-001.
+                for (const [signoff, exitCode, message] of [
+                    ["blocked", 0, /Completion snapshot review is blocked: final-002/],
+                    [null, 1, /Completion snapshot review is malformed: final-002/],
+                ] as const) {
+                    fs.rmSync(reviewRoundDir(directory, "final", 2), { recursive: true, force: true })
+                    writeReviewRound(directory, "final", 2, signoff, { exitCode })
+                    if (signoff === null)
+                        fs.writeFileSync(path.join(reviewRoundDir(directory, "final", 2), "review.md"), "# Failed\n")
+                    fs.writeFileSync(path.join(reviewRoundDir(directory, "final", 2), "candidate.md"), completion)
+                    await assert.rejects(presentCompletion(), message)
+                    await assert.rejects(
+                        presentCompletion("reviews/final-001/candidate.md"),
+                        /must be the newest final round's candidate\.md: final-002/,
+                    )
+                }
+                writeReviewRound(directory, "final", 2, "approved")
+                assert.match(
+                    JSON.stringify((await presentCompletion("reviews/final-002/candidate.md")).content),
+                    /final-002\/candidate\.md/,
+                )
+                await assert.rejects(
+                    presentCompletion("reviews/plan-001/candidate.md"),
+                    /must be the newest final round's candidate\.md/,
+                )
+                assert.equal(fs.existsSync(path.join(directory, "result.md")), false)
+
                 if (layout === "linked") {
                     // Everything was written through the link into the source checkout's directory.
                     assert.ok(fs.existsSync(path.join(source, "gigs/7-example/reviews/plan-001/candidate.md")))
+                    assert.ok(fs.existsSync(path.join(source, "gigs/7-example/reviews/final-001/candidate.md")))
                 }
             } finally {
                 fs.rmSync(repository, { recursive: true, force: true })
@@ -402,22 +469,24 @@ describe("workflow reviewer isolation", () => {
             }
             const gig = (kind: string, phase: string, files: Record<string, string>, slug: string) =>
                 entity(`.project/.local/gigs/7-${slug}`, { entity: "gig", kind, phase }, files)
-            const result = { "result.md": "# Result\n\nDone.\n" }
+            const result = { "result-draft.md": "# Result\n\nDone.\n" }
+            // An accepted root artifact alone no longer satisfies final review.
+            const acceptedOnly = { "result.md": "# Result\n\nDone.\n", "report.md": "# Report\n\nDone.\n" }
 
             // Each rejected precondition leaves no new round behind.
             for (const [tool, directory, phase, message] of [
                 ["review_gig", gig("feature", "planning", {}, "no-draft"), "plan", /Planning draft does not exist/],
                 [
                     "review_gig",
-                    gig("feature", "selfReview", {}, "no-result"),
+                    gig("feature", "selfReview", acceptedOnly, "no-result"),
                     "final",
-                    /requires a non-empty result\.md/,
+                    /requires a non-empty working draft result-draft\.md/,
                 ],
                 [
                     "review_gig",
-                    gig("research", "selfReview", result, "no-report"),
+                    gig("research", "selfReview", { ...result, ...acceptedOnly }, "no-report"),
                     "final",
-                    /requires a non-empty report\.md/,
+                    /requires a non-empty working draft report-draft\.md/,
                 ],
                 [
                     "review_gig",
@@ -451,8 +520,11 @@ describe("workflow reviewer isolation", () => {
 
             // Once fixed, the first real review takes round 001.
             const fixed = gig("feature", "selfReview", {}, "fixed")
-            assert.deepEqual(await run("review_gig", fixed, "final", /requires a non-empty result\.md/), [])
-            fs.writeFileSync(path.join(fixed, "result.md"), result["result.md"])
+            assert.deepEqual(
+                await run("review_gig", fixed, "final", /requires a non-empty working draft result-draft\.md/),
+                [],
+            )
+            fs.writeFileSync(path.join(fixed, "result-draft.md"), result["result-draft.md"])
             assert.deepEqual(await run("review_gig", fixed, "final", stopBeforeRunner), ["final-001"])
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
@@ -779,22 +851,27 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(localDir, "draft.md"), "current reviewed plan\n")
             fs.writeFileSync(path.join(reviewsDir, "plan-001", "candidate.md"), "orphan stale plan\n")
 
-            const snapshot = await snapshotPlan(deliverable, 1)
+            const snapshot = await snapshotCandidate(deliverable, "plan", 1)
             assert.equal(snapshot, path.join(reviewsDir, "plan-001", "candidate.md"))
             assert.equal(fs.readFileSync(snapshot, "utf-8"), "current reviewed plan\n")
 
             writeReviewRound(deliverable, "plan", 1, "approved")
-            await requireApprovedPlanSnapshot(deliverable, snapshot)
+            await requireApprovedSnapshot(deliverable, snapshot, "plan")
             assert.equal(await latestApprovedPlanSnapshot(deliverable), snapshot)
 
-            await assert.rejects(requireApprovedPlanSnapshot(deliverable, path.join(localDir, "draft.md")), /plan-NNN/)
+            await assert.rejects(
+                requireApprovedSnapshot(deliverable, path.join(localDir, "draft.md"), "plan"),
+                /plan-NNN/,
+            )
+            // A plan snapshot never satisfies a final presentation, nor the reverse.
+            await assert.rejects(requireApprovedSnapshot(deliverable, snapshot, "final"), /numbered final review round/)
 
             const blockedDir = path.join(reviewsDir, "plan-002")
             fs.mkdirSync(blockedDir)
             const blocked = path.join(blockedDir, "candidate.md")
             fs.writeFileSync(blocked, "blocked plan\n")
             writeReviewRound(deliverable, "plan", 2, "blocked")
-            await assert.rejects(requireApprovedPlanSnapshot(deliverable, blocked), /review is blocked/)
+            await assert.rejects(requireApprovedSnapshot(deliverable, blocked, "plan"), /review is blocked/)
 
             const malformedDir = path.join(reviewsDir, "plan-003")
             fs.mkdirSync(malformedDir)
@@ -802,13 +879,16 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(malformed, "malformed plan\n")
             fs.writeFileSync(path.join(malformedDir, "review.md"), renderReviewDocument(reviewReport("approved")))
             fs.writeFileSync(path.join(malformedDir, "outcome.json"), JSON.stringify({ exitCode: 0, signoff: null }))
-            await assert.rejects(requireApprovedPlanSnapshot(deliverable, malformed), /review is malformed/)
+            await assert.rejects(requireApprovedSnapshot(deliverable, malformed, "plan"), /review is malformed/)
 
             const missingReviewDir = path.join(reviewsDir, "plan-004")
             fs.mkdirSync(missingReviewDir)
             const missingReview = path.join(missingReviewDir, "candidate.md")
             fs.writeFileSync(missingReview, "unreviewed plan\n")
-            await assert.rejects(requireApprovedPlanSnapshot(deliverable, missingReview), /matching review document/)
+            await assert.rejects(
+                requireApprovedSnapshot(deliverable, missingReview, "plan"),
+                /matching review document/,
+            )
             assert.equal(await latestApprovedPlanSnapshot(deliverable), snapshot)
         } finally {
             fs.rmSync(deliverable, { recursive: true, force: true })
@@ -822,7 +902,7 @@ describe("workflow reviewer isolation", () => {
             fs.writeFileSync(path.join(epic, "draft.md"), "current Epic candidate\n")
             fs.writeFileSync(path.join(epic, "reviews", "plan-001", "candidate.md"), "orphan Epic candidate\n")
 
-            const snapshot = await snapshotPlan(epic, 1)
+            const snapshot = await snapshotCandidate(epic, "plan", 1)
             assert.equal(snapshot, path.join(epic, "reviews", "plan-001", "candidate.md"))
             assert.equal(fs.readFileSync(snapshot, "utf-8"), "current Epic candidate\n")
         } finally {
@@ -887,11 +967,9 @@ describe("workflow reviewer isolation", () => {
                     kind: "bugfix",
                 }),
             )
-            const deliverablePrompt = await buildDeliverableReviewPrompt(
-                { cwd: repository } as never,
-                gigDir,
-                "interim",
-            )
+            const deliverablePrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, {
+                phase: "interim",
+            })
             assert.ok(deliverablePrompt.includes(policies))
             for (const reviewPrompt of [prompt, deliverablePrompt]) {
                 assert.match(reviewPrompt, /user decisions override Project Policies/)
@@ -906,65 +984,102 @@ describe("workflow reviewer isolation", () => {
             assert.match(deliverablePrompt, /Return only one JSON object/)
             assert.doesNotMatch(deliverablePrompt, /## Findings/)
 
-            await assert.rejects(
-                buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"),
-                /bugfix final review requires a non-empty result\.md/,
+            // Final review requires the kind's working draft, not the gated root artifact.
+            fs.writeFileSync(path.join(gigDir, "result.md"), "# Result\n\nPreviously accepted.\n")
+            assert.throws(
+                () => assertReviewPreconditions(gigDir, "final"),
+                /bugfix final review requires a non-empty working draft result-draft\.md/,
             )
+            fs.rmSync(path.join(gigDir, "result.md"))
+            const draftPath = path.join(gigDir, "result-draft.md")
             fs.writeFileSync(
-                path.join(gigDir, "result.md"),
+                draftPath,
                 "# Result\n\n## Overview\n\n- Fixed the defect.\n\n## Verification\n\n- `test` — passed\n",
             )
             const pendingPath = path.join(gigDir, "pending.md")
             assert.equal(fs.existsSync(pendingPath), false)
-            const rerunFinalPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final")
-            assert.match(rerunFinalPrompt, /# result\.md/)
-            assert.match(rerunFinalPrompt, /Verify that the existing result\.md remains synchronized/)
+            assert.doesNotThrow(() => assertReviewPreconditions(gigDir, "final"))
+            // Interim review needs no draft.
+            fs.rmSync(draftPath)
+            assert.doesNotThrow(() => assertReviewPreconditions(gigDir, "interim"))
+            fs.writeFileSync(draftPath, "# Result\n\n## Overview\n\n- Fixed the defect.\n")
 
             fs.writeFileSync(pendingPath, "# Pending\n\n- [x] Resolved item\n")
-            await assert.doesNotReject(buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"))
+            assert.doesNotThrow(() => assertReviewPreconditions(gigDir, "final"))
             for (const entry of ["- [ ] Unresolved item", "1. [ ] Ordered unresolved item"]) {
                 fs.writeFileSync(pendingPath, `# Pending\n\n${entry}\n`)
-                await assert.rejects(
-                    buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"),
+                assert.throws(
+                    () => assertReviewPreconditions(gigDir, "final"),
                     /requires zero unchecked pending entries; unresolved entries: line 3/,
                 )
             }
             fs.writeFileSync(pendingPath, "# Pending\n")
-            await assert.doesNotReject(buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"))
-            fs.rmSync(path.join(gigDir, "result.md"))
+
+            // The final round reviews its snapshot of the draft; root artifacts are accepted context only.
+            const finalSnapshot = await snapshotCandidate(gigDir, "final", 1)
+            assert.equal(finalSnapshot, path.join(reviewRoundDir(gigDir, "final", 1), "candidate.md"))
+            assert.equal(fs.readFileSync(finalSnapshot, "utf-8"), fs.readFileSync(draftPath, "utf-8"))
+            fs.writeFileSync(draftPath, "# Result\n\nEdited after the snapshot.\n")
+            fs.writeFileSync(path.join(gigDir, "report.md"), "# Research report\n\nPrior research conclusion.\n")
+            const finalPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, {
+                phase: "final",
+                completionSnapshot: finalSnapshot,
+            })
+            assert.match(finalPrompt, /final-001\/candidate\.md \(completion artifact under review\)/)
+            assert.match(finalPrompt, /Fixed the defect/)
+            assert.doesNotMatch(finalPrompt, /Edited after the snapshot/)
+            assert.match(finalPrompt, /# report\.md \(previously accepted\)/)
+            assert.match(finalPrompt, /Prior research conclusion/)
+            fs.rmSync(path.join(gigDir, "report.md"))
+            fs.writeFileSync(finalSnapshot, " \n")
+            await assert.rejects(
+                buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, {
+                    phase: "final",
+                    completionSnapshot: finalSnapshot,
+                }),
+                /requires a non-empty completion snapshot/,
+            )
+            fs.rmSync(draftPath)
 
             const metadataPath = path.join(gigDir, "metadata.json")
-            fs.writeFileSync(
-                metadataPath,
-                fs.readFileSync(metadataPath, "utf-8").replace('"kind":"bugfix"', '"kind":"audit"'),
-            )
-            fs.writeFileSync(path.join(gigDir, "report.md"), "# Audit report\n\nEvidenced finding.\n")
-            const auditPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final")
-            assert.match(auditPrompt, /Audit focus: declared scope and criteria/)
-            assert.match(auditPrompt, /Evidenced finding/)
-
-            const reportPath = path.join(gigDir, "report.md")
+            const reportDraftPath = path.join(gigDir, "report-draft.md")
             for (const kind of ["audit", "research"] as const) {
                 const currentMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>
                 fs.writeFileSync(metadataPath, JSON.stringify({ ...currentMetadata, kind }))
-                fs.rmSync(reportPath, { force: true })
-                await assert.rejects(
-                    buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"),
-                    new RegExp(`${kind} final review requires a non-empty report\\.md`),
+                fs.rmSync(reportDraftPath, { force: true })
+                // An accepted root report.md alone never satisfies final review.
+                fs.writeFileSync(path.join(gigDir, "report.md"), "# Report\n\nAccepted.\n")
+                assert.throws(
+                    () => assertReviewPreconditions(gigDir, "final"),
+                    new RegExp(`${kind} final review requires a non-empty working draft report-draft\\.md`),
                 )
+                fs.rmSync(path.join(gigDir, "report.md"))
                 for (const content of ["", " \n\t"]) {
-                    fs.writeFileSync(reportPath, content)
-                    await assert.rejects(
-                        buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final"),
-                        new RegExp(`${kind} final review requires a non-empty report\\.md`),
+                    fs.writeFileSync(reportDraftPath, content)
+                    assert.throws(
+                        () => assertReviewPreconditions(gigDir, "final"),
+                        new RegExp(`${kind} final review requires a non-empty working draft report-draft\\.md`),
                     )
                 }
             }
 
-            fs.writeFileSync(reportPath, "# Research report\n\nSupported conclusion.\n")
-            const researchPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, "final")
+            fs.writeFileSync(reportDraftPath, "# Research report\n\nSupported conclusion.\n")
+            const researchSnapshot = await snapshotCandidate(gigDir, "final", 2)
+            const researchPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, {
+                phase: "final",
+                completionSnapshot: researchSnapshot,
+            })
             assert.match(researchPrompt, /Research focus: question and boundaries/)
             assert.match(researchPrompt, /Supported conclusion/)
+            fs.writeFileSync(
+                metadataPath,
+                JSON.stringify({ ...JSON.parse(fs.readFileSync(metadataPath, "utf-8")), kind: "audit" }),
+            )
+            const auditPrompt = await buildDeliverableReviewPrompt({ cwd: repository } as never, gigDir, {
+                phase: "final",
+                completionSnapshot: researchSnapshot,
+            })
+            assert.match(auditPrompt, /Audit focus: declared scope and criteria/)
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
         }

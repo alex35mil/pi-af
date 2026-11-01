@@ -43,9 +43,18 @@ import {
 const MAX_DIFF_BYTES = 180 * 1024
 const REVIEW_OUTCOME_FILE = "outcome.json"
 const REVIEW_REPORT_FILE = "report.json"
+const CANDIDATE_FILE = "candidate.md"
 
 type ReviewPhase = "plan" | "interim" | "final"
+/** Review categories whose rounds snapshot a candidate that a presentation tool can hand to the user. */
+type SnapshotPhase = "plan" | "final"
 type ReviewEntity = "epic" | "task" | "gig"
+
+/** What a Deliverable review round reviews, with the snapshot only the categories that take one carry. */
+export type DeliverableReviewRound =
+    | { phase: "plan"; planSnapshot: string }
+    | { phase: "interim"; subject?: string }
+    | { phase: "final"; completionSnapshot: string }
 
 const ReviewOutcomeSchema = Type.Object(
     {
@@ -138,6 +147,35 @@ export const PreparePlanPresentationSchema = Type.Union([
 ])
 type PreparePlanPresentationParams = Static<typeof PreparePlanPresentationSchema>
 
+const completionPresentationProperties = {
+    snapshot: Type.Optional(
+        Type.String({
+            description:
+                "Optional reviewed completion snapshot path; must be the newest final round's, e.g. reviews/final-002/candidate.md",
+        }),
+    ),
+}
+
+export const PrepareCompletionPresentationSchema = Type.Union([
+    Type.Object(
+        {
+            entity: Type.Literal("task"),
+            entityDir: Type.String({ description: "Task directory under an Epic's tasks/ directory" }),
+            ...completionPresentationProperties,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            entity: Type.Literal("gig"),
+            entityDir: Type.String({ description: `Gig directory under ${GIG_ROOT}/` }),
+            ...completionPresentationProperties,
+        },
+        { additionalProperties: false },
+    ),
+])
+type PrepareCompletionPresentationParams = Static<typeof PrepareCompletionPresentationSchema>
+
 interface ParentEpicContext {
     relDir: string
     content: string
@@ -178,33 +216,31 @@ export default function (pi: ExtensionAPI) {
 
                 const round = await nextReviewRound(entityDir, phase)
                 const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
-                const reviewedPlanPath = phase === "plan" ? await snapshotPlan(entityDir, round) : undefined
                 const requestPath = path.join(reviewRoundDir, "request.md")
 
-                const prompt =
-                    input.entity === "epic"
-                        ? await buildEpicReviewPrompt(
-                              ctx,
-                              entityDir,
-                              reviewedPlanPath!,
-                              await readPreviousReviewArtifacts(entityDir, phase),
-                              input.instructions,
-                          )
-                        : await buildDeliverableReviewPrompt(
-                              ctx,
-                              entityDir,
-                              phase,
-                              input.instructions,
-                              input.subject,
-                              reviewedPlanPath,
-                          )
+                let snapshotPath: string | undefined
+                let prompt: string
+                if (input.entity === "epic") {
+                    snapshotPath = await snapshotCandidate(entityDir, input.phase, round)
+                    prompt = await buildEpicReviewPrompt(
+                        ctx,
+                        entityDir,
+                        snapshotPath,
+                        await readPreviousReviewArtifacts(entityDir, phase),
+                        input.instructions,
+                    )
+                } else {
+                    const reviewRound = await snapshotDeliverableRound(entityDir, input, round)
+                    snapshotPath = deliverableRoundSnapshot(reviewRound)
+                    prompt = await buildDeliverableReviewPrompt(ctx, entityDir, reviewRound, input.instructions)
+                }
                 onUpdate?.(textResult(`Review agent started: ${path.relative(ctx.cwd, requestPath)}`))
 
                 const { report, artifactText } = await executeReviewRound({
                     environment: reviewerEnvironment(pi, ctx.modelRegistry),
                     cwd: ctx.cwd,
                     directory: reviewRoundDir,
-                    additionalFiles: reviewedPlanPath ? [reviewedPlanPath] : [],
+                    additionalFiles: snapshotPath ? [snapshotPath] : [],
                     prompt,
                     signal,
                     model: input.model,
@@ -283,10 +319,10 @@ export default function (pi: ExtensionAPI) {
                 const publication = trackerPlanPublication(readEntityStatus(entityDir).tracker)
 
                 const snapshotPath = input.snapshot
-                    ? resolvePlanSnapshotPath(ctx.cwd, entityDir, input.snapshot)
+                    ? resolveSnapshotPath(ctx.cwd, entityDir, input.snapshot)
                     : await latestApprovedPlanSnapshot(entityDir)
 
-                if (snapshotPath && input.snapshot) await requireApprovedPlanSnapshot(entityDir, snapshotPath)
+                if (snapshotPath && input.snapshot) await requireApprovedSnapshot(entityDir, snapshotPath, "plan")
                 if (!snapshotPath) {
                     return textResult("No approved plan review snapshot found.", true)
                 }
@@ -297,7 +333,52 @@ export default function (pi: ExtensionAPI) {
                     path.join(entityDir, input.entity === "epic" ? "epic.md" : "plan.md"),
                 )
 
-                return textResult(planPresentationInstructions(relSnapshot, relPlan, publication.state))
+                return textResult(
+                    presentationInstructions({ subject: "plan", publication: publication.state }, relSnapshot, relPlan),
+                )
+            },
+        })
+    }
+
+    const completionPresentations = [
+        ["task", PrepareCompletionPresentationSchema.anyOf[0]],
+        ["gig", PrepareCompletionPresentationSchema.anyOf[1]],
+    ] as const
+    for (const [entity, schema] of completionPresentations) {
+        const parameters = Type.Omit(schema, ["entity"])
+        tools.registerTool({
+            name: `prepare_${entity}_completion_presentation`,
+            label: `prepare_${entity}_completion_presentation`,
+            description:
+                "Validate a Task or Gig's newest final review round and select its approved completion snapshot. Return snapshot and target (result.md or report.md) paths for the write tool to present the user's review diff.",
+            parameters,
+
+            async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+                const input: PrepareCompletionPresentationParams = Value.Parse(PrepareCompletionPresentationSchema, {
+                    ...Value.Parse(parameters, params),
+                    entity,
+                })
+                assertArtifactPersistencePrepared(ctx.cwd)
+                const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
+
+                if (!fs.existsSync(entityDir)) {
+                    return textResult(`Entity directory does not exist: ${path.relative(ctx.cwd, entityDir)}`, true)
+                }
+                assertReviewEntity(entityDir, input.entity)
+                assertReviewPhase(entityDir, "final")
+
+                const snapshotPath = await newestApprovedFinalSnapshot(
+                    entityDir,
+                    input.snapshot ? resolveSnapshotPath(ctx.cwd, entityDir, input.snapshot) : undefined,
+                )
+                const target = path.join(entityDir, completionFiles(deliverableStatus(entityDir).kind).artifact)
+                return textResult(
+                    presentationInstructions(
+                        { subject: "completion" },
+                        path.relative(ctx.cwd, snapshotPath),
+                        path.relative(ctx.cwd, target),
+                    ),
+                )
             },
         })
     }
@@ -342,11 +423,11 @@ export function assertReviewPreconditions(directory: string, phase: ReviewPhase)
         throw new Error(
             `${entityLabel(status)} final review requires zero unchecked pending entries; unresolved entries: ${pendingEntries.map(({ line }) => `line ${line}`).join(", ")}`,
         )
-    const artifact = deliverableKindRequiresReport(status.kind) ? "report.md" : "result.md"
-    const content = fs.existsSync(path.join(directory, artifact))
-        ? fs.readFileSync(path.join(directory, artifact), "utf-8")
+    const { draft } = completionFiles(status.kind)
+    const content = fs.existsSync(path.join(directory, draft))
+        ? fs.readFileSync(path.join(directory, draft), "utf-8")
         : ""
-    if (!content.trim()) throw new Error(`${status.kind} final review requires a non-empty ${artifact}`)
+    if (!content.trim()) throw new Error(`${status.kind} final review requires a non-empty working draft ${draft}`)
 }
 
 function assertReviewEntity(directory: string, expected: ReviewEntity): void {
@@ -369,14 +450,27 @@ export async function createReviewRoundDirectory(
     return reviewRoundDir
 }
 
-export async function snapshotPlan(entityDir: string, round: number): Promise<string> {
+/**
+ * Copies the round's working draft into `reviews/<phase>-NNN/candidate.md`: `draft.md` for a plan round,
+ * the kind's completion draft for a final round. The reviewer and later presentation use only that copy.
+ */
+export async function snapshotCandidate(entityDir: string, phase: SnapshotPhase, round: number): Promise<string> {
     const padded = round.toString().padStart(3, "0")
-    const reviewRoundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, `plan-${padded}`)
+    const reviewRoundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, `${phase}-${padded}`)
     await fs.promises.mkdir(reviewRoundDir, { recursive: true })
-    const snapshotPath = path.join(reviewRoundDir, "candidate.md")
-    const draftPath = path.join(entityDir, LOCAL_DRAFT_FILE)
-    if (!fs.existsSync(draftPath)) {
-        throw new Error(`Planning draft does not exist: ${path.relative(entityDir, draftPath)}`)
+    const snapshotPath = path.join(reviewRoundDir, CANDIDATE_FILE)
+    let draftPath: string
+    switch (phase) {
+        case "plan":
+            draftPath = path.join(entityDir, LOCAL_DRAFT_FILE)
+            if (!fs.existsSync(draftPath)) throw new Error(`Planning draft does not exist: ${LOCAL_DRAFT_FILE}`)
+            break
+        case "final": {
+            const { draft } = completionFiles(deliverableStatus(entityDir).kind)
+            draftPath = path.join(entityDir, draft)
+            if (!fs.existsSync(draftPath)) throw new Error(`Completion working draft does not exist: ${draft}`)
+            break
+        }
     }
     const temporaryPath = `${snapshotPath}.${process.pid}.tmp`
     try {
@@ -504,44 +598,60 @@ export function formatBlockedReviewPause(gate: BlockedReviewGate): string {
     ].join("\n")
 }
 
-function resolvePlanSnapshotPath(cwd: string, entityDir: string, raw: string): string {
+function snapshotLabel(phase: SnapshotPhase): string {
+    switch (phase) {
+        case "plan":
+            return "Plan"
+        case "final":
+            return "Completion"
+    }
+}
+
+function resolveSnapshotPath(cwd: string, entityDir: string, raw: string): string {
     const resolved = path.resolve(entityDir, raw)
     const reviewsDir = path.resolve(entityDir, LOCAL_REVIEWS_DIR)
     if (!resolved.startsWith(reviewsDir + path.sep)) {
         throw new Error("snapshot must be inside the entity reviews directory")
     }
     if (!fs.existsSync(resolved)) {
-        throw new Error(`Plan snapshot does not exist: ${path.relative(cwd, resolved)}`)
+        throw new Error(`Snapshot does not exist: ${path.relative(cwd, resolved)}`)
     }
     return resolved
 }
 
-export async function requireApprovedPlanSnapshot(entityDir: string, snapshotPath: string): Promise<void> {
+/** Requires `reviews/<phase>-NNN/candidate.md` whose round finished with a valid approved signoff. */
+export async function requireApprovedSnapshot(
+    entityDir: string,
+    snapshotPath: string,
+    phase: SnapshotPhase,
+): Promise<void> {
+    const label = snapshotLabel(phase)
     const resolved = path.resolve(snapshotPath)
     const roundDir = path.dirname(resolved)
     const reviewsDir = path.resolve(entityDir, LOCAL_REVIEWS_DIR)
-    if (path.dirname(roundDir) !== reviewsDir || path.basename(resolved) !== "candidate.md") {
-        throw new Error("snapshot must be reviews/plan-NNN/candidate.md")
+    if (path.dirname(roundDir) !== reviewsDir || path.basename(resolved) !== CANDIDATE_FILE) {
+        throw new Error(`snapshot must be reviews/${phase}-NNN/${CANDIDATE_FILE}`)
     }
-    const match = /^plan-(\d{3})$/.exec(path.basename(roundDir))
-    if (!match) throw new Error("snapshot must belong to a numbered plan review round")
-    if (!fs.existsSync(resolved)) throw new Error(`Plan snapshot does not exist: ${path.basename(roundDir)}`)
+    const match = new RegExp(`^${phase}-(\\d{3})$`).exec(path.basename(roundDir))
+    if (!match) throw new Error(`snapshot must belong to a numbered ${phase} review round`)
+    if (!fs.existsSync(resolved)) throw new Error(`${label} snapshot does not exist: ${path.basename(roundDir)}`)
 
     const reviewPath = path.join(roundDir, "review.md")
     if (!fs.existsSync(reviewPath)) {
-        throw new Error(`Plan snapshot has no matching review document: ${path.basename(roundDir)}`)
+        throw new Error(`${label} snapshot has no matching review document: ${path.basename(roundDir)}`)
     }
     const outcomePath = path.join(roundDir, REVIEW_OUTCOME_FILE)
     if (!fs.existsSync(outcomePath)) {
-        throw new Error(`Plan snapshot has no matching review outcome: ${path.basename(roundDir)}`)
+        throw new Error(`${label} snapshot has no matching review outcome: ${path.basename(roundDir)}`)
     }
     const outcome = await readReviewOutcome(roundDir)
     const signoff = outcome.exitCode === 0 ? outcome.signoff : null
     if (signoff !== "approved") {
-        throw new Error(`Plan snapshot review is ${signoff ?? "malformed"}: ${path.basename(roundDir)}`)
+        throw new Error(`${label} snapshot review is ${signoff ?? "malformed"}: ${path.basename(roundDir)}`)
     }
 }
 
+/** The newest approved plan candidate; plan presentation may present it after later unapproved rounds. */
 export async function latestApprovedPlanSnapshot(entityDir: string): Promise<string | undefined> {
     for (const { directory: roundDir } of (await readReviewRounds(entityDir, "plan")).reverse()) {
         const reviewPath = path.join(roundDir, "review.md")
@@ -550,26 +660,52 @@ export async function latestApprovedPlanSnapshot(entityDir: string): Promise<str
         const outcome = await readReviewOutcome(roundDir)
         if (outcome.exitCode !== 0 || outcome.signoff !== "approved") continue
 
-        const snapshotPath = path.join(roundDir, "candidate.md")
+        const snapshotPath = path.join(roundDir, CANDIDATE_FILE)
         if (fs.existsSync(snapshotPath)) return snapshotPath
     }
 
     return undefined
 }
 
-function planPresentationInstructions(
-    relSnapshot: string,
-    relPlan: string,
-    publication: PublicationState<unknown>["state"],
-): string {
+/**
+ * The newest final round's candidate, only when that round itself approved: a newer blocked or failed
+ * round means the current work hasn't passed review, so an older approval is never presented.
+ * An explicit snapshot must be that same candidate.
+ */
+export async function newestApprovedFinalSnapshot(entityDir: string, explicit?: string): Promise<string> {
+    const newest = (await readReviewRounds(entityDir, "final")).at(-1)
+    if (!newest)
+        throw new Error("No final review round found; run final review before presenting the completion artifact")
+    const snapshotPath = path.join(newest.directory, CANDIDATE_FILE)
+    if (explicit && path.resolve(explicit) !== snapshotPath)
+        throw new Error(`snapshot must be the newest final round's ${CANDIDATE_FILE}: ${newest.entry}`)
+    await requireApprovedSnapshot(entityDir, snapshotPath, "final")
+    return snapshotPath
+}
+
+/** What a presentation hands to the user; only a plan carries publication state for its update announcement. */
+type Presentation = { subject: "plan"; publication: PublicationState<unknown>["state"] } | { subject: "completion" }
+
+function presentationInstructions(presentation: Presentation, relSnapshot: string, relTarget: string): string {
+    let artifact: string
+    let announcement: string[]
+    switch (presentation.subject) {
+        case "plan":
+            artifact = "plan"
+            announcement = planUpdateAnnouncementInstructions(presentation.publication)
+            break
+        case "completion":
+            artifact = "completion artifact"
+            announcement = []
+            break
+    }
     const lines = [
-        "Reviewed plan snapshot is ready for user diff review.",
-        "Next: read Snapshot, then write its exact content to Target using the write tool. Do not print the plan in chat.",
+        `Reviewed ${presentation.subject} snapshot is ready for user diff review.`,
+        `Next: read Snapshot, then write its exact content to Target using the write tool. Do not print the ${artifact} in chat.`,
         "",
         `Snapshot: ${relSnapshot}`,
-        `Target: ${relPlan}`,
+        `Target: ${relTarget}`,
     ]
-    const announcement = planUpdateAnnouncementInstructions(publication)
     return (announcement.length ? [...lines, "", ...announcement] : lines).join("\n")
 }
 
@@ -594,16 +730,57 @@ function planUpdateAnnouncementInstructions(publication: PublicationState<unknow
     }
 }
 
-function deliverableKindRequiresReport(kind: DeliverableKind): boolean {
+/**
+ * The kind's user-approved completion artifact and the ungated working draft the agent edits and final
+ * review snapshots. Only the presentation write after an approved final review touches `artifact`.
+ */
+export function completionFiles(kind: DeliverableKind): { artifact: string; draft: string } {
     switch (kind) {
         case "research":
         case "audit":
-            return true
+            return { artifact: "report.md", draft: "report-draft.md" }
         case "feature":
         case "bugfix":
         case "refactor":
         case "chore":
-            return false
+            return { artifact: "result.md", draft: "result-draft.md" }
+    }
+}
+
+function deliverableStatus(entityDir: string) {
+    const status = readEntityStatus(entityDir)
+    switch (status.entity) {
+        case "epic":
+            throw new Error(`expected Deliverable status in ${entityDir}`)
+        case "task":
+        case "gig":
+            return status
+    }
+}
+
+async function snapshotDeliverableRound(
+    entityDir: string,
+    input: Extract<ReviewAgentParams, { entity: "task" | "gig" }>,
+    round: number,
+): Promise<DeliverableReviewRound> {
+    switch (input.phase) {
+        case "plan":
+            return { phase: "plan", planSnapshot: await snapshotCandidate(entityDir, "plan", round) }
+        case "interim":
+            return { phase: "interim", subject: input.subject }
+        case "final":
+            return { phase: "final", completionSnapshot: await snapshotCandidate(entityDir, "final", round) }
+    }
+}
+
+function deliverableRoundSnapshot(round: DeliverableReviewRound): string | undefined {
+    switch (round.phase) {
+        case "plan":
+            return round.planSnapshot
+        case "interim":
+            return undefined
+        case "final":
+            return round.completionSnapshot
     }
 }
 
@@ -627,23 +804,39 @@ function deliverableKindReviewFocus(kind: DeliverableKind): string {
 export async function buildDeliverableReviewPrompt(
     ctx: ExtensionContext,
     gigDir: string,
-    phase: ReviewPhase,
+    round: DeliverableReviewRound,
     instructions?: string,
-    subject?: string,
-    reviewedPlanPath?: string,
 ): Promise<string> {
+    const phase = round.phase
     const relDeliverableDir = path.relative(ctx.cwd, gigDir)
-    const planPath = reviewedPlanPath ?? path.join(gigDir, "plan.md")
+    let planPath: string
+    let completionSnapshot: string | undefined
+    let subject: string | undefined
+    switch (round.phase) {
+        case "plan":
+            planPath = round.planSnapshot
+            break
+        case "interim":
+            planPath = path.join(gigDir, "plan.md")
+            subject = round.subject
+            break
+        case "final":
+            planPath = path.join(gigDir, "plan.md")
+            completionSnapshot = round.completionSnapshot
+            break
+    }
     const relPlanPath = path.relative(ctx.cwd, planPath)
     const plan = await readOptional(planPath)
     const brief = await readOptional(path.join(gigDir, "brief.md"))
     const metadata = await readOptional(path.join(gigDir, "metadata.json"))
-    const entityStatus = readEntityStatus(gigDir)
-    if (entityStatus.entity === "epic") throw new Error(`expected Deliverable status in ${gigDir}`)
+    const entityStatus = deliverableStatus(gigDir)
+    // Accepted root artifacts stay visible as context: prior research evidence, or the last accepted result.
     const report = await readOptional(path.join(gigDir, "report.md"))
     const result = await readOptional(path.join(gigDir, "result.md"))
-    // The tool already ran this before creating the round; it's the one owner of these rules.
-    if (phase === "final") assertReviewPreconditions(gigDir, phase)
+    const completion = completionSnapshot ? await readOptional(completionSnapshot) : ""
+    if (completionSnapshot && !completion.trim())
+        throw new Error(`${entityStatus.kind} final review requires a non-empty completion snapshot`)
+    const relCompletionSnapshot = completionSnapshot ? path.relative(ctx.cwd, completionSnapshot) : ""
     const parentEpic = await readParentEpicContext(ctx.cwd, gigDir)
     const projectPolicies = await readProjectPolicies(ctx.cwd)
     const previousReviews = await readPreviousReviewArtifacts(gigDir, phase)
@@ -655,6 +848,7 @@ export async function buildDeliverableReviewPrompt(
         `Deliverable directory: ${relDeliverableDir}`,
         `Phase: ${phase}`,
         `Reviewed plan: ${relPlanPath}`,
+        relCompletionSnapshot ? `Reviewed completion artifact: ${relCompletionSnapshot}` : "",
         parentEpic ? `Parent epic: ${parentEpic.relDir}` : "",
         subject ? `Subject: ${subject}` : "",
         "",
@@ -681,7 +875,7 @@ export async function buildDeliverableReviewPrompt(
         phase === "plan"
             ? "Plan review focus: concise kind-specific sufficiency. Do not require boilerplate sections. Check for hidden assumptions, testability/verification, risky files, and ambiguous product/domain decisions."
             : phase === "final"
-              ? `Final review focus: correctness against the approved plan and current kind strategy, regressions, security, tests/verification, and missed requirements.${result.trim() ? " Verify that the existing result.md remains synchronized with the implementation and actual verification." : ""}`
+              ? `Final review focus: correctness against the approved plan and current kind strategy, regressions, security, tests/verification, and missed requirements. Verify that the reviewed completion artifact (${completionFiles(entityStatus.kind).artifact} candidate) accurately describes the implementation and only verification that actually ran. Root result.md or report.md files, when present, are previously accepted artifacts shown as context, not the artifact under review.`
               : "Interim review focus: adversarially review current work or the requested subject. Inspect only what is needed and call out uncertainty, missing evidence, and concrete next actions.",
         instructions ? `\nExtra instructions:\n${instructions}` : "",
         projectPolicies ? ["", "# Project Policies (.project/policies.md)", "", projectPolicies].join("\n") : "",
@@ -700,8 +894,30 @@ export async function buildDeliverableReviewPrompt(
         "",
         fence(truncate(metadata || "(missing)", MAX_EMBEDDED_FILE_BYTES), "json"),
         "",
-        report ? ["# report.md", "", fence(truncate(report, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
-        result ? ["# result.md", "", fence(truncate(result, MAX_EMBEDDED_FILE_BYTES), "markdown"), ""].join("\n") : "",
+        completion
+            ? [
+                  `# ${relCompletionSnapshot} (completion artifact under review)`,
+                  "",
+                  fence(truncate(completion, MAX_EMBEDDED_FILE_BYTES), "markdown"),
+                  "",
+              ].join("\n")
+            : "",
+        report
+            ? [
+                  "# report.md (previously accepted)",
+                  "",
+                  fence(truncate(report, MAX_EMBEDDED_FILE_BYTES), "markdown"),
+                  "",
+              ].join("\n")
+            : "",
+        result
+            ? [
+                  "# result.md (previously accepted)",
+                  "",
+                  fence(truncate(result, MAX_EMBEDDED_FILE_BYTES), "markdown"),
+                  "",
+              ].join("\n")
+            : "",
         parentEpic?.content ?? "",
         previousReviews ? ["# Previous review artifacts", "", previousReviews].join("\n") : "",
         diff ? ["# Current git diff", "", diff].join("\n") : "",

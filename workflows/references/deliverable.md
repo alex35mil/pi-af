@@ -15,7 +15,7 @@ Related files, read when the step is reached:
 1. Follow the preparation and entity-selection gates in [artifacts](./artifacts.md#initialization-inputs).
 2. Read:
    - `brief.md`, `metadata.json`, `notes.md`, and `pending.md` when present;
-   - `plan.md`, any `result.md` or `report.md`, and the relevant local review round;
+   - `plan.md`, any `result.md` or `report.md`, the working draft `result-draft.md` or `report-draft.md`, and the relevant local review round;
    - `<repo>/.project/policies.md` when present. Apply it throughout.
 
    Create missing notes or pending files when continuing local work.
@@ -53,7 +53,7 @@ Every Deliverable has exactly one kind: `feature`, `bugfix`, `refactor`, `resear
 
 ### Research and audit reports
 
-Write a durable `report.md` in the [reviewed document shape](./artifacts.md#reviewed-document-shape).
+Write the report as `report-draft.md` in the [reviewed document shape](./artifacts.md#reviewed-document-shape). It becomes the durable `report.md` only through step 8, after final review approves.
 
 - The Overview states the question or scope, the key conclusion, and material uncertainty.
 - The following sections keep the full evidence, findings, conclusions, and next steps. Use only relevant sections.
@@ -79,22 +79,22 @@ Every plan, interim, and final review follows [review](./review.md).
 2. Implement the complete approved change at its owning abstraction. Leave unrelated working-tree changes untouched.
 3. Run focused checks while developing. Run all plan and Project Policy verification before final review.
 4. A Task runs its skill's parent synchronization. A Gig has none.
-5. Create or update the completion artifact: `result.md` for feature, bugfix, refactor, and chore; `report.md` for research and audit. Never claim verification that didn't run.
+5. Create or update the [working draft](#completion-artifact): `result-draft.md` for feature, bugfix, refactor, and chore; `report-draft.md` for research and audit. Never claim verification that didn't run.
 6. Resolve every unchecked `pending.md` entry, or move it to separately approved work. A missing file counts as empty.
-7. Set Self-Review, then call `review_task` or `review_gig` with `phase: "final"`. Repeat review and correction until approved, keeping the completion artifact current.
-8. Stay in Self-Review while presenting the implementation and completion artifact for user review.
-9. When user review leads to changes, return to Execution, update the artifact, then go back to Self-Review and rerun final review for every material change.
+7. Set Self-Review, then call `review_task` or `review_gig` with `phase: "final"`. It reviews a snapshot of the draft. Repeat review and correction until approved, keeping the draft current.
+8. When final review approves, call `prepare_task_completion_presentation` or `prepare_gig_completion_presentation`. Write the returned snapshot's exact content to the target, `result.md` or `report.md`, with the write tool. That diff is the user's review; stay in Self-Review while waiting.
+9. When user review leads to changes, return to Execution and keep editing the draft. When the user accepted the presentation with their own edits, first copy the target into the draft. Then go back to Self-Review, rerun final review, and present again.
 10. When the user accepts, read [submission](./deliverable/submission.md). When the user asks to ship, read [shipping](./deliverable/shipping.md).
 
 **When the plan defines commit steps:**
 
-- Run steps 1–9 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review.
-- When the user accepts a step, read [commits](./deliverable/submission.md#commits) and commit it. Accepting a step authorizes only its commit, not a push or PR.
-- Run the final review over the whole branch before submission.
+- Run steps 1–7 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review.
+- After a step's interim review approves, summarize the step's changes and the review outcome in chat, and wait for explicit acceptance. Then read [commits](./deliverable/submission.md#commits) and commit it. Accepting a step authorizes only its commit, not a push or PR.
+- After the last step, run the final review over the whole branch, then steps 8–10.
 
 ## Completion artifact
 
-Write `result.md` before final review so the reviewer sees the actual outcome:
+The agent writes the working draft (`result-draft.md` or `report-draft.md`) before final review, so the reviewer sees the actual outcome. Only step 8 writes `result.md` or `report.md`, after final review approves, so the user always reviews checked work. Both use this shape:
 
 ```markdown
 # Result
@@ -120,8 +120,8 @@ Optional deeper code or architecture explanation; omit when unnecessary.
 - Describe actual outcomes, not plans or a transcript. It must make sense without the conversation.
 - Include only the delivered behavior, material changes, limitations, and verification of the Deliverable itself. Leave out workflow housekeeping: tracker or forge state, lifecycle, Priority, labels, review state, projection, and branch, PR, or merge steps.
 - Omit the **Not run** list when every planned check ran.
-- Keep the artifact current after every review change, implementation change, or rerun. A material change requires another final review.
-- Present it with every user review and with final approval. Keep provider metadata and links out of it.
+- Keep the draft current after every review change, implementation change, or rerun. A material change requires another final review. Never edit `result.md` or `report.md` directly.
+- Present it through step 8 for every user review and final approval. Keep provider metadata and links out of it.
 - Research or audit work that continues into implementation keeps `report.md` as prior evidence and adds `result.md`.
 
 When the output is a UI mockup, layout, or visual concept, read [design artifacts](./deliverable/extras.md#design-artifacts).
