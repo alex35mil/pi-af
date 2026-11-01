@@ -686,15 +686,15 @@ type Presentation = { subject: "plan"; publication: PublicationState<unknown>["s
 
 function presentationInstructions(presentation: Presentation, relSnapshot: string, relTarget: string): string {
     let artifact: string
-    let announcement: string[]
+    let notes: string[]
     switch (presentation.subject) {
         case "plan":
             artifact = "plan"
-            announcement = planUpdateAnnouncementInstructions(presentation.publication)
+            notes = planUpdateAnnouncementInstructions(presentation.publication)
             break
         case "completion":
             artifact = "completion artifact"
-            announcement = []
+            notes = [COMPLETION_ACCEPTANCE_INSTRUCTION]
             break
     }
     const lines = [
@@ -704,8 +704,12 @@ function presentationInstructions(presentation: Presentation, relSnapshot: strin
         `Snapshot: ${relSnapshot}`,
         `Target: ${relTarget}`,
     ]
-    return (announcement.length ? [...lines, "", ...announcement] : lines).join("\n")
+    return (notes.length ? [...lines, "", ...notes] : lines).join("\n")
 }
+
+// Accepting the completion artifact is not delivery approval: the user may still want to review the code.
+const COMPLETION_ACCEPTANCE_INSTRUCTION =
+    "Accepting this diff authorizes no commit, push, or PR. After acceptance, say the work is ready to submit and wait for an explicit request to submit or ship."
 
 const ANNOUNCEMENT_SUMMARY_INSTRUCTION =
     "Before writing Target, draft a short summary of what changed and why; say so when the change is only editorial. Show it in the same message as the diff: accepting the diff approves the plan update and its announcement together. Pass that summary as the announcement when publishing."

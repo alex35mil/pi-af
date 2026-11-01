@@ -234,6 +234,7 @@ describe("workflow reviewer isolation", () => {
                         assert.match(JSON.stringify(result.content), /Snapshot:.*candidate\.md/)
                         assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
                         assert.doesNotMatch(JSON.stringify(result.content), /announce/)
+                        assert.doesNotMatch(JSON.stringify(result.content), /authorizes no commit/)
                     } else await assert.rejects(invoke(), /plan review requires Phase Planning/)
                     assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
                     assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
@@ -349,6 +350,8 @@ describe("workflow reviewer isolation", () => {
                         assert.match(text, /Reviewed completion snapshot is ready/)
                         assert.match(text, /Snapshot:.*final-001\/candidate\.md/)
                         assert.match(text, /Target:.*7-example\/result\.md/)
+                        // Accepting the completion artifact is not submission approval.
+                        assert.match(text, /authorizes no commit, push, or PR/)
                     } else await assert.rejects(presentCompletion(), /final review requires Phase Self-Review/)
                 }
                 // A research Gig presents into report.md.
@@ -944,7 +947,7 @@ describe("workflow reviewer isolation", () => {
                 "",
                 "- During Epic plan review, additionally check that every planned Task identifies its rollout stage.",
                 "- During Deliverable final review, additionally check the completion artifact against the repository's release checklist.",
-                "- Override automatic submission after final-artifact acceptance: commit locally, then wait for a separate explicit user request before pushing or creating a PR.",
+                "- Override Deliverable submission: on a submit request, commit locally, then wait for a separate explicit user request before pushing or creating a PR.",
                 "",
             ].join("\n")
             fs.writeFileSync(path.join(repository, ".project", "policies.md"), policies)
