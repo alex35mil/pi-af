@@ -21,16 +21,11 @@ import {
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import type { PublicationState } from "../integrations/plan-publication.js"
 import { trackerPlanPublication } from "../integrations/records.js"
-import { executeReviewRound, recordRoundResponse } from "./round.js"
+import { executeReviewRound, recordRoundResponse, renderReviewRoundResult } from "./round.js"
 import { reviewerEnvironment } from "./model.js"
 import { registerPullRequestReview } from "./pull-request.js"
 import { buildEpicReviewPrompt } from "./epic.js"
-import {
-    renderReviewDocument,
-    reviewAgentOutputInstructions,
-    ReviewResponseFindingInputSchema,
-    reviewResponseFindings,
-} from "./findings.js"
+import { reviewAgentOutputInstructions, ReviewResponseFindingInputSchema, reviewResponseFindings } from "./findings.js"
 import {
     fence,
     MAX_EMBEDDED_FILE_BYTES,
@@ -236,7 +231,7 @@ export default function (pi: ExtensionAPI) {
                 }
                 onUpdate?.(textResult(`Review agent started: ${path.relative(ctx.cwd, requestPath)}`))
 
-                const { report, artifactText } = await executeReviewRound({
+                const { report } = await executeReviewRound({
                     environment: reviewerEnvironment(pi, ctx.modelRegistry),
                     cwd: ctx.cwd,
                     directory: reviewRoundDir,
@@ -254,14 +249,17 @@ export default function (pi: ExtensionAPI) {
                 })
                 const signoff = report.signoff
 
-                const baseText = `${renderReviewDocument(report)}\n${artifactText}`
                 const blockedGate = await blockedReviewGate(
                     entityDir,
                     phase,
                     round,
                     projectConfig.reviews?.userConfirmationAfter,
                 )
-                const text = blockedGate ? `${baseText}\n\n${formatBlockedReviewPause(blockedGate)}` : baseText
+                const text = renderReviewRoundResult(
+                    report,
+                    round,
+                    blockedGate ? formatBlockedReviewPause(blockedGate) : undefined,
+                )
                 return textResult(text, false, { signoff, blockedGate })
             },
         })

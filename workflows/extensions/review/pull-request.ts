@@ -18,13 +18,8 @@ import {
     type IncomingRevision,
 } from "../integrations/forge/github/incoming-pr-context.js"
 import { fence, readOptional, REVIEW_AUTHORITY_INSTRUCTIONS } from "./context.js"
-import {
-    ReviewResponseFindingInputSchema,
-    reviewResponseFindings,
-    renderReviewDocument,
-    reviewAgentOutputInstructions,
-} from "./findings.js"
-import { executeReviewRound, recordRoundResponse } from "./round.js"
+import { ReviewResponseFindingInputSchema, reviewResponseFindings, reviewAgentOutputInstructions } from "./findings.js"
+import { executeReviewRound, recordRoundResponse, renderReviewRoundResult } from "./round.js"
 import { reviewerEnvironment } from "./model.js"
 
 const revisionProperties = {
@@ -233,7 +228,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
         async execute(_id, params, signal, onUpdate, ctx) {
             const input = Value.Parse(ReviewPullRequestSchema, params)
             const prepared = await preparePullRequestReview(ctx.cwd, input, tools)
-            const { report, artifactText } = await executeReviewRound({
+            const { report } = await executeReviewRound({
                 environment: reviewerEnvironment(pi, ctx.modelRegistry),
                 cwd: prepared.root,
                 directory: prepared.directory,
@@ -250,7 +245,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
                 signal,
                 onUpdate: (text) => onUpdate?.(textResult(text)),
             })
-            return textResult(`${renderReviewDocument(report)}\n${artifactText}`, {
+            return textResult(renderReviewRoundResult(report, prepared.round), {
                 round: prepared.round,
                 revision: prepared.revision,
                 signoff: report.signoff,

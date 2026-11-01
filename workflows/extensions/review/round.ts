@@ -45,10 +45,20 @@ export function reviewCorrectionPrompt(error: string, previousOutput: string): s
     ].join("\n\n")
 }
 
+/**
+ * The model-facing result of a successful review round. The signoff stays the final line; a notice, such as
+ * the blocked-review pause, goes first. Round file paths appear only in failed-round errors.
+ */
+export function renderReviewRoundResult(report: ReviewReport, round: number, notice?: string): string {
+    return [notice, `**Review round:** ${round}`, renderReviewDocument(report).trimEnd()]
+        .filter((part) => part !== undefined)
+        .join("\n\n")
+}
+
 export async function executeReviewRound(
     options: ReviewRoundOptions,
     runner: ReviewRunner = runReviewAgent,
-): Promise<{ report: ReviewReport; artifactText: string }> {
+): Promise<{ report: ReviewReport }> {
     const file = (name: string) => path.join(options.directory, name)
     const requestPath = file("request.md")
     const jsonlPath = file("agent.jsonl")
@@ -101,9 +111,9 @@ export async function executeReviewRound(
         `${JSON.stringify({ exitCode: result.exitCode, signoff: report?.signoff ?? null }, null, 4)}\n`,
         "utf-8",
     )
+    if (report) return { report }
     const files = [
         ...options.additionalFiles,
-        ...(report ? [file("review.md"), file("report.json")] : []),
         requestPath,
         file("transcript.md"),
         jsonlPath,
@@ -112,7 +122,6 @@ export async function executeReviewRound(
         ...(unvalidatedOutput && reportError ? [file(INVALID_REPORT_FILE)] : []),
     ]
     const artifactText = ["Artifacts:", ...files.map((entry) => `- ${path.relative(options.cwd, entry)}`)].join("\n")
-    if (report) return { report, artifactText }
     const unvalidated =
         unvalidatedOutput && reportError
             ? `\n\nUnvalidated reviewer output. Use it only as evidence; it is not a review or signoff:\n\n${fence(unvalidatedOutput, "text")}`

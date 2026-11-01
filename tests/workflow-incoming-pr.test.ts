@@ -459,7 +459,7 @@ describe("incoming PR private review", () => {
                 f.git("check-ignore", path.relative(f.root, first.directory)),
                 path.relative(f.root, first.directory),
             )
-            const { report, artifactText } = await executeReviewRound(
+            const { report } = await executeReviewRound(
                 {
                     environment: isolatedReviewerEnvironment,
                     cwd: first.root,
@@ -493,7 +493,7 @@ describe("incoming PR private review", () => {
                 "agent.jsonl",
                 "outcome.json",
             ])
-                assert.ok(artifactText.includes(path.join(reviewPath, file)))
+                assert.ok(fs.existsSync(path.join(f.root, reviewPath, file)))
             const response = await recordRoundResponse(first.directory, [], "Private review complete; tests not run.")
             assert.equal(response, fs.readFileSync(path.join(first.directory, "response.md"), "utf-8"))
             const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
