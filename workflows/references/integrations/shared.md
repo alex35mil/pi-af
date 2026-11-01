@@ -74,13 +74,15 @@ The tracker object comes first; the local entity is named from it. New work and 
    - New work: create only the tracker object, with the approved title and Request, as the provider reference describes. No search first.
    - Adoption: use the explicitly selected object after its provider preflight.
 3. **Initialize.** Call `init_github_<entity>` or `init_linear_<entity>` with the object's identity as `object`. It names the directory and branch from the object, creates the local entity with a ready branch, and records the object's Resource IDs.
-4. **Set up the board.** Call `initialize_integration`, then apply the provider reference's board steps: Project membership, In Progress, Priority, Planning Phase, Task hierarchy, and the Kind label when configured. These are ordinary absolute updates; a failure is reconciled on resume.
+4. **Set up the board.** Call `initialize_integration`, then apply the provider reference's board steps: Project membership, In Progress, Priority, Planning Phase, Task hierarchy, the Kind label when configured, and the assignee. These are ordinary absolute updates; a failure is reconciled on resume, except assignment.
+
+**Assignment:** whoever starts the work owns it. Initialization assigns the authenticated user to the tracker item, new or adopted, replacing existing assignees. Set it once and trust a clear success; never read it back or reconcile it later. Queue intake and Task issue processing assign nobody.
 
 **When something fails:**
 
 - **Uncertain create:** nothing local exists yet. Before any new create for the same intake, search the tracker for the exact approved title ([recovery](./recovery.md#uncertain-tracker-creation)). One match continues at step 3; none allows a retry; several stop for the user.
 - **Initialization fails after a clear create:** never create again. Report the created object and the failure, fix the cause (for example a name collision), and call initialization again with the same object.
-- **Board setup incomplete on resume:** read fresh Project membership, Status, Priority, and Phase, and apply what's missing. When native Priority is unset, ask the user for it; it isn't kept locally.
+- **Board setup incomplete on resume:** read fresh Project membership, Status, Priority, and Phase, and apply what's missing. Skip assignment. When native Priority is unset, ask the user for it; it isn't kept locally.
 
 ## Provider bodies
 

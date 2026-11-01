@@ -295,7 +295,7 @@ MCP settings are shared Pi configuration, not workflow JSON. Use `configure_mcp`
 **Credentials and toolsets:**
 
 - Default credential variables: `LINEAR_API_KEY` for Linear, `GITHUB_PERSONAL_ACCESS_TOKEN` for GitHub.
-- A GitHub tracker enables `issues,projects`, a GitHub forge enables `pull_requests`, and both together enable all three.
+- A GitHub tracker enables `context,issues,projects`, a GitHub forge enables `pull_requests`, and both together enable all four. `context` provides `get_me`, which starting work uses to assign the authenticated user.
 
 **Merging and registration:**
 
@@ -319,7 +319,7 @@ Example project registrations produced by `configure_mcp`:
             "url": "https://api.githubcopilot.com/mcp/",
             "headers": {
                 "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}",
-                "X-MCP-Toolsets": "issues,projects,pull_requests"
+                "X-MCP-Toolsets": "context,issues,projects,pull_requests"
             }
         }
     }

@@ -1,5 +1,11 @@
 # Upgrading
 
+## Assigning work to the user who starts it
+
+Starting an Epic, Task, or Gig now assigns its tracker item to the authenticated user. On GitHub this uses `get_me` from the `context` toolset. Add `context` to `X-MCP-Toolsets` in each GitHub tracker registration (for example `context,issues,projects,pull_requests`) by rerunning `/project-setup` or editing the MCP registration, then reload Pi. Until then, work starts without an assignee. Linear needs no change.
+
+No `.project` artifact migration is needed.
+
 ## Shipping terminology and evidence inputs
 
 Deliverable merge, Done, and cleanup is now called **shipping**, matching incoming-PR shipping. Names for an activity use nouns ("shipping", "cancellation"). There are no aliases; update custom permission selectors and scripts that use the old names.

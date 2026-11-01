@@ -50,7 +50,7 @@ Run it after every accepted `epic.md` revision and on every Epic or Task resume,
 - Processing ensures every queued Task's board state itself, whatever Project automations did first: on the Project, Status Todo (Backlog or empty becomes Todo), and the Epic's Priority when the Task has none. A Priority already set on the Task is kept, and a Canceled issue is left alone. To defer a Task, mark it `Status: canceled` or replan; a manual Backlog move is reverted.
 - A Task that has already started is never canceled.
 - An uncertain create needs no separate recovery: the next run's title lookup finds the issue or confirms it's absent.
-- Creating issues never initializes a Task.
+- Creating issues never initializes a Task. Task issues stay unassigned until the Task starts.
 
 ## Progress and replanning
 
