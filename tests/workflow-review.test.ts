@@ -32,7 +32,11 @@ import registerReviewTools, {
 import registerEpic from "../workflows/extensions/epic/index.ts"
 import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
 import type { ReviewAgentRunOptions, ReviewAgentRunResult } from "../workflows/extensions/review/agent.ts"
-import { executeReviewRound, recordRoundResponse } from "../workflows/extensions/review/round.ts"
+import {
+    executeReviewRound,
+    recordRoundResponse,
+    renderReviewRoundResult,
+} from "../workflows/extensions/review/round.ts"
 
 function runResult(finalOutput: string, exitCode = 0): ReviewAgentRunResult {
     return { exitCode, finalOutput, stderr: "", events: [] }
@@ -644,6 +648,25 @@ describe("workflow reviewer isolation", () => {
         }
     })
 
+    it("ends a successful round result with the signoff and keeps round paths out", async () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-result-"))
+        try {
+            const { value } = await runRound(directory, [runResult(JSON.stringify(reviewReport("blocked")))])
+            assert.ok(value)
+            assert.ok(fs.existsSync(path.join(directory, "outcome.json")))
+            for (const notice of [undefined, "Pause here."]) {
+                const text = renderReviewRoundResult(value.report, 7, notice)
+                const lines = text.split("\n")
+                assert.equal(lines.at(-1), "**Signoff:** blocked")
+                assert.equal(lines.indexOf("**Review round:** 7"), notice ? 2 : 0)
+                if (notice) assert.equal(lines[0], notice)
+                assert.doesNotMatch(text, /outcome\.json|Artifacts:/)
+            }
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true })
+        }
+    })
+
     it("saves unvalidated output when the correction also fails", async () => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), "review-invalid-"))
         try {
@@ -669,6 +692,7 @@ describe("workflow reviewer isolation", () => {
             const { error, calls } = await runRound(directory, [runResult("", 1)])
             assert.equal(calls.length, 1)
             assert.match(error?.message ?? "", /exited with code 1/)
+            for (const file of ["request.md", "transcript.md", "outcome.json"]) assert.ok(error?.message.includes(file))
             assert.equal(fs.existsSync(path.join(directory, "invalid-report.md")), false)
         } finally {
             fs.rmSync(directory, { recursive: true, force: true })
