@@ -19,6 +19,7 @@ Upgrading from an older version? See the [upgrade guide](UPGRADING.md).
 - [**mcp**](extensions/mcp/) — MCP server integration
 - [**permissions**](extensions/permissions/) — tool execution control with allow/deny/ask rules
 - [**rules**](extensions/rules/) — rule files injected into system prompt
+- [**status**](extensions/status/) — runtime and rate-limit status entries for pi.nvim
 - [**web-search**](extensions/web-search/) — `web_search` tool via Brave Search API
 
 ## Skills
