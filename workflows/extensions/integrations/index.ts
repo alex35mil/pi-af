@@ -9,6 +9,7 @@ import * as project from "../../../extensions/__lib/project.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
+import { kindLabelName, type WorkflowKind } from "./labels.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import {
     NativePhaseFactsSchema,
@@ -549,11 +550,10 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     }
 }
 
-// The configured GitHub Kind label for queued work; none for Linear, `not set`, or no label set.
-function queueKindLabel(environment: WorkflowEnvironment, kind: string): string | undefined {
-    const labels = environment.tracker.provider === "github" ? environment.tracker.labels?.kind : undefined
-    if (!labels || kind === "not set") return undefined
-    return kind === "epic" ? labels.epic : labels.deliverableKinds[kind as keyof typeof labels.deliverableKinds]
+// The configured GitHub `kind` label for queued work; none for Linear, `not set`, or no `kind` group.
+function queueKindLabel(environment: WorkflowEnvironment, kind: WorkflowKind | "not set"): string | undefined {
+    if (environment.tracker.provider !== "github" || kind === "not set") return undefined
+    return kindLabelName(environment.tracker.labels, kind)
 }
 
 export function renderEntityProviderBody(

@@ -2253,14 +2253,15 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
         ...(specification.labels
             ? {
                   labels: {
-                      kind: {
-                          epic: specification.labels.kind.epic.name,
-                          deliverableKinds: Object.fromEntries(
-                              Object.entries(specification.labels.kind.deliverableKinds).map(([key, label]) => [
-                                  key,
-                                  label.name,
-                              ]),
-                          ),
+                      groups: {
+                          kind: {
+                              appliesTo: ["epic", "deliverable"],
+                              cardinality: "exactlyOne",
+                              values: {
+                                  epic: specification.labels.kind.epic,
+                                  ...specification.labels.kind.deliverableKinds,
+                              },
+                          },
                       },
                   },
               }

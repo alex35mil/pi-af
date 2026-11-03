@@ -23,7 +23,7 @@ import { requireProviderCall } from "../workflows/extensions/integrations/provid
 import { resourceIdsFromRead } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import type { EntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
-import { githubPhaseReads, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { githubPhaseReads, kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 
 /** "accepted" or "rejected", so two checks can be compared on the same input. */
 function attempt(check: () => unknown): "accepted" | "rejected" {
@@ -48,19 +48,7 @@ const github = Value.Parse(GitHubTrackerSchema, {
     mcpServer: "github",
     repository: { owner: "example", repo: "example" },
     project: { owner: "example", ownerType: "user", number: 1 },
-    labels: {
-        kind: {
-            epic: "Epic",
-            deliverableKinds: {
-                feature: "Feature",
-                bugfix: "Bugfix",
-                research: "Research",
-                refactor: "Refactor",
-                audit: "Audit",
-                chore: "Chore",
-            },
-        },
-    },
+    labels: kindLabels(),
     fields: {
         status: { field: "Status", values: statuses },
         phase: { field: "Phase", values: phaseValues },
@@ -396,7 +384,7 @@ describe("shared workflow Phase", () => {
 
     it("uses distinct Project and issue group configurations", () => {
         const tracker = structuredClone(linear)
-        tracker.phase.projects.group = "Project Phase"
+        tracker.phase.projects.group.name = "Project Phase"
         const facts = linearFacts()
         facts.catalog[0].name = "Project Phase"
         assert.doesNotThrow(() => resolveLinearPhaseGroup(tracker, "epic", facts.catalog))

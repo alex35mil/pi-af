@@ -23,6 +23,7 @@ import { refreshAcceptedAnnouncement } from "./announcement-state.js"
 import { assertConfiguredPriority, loadIntegrationConfig, type TrackerConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
 import { linearPriorityNumber } from "./records.js"
+import { kindLabelName } from "./labels.js"
 import { EvidenceSchema } from "./resource-id-tool.js"
 
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
@@ -273,7 +274,7 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
                 state_reason: "not_planned",
             }),
         })
-        const kindLabel = (task: EpicTask) => tracker.labels?.kind.deliverableKinds[task.kind]
+        const kindLabel = (task: EpicTask) => kindLabelName(tracker.labels, task.kind)
         return {
             create: (task) => {
                 const label = kindLabel(task)

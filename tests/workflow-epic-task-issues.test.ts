@@ -8,7 +8,7 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
-import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { parseEpicRouting, parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
@@ -60,19 +60,7 @@ function repo(tracker: "github" | "linear") {
                           mcpServer: "github",
                           repository,
                           project: { owner: "example", ownerType: "user", number: 3 },
-                          labels: {
-                              kind: {
-                                  epic: "Kind: Epic",
-                                  deliverableKinds: {
-                                      feature: "Kind: Feature",
-                                      bugfix: "Kind: Bugfix",
-                                      research: "Kind: Research",
-                                      refactor: "Kind: Refactor",
-                                      audit: "Kind: Audit",
-                                      chore: "Kind: Chore",
-                                  },
-                              },
-                          },
+                          labels: kindLabels(),
                           fields: {
                               status: { field: "Status", values: statuses },
                               phase: { field: "Phase", values: { ...phaseValues } },

@@ -553,8 +553,9 @@ describe("GitHub Project setup", () => {
             execution: "Execution",
             selfReview: "Self-Review",
         })
-        assert.equal(tracker.labels.kind.epic, "Kind: Epic")
-        assert.equal(tracker.labels.kind.deliverableKinds.feature, "Kind: Feature")
+        assert.equal(tracker.labels.groups.kind.cardinality, "exactlyOne")
+        assert.deepEqual(tracker.labels.groups.kind.values.epic, GITHUB_PROJECT_DEFAULTS.labels.kind.epic)
+        assert.equal(tracker.labels.groups.kind.values.feature.name, "Kind: Feature")
         assert.deepEqual(tracker.fields.priority.values, ["Urgent", "High", "Medium", "Low"])
         assert.equal(tracker.fields.type, undefined)
         assert.deepEqual(github.repositoryLabels, defaultRepositoryLabels())

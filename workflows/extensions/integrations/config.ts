@@ -6,6 +6,13 @@ import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { PRIORITY_NOT_SET } from "../__lib/domain.js"
+import {
+    assertGitHubLabels,
+    assertLinearLabels,
+    GitHubLabelsSchema,
+    LinearLabelsSchema,
+    LinearPhaseGroupsSchema,
+} from "./labels.js"
 import { linearPriorityNumber } from "./records.js"
 
 export const INTEGRATION_CONFIG_PATH = ".project/integrations.json"
@@ -34,27 +41,6 @@ export const PriorityFieldSchema = Type.Union([
 ])
 export type PriorityField = Static<typeof PriorityFieldSchema>
 
-const DeliverableKindValuesSchema = Type.Object(
-    {
-        feature: Type.String({ minLength: 1 }),
-        bugfix: Type.String({ minLength: 1 }),
-        research: Type.String({ minLength: 1 }),
-        refactor: Type.String({ minLength: 1 }),
-        audit: Type.String({ minLength: 1 }),
-        chore: Type.String({ minLength: 1 }),
-    },
-    { additionalProperties: false },
-)
-
-export const KindLabelsSchema = Type.Object(
-    {
-        epic: Type.String({ minLength: 1 }),
-        deliverableKinds: DeliverableKindValuesSchema,
-    },
-    { additionalProperties: false },
-)
-export type KindLabels = Static<typeof KindLabelsSchema>
-
 export const PhaseValuesSchema = Type.Object(
     {
         planning: FieldNameSchema,
@@ -64,16 +50,6 @@ export const PhaseValuesSchema = Type.Object(
     { additionalProperties: false },
 )
 export type PhaseValues = Static<typeof PhaseValuesSchema>
-
-export const PhaseLabelGroupSchema = Type.Object(
-    {
-        scope: Type.Enum(["workspace", "team"], { type: "string" }),
-        group: FieldNameSchema,
-        values: PhaseValuesSchema,
-    },
-    { additionalProperties: false },
-)
-export type PhaseLabelGroup = Static<typeof PhaseLabelGroupSchema>
 
 const StatusValuesSchema = Type.Object(
     {
@@ -109,8 +85,8 @@ export const GitHubTrackerSchema = Type.Object(
             },
             { additionalProperties: false },
         ),
-        // Kind labels are applied only when configured.
-        labels: Type.Optional(Type.Object({ kind: KindLabelsSchema }, { additionalProperties: false })),
+        // Managed labels are applied only when configured.
+        labels: Type.Optional(GitHubLabelsSchema),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -138,10 +114,8 @@ export const LinearTrackerSchema = Type.Object(
         provider: Type.Enum(["linear"], { type: "string" }),
         mcpServer: McpServerSchema,
         team: Type.String({ minLength: 1 }),
-        phase: Type.Object(
-            { issues: PhaseLabelGroupSchema, projects: PhaseLabelGroupSchema },
-            { additionalProperties: false },
-        ),
+        phase: LinearPhaseGroupsSchema,
+        labels: Type.Optional(LinearLabelsSchema),
         statuses: Type.Object(
             {
                 issues: StatusValuesSchema,
@@ -194,13 +168,7 @@ function assertGitHubTrackerInvariants(config: GitHubTracker): void {
         throw new Error("GitHub Status mappings must use distinct options")
     }
 
-    if (config.labels) {
-        const managedLabels = [config.labels.kind.epic, ...Object.values(config.labels.kind.deliverableKinds)]
-        const normalizedLabels = managedLabels.map((label) => label.toLowerCase())
-        if (new Set(normalizedLabels).size !== normalizedLabels.length) {
-            throw new Error("GitHub Kind label names must be distinct case-insensitively")
-        }
-    }
+    assertGitHubLabels(config.labels)
 
     const projectFieldNames = [
         config.fields.status.field,
@@ -244,8 +212,7 @@ function validateIntegrationConfig(value: unknown): IntegrationConfig {
     try {
         if (value.tracker.provider === "github") assertGitHubTrackerInvariants(value.tracker)
         if (value.tracker.provider === "linear") {
-            assertDistinctPhases(value.tracker.phase.issues.values)
-            assertDistinctPhases(value.tracker.phase.projects.values)
+            assertLinearLabels(value.tracker.labels, value.tracker.phase)
             assertDistinctStatuses("Linear", "issue", value.tracker.statuses.issues)
             assertDistinctStatuses("Linear", "Project", value.tracker.statuses.projects)
         }

@@ -24,6 +24,7 @@ import {
 } from "../workflows/extensions/integrations/tracker-publication.ts"
 import type { ProviderEvidence } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
+import { kindLabels } from "./workflow-phase-fixtures.ts"
 
 const tools = workflowMcpCatalog("github")
 const repository = { owner: "example", repo: "project" }
@@ -46,9 +47,6 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
         path.join(root, ".project/config.json"),
         JSON.stringify({ branches: { format: "identifier-title" } }),
     )
-    const kinds = Object.fromEntries(
-        ["feature", "bugfix", "research", "refactor", "audit", "chore"].map((k) => [k, `Kind: ${k}`]),
-    )
     fs.writeFileSync(
         path.join(root, ".project/integrations.json"),
         JSON.stringify({
@@ -57,7 +55,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
                 mcpServer: "github",
                 repository,
                 project: { owner: "example", ownerType: "user", number: 1 },
-                labels: { kind: { epic: "Kind: Epic", deliverableKinds: kinds } },
+                labels: kindLabels(),
                 fields: {
                     status: {
                         field: "Status",

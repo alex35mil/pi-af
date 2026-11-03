@@ -11,7 +11,7 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import type { IncomingProjectContextInput } from "../workflows/extensions/integrations/forge/github/incoming-pr-project.ts"
 
-import { minimalTracker } from "./workflow-phase-fixtures.ts"
+import { kindLabels, minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const mcpTools = workflowMcpCatalog("forge", "board")
@@ -141,19 +141,7 @@ function fixture() {
             mcpServer: "board",
             repository: { owner: "upstream", repo: "issues" },
             project,
-            labels: {
-                kind: {
-                    epic: "Epic",
-                    deliverableKinds: {
-                        feature: "Feature",
-                        bugfix: "Bugfix",
-                        research: "Research",
-                        refactor: "Refactor",
-                        audit: "Audit",
-                        chore: "Chore",
-                    },
-                },
-            },
+            labels: kindLabels(),
             fields: {
                 status: { field: "Status", values: statuses },
                 phase: {

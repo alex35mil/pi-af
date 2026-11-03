@@ -14,7 +14,7 @@ import type { IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
-import { minimalTracker } from "./workflow-phase-fixtures.ts"
+import { kindLabels, minimalTracker } from "./workflow-phase-fixtures.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 type Kind = "clean" | "conflict" | "multiple" | "merged" | "alreadyApplied" | "customDriver" | "literalPath"
@@ -1176,19 +1176,7 @@ process.exit(result.status ?? 1);
                 mcpServer: "board",
                 repository: { owner: "upstream", repo: "app" },
                 project: { owner: "board-owner", ownerType: "user", number: 2 },
-                labels: {
-                    kind: {
-                        epic: "Epic",
-                        deliverableKinds: {
-                            feature: "Feature",
-                            bugfix: "Bugfix",
-                            research: "Research",
-                            refactor: "Refactor",
-                            audit: "Audit",
-                            chore: "Chore",
-                        },
-                    },
-                },
+                labels: kindLabels(),
                 fields: {
                     status: { field: "Status", values },
                     phase: {
