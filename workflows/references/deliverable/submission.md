@@ -45,6 +45,7 @@ Every Deliverable ships through a merged PR.
 - Accepting a re-presented `result.md` or `report.md` authorizes no commit, push, or PR body update. Resubmit only on an explicit request.
 - When resubmitting after a change to `result.md` or `report.md`, render and publish the complete PR body again.
 - Return to In Review after successful resubmission. Reuse native automation outcomes and skip writes that are already applied.
+- When resolving a merge conflict with the target, read [conflict resolution](./conflicts.md) instead.
 
 ## Choosing an existing PR
 

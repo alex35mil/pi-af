@@ -35,6 +35,7 @@ allowed-tools:
     - "invalidate_resource_ids"
     - "select_pull_request_resource"
     - "cleanup_delivery_branch"
+    - "prepare_merge_resolution_comment"
     - "read(.project/*)"
     - "write(.project/*)"
     - "edit(.project/*)"

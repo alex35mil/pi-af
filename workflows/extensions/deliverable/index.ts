@@ -8,6 +8,11 @@ import { workflowTools } from "../__lib/tools.js"
 import { shippingReadDecision, resolveResourceIdsContext } from "../integrations/resource-id-operations.js"
 import { isResourceIdsKind, readCachedResourceIds } from "../integrations/resource-ids.js"
 import { DeliveryCleanupInputSchema, runDeliveryCleanup } from "./cleanup.js"
+import {
+    MergeResolutionCommentInputSchema,
+    parseMergeResolutionCommentInput,
+    prepareMergeResolutionComment,
+} from "./merge-resolution.js"
 
 export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "delivery")
@@ -22,6 +27,20 @@ export default function (pi: ExtensionAPI): void {
             const input = Value.Parse(DeliveryCleanupInputSchema, params)
             const merge = githubMergeProof(ctx.cwd, input, catalog)
             const result = runDeliveryCleanup({ entityDir: input.entityDir, merge }, { cwd: ctx.cwd })
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                details: result,
+            }
+        },
+    })
+    tools.registerTool({
+        name: "prepare_merge_resolution_comment",
+        label: "prepare_merge_resolution_comment",
+        description:
+            "After an approved push of a Task/Gig merge-conflict resolution, render the PR comment that records it: the push-approved summary and the merge commit's git show --remerge-diff, folded in <details>. Validates that the stored branch ends in a pushed merge of the stored target that resolved conflicts. Returns the native comment call to run unchanged; never calls providers.",
+        parameters: MergeResolutionCommentInputSchema,
+        async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+            const result = prepareMergeResolutionComment(ctx.cwd, parseMergeResolutionCommentInput(params), catalog)
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
                 details: result,

@@ -47,7 +47,7 @@ A message is any text sent to people through a provider: issue and PR bodies and
 Skip the text review only when:
 
 - the user explicitly says to send without review, for that message or as a standing instruction for the session. Never infer it from urgency or earlier approvals.
-- the content comes from an artifact or workflow step the user already approved, such as an accepted plan, a plan diff with its announcement, a completion artifact for a PR body, an intake, or an incoming PR review package. Code-rendered bodies from it need no second approval; anything beyond that rendering does.
+- the content comes from an artifact or workflow step the user already approved, such as an accepted plan, a plan diff with its announcement, a completion artifact for a PR body, a merge-conflict resolution summary approved with its push, an intake, or an incoming PR review package. Code-rendered bodies from it need no second approval; anything beyond that rendering does.
 - the user supplied the complete message and you relay it unchanged. The destination must still be clear; ask when it isn't.
 
 ## Offering a workflow report

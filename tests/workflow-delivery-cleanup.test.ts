@@ -12,6 +12,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { phaseValues } from "./workflow-phase-fixtures.ts"
 import { runDeliveryCleanup } from "../workflows/extensions/deliverable/cleanup.ts"
 import registerDeliverable, { githubMergeProof } from "../workflows/extensions/deliverable/index.ts"
+import {
+    prepareMergeResolutionComment,
+    renderMergeResolutionComment,
+} from "../workflows/extensions/deliverable/merge-resolution.ts"
 import { fixtureToolName, workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
@@ -169,14 +173,14 @@ function cloneBranchExists(root: string, branch: string): boolean {
 }
 
 describe("Deliverable branch cleanup", () => {
-    it("registers one cleanup tool under the Deliverable extension", () => {
+    it("registers the cleanup and merge-resolution tools under the Deliverable extension", () => {
         const tools: string[] = []
         registerDeliverable({
             on() {},
             events: { on: () => () => {} },
             registerTool: (tool: { name: string }) => tools.push(tool.name),
         } as unknown as ExtensionAPI)
-        assert.deepEqual(tools, ["cleanup_delivery_branch"])
+        assert.deepEqual(tools, ["cleanup_delivery_branch", "prepare_merge_resolution_comment"])
     })
 
     it("cleans a squash-merged branch in the current clone from verified PR evidence", () => {
@@ -502,3 +506,116 @@ describe("Deliverable branch cleanup", () => {
         }
     })
 })
+
+describe("Deliverable merge-resolution comment", () => {
+    const catalog = workflowMcpCatalog("github")
+    const summary = "`README.md` conflicted; kept both lines, branch first."
+
+    // A submitted Gig whose branch and target both changed the same README line.
+    function conflicted() {
+        const fixture = repository()
+        const { root } = fixture
+        const gig = submittedGig(root)
+        git(root, ["switch", gig.branch])
+        fs.writeFileSync(path.join(root, "README.md"), "branch\n")
+        git(root, ["commit", "-am", "branch change"])
+        git(root, ["push", "-u", "origin", gig.branch])
+        git(root, ["switch", gig.target])
+        fs.writeFileSync(path.join(root, "README.md"), "target\n")
+        git(root, ["commit", "-am", "target change"])
+        git(root, ["push", "origin", gig.target])
+        git(root, ["switch", gig.branch])
+        git(root, ["fetch", "origin"])
+        return { ...fixture, gig }
+    }
+
+    function resolve(root: string, content: string) {
+        cp.spawnSync("git", ["merge", "--no-ff", "--no-commit", "origin/main"], { cwd: root })
+        fs.writeFileSync(path.join(root, "README.md"), content)
+        git(root, ["add", "README.md"])
+        git(root, ["commit", "--no-edit"])
+        return git(root, ["rev-parse", "HEAD"])
+    }
+
+    it("renders the pushed resolution with the summary, folded remerge-diff, and marker", () => {
+        const { parent, root, gig } = conflicted()
+        try {
+            const prepare = () => prepareMergeResolutionComment(root, { entityDir: gig.directory, summary }, catalog)
+            assert.throws(prepare, /doesn't end in a merge commit/)
+            const merge = resolve(root, "branch\ntarget\n")
+            assert.throws(prepare, /push it before recording/)
+            git(root, ["push", "origin", gig.branch])
+            const prepared = prepare()
+            assert.equal(prepared.merge, merge)
+            assert.equal(prepared.call.tool, fixtureToolName("github", "add_issue_comment"))
+            const { body, ...address } = prepared.call.arguments
+            assert.deepEqual(address, { ...repo, issue_number: 7 })
+            assert.ok(body.startsWith("**Merge conflict resolved**"))
+            assert.ok(body.includes(summary))
+            assert.ok(body.includes(`\`${merge.slice(0, 12)}\``))
+            assert.match(body, /<details>\n<summary>Conflict resolution<\/summary>\n\n```diff\n[\s\S]*^-<<<<<<< /m)
+            assert.match(body, /^->>>>>>> /m)
+            assert.ok(body.endsWith(`<!-- merge-resolution:${merge} -->`))
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+
+    it("refuses a merge without conflicts, a merge of another branch, and a missing PR record", () => {
+        const { parent, root, gig } = conflicted()
+        try {
+            const prepare = (directory = gig.directory) =>
+                prepareMergeResolutionComment(root, { entityDir: directory, summary }, catalog)
+            // Git's own resolution leaves nothing to record.
+            git(root, ["switch", "-c", "side", "origin/main~1"])
+            fs.writeFileSync(path.join(root, "side.txt"), "side\n")
+            git(root, ["add", "side.txt"])
+            git(root, ["commit", "-m", "side"])
+            git(root, ["switch", gig.branch])
+            git(root, ["merge", "--no-ff", "--no-edit", "side"])
+            git(root, ["push", "origin", gig.branch])
+            assert.throws(prepare, /isn't on refs\/remotes\/origin\/main/)
+            git(root, ["push", "origin", "side:main", "--force"])
+            git(root, ["fetch", "origin"])
+            assert.throws(prepare, /resolved no conflicts/)
+
+            const unsubmitted = submittedGigWithoutPr(root)
+            assert.throws(() => prepare(unsubmitted), /forge intent|recorded PR/)
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+
+    it("leaves out an oversized diff and names the local command instead", () => {
+        const merge = "a".repeat(40)
+        const body = renderMergeResolutionComment({
+            summary,
+            target: "main",
+            targetSha: "b".repeat(40),
+            merge,
+            remergeDiff: "+x".repeat(40_000),
+        })
+        assert.doesNotMatch(body, /```diff/)
+        assert.ok(body.includes(`git show --remerge-diff ${merge}`))
+        assert.ok(body.endsWith(`<!-- merge-resolution:${merge} -->`))
+        assert.match(
+            renderMergeResolutionComment({ summary, target: "main", targetSha: merge, merge, remergeDiff: "+```" }),
+            /````diff/,
+        )
+    })
+})
+
+// A second Gig in the same repository with no PR intent recorded.
+function submittedGigWithoutPr(root: string): string {
+    return initializeEntity(
+        {
+            entity: "gig",
+            title: "Other",
+            slug: "other",
+            request: "Other work",
+            kind: "chore",
+            object: issue(6),
+        },
+        { cwd: root },
+    ).directory
+}

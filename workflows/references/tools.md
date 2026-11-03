@@ -64,9 +64,12 @@ None of these call providers or turn identity, lifecycle, or merge facts into ca
 - **Setup:** `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, `render_incoming_pr_intake`.
 - **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
 - **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
+  - Task and Gig reviews also have `conflict-plan` and `conflict-merge` categories for [conflict resolution](./deliverable/conflicts.md).
+  - Epic, Task, and Gig reviewers read files with `read`, `grep`, `find`, and `ls`, and Git with the read-only `git_read`. They run headless under your permission settings, so with `defaultMode: "ask"` those tools must be allowed. Incoming-PR reviewers get file reads only.
 - **Plan presentation:** `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, `prepare_gig_plan_presentation`.
 - **Completion presentation:** `prepare_task_completion_presentation`, `prepare_gig_completion_presentation`. They present only the newest final round, and only when it approved.
 - **Delivery cleanup:** `cleanup_delivery_branch` takes the merged PR read as `evidence`. It doesn't establish Done or authorize cleanup outside the shipping gates.
+- **Conflict resolution comment:** `prepare_merge_resolution_comment` returns the PR comment call that records a pushed conflict resolution.
 
 ## Incoming PRs
 

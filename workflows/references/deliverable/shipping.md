@@ -31,12 +31,7 @@ Never merge locally or merge an Epic.
 
 ## Merge conflicts
 
-When GitHub rejects the merge because the PR conflicts with its target, stop shipping.
-
-1. Fetch the target and report what conflicts. Don't change the branch.
-2. When the resolution changes accepted behavior or wording, use [material replanning](../planning.md#material-replanning). Otherwise, the user still decides how to resolve it.
-3. Resolving creates a new head. Apply it as a [revision on an open PR](./submission.md#revisions-on-an-open-pr). Rebasing or pushing the branch needs explicit user approval, shown with the resolved diff.
-4. After the approved push, merging the new head needs a new request to ship.
+When GitHub rejects the merge because the PR conflicts with its target, stop shipping and read [conflict resolution](./conflicts.md). The resolution is a new head: pushing it needs explicit approval, and merging it needs a new request to ship.
 
 ## What cleanup does
 
@@ -53,4 +48,4 @@ An Epic-target Task stays on the Epic branch and leaves main untouched.
 
 A blocked merge, missing evidence, unavailable origin, ahead or diverged target, head mismatch, or worktree failure stops shipping and preserves the Deliverable branch. Report what completed and the exact blocker. Claim it fully shipped only when the clone is on the synchronized target and the local branch is deleted.
 
-Never stash, reset, clean unrelated files, force checkout, push the target to hide divergence, delete remote or Epic branches, or revert a confirmed `done`.
+Never stash, reset, clean unrelated files, force checkout, push the target to hide divergence, delete remote or Epic branches, or revert a confirmed `done`. The one allowed reset is the approved `git reset --keep` of an unpushed conflict merge in [conflict resolution](./conflicts.md#review-the-merge).

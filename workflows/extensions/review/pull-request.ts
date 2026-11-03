@@ -241,6 +241,8 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
                 prompt: prepared.prompt,
                 agentName: "incoming-pr-review",
                 progressLabel: "Incoming PR review agent",
+                // The contribution is untrusted, so this reviewer keeps file reads only.
+                toolset: "files",
                 model: input.model,
                 signal,
                 onUpdate: (text) => onUpdate?.(textResult(text)),
