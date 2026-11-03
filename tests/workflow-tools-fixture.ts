@@ -53,6 +53,7 @@ export const expectedWorkflowTools = [
     "record_epic_task_issue",
     "render_provider_body",
     "verify_artifact_projection",
+    "inspect_session_analysis",
     "inspect_integrations",
     "inspect_queue_intake",
     "inspect_adoption",

@@ -2,6 +2,7 @@
 name: gig
 description: "Use for standalone Deliverable work under <repo>/.project/.local/gigs/. Initializes or resumes a Gig, then follows the shared Deliverable lifecycle."
 allowed-tools:
+    - "inspect_session_analysis"
     - "preflight_gig"
     - "init_github_gig"
     - "init_linear_gig"

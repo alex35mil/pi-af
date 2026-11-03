@@ -51,9 +51,13 @@ const WorkflowSettingsSchema = Type.Object(
     {
         branches: Type.Optional(BranchSettingsSchema),
         workflowProject: Type.Optional(Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })),
+        sessionAnalysis: Type.Optional(Type.Boolean()),
     },
     { additionalProperties: false, minProperties: 1 },
 )
+
+/** Whether a fully shipped Deliverable ends with an in-chat analysis of the session for workflow problems. */
+export type SessionAnalysis = "enabled" | "disabled"
 
 export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: string } = {}): ProjectConfig {
     const root = project.resolveRootDir(cwd)
@@ -101,6 +105,12 @@ export function getWorkflowSettingsPaths(cwd: string, options: { globalSettingsP
         global: options.globalSettingsPath ?? global,
         local: path.join(root, LOCAL_PROJECT_CONFIG_PATH),
     }
+}
+
+/** Reads the global opt-in; it is machine-wide, so project configuration can't set it. Absent means disabled. */
+export function loadSessionAnalysis(cwd: string, options: { globalSettingsPath?: string } = {}): SessionAnalysis {
+    const settingsPath = getWorkflowSettingsPaths(cwd, options).global
+    return loadWorkflowSettings(settingsPath, WorkflowSettingsSchema)?.sessionAnalysis === true ? "enabled" : "disabled"
 }
 
 export function resolveWorkflowProject(cwd: string, options: { globalSettingsPath?: string } = {}): string {

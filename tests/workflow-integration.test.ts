@@ -443,6 +443,31 @@ describe("workflow-source queue context", () => {
         assert.equal((result.details as { projectRoot: string }).projectRoot, f.source)
         assert.deepEqual(fileSnapshot(f.root), before)
     })
+
+    it("reports the global session-analysis setting through its context tool", async (t) => {
+        const f = workflowFixture(t)
+        type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
+        const tools = new Map<string, Tool>()
+        registerIntegrations({
+            events: { on: () => () => {} },
+            on: () => {},
+            registerCommand: () => {},
+            registerTool: (tool: Tool) => tools.set(tool.name, tool),
+        } as unknown as ExtensionAPI)
+        const inspect = async () =>
+            (
+                await tools
+                    .get("inspect_session_analysis")!
+                    .execute("inspect", {}, undefined, undefined, withToolExecution(f.ctx))
+            ).details
+        assert.deepEqual(await inspect(), { sessionAnalysis: "disabled" })
+        fs.writeFileSync(f.settingsPath, JSON.stringify({ workflowProject: f.source, sessionAnalysis: true }))
+        const before = fileSnapshot(f.root)
+        assert.deepEqual(await inspect(), { sessionAnalysis: "enabled" })
+        assert.deepEqual(fileSnapshot(f.root), before)
+        fs.writeFileSync(f.settingsPath, JSON.stringify({ sessionAnalysis: 1 }))
+        await assert.rejects(inspect, (error: Error) => error.message.includes(f.settingsPath))
+    })
 })
 
 describe("workflow integration configuration", () => {
