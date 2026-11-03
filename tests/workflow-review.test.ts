@@ -1333,6 +1333,9 @@ describe("workflow reviewer isolation", () => {
             assert.ok(
                 planPrompt.includes(`"--write-tree", "--name-only", "--messages", "${branchHead}", "${targetSha}"`),
             )
+            // The reviewer lists the target commits behind the conflict and checks each against the plan.
+            assert.ok(planPrompt.includes(`"${branchHead}..${targetSha}", "--"`))
+            assert.match(planPrompt, /Target changes to keep/)
 
             // No merge review before the newest plan round approves, or before the merge exists.
             await assert.rejects(run({ phase: "conflict-merge" }), /newest conflict-plan round to be approved/)
@@ -1374,6 +1377,7 @@ describe("workflow reviewer isolation", () => {
             })
             assert.ok(mergePrompt.includes(`"--remerge-diff", "${merge}"`))
             assert.match(mergePrompt, /Approved resolution plan/)
+            assert.match(mergePrompt, /Target changes to keep/)
 
             // Replanning on the unpushed merge records its first parent, where the reset returns.
             await reachesReviewer({ phase: "conflict-plan", resolution: "Keep only the target line." })

@@ -107,7 +107,7 @@ const subjectProperty = Type.String({ description: "Interim review subject/quest
 const resolutionProperty = Type.String({
     minLength: 1,
     description:
-        "conflict-plan only: the plain-words resolution plan, naming each conflicting file, what each side changed, and how each conflict is kept or combined",
+        "conflict-plan only: the plain-words resolution plan, naming each conflicting file, what each side changed, and how each conflict is kept or combined, plus a Target changes to keep section listing each target commit that touches a conflicting file, with its SHA and PR, the fix or behavior that must survive, and how the resolution keeps it",
 })
 
 // One strict object per Deliverable review category, so each input exists only where it's used.
@@ -1111,12 +1111,14 @@ function deliverableRoundFocus(round: DeliverableReviewRound, completionArtifact
                 "Conflict resolution plan focus: the Deliverable's PR conflicts with its target, and the plan below says how a merge of the target into the branch will resolve it. Nothing is merged yet.",
                 `Inspect the actual conflicts yourself: git_read merge-tree with ["--write-tree", "--name-only", "--messages", "${round.conflict.preMergeBase}", "${round.conflict.targetSha}"] lists them, and git_read diff, show, and log on both sides show what each side changed since their merge base.`,
                 "Check that the plan covers every conflicting file and hunk, keeps the intent of both sides, describes each side's change accurately, and stays within the accepted plan's behavior. A resolution that changes accepted behavior needs material replanning, not a resolution plan.",
+                `Check the plan's Target changes to keep section: git_read log with ["--oneline", "${round.conflict.preMergeBase}..${round.conflict.targetSha}", "--", <conflicting files>] lists the target commits that touch the conflicting files, and each must match an entry. A missing commit, or a resolution that drops or weakens a listed change, is a blocking finding.`,
             ].join("\n")
         case "conflict-merge":
             return [
                 `Conflict merge focus: ${round.merge} merges the target into the branch and resolves the conflicts. Review it against the approved resolution plan below.`,
                 `Inspect the exact resolution: git_read show with ["--remerge-diff", "${round.merge}"] shows how the committed result differs from Git's automatic merge, including conflict markers. Use git_read diff and show on either parent for context.`,
                 "Check that the resolution follows the plan, loses no change from either side, adds no unrelated change, and leaves no conflict markers. Call out missing verification of the merged result.",
+                "Check the merged result against the plan's Target changes to keep section. A listed change that the merge drops or weakens is a blocking finding.",
             ].join("\n")
     }
 }
