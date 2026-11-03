@@ -3,6 +3,7 @@ import {
     getMcpToolName,
     isMcpTool,
     mcpResponsePayload,
+    requireMcpTool,
     type McpToolCatalog,
 } from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
@@ -88,8 +89,7 @@ function callScope(
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ) {
-    if (!isMcpTool(evidence.tool, server, tool, tools))
-        throw new Error("Project evidence is not from the configured tool")
+    requireMcpTool(evidence.tool, server, tool, tools, "Project evidence")
     for (const [key, value] of Object.entries(expected)) {
         const actual = evidence.arguments[key]
         const matches =

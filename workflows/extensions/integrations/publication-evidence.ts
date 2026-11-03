@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util"
-import { isMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { requireMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
 export function requirePublicationCall(
@@ -9,8 +9,7 @@ export function requirePublicationCall(
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ): void {
-    if (!isMcpTool(evidence.tool, server, operation, tools))
-        throw new Error("plan publication evidence is not from the configured registered tool")
+    requireMcpTool(evidence.tool, server, operation, tools, "plan publication evidence")
     for (const [key, value] of Object.entries(expected)) {
         const actual = evidence.arguments[key]
         const matches =

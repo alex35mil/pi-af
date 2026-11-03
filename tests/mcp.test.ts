@@ -11,8 +11,10 @@ import {
     mcpResponsePayload,
     mcpResponseValue,
     MCP_TOOL_DECORATORS_EVENT,
+    requireMcpTool,
     type McpToolDecorators,
 } from "../extensions/__lib/mcp.ts"
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 import { nativeMcpFixture } from "./native-mcp-fixture.ts"
 
 const schema = { type: "object" as const, properties: { value: { type: "string" } }, additionalProperties: false }
@@ -59,6 +61,22 @@ describe("MCP provider evidence", () => {
             "Access denied",
         ])
             assert.throws(() => mcpResponsePayload(response), /MCP|Provider evidence/)
+    })
+
+    it("names the expected registered tool when evidence comes from another tool", () => {
+        const catalog = workflowMcpCatalog("github")
+        requireMcpTool("mcp__github__create_pull_request", "github", "create_pull_request", catalog, "PR evidence")
+        assert.throws(
+            () => requireMcpTool("create_pull_request", "github", "create_pull_request", catalog, "PR evidence"),
+            (error: Error) =>
+                error.message.includes("mcp__github__create_pull_request") &&
+                error.message.includes("got create_pull_request"),
+        )
+        assert.throws(
+            () => requireMcpTool("mcp__github__create_pull_request", "other", "create_pull_request", catalog, "PR"),
+            (error: Error) =>
+                error.message.includes("mcp__github__create_pull_request") && /unavailable/.test(error.message),
+        )
     })
 })
 

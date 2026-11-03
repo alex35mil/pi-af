@@ -4,7 +4,7 @@ import * as path from "node:path"
 import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 
-import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { mcpResponsePayload, requireMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { EPIC_ROOT, entityName, readyBranch, slugify } from "../__lib/domain.js"
 import {
@@ -68,8 +68,8 @@ function epicFacts(environment: WorkflowEnvironment, evidence: ProviderEvidence,
         return value
     }
     if (tracker.provider === "github") {
-        if (!isMcpTool(evidence.tool, tracker.mcpServer, "issue_read", tools) || evidence.arguments.method !== "get")
-            throw new Error("Epic evidence must be the configured issue_read get")
+        requireMcpTool(evidence.tool, tracker.mcpServer, "issue_read", tools, "Epic evidence")
+        if (evidence.arguments.method !== "get") throw new Error("Epic evidence must be the configured issue_read get")
         const repository = `${tracker.repository.owner}/${tracker.repository.repo}`.toLowerCase()
         const args = `${evidence.arguments.owner}/${evidence.arguments.repo}`.toLowerCase()
         if (args !== repository || response.number !== evidence.arguments.issue_number)
@@ -89,8 +89,7 @@ function epicFacts(environment: WorkflowEnvironment, evidence: ProviderEvidence,
             createdAt: text(response.created_at, "creation time"),
         }
     }
-    if (!isMcpTool(evidence.tool, tracker.mcpServer, "get_project", tools))
-        throw new Error("Epic evidence must be the configured get_project")
+    requireMcpTool(evidence.tool, tracker.mcpServer, "get_project", tools, "Epic evidence")
     return {
         object: {
             provider: "linear",

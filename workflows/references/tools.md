@@ -50,7 +50,7 @@ Context tools return configuration, addressing, evidence requirements, or native
 
 ## Resource identity and publication
 
-- **PR creation:** `begin_resource_creation` saves the PR intent, then `record_resource_creation` takes the PR create's evidence.
+- **PR creation:** `begin_resource_creation` saves the PR intent and returns the PR create call, then `record_resource_creation` takes that call's evidence.
 - **Resource IDs:** `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and `select_pull_request_resource` for an approved choice of existing PR.
 - **Plans:**
   - `prepare_tracker_publication`, and `prepare_tracker_publication_update` when it returns `reads-required`: always for a published plan, any entity and provider;
