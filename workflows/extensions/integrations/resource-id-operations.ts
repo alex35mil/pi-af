@@ -16,7 +16,7 @@ import {
     type ResourceIds,
     type ResourceIdsScope,
 } from "./resource-ids.js"
-import { sameRepository } from "./policy.js"
+import { matchesGitHubProjectAddress, sameRepository } from "./policy.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./forge/github/merge.js"
 
 export type ResourceKind = ResourceIdsScope["kind"]
@@ -126,6 +126,15 @@ function assertArguments(evidence: ProviderEvidence, expected: Record<string, un
         if (!matches) throw new Error(`provider evidence argument ${key} does not match the required resource`)
     }
 }
+function assertProjectAddress(
+    evidence: ProviderEvidence,
+    project: Extract<ResourceIdsScope, { kind: "github-project-item" }>["project"],
+): void {
+    if (!matchesGitHubProjectAddress(evidence.arguments, project))
+        throw new Error(
+            "provider evidence arguments owner, owner_type, and project_number do not match the required Project",
+        )
+}
 function requireTool(evidence: ProviderEvidence, scope: ResourceIdsScope, tool: string, tools: McpToolCatalog): void {
     if (!isMcpTool(evidence.tool, scope.mcpServer, tool, tools))
         throw new Error("provider evidence does not come from the configured registered tool")
@@ -154,12 +163,8 @@ export function resourceIdsFromRead(
         }
         case "github-project-item": {
             requireTool(evidence, scope, "projects_get", tools)
-            assertArguments(evidence, {
-                method: "get_project_item",
-                owner: scope.project.owner,
-                owner_type: scope.project.ownerType,
-                project_number: scope.project.number,
-            })
+            assertArguments(evidence, { method: "get_project_item" })
+            assertProjectAddress(evidence, scope.project)
             const content = object(response.content, "Project item content")
             if (
                 response.content_type !== "Issue" ||
@@ -278,14 +283,12 @@ export async function recordResourceIdsEvidence(
     ) {
         assertArguments(evidence, {
             method: "add_project_item",
-            owner: context.scope.project.owner,
-            owner_type: context.scope.project.ownerType,
-            project_number: context.scope.project.number,
             item_owner: context.scope.repository.owner,
             item_repo: context.scope.repository.repo,
             item_type: "issue",
             issue_number: context.scope.issueNumber,
         })
+        assertProjectAddress(evidence, context.scope.project)
         primary = parseResourceIds({
             scope: context.scope,
             value: { itemId: positiveInteger(responseObject(evidence).item_id, "Project item ID") },
@@ -340,13 +343,8 @@ export async function invalidateStaleResourceIds(
     let stale: boolean
     if (isResourceIdsKind(resourceIds, "github-project-item")) {
         requireTool(evidence, resourceIds.scope, "projects_get", tools)
-        assertArguments(evidence, {
-            method: "get_project_item",
-            owner: resourceIds.scope.project.owner,
-            owner_type: resourceIds.scope.project.ownerType,
-            project_number: resourceIds.scope.project.number,
-            item_id: resourceIds.value.itemId,
-        })
+        assertArguments(evidence, { method: "get_project_item", item_id: resourceIds.value.itemId })
+        assertProjectAddress(evidence, resourceIds.scope.project)
         if (positiveInteger(response.id, "Project item ID") !== resourceIds.value.itemId)
             throw new Error("response does not establish the requested cached item")
         const content = object(response.content, "Project item content")
