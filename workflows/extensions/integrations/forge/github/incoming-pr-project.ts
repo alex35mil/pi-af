@@ -9,6 +9,7 @@ import { EvidenceSchema } from "../../resource-id-tool.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 import { incomingPullRequestContext, incomingRevision } from "./incoming-pr-context.js"
 import { planGitHubMerge } from "./merge.js"
+import { matchesGitHubProjectAddress } from "../../policy.js"
 
 const membership = Type.Union([
     Type.Object(
@@ -83,19 +84,19 @@ function integer(value: unknown): number {
 }
 function callScope(
     evidence: Pick<ProviderEvidence, "tool" | "arguments">,
-    server: string,
+    board: Board,
     tool: string,
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ) {
-    if (!isMcpTool(evidence.tool, server, tool, tools))
+    if (!isMcpTool(evidence.tool, board.mcpServer, tool, tools))
         throw new Error("Project evidence is not from the configured tool")
+    if (!matchesGitHubProjectAddress(evidence.arguments, board.project))
+        throw new Error("Project evidence owner, owner_type, and project_number do not match configured scope")
     for (const [key, value] of Object.entries(expected)) {
         const actual = evidence.arguments[key]
         const matches =
-            ["owner", "item_owner", "item_repo"].includes(key) &&
-            typeof actual === "string" &&
-            typeof value === "string"
+            ["item_owner", "item_repo"].includes(key) && typeof actual === "string" && typeof value === "string"
                 ? actual.toLowerCase() === value.toLowerCase()
                 : actual === value
         if (!matches) throw new Error(`Project evidence ${key} does not match configured scope`)
@@ -103,25 +104,19 @@ function callScope(
 }
 function call(
     evidence: ProviderEvidence,
-    server: string,
+    board: Board,
     tool: string,
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ) {
-    callScope(evidence, server, tool, expected, tools)
+    callScope(evidence, board, tool, expected, tools)
     return mcpResponsePayload(evidence.response)
 }
 function address(board: Board) {
     return { owner: board.project.owner, owner_type: board.project.ownerType, project_number: board.project.number }
 }
 function field(board: Board, evidence: ProviderEvidence, tools: McpToolCatalog): number {
-    const response = call(
-        evidence,
-        board.mcpServer,
-        "projects_get",
-        { method: "get_project_field", ...address(board) },
-        tools,
-    )
+    const response = call(evidence, board, "projects_get", { method: "get_project_field" }, tools)
     const id = integer(response.id)
     if (
         evidence.arguments.field_id !== id ||
@@ -148,8 +143,8 @@ function item(
 ) {
     // An add response carries only the node `id` and numeric `item_id`, never the PR or Status, so it is no item evidence.
     const mutation = isMcpTool(evidence.tool, board.mcpServer, "projects_write", tools)
-    const expected = { method: mutation ? "update_project_item" : "get_project_item", ...address(board) }
-    const response = call(evidence, board.mcpServer, mutation ? "projects_write" : "projects_get", expected, tools)
+    const expected = { method: mutation ? "update_project_item" : "get_project_item" }
+    const response = call(evidence, board, mutation ? "projects_write" : "projects_get", expected, tools)
     const id = integer(response.id)
     const content = object(response.content, "Project content")
     if (
@@ -187,11 +182,10 @@ function absence(board: Board, pages: ProviderEvidence[], repository: string, nu
     pages.forEach((page, index) => {
         const response = call(
             page,
-            board.mcpServer,
+            board,
             "projects_list",
             {
                 method: "list_project_items",
-                ...address(board),
                 query: `repo:${repository} is:pr`,
                 after,
             },
@@ -299,11 +293,10 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                     input.membership.state === "added" ? input.membership.creation : input.membership.attempt
                 callScope(
                     attempt,
-                    board.mcpServer,
+                    board,
                     "projects_write",
                     {
                         method: "add_project_item",
-                        ...address(board),
                         item_owner: revision.repository.owner,
                         item_repo: revision.repository.repo,
                         item_type: "pull_request",

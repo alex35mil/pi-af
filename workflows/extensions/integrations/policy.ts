@@ -25,6 +25,20 @@ export function assertEntityEnvironment(status: EntityStatus, environment: Workf
         throw new Error(`${status.slug} forge repository differs from the configured repository`)
 }
 
+// A Project is identified by owner login and number; logins are unique across users and organizations,
+// so `owner_type` is only a hint the server detects when absent. A passed `owner_type` must still match.
+export function matchesGitHubProjectAddress(
+    args: Record<string, unknown>,
+    project: { owner: string; ownerType: "user" | "org"; number: number },
+): boolean {
+    return (
+        typeof args.owner === "string" &&
+        args.owner.toLowerCase() === project.owner.toLowerCase() &&
+        args.project_number === project.number &&
+        (args.owner_type === undefined || args.owner_type === project.ownerType)
+    )
+}
+
 export function sameRepository(left: { owner: string; repo: string }, right: { owner: string; repo: string }) {
     return (
         left.owner.toLowerCase() === right.owner.toLowerCase() && left.repo.toLowerCase() === right.repo.toLowerCase()

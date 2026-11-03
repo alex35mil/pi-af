@@ -329,6 +329,65 @@ describe("resource ID operations", () => {
         }
     })
 
+    it("accepts Project evidence without owner_type and rejects a mismatched Project address", async () => {
+        const f = fixture()
+        try {
+            const context = resolveResourceIdsContext(f.root, f.directory, "github-project-item")
+            const address = { owner: "alex", project_number: 2 }
+            const add = {
+                tool: "mcp__github__projects_write",
+                arguments: {
+                    method: "add_project_item",
+                    ...address,
+                    item_owner: "alex",
+                    item_repo: "example",
+                    item_type: "issue",
+                    issue_number: 23,
+                },
+                response: { id: "PVTI_example", item_id: 42 },
+            }
+            const read = (number: number) => ({
+                tool: "mcp__github__projects_get",
+                arguments: { method: "get_project_item", ...address, item_id: 42 },
+                response: { id: 42, content_type: "Issue", content: { number, repository: "alex/example" } },
+            })
+            const mismatches = [{ owner_type: "org" }, { owner: "other" }, { project_number: 3 }]
+
+            const added = await recordResourceIdsEvidence(context, add, new OperationResourceIdsMemo(), mcpTools)
+            assert.deepEqual(added.value, { itemId: 42 })
+            assert.deepEqual(resourceIdsFromRead(itemScope, read(23), mcpTools).value, { itemId: 42 })
+            for (const changed of mismatches)
+                assert.throws(() => {
+                    const evidence = read(23)
+                    resourceIdsFromRead(
+                        itemScope,
+                        { ...evidence, arguments: { ...evidence.arguments, ...changed } },
+                        mcpTools,
+                    )
+                }, /do not match the required Project/)
+
+            const before = readResourceIdsCache(f.directory)
+            for (const changed of mismatches) {
+                const stale = read(24)
+                await assert.rejects(
+                    invalidateStaleResourceIds(
+                        context,
+                        { ...stale, arguments: { ...stale.arguments, ...changed } },
+                        new OperationResourceIdsMemo(),
+                        mcpTools,
+                    ),
+                    /do not match the required Project/,
+                )
+                assert.deepEqual(readResourceIdsCache(f.directory), before)
+            }
+            const result = await invalidateStaleResourceIds(context, read(24), new OperationResourceIdsMemo(), mcpTools)
+            assert.equal(result.state, "missing")
+            assert.deepEqual(readResourceIdsCache(f.directory)!.resourceIds, [])
+        } finally {
+            f.cleanup()
+        }
+    })
+
     it("removes only proven-stale IDs without finding replacements", async () => {
         const f = fixture()
         try {
