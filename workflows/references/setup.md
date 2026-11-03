@@ -106,6 +106,12 @@ To report workflow problems from any consuming project, set `workflowProject` in
 - It points to the workflow source repository root. It can sit alongside a global `branches.username`, and either can appear alone.
 - The file stays outside Git, holds no credentials, and isn't a consuming-project setting. `.project/config.local.json` holds branch settings only and can't override it.
 
+**Session analysis:**
+
+- `"sessionAnalysis": true` in the same file ends every shipped Task or Gig, completed Epic, and shipped incoming PR with an in-chat analysis of the session for workflow problems ([session analysis](./session-analysis.md)).
+- It's off when absent or `false`, and it costs tokens. It's global only; no project configuration can set it.
+- It doesn't need `workflowProject`, but reporting a finding does.
+
 **Targets:**
 
 - `inspect_integrations` and `inspect_queue_intake` take `target: "current" | "workflow"`.

@@ -2,6 +2,7 @@
 name: task
 description: "Use for Deliverable work belonging to exactly one Epic under <repo>/.project/.local/epics/<epic>/tasks/."
 allowed-tools:
+    - "inspect_session_analysis"
     - "init_github_task"
     - "restore_epic"
     - "restore_epic_plan_source"

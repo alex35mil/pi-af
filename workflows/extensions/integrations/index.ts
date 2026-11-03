@@ -22,6 +22,7 @@ import {
 import {
     assertArtifactPersistencePrepared,
     assertSandboxArtifactsLinked,
+    loadSessionAnalysis,
     resolveWorkflowProject,
 } from "../__lib/project-config.js"
 import * as Git from "../__lib/git.js"
@@ -242,6 +243,18 @@ export default function (pi: ExtensionAPI): void {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
                 details: result,
             }
+        },
+    })
+
+    toolsApi.registerTool({
+        name: "inspect_session_analysis",
+        label: "inspect_session_analysis",
+        description:
+            "Read whether the global workflows.json enables the in-chat session analysis that ends a finished Task, Gig, Epic, or incoming PR. Reads local settings only; never calls providers or changes configuration.",
+        parameters: Type.Object({}, { additionalProperties: false }),
+        async execute(_id, _params, _signal, _onUpdate, ctx) {
+            const result = { sessionAnalysis: loadSessionAnalysis(ctx.cwd) }
+            return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
         },
     })
 

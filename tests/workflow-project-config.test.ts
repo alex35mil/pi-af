@@ -20,6 +20,7 @@ import {
     assertArtifactPersistencePrepared,
     assertSandboxArtifactsLinked,
     loadProjectConfig,
+    loadSessionAnalysis,
     LOCAL_PROJECT_CONFIG_EXCLUDE,
     LEGACY_PROJECT_LOCAL_IGNORE,
     prepareArtifactPersistence,
@@ -98,6 +99,36 @@ describe("workflow project configuration", () => {
                 fs.realpathSync(root),
                 "source selection reads global settings only",
             )
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("reads session analysis only from the global settings, disabled by default", () => {
+        const root = repository()
+        const globalSettingsPath = path.join(root, "workflows.json")
+        const options = { globalSettingsPath }
+        try {
+            assert.equal(loadSessionAnalysis(root, options), "disabled")
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ workflowProject: root }))
+            assert.equal(loadSessionAnalysis(root, options), "disabled")
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ sessionAnalysis: false }))
+            assert.equal(loadSessionAnalysis(root, options), "disabled")
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ sessionAnalysis: true }))
+            assert.equal(loadSessionAnalysis(root, options), "enabled")
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ sessionAnalysis: "true" }))
+            assert.throws(
+                () => loadSessionAnalysis(root, options),
+                (error: Error) => error.message.includes(globalSettingsPath),
+            )
+
+            fs.writeFileSync(globalSettingsPath, JSON.stringify({ sessionAnalysis: false }))
+            fs.mkdirSync(path.join(root, ".project"), { recursive: true })
+            fs.writeFileSync(
+                path.join(root, ".project", "config.local.json"),
+                JSON.stringify({ sessionAnalysis: true }),
+            )
+            assert.equal(loadSessionAnalysis(root, options), "disabled")
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

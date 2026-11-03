@@ -52,6 +52,7 @@ The Project stays In Review through all feedback, drafts, rebase, fix publicatio
 5. **Clean up.** Within the same request, call `cleanup_incoming_pr_checkout` with the merged PR evidence.
    - For a configured GitHub Project, supply `completion: { kind: "project", fieldEvidence, itemEvidence }` proving this item is Done. A complete scoped write success may supply the item evidence; otherwise read the missing facts.
    - Only a genuinely unconfigured board uses `{ kind: "forgeOnly" }`.
+6. **Analyze.** After cleanup succeeds, including a no-op, call `inspect_session_analysis`. When it returns `enabled`, read [session analysis](../session-analysis.md). A failed cleanup skips this.
 
 **What cleanup checks and keeps:**
 

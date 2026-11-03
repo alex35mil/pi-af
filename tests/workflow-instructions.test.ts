@@ -121,6 +121,7 @@ describe("workflow guidance structure", () => {
                 "integrations/forge/github.md",
                 "integrations/forge/merge.md",
                 "integrations/recovery.md",
+                "session-analysis.md",
             ])
                 assert.ok(graph.has(`workflows/references/${reference}`), `${skill} must reach ${reference}`)
             if (skill !== "epic")
@@ -148,6 +149,7 @@ describe("workflow guidance structure", () => {
                 ])
                     assert.ok(graph.has(`workflows/references/pr/${reference}.md`), `pr must reach pr/${reference}.md`)
                 assert.ok(graph.has("workflows/references/integrations/forge/merge.md"), "pr must reach forge/merge.md")
+                assert.ok(graph.has("workflows/references/session-analysis.md"), "pr must reach session-analysis.md")
                 continue
             }
             if (skill === "project-setup")
@@ -226,19 +228,27 @@ describe("workflow guidance structure", () => {
         // The permissions extension reads these grants at runtime; the tool-contract
         // inventory only rejects unknown names, so missing grants are checked here.
         const required: Record<string, string[]> = {
-            epic: ["prepare_epic_plan_presentation", "prepare_tracker_publication", "render_provider_body"],
+            epic: [
+                "prepare_epic_plan_presentation",
+                "prepare_tracker_publication",
+                "render_provider_body",
+                "inspect_session_analysis",
+            ],
             task: [
                 "prepare_task_plan_presentation",
                 "prepare_task_completion_presentation",
                 "prepare_tracker_publication",
                 "render_provider_body",
+                "inspect_session_analysis",
             ],
             gig: [
                 "prepare_gig_plan_presentation",
                 "prepare_gig_completion_presentation",
                 "prepare_tracker_publication",
                 "render_provider_body",
+                "inspect_session_analysis",
             ],
+            pr: ["inspect_session_analysis"],
             "project-setup": ["inspect_permissions", "inspect_project_setup"],
         }
         for (const [skill, tools] of Object.entries(required)) {

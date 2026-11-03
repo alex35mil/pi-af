@@ -2,6 +2,7 @@
 name: epic
 description: "Use to initialize, shape, review, resume, and complete an Epic under <repo>/.project/.local/epics/. Never implements Task work."
 allowed-tools:
+    - "inspect_session_analysis"
     - "preflight_epic"
     - "init_github_epic"
     - "init_linear_epic"
@@ -185,5 +186,6 @@ When the user explicitly resumes the Epic and asks to complete it:
 2. Reconcile finished Task outcomes against the Epic contract and Project Policies. When drift remains, present it and stop without changing lifecycle; resolve it through Epic planning and acceptance first.
 3. Set native Status straight from In Progress to the configured `done` value and clear native Phase ([Phase](../../references/phase.md)). Keep the last metadata Phase.
 4. Report the completion evidence. Change no committed file; Epic completion never creates a commit, push, PR, or CI run.
+5. Call `inspect_session_analysis`. When it returns `enabled`, read [session analysis](../../references/session-analysis.md).
 
 Never implement Task work from the Epic workflow. Don't push, create a PR, merge, delete branches, or use a worktree without explicit approval of that exact operation or set.
