@@ -252,12 +252,19 @@ describe("shared workflow Phase", () => {
 
         it("rejects reads outside the configured field, Project, or entity issue", () => {
             const rejected: Array<[string, Reads, RegExp]> = [
+                // Wrong-tool errors name the expected registered tool (#156).
                 [
                     "field server",
                     edit((r) => (r.field.tool = "mcp__other__projects_get")),
-                    /configured registered tool/,
+                    /must come from mcp__github__projects_get/,
                 ],
-                ["item server", edit((r) => (r.item.tool = "mcp__other__projects_get")), /configured registered tool/],
+                [
+                    "item server",
+                    edit((r) => (r.item.tool = "mcp__other__projects_get")),
+                    /must come from mcp__github__projects_get/,
+                ],
+                ["field owner_type", edit((r) => (r.field.arguments.owner_type = "org")), /required Project/],
+                ["item owner_type", edit((r) => (r.item.arguments.owner_type = "org")), /required Project/],
                 ["field method", edit((r) => (r.field.arguments.method = "get_project_item")), /method/],
                 ["field Project", edit((r) => (r.field.arguments.project_number = 9)), /project_number/],
                 ["item Project", edit((r) => (r.item.arguments.project_number = 9)), /project_number/],
@@ -284,6 +291,14 @@ describe("shared workflow Phase", () => {
                 () => githubPhaseFacts(linear, entity, githubPhaseReads(target), mcpTools),
                 /configured GitHub tracker/,
             )
+        })
+
+        it("accepts Phase reads that omit the optional owner_type", () => {
+            const reads = edit((r) => {
+                delete (r.field.arguments as { owner_type?: string }).owner_type
+                delete (r.item.arguments as { owner_type?: string }).owner_type
+            })
+            assert.equal(facts(reads).provider, "github")
         })
 
         it("accepts and rejects the same item reads as resource-ID recording", () => {

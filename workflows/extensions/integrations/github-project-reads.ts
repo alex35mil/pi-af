@@ -1,4 +1,5 @@
 import { mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { matchesGitHubProjectAddress } from "./policy.js"
 import { requireProviderCall } from "./provider-evidence.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
@@ -20,8 +21,28 @@ export interface SingleSelectField {
 /** One configured field on an item read: absent when the read returned no entry for it. */
 export type ItemFieldValue = { state: "absent" } | { state: "present"; value: string | null }
 
+/** Arguments for calls the workflow builds itself, which always pass the configured `owner_type`. */
 export function projectAddress(project: GitHubProjectScope) {
     return { owner: project.owner, owner_type: project.ownerType, project_number: project.number }
+}
+
+/**
+ * Proves a `projects_*` call in the configured Project. `expected` holds the non-address arguments;
+ * the address follows `matchesGitHubProjectAddress`, so evidence may omit `owner_type`.
+ */
+export function requireProjectCall(
+    project: GitHubProjectScope,
+    evidence: Pick<ProviderEvidence, "tool" | "arguments">,
+    operation: string,
+    expected: Record<string, unknown>,
+    tools: McpToolCatalog,
+    label: string,
+): void {
+    requireProviderCall(evidence, { server: project.mcpServer, operation, expected }, tools, label)
+    if (!matchesGitHubProjectAddress(evidence.arguments, project))
+        throw new Error(
+            `${label} evidence arguments owner, owner_type, and project_number do not match the required Project`,
+        )
 }
 
 /** Proves a `projects_*` call in the configured Project and returns its payload. */
@@ -32,12 +53,7 @@ export function projectCall(
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ): Record<string, unknown> {
-    requireProviderCall(
-        evidence,
-        { server: project.mcpServer, operation, expected: { ...projectAddress(project), ...expected } },
-        tools,
-        "Project",
-    )
+    requireProjectCall(project, evidence, operation, expected, tools, "Project")
     return mcpResponsePayload(evidence.response)
 }
 

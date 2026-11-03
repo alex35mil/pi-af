@@ -1,4 +1,4 @@
-import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
+import { mcpResponsePayload, requireMcpTool, type McpToolCatalog } from "../../../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 
 interface Repository {
@@ -62,8 +62,8 @@ export function planGitHubMerge(
 ): GitHubMergeDecision {
     try {
         const args = evidence.arguments
+        requireMcpTool(evidence.tool, subject.mcpServer, "pull_request_read", tools, "Merge evidence")
         if (
-            !isMcpTool(evidence.tool, subject.mcpServer, "pull_request_read", tools) ||
             args.method !== "get" ||
             typeof args.owner !== "string" ||
             args.owner.toLowerCase() !== subject.repository.owner.toLowerCase() ||

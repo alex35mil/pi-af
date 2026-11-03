@@ -18,7 +18,7 @@ Named integration context tools read local workflow configuration and state with
 
 `resolve_resource_ids`, `record_resource_ids`, and `invalidate_resource_ids` use scoped IDs/URLs from `resource-ids.json` and records actual adoption, mutation or required-read evidence. Missing/stale IDs require agent investigation. Scoped cache mutation is queued/atomic, preserves unrelated entries and remains outside Git; the operation memo resets on context/shutdown/reload.
 
-Before the PR create, forge `begin_resource_creation` saves immutable repository/head/target intent in the local metadata. After one native PR-create call, `record_resource_creation` writes returned number/URL directly to the IDs file. Explicit `select_pull_request_resource` updates that same file. Neither operation changes `metadata.json` or creates another artifact. Uncertain outcomes require agent investigation before retry.
+Before the PR create, forge `begin_resource_creation` saves immutable repository/head/target intent in the local metadata and returns the registered `create_pull_request` call with the same owner, repo, head, base, and title that recording checks; the agent adds only `body`. After that one call, `record_resource_creation` writes returned number/URL directly to the IDs file. Explicit `select_pull_request_resource` updates that same file. Neither operation changes `metadata.json` or creates another artifact. Uncertain outcomes require agent investigation before retry.
 
 - Configuration: [setup](../../references/setup.md).
 - Procedures: [shared integrations](../../references/integrations/shared.md), [Queue](../../references/queue.md), [tracker](tracker/README.md) and [forge](forge/README.md).

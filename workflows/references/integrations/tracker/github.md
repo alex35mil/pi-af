@@ -56,6 +56,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 - The `add_project_item` response's `id` is the GraphQL node ID (`PVTI_…`). Its numeric Project item ID is `item_id`. Never pass `id` as `item_id`.
 - Every other Project item response returns the numeric ID in `id`.
 - Right after an add, address Project writes by issue (`item_owner`, `item_repo`, `issue_number`); they need no item ID.
+- `owner_type` is optional in Project calls and their evidence. When passed, it must match the configured owner type.
 
 ## Resume and mutations
 

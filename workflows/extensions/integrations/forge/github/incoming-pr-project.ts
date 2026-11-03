@@ -9,10 +9,10 @@ import {
     itemFieldValue,
     projectAddress,
     projectCall,
+    requireProjectCall,
     singleSelectField,
     type GitHubProjectScope,
 } from "../../github-project-reads.js"
-import { requireProviderCall } from "../../provider-evidence.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 import { incomingPullRequestContext, incomingRevision } from "./incoming-pr-context.js"
@@ -256,19 +256,16 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             if (input.membership.state === "added" || input.membership.state === "reconciled") {
                 const attempt =
                     input.membership.state === "added" ? input.membership.creation : input.membership.attempt
-                requireProviderCall(
+                requireProjectCall(
+                    scope(board),
                     attempt,
+                    "projects_write",
                     {
-                        server: board.mcpServer,
-                        operation: "projects_write",
-                        expected: {
-                            method: "add_project_item",
-                            ...address(board),
-                            item_owner: revision.repository.owner,
-                            item_repo: revision.repository.repo,
-                            item_type: "pull_request",
-                            pull_request_number: revision.number,
-                        },
+                        method: "add_project_item",
+                        item_owner: revision.repository.owner,
+                        item_repo: revision.repository.repo,
+                        item_type: "pull_request",
+                        pull_request_number: revision.number,
                     },
                     tools,
                     "Project",

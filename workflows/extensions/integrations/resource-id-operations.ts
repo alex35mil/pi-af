@@ -15,6 +15,7 @@ import {
     type ResourceIds,
     type ResourceIdsScope,
 } from "./resource-ids.js"
+import { requireProjectCall } from "./github-project-reads.js"
 import { sameRepository } from "./policy.js"
 import { requireProviderCall } from "./provider-evidence.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./forge/github/merge.js"
@@ -124,6 +125,23 @@ function requireCall(
 ): void {
     requireProviderCall(evidence, { server: scope.mcpServer, operation, expected }, tools, "provider")
 }
+/** Project-scoped evidence: `owner_type` may be omitted but must match when passed (#148). */
+function requireProjectItemCall(
+    evidence: ProviderEvidence,
+    scope: Extract<ResourceIdsScope, { kind: "github-project-item" }>,
+    operation: string,
+    expected: Record<string, unknown>,
+    tools: McpToolCatalog,
+): void {
+    requireProjectCall(
+        { mcpServer: scope.mcpServer, ...scope.project },
+        evidence,
+        operation,
+        expected,
+        tools,
+        "provider",
+    )
+}
 
 export function resourceIdsFromRead(
     scope: ResourceIdsScope,
@@ -152,18 +170,7 @@ export function resourceIdsFromRead(
             })
         }
         case "github-project-item": {
-            requireCall(
-                evidence,
-                scope,
-                "projects_get",
-                {
-                    method: "get_project_item",
-                    owner: scope.project.owner,
-                    owner_type: scope.project.ownerType,
-                    project_number: scope.project.number,
-                },
-                tools,
-            )
+            requireProjectItemCall(evidence, scope, "projects_get", { method: "get_project_item" }, tools)
             const content = object(response.content, "Project item content")
             if (
                 response.content_type !== "Issue" ||
@@ -278,15 +285,12 @@ export async function recordResourceIdsEvidence(
         context.scope.kind === "github-project-item" &&
         isMcpTool(evidence.tool, context.scope.mcpServer, "projects_write", tools)
     ) {
-        requireCall(
+        requireProjectItemCall(
             evidence,
             context.scope,
             "projects_write",
             {
                 method: "add_project_item",
-                owner: context.scope.project.owner,
-                owner_type: context.scope.project.ownerType,
-                project_number: context.scope.project.number,
                 item_owner: context.scope.repository.owner,
                 item_repo: context.scope.repository.repo,
                 item_type: "issue",
@@ -347,17 +351,11 @@ export async function invalidateStaleResourceIds(
     const response = responseObject(evidence)
     let stale: boolean
     if (isResourceIdsKind(resourceIds, "github-project-item")) {
-        requireCall(
+        requireProjectItemCall(
             evidence,
             resourceIds.scope,
             "projects_get",
-            {
-                method: "get_project_item",
-                owner: resourceIds.scope.project.owner,
-                owner_type: resourceIds.scope.project.ownerType,
-                project_number: resourceIds.scope.project.number,
-                item_id: resourceIds.value.itemId,
-            },
+            { method: "get_project_item", item_id: resourceIds.value.itemId },
             tools,
         )
         if (positiveInteger(response.id, "Project item ID") !== resourceIds.value.itemId)

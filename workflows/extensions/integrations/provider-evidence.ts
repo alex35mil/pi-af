@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util"
-import { isMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { requireMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
 // GitHub owner and repository names are case-insensitive; every other argument must match exactly.
@@ -13,7 +13,8 @@ export interface ProviderCall {
 
 /**
  * Proves that evidence comes from the configured registered tool, called with the expected arguments.
- * `label` names the evidence in errors, for example "plan publication" or "Project".
+ * `label` names the evidence in errors, for example "plan publication" or "Project"; a wrong tool's
+ * error names the expected registered tool.
  */
 export function requireProviderCall(
     evidence: Pick<ProviderEvidence, "tool" | "arguments">,
@@ -21,8 +22,7 @@ export function requireProviderCall(
     tools: McpToolCatalog,
     label: string,
 ): void {
-    if (!isMcpTool(evidence.tool, call.server, call.operation, tools))
-        throw new Error(`${label} evidence is not from the configured registered tool`)
+    requireMcpTool(evidence.tool, call.server, call.operation, tools, `${label} evidence`)
     for (const [key, value] of Object.entries(call.expected)) {
         const actual = evidence.arguments[key]
         const matches =

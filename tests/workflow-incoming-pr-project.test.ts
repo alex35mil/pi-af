@@ -482,6 +482,60 @@ describe("maintainer-controlled incoming PR Project", () => {
             f.close()
         }
     })
+    it("accepts every Project evidence path without owner_type and blocks a mismatched one", () => {
+        const f = fixture()
+        try {
+            const merged = read()
+            merged.response.state = "closed"
+            merged.response.merged = true
+            merged.response.merged_at = "2026-10-21T12:00:00Z"
+            type Edit = (args: Record<string, unknown>) => void
+            const scenarios: Record<string, (edit: Edit) => object> = {
+                field: (edit) => {
+                    const evidence = field()
+                    edit(evidence.arguments)
+                    return { fieldEvidence: evidence }
+                },
+                item: (edit) => {
+                    const membership = present()
+                    edit(membership.evidence.arguments)
+                    return { membership }
+                },
+                lookup: (edit) => {
+                    const membership = absent()
+                    edit(membership.lookup[0].arguments)
+                    return { action: "intake", choice: "todo", membership }
+                },
+                statusWrite: (edit) => {
+                    const evidence = {
+                        ...present("Done").evidence,
+                        tool: "mcp__board__projects_write",
+                        arguments: {
+                            method: "update_project_item",
+                            ...address,
+                            item_id: 99,
+                            updated_field: { name: "Status", value: "Done" },
+                        },
+                    }
+                    edit(evidence.arguments)
+                    return { action: "shipping", evidence: merged, membership: { state: "present", evidence } }
+                },
+                add: (edit) => {
+                    const membership = added()
+                    edit(membership.creation.arguments)
+                    return { action: "intake", choice: "backlog", membership }
+                },
+            }
+            for (const [name, scenario] of Object.entries(scenarios)) {
+                const omitted = f.plan(scenario((args) => delete args.owner_type))
+                assert.notEqual(omitted.state, "blocked", `${name}: ${JSON.stringify(omitted)}`)
+                const mismatched = f.plan(scenario((args) => (args.owner_type = "org")))
+                assert.equal(mismatched.state, "blocked", name)
+            }
+        } finally {
+            f.close()
+        }
+    })
     it("rejects wrong Project, issue content, foreign identity and missing options", () => {
         const f = fixture()
         try {

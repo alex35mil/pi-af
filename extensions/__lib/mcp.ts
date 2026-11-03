@@ -82,6 +82,24 @@ export function isMcpTool(
     return metadata?.serverName === serverName && metadata.serverToolName === toolName
 }
 
+// Evidence must come from one exact server operation; the error names what to send instead.
+export function requireMcpTool(
+    registeredName: string,
+    serverName: string,
+    toolName: string,
+    catalog: McpToolCatalog,
+    subject: string,
+): void {
+    if (isMcpTool(registeredName, serverName, toolName, catalog)) return
+    const address = resolveMcpTool(serverName, toolName, catalog)
+    switch (address.state) {
+        case "available":
+            throw new Error(`${subject} must come from ${address.tool}, got ${registeredName}`)
+        case "unavailable":
+            throw new Error(`${subject} cannot come from ${registeredName}: ${address.reason}`)
+    }
+}
+
 // Each extension owns its subscription; callers pass the catalog explicitly across module boundaries.
 export function observeMcpTools(pi: Pick<ExtensionAPI, "events" | "on">): McpToolCatalog {
     const catalog = new Map<string, McpToolMetadata>()
