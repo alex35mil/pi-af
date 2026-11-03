@@ -273,6 +273,24 @@ describe("native rules model delivery", () => {
         }
     })
 
+    it("records newly loaded rules as a rules:load history entry once per visible scope", async () => {
+        const h = await nativeSessionFixture({ extensions, setup, tools: ["read", "write", "edit"] })
+        const loads = () =>
+            h.manager
+                .getBranch()
+                .flatMap((entry) => (entry.type === "custom" && entry.customType === "rules:load" ? [entry.data] : []))
+        try {
+            h.respond(read(), answer("Rules received"))
+            await h.prompt("Read the target")
+            assert.deepEqual(loads(), [{ paths: [".agents/rules/scoped.md"] }])
+            h.respond(call({ name: "read", arguments: { path: "other.txt" } }), answer("Done"))
+            await h.prompt("Read another file in the same scope")
+            assert.equal(loads().length, 1)
+        } finally {
+            await h.cleanup()
+        }
+    })
+
     it("requires delivery of changed rule contents before another edit", async () => {
         const h = await nativeSessionFixture({ extensions, setup, tools: ["read", "write", "edit"] })
         try {

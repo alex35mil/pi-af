@@ -216,10 +216,9 @@ export default function (pi: ExtensionAPI) {
         const existingRules = matchingRules.filter((rule) => runtime.visibleRuleIds.has(rule.id))
         for (const rule of newRules) runtime.pendingRuleIds.add(rule.id)
         if (newRules.length > 0) {
-            ctx.ui.setWidget(
-                `${EXTENSION}:load`,
-                newRules.map((rule) => normalizePosixPath(path.relative(runtime.repoRoot, rule.filePath))),
-            )
+            pi.appendEntry(`${EXTENSION}:load`, {
+                paths: newRules.map((rule) => normalizePosixPath(path.relative(runtime.repoRoot, rule.filePath))),
+            })
         }
         const parts: string[] = []
         if (newRules.length > 0) parts.push(buildFullReminder(newRules))
