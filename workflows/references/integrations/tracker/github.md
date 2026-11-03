@@ -56,6 +56,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 - The `add_project_item` response's `id` is the GraphQL node ID (`PVTI_…`). Its numeric Project item ID is `item_id`. Never pass `id` as `item_id`.
 - Every other Project item response returns the numeric ID in `id`.
 - Right after an add, address Project writes by issue (`item_owner`, `item_repo`, `issue_number`); they need no item ID.
+- `owner_type` is optional in Project calls and their evidence. When passed, it must match the configured owner type.
 
 ## Resume and mutations
 
@@ -72,7 +73,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 **Changing values:**
 
 - Use `prepare_tracker_mutation` with exactly one change: `labels`, `lifecycle`, `priority`, or Task `hierarchy`.
-- For Phase, use `prepare_github_phase_mutation` with fresh facts and apply only a changed field value.
+- For Phase, use `prepare_github_phase_mutation` with this operation's Phase field and item reads ([fresh native facts](../../phase.md#fresh-native-facts)), and apply only a changed field value.
 - Priority follows its configured Project or issue scope.
 - Lifecycle and Priority are provider authority: never cached and never replaced by a local fallback.
 - A user's request to assign an issue is an ordinary `issue_write` update; resume never reads or repairs assignees.

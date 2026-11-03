@@ -60,7 +60,7 @@ These tools read local configuration, authority, and entity state. They never ca
 
 ### PR creation
 
-`begin_resource_creation` saves only the immutable repository, head, and target intent in `metadata.json`. Then make one native create, and pass clear-success evidence to `record_resource_creation`, which saves the number and URL in the local IDs file. When choosing an existing PR, `select_pull_request_resource` records the user's choice in the same file.
+`begin_resource_creation` saves only the immutable repository, head, and target intent in `metadata.json`, and returns the PR create call. Run that call once with the rendered body, and pass clear-success evidence to `record_resource_creation`, which saves the number and URL in the local IDs file. When choosing an existing PR, `select_pull_request_resource` records the user's choice in the same file.
 
 - Recording never changes `metadata.json`. Existing intent or an uncertain outcome needs investigation, never a blind replacement.
 - Initialization and mutations seed IDs they already have. Queued work keeps IDs only during its own operation.

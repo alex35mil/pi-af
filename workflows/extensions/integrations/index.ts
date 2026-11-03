@@ -12,13 +12,12 @@ import { loadIntegrationConfig } from "./config.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import {
     NativePhaseFactsSchema,
-    GitHubPhaseInputSchema,
     LinearPhaseInputSchema,
-    githubPhaseFacts,
     linearPhaseFacts,
     phaseProjectionContract,
     planPhaseMutation,
 } from "./phase.js"
+import { GitHubPhaseInputSchema, githubPhaseFacts } from "./github-phase-evidence.js"
 import {
     assertArtifactPersistencePrepared,
     assertSandboxArtifactsLinked,
@@ -147,7 +146,7 @@ export default function (pi: ExtensionAPI): void {
     const resourceIdsMemo = new OperationResourceIdsMemo()
     registerResourceIds(pi, resourceIdsMemo, tools)
     registerTrackerPublication(pi, tools)
-    registerWorkflowOperations(pi)
+    registerWorkflowOperations(pi, tools)
     registerWorkflowContext(pi)
     pi.on("session_shutdown", async () => resourceIdsMemo.reset())
 
@@ -290,10 +289,14 @@ export default function (pi: ExtensionAPI): void {
         })
     }
     const phaseContexts = [
-        ["prepare_github_phase_mutation", GitHubPhaseInputSchema],
-        ["prepare_linear_phase_mutation", LinearPhaseInputSchema],
+        ["prepare_github_phase_mutation", GitHubPhaseInputSchema, "the actual Project field and item reads"],
+        [
+            "prepare_linear_phase_mutation",
+            LinearPhaseInputSchema,
+            "provider-specific label catalog and selection facts; omit only observed empty native leaves",
+        ],
     ] as const
-    for (const [name, native] of phaseContexts) {
+    for (const [name, native, facts] of phaseContexts) {
         const parameters = Type.Object(
             { ...Type.Omit(phase, ["operation", "change", "native"]).properties, native },
             { additionalProperties: false },
@@ -301,13 +304,18 @@ export default function (pi: ExtensionAPI): void {
         toolsApi.registerTool({
             name,
             label: name,
-            description:
-                "Calculate the native Phase assignment from fresh lifecycle and provider-specific metadata/selection facts. Omit only observed empty native leaves. Never execute a provider mutation or change lifecycle.",
+            description: `Calculate the native Phase assignment from fresh lifecycle and ${facts}. Never execute a provider mutation or change lifecycle.`,
             parameters,
             async execute(_id, params, _signal, _onUpdate, ctx) {
                 const native =
                     name === "prepare_github_phase_mutation"
-                        ? githubPhaseFacts(Value.Parse(GitHubPhaseInputSchema, params.native))
+                        ? githubPhaseFacts(
+                              resolveWorkflowEnvironment(loadIntegrationConfig(project.resolveRootDir(ctx.cwd)))
+                                  .tracker,
+                              entityName(readWorkflowEntity(ctx.cwd, params.entityDir)),
+                              Value.Parse(GitHubPhaseInputSchema, params.native),
+                              tools,
+                          )
                         : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
                 const input = Value.Parse(IntegrationContextSchema, {
                     ...params,
@@ -579,4 +587,7 @@ function readWorkflowEntity(cwd: string, raw: string) {
     const root = project.resolveRootDir(cwd)
     const resolved = resolveEntityDirectory(root, cwd, raw)
     return { directory: path.relative(root, resolved), status: readEntityStatus(resolved) }
+}
+function entityName(entity: ReturnType<typeof readWorkflowEntity>) {
+    return { name: path.basename(entity.directory), status: entity.status }
 }

@@ -1,5 +1,4 @@
 import * as path from "node:path"
-import { isDeepStrictEqual } from "node:util"
 
 import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
@@ -16,7 +15,9 @@ import {
     type ResourceIds,
     type ResourceIdsScope,
 } from "./resource-ids.js"
+import { requireProjectCall } from "./github-project-reads.js"
 import { sameRepository } from "./policy.js"
+import { requireProviderCall } from "./provider-evidence.js"
 import { planGitHubMerge, type GitHubMergeDecision } from "./forge/github/merge.js"
 
 export type ResourceKind = ResourceIdsScope["kind"]
@@ -115,20 +116,31 @@ export function resolveResourceIdsContext(cwd: string, entityDir: string, resour
 function responseObject(evidence: ProviderEvidence): Record<string, unknown> {
     return mcpResponsePayload(evidence.response)
 }
-function assertArguments(evidence: ProviderEvidence, expected: Record<string, unknown>): void {
-    for (const [key, value] of Object.entries(expected)) {
-        const actual = evidence.arguments[key]
-        const repositoryName = ["owner", "repo", "item_owner", "item_repo"].includes(key)
-        const matches =
-            repositoryName && typeof actual === "string" && typeof value === "string"
-                ? actual.toLowerCase() === value.toLowerCase()
-                : isDeepStrictEqual(actual, value)
-        if (!matches) throw new Error(`provider evidence argument ${key} does not match the required resource`)
-    }
+function requireCall(
+    evidence: ProviderEvidence,
+    scope: ResourceIdsScope,
+    operation: string,
+    expected: Record<string, unknown>,
+    tools: McpToolCatalog,
+): void {
+    requireProviderCall(evidence, { server: scope.mcpServer, operation, expected }, tools, "provider")
 }
-function requireTool(evidence: ProviderEvidence, scope: ResourceIdsScope, tool: string, tools: McpToolCatalog): void {
-    if (!isMcpTool(evidence.tool, scope.mcpServer, tool, tools))
-        throw new Error("provider evidence does not come from the configured registered tool")
+/** Project-scoped evidence: `owner_type` may be omitted but must match when passed (#148). */
+function requireProjectItemCall(
+    evidence: ProviderEvidence,
+    scope: Extract<ResourceIdsScope, { kind: "github-project-item" }>,
+    operation: string,
+    expected: Record<string, unknown>,
+    tools: McpToolCatalog,
+): void {
+    requireProjectCall(
+        { mcpServer: scope.mcpServer, ...scope.project },
+        evidence,
+        operation,
+        expected,
+        tools,
+        "provider",
+    )
 }
 
 export function resourceIdsFromRead(
@@ -139,8 +151,13 @@ export function resourceIdsFromRead(
     const response = responseObject(evidence)
     switch (scope.kind) {
         case "github-issue": {
-            requireTool(evidence, scope, "issue_read", tools)
-            assertArguments(evidence, { method: "get", ...scope.repository, issue_number: scope.issueNumber })
+            requireCall(
+                evidence,
+                scope,
+                "issue_read",
+                { method: "get", ...scope.repository, issue_number: scope.issueNumber },
+                tools,
+            )
             if (response.number !== scope.issueNumber)
                 throw new Error("provider issue number does not match durable identity")
             if (response.id === undefined)
@@ -153,13 +170,7 @@ export function resourceIdsFromRead(
             })
         }
         case "github-project-item": {
-            requireTool(evidence, scope, "projects_get", tools)
-            assertArguments(evidence, {
-                method: "get_project_item",
-                owner: scope.project.owner,
-                owner_type: scope.project.ownerType,
-                project_number: scope.project.number,
-            })
+            requireProjectItemCall(evidence, scope, "projects_get", { method: "get_project_item" }, tools)
             const content = object(response.content, "Project item content")
             if (
                 response.content_type !== "Issue" ||
@@ -169,18 +180,16 @@ export function resourceIdsFromRead(
             )
                 throw new Error("Project item does not belong to the exact durable issue")
             const itemId = positiveInteger(response.id, "Project item ID")
-            assertArguments(evidence, { item_id: itemId })
+            requireCall(evidence, scope, "projects_get", { item_id: itemId }, tools)
             return parseResourceIds({ scope, value: { itemId } })
         }
         case "linear-project": {
-            requireTool(evidence, scope, "get_project", tools)
-            assertArguments(evidence, { query: scope.projectId })
+            requireCall(evidence, scope, "get_project", { query: scope.projectId }, tools)
             if (response.uuid !== scope.projectId) throw new Error("Linear Project does not match durable identity")
             return parseResourceIds({ scope, value: { url: text(response.url, "Project URL") } })
         }
         case "linear-issue": {
-            requireTool(evidence, scope, "get_issue", tools)
-            assertArguments(evidence, { id: scope.issueId })
+            requireCall(evidence, scope, "get_issue", { id: scope.issueId }, tools)
             if (response.uuid !== scope.issueId) throw new Error("Linear issue does not match durable identity")
             if (scope.relationship.kind === "project") {
                 if (response.projectId !== scope.relationship.projectId)
@@ -193,9 +202,9 @@ export function resourceIdsFromRead(
             })
         }
         case "github-pull-request": {
-            requireTool(evidence, scope, "pull_request_read", tools)
+            requireCall(evidence, scope, "pull_request_read", { method: "get", ...scope.repository }, tools)
             const number = positiveInteger(response.number, "PR number")
-            assertArguments(evidence, { method: "get", ...scope.repository, pullNumber: number })
+            requireCall(evidence, scope, "pull_request_read", { pullNumber: number }, tools)
             if (!pullRequestMatches(scope, response))
                 throw new Error("PR does not match the exact durable repository/head/target association")
             return parseResourceIds({ scope, value: { number, url: text(response.html_url, "PR URL") } })
@@ -276,16 +285,19 @@ export async function recordResourceIdsEvidence(
         context.scope.kind === "github-project-item" &&
         isMcpTool(evidence.tool, context.scope.mcpServer, "projects_write", tools)
     ) {
-        assertArguments(evidence, {
-            method: "add_project_item",
-            owner: context.scope.project.owner,
-            owner_type: context.scope.project.ownerType,
-            project_number: context.scope.project.number,
-            item_owner: context.scope.repository.owner,
-            item_repo: context.scope.repository.repo,
-            item_type: "issue",
-            issue_number: context.scope.issueNumber,
-        })
+        requireProjectItemCall(
+            evidence,
+            context.scope,
+            "projects_write",
+            {
+                method: "add_project_item",
+                item_owner: context.scope.repository.owner,
+                item_repo: context.scope.repository.repo,
+                item_type: "issue",
+                issue_number: context.scope.issueNumber,
+            },
+            tools,
+        )
         primary = parseResourceIds({
             scope: context.scope,
             value: { itemId: positiveInteger(responseObject(evidence).item_id, "Project item ID") },
@@ -339,14 +351,13 @@ export async function invalidateStaleResourceIds(
     const response = responseObject(evidence)
     let stale: boolean
     if (isResourceIdsKind(resourceIds, "github-project-item")) {
-        requireTool(evidence, resourceIds.scope, "projects_get", tools)
-        assertArguments(evidence, {
-            method: "get_project_item",
-            owner: resourceIds.scope.project.owner,
-            owner_type: resourceIds.scope.project.ownerType,
-            project_number: resourceIds.scope.project.number,
-            item_id: resourceIds.value.itemId,
-        })
+        requireProjectItemCall(
+            evidence,
+            resourceIds.scope,
+            "projects_get",
+            { method: "get_project_item", item_id: resourceIds.value.itemId },
+            tools,
+        )
         if (positiveInteger(response.id, "Project item ID") !== resourceIds.value.itemId)
             throw new Error("response does not establish the requested cached item")
         const content = object(response.content, "Project item content")
@@ -356,12 +367,17 @@ export async function invalidateStaleResourceIds(
                 `${resourceIds.scope.repository.owner}/${resourceIds.scope.repository.repo}`.toLowerCase() ||
             positiveInteger(content.number, "content issue number") !== resourceIds.scope.issueNumber
     } else if (isResourceIdsKind(resourceIds, "github-pull-request")) {
-        requireTool(evidence, resourceIds.scope, "pull_request_read", tools)
-        assertArguments(evidence, {
-            method: "get",
-            ...resourceIds.scope.repository,
-            pullNumber: resourceIds.value.number,
-        })
+        requireCall(
+            evidence,
+            resourceIds.scope,
+            "pull_request_read",
+            {
+                method: "get",
+                ...resourceIds.scope.repository,
+                pullNumber: resourceIds.value.number,
+            },
+            tools,
+        )
         if (positiveInteger(response.number, "PR number") !== resourceIds.value.number)
             throw new Error("response does not establish the requested cached PR")
         stale = !pullRequestMatches(resourceIds.scope, response)
