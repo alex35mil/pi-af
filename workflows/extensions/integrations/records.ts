@@ -6,7 +6,7 @@ import {
     TIMESTAMP_PATTERN,
     type TrackerReference,
 } from "../__lib/domain.js"
-import { PlanAnnouncementSchema } from "./plan-announcement.js"
+import { type PlanAnnouncement, PlanAnnouncementSchema } from "./plan-announcement.js"
 import { assertPlanCommentUrl, type PlanComment, PlanCommentSchema } from "./plan-comment.js"
 import { assertPlanDocumentUrl, type PlanDocument, PlanDocumentSchema } from "./plan-document.js"
 
@@ -241,13 +241,31 @@ export function assertTrackerRecordInvariants(
         const comment = tracker.planComment
         if (comment.state === "published")
             assertPlanCommentUrl(tracker.repository, tracker.external.issueNumber, comment.id, comment.url)
-        if (tracker.planAnnouncement && comment.state !== "published")
-            fail("a plan announcement requires a published plan")
+        assertPlanAnnouncementState(tracker.planAnnouncement, comment.state, fail)
         return
     }
     const expected = entity === "epic" ? "project" : entity === "task" ? "task-issue" : "gig-issue"
     if (tracker.resource !== expected) fail(`Linear tracker resource must be ${expected} for ${entity}`)
     if (tracker.planDocument.state === "published") assertPlanDocumentUrl(tracker.planDocument.url)
-    if (tracker.planAnnouncement && tracker.planDocument.state !== "published")
-        fail("a plan announcement requires a published plan")
+    assertPlanAnnouncementState(tracker.planAnnouncement, tracker.planDocument.state, fail)
+}
+
+// A presented or accepted summary waits for a plan that is published or whose first publication
+// may have landed; an update in flight needs a published plan.
+function assertPlanAnnouncementState(
+    announcement: PlanAnnouncement | undefined,
+    publication: (PlanComment | PlanDocument)["state"],
+    fail: (message: string) => never,
+): void {
+    if (!announcement) return
+    switch (announcement.state) {
+        case "presented":
+        case "accepted":
+            if (publication === "unpublished") fail("a presented plan announcement requires a published plan")
+            return
+        case "plan-update":
+        case "announcing":
+            if (publication !== "published") fail("a plan announcement requires a published plan")
+            return
+    }
 }

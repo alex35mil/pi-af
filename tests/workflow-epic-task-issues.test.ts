@@ -14,6 +14,7 @@ import { parseEpicRouting, parseEpicTasks } from "../workflows/extensions/__lib/
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { restoreEpic, restoreEpicPlanSource } from "../workflows/extensions/init/restore.ts"
+import { planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { renderProviderBody, restoreProviderSource } from "../workflows/extensions/integrations/projection.ts"
 import {
     type EpicChildIssue,
@@ -216,6 +217,30 @@ describe("Epic Task issue processing", () => {
                 arguments: create!.arguments,
                 response: { id: "5", url: "https://github.com/example/app/issues/11" },
             }
+            // A summary accepted with this plan survives the code-owned tag.
+            const metadataPath = path.join(root, directory, "metadata.json")
+            const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
+            const accepted = {
+                state: "accepted",
+                summary: "Added the parser.",
+                after: planFingerprint(fs.readFileSync(epicPath, "utf-8")),
+            }
+            fs.writeFileSync(
+                metadataPath,
+                JSON.stringify({
+                    ...metadata,
+                    tracker: {
+                        ...metadata.tracker,
+                        planComment: {
+                            state: "published",
+                            token: "ab345678-1234-4567-8901-123456789abc",
+                            id: 9,
+                            url: "https://github.com/example/app/issues/10#issuecomment-9",
+                        },
+                        planAnnouncement: accepted,
+                    },
+                }),
+            )
             assert.deepEqual(
                 recordEpicTaskIssue(root, { entityDir: directory, title: "Parser", marker: "#11", evidence }, tools),
                 {
@@ -224,6 +249,11 @@ describe("Epic Task issue processing", () => {
                     marker: "#11",
                 },
             )
+            assert.deepEqual(readEntityStatus(path.join(root, directory)).tracker.planAnnouncement, {
+                ...accepted,
+                after: planFingerprint(fs.readFileSync(epicPath, "utf-8")),
+            })
+            assert.notEqual(accepted.after, planFingerprint(fs.readFileSync(epicPath, "utf-8")))
             assert.throws(
                 () => recordEpicTaskIssue(root, { entityDir: directory, title: "CLI", marker: "#12", evidence }, tools),
                 /another Task title/,

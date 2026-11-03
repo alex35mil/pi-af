@@ -19,6 +19,7 @@ import {
 } from "../__lib/entity.js"
 import { type EpicTask, readEpicTasks, tagEpicTask } from "../__lib/epic-tasks.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import { refreshAcceptedAnnouncement } from "./announcement-state.js"
 import { assertConfiguredPriority, loadIntegrationConfig, type TrackerConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
 import { linearPriorityNumber } from "./records.js"
@@ -378,6 +379,7 @@ export function recordEpicTaskIssue(cwd: string, input: RecordEpicTaskIssueInput
         if (created !== input.marker) throw new Error(`create evidence returned ${created}, not ${input.marker}`)
     }
     const result = tagEpicTask(epicPath, input.title, input.marker)
+    if (result === "tagged") refreshAcceptedAnnouncement(ctx.directory, fs.readFileSync(epicPath, "utf-8"))
     return { state: result, title: input.title, marker: input.marker }
 }
 

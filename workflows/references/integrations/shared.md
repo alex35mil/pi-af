@@ -133,8 +133,8 @@ The same contract applies when an open PR's synchronized `result.md` or `report.
 
 Editing a published plan notifies nobody, so every update to a published Epic, Task, or Gig plan also posts one discussion comment on that entity's own tracker item: a GitHub issue comment, or a Linear Project or issue comment. That covers material replanning and editorial edits alike. The first publication isn't announced.
 
-1. **Draft** a short summary of what changed and why, and say when the change is only editorial. Show it with the `epic.md` or `plan.md` diff; accepting the diff approves the plan update and the announcement together.
-2. **Prepare.** `prepare_tracker_publication` returns `reads-required` for every published plan. Pass the reads to `prepare_tracker_publication_update` with `announcement`: the summary, plus an `origin` only for an Epic update made from one of its Tasks, with that Task's `entityDir`.
+1. **Draft** a short summary of what changed and why, and say when the change is only editorial. Pass it as `announcement` to the plan-presentation tool, plus an `origin` only for an Epic update made from one of its Tasks. Code shows it while the target is written; accepting the diff approves both.
+2. **Prepare.** `prepare_tracker_publication` returns `reads-required` for every published plan. Pass the reads to `prepare_tracker_publication_update`; it uses the accepted summary. Pass `announcement` only for an editorial edit made without presentation.
 3. **Rendering** is code-owned: `**Plan updated**`, `from Task <marker>` when an Epic update came from a Task, the summary, a link to the plan, and a folded diff of the published plan against the new one. An oversized diff is left out.
 4. **Run** the returned plan update, then record its clear success with `record_tracker_publication`. That returns the announcement comment; run it and record it the same way.
 5. **Until it's recorded**, every publication of that entity returns the pending announcement. When the outcome is uncertain, read [recovery](./recovery.md#pending-announcement).

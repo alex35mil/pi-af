@@ -13,7 +13,7 @@ import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
-import type { AnnouncementInput } from "../workflows/extensions/integrations/plan-announcement.ts"
+import { type AnnouncementInput, planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { PlanDocumentSchema } from "../workflows/extensions/integrations/plan-document.ts"
 import { planPublicationMarker } from "../workflows/extensions/integrations/plan-publication.ts"
 import { trackerPublication } from "../workflows/extensions/integrations/tracker-publication.ts"
@@ -507,7 +507,23 @@ describe("managed Linear plan documents", () => {
                     "* One maintained plan.",
                 )
                 const revised = source.replace("All supporting details.", "All supporting details, revised.")
-                const updated = await f.update(f.read(stored), f.parent(), revised, { summary: "Details revised." })
+                // The summary accepted at presentation is used without passing it again.
+                const metadata = f.saved()
+                fs.writeFileSync(
+                    f.file,
+                    JSON.stringify({
+                        ...metadata,
+                        tracker: {
+                            ...metadata.tracker,
+                            planAnnouncement: {
+                                state: "accepted",
+                                summary: "Details revised.",
+                                after: planFingerprint(revised),
+                            },
+                        },
+                    }),
+                )
+                const updated = await f.update(f.read(stored), f.parent(), revised)
                 assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
                 const body = updated.announcement as string
                 assert.match(body, /^\*\*Plan updated\*\*\n\nDetails revised\./)
@@ -560,8 +576,26 @@ describe("managed Linear plan documents", () => {
             }
             write({ state: "unpublished" })
             assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
+            write({ state: "pending", token })
+            assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
             write({ state: "published", token, id: documentId, url })
             assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, pending)
+            // A presented summary may wait on a first publication that may have landed, but not on none.
+            const presented = { state: "presented", summary: "Revised.", after: planFingerprint(source) }
+            const present = (planDocument: Record<string, unknown>) => {
+                const metadata = f.saved()
+                fs.writeFileSync(
+                    f.file,
+                    JSON.stringify({
+                        ...metadata,
+                        tracker: { ...metadata.tracker, planDocument, planAnnouncement: presented },
+                    }),
+                )
+            }
+            present({ state: "unpublished" })
+            assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
+            present({ state: "pending", token })
+            assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, presented)
         } finally {
             f.dispose()
         }

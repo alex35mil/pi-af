@@ -30,6 +30,7 @@ import registerReviewTools, {
     snapshotCandidate,
 } from "../workflows/extensions/review/index.ts"
 import registerEpic from "../workflows/extensions/epic/index.ts"
+import { planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { buildEpicReviewPrompt } from "../workflows/extensions/review/epic.ts"
 import type { ReviewAgentRunOptions, ReviewAgentRunResult } from "../workflows/extensions/review/agent.ts"
 import {
@@ -236,12 +237,26 @@ describe("workflow reviewer isolation", () => {
                         assert.match(JSON.stringify(result.content), /Target:.*plan\.md/)
                         assert.doesNotMatch(JSON.stringify(result.content), /announce/)
                         assert.doesNotMatch(JSON.stringify(result.content), /authorizes no commit/)
+                        // A first publication isn't announced.
+                        await assert.rejects(
+                            preparePresentation.execute(
+                                "test",
+                                { entityDir, announcement: { summary: "Changed." } },
+                                undefined,
+                                undefined,
+                                ctx,
+                            ),
+                            /first publication isn't announced/,
+                        )
                     } else await assert.rejects(invoke(), /plan review requires Phase Planning/)
                     assert.equal(fs.readFileSync(snapshot, "utf-8"), plan)
                     assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
                 }
-                // A published plan's update is announced, so the summary is asked for with the diff.
+                // A published plan's update is announced, so the summary is required and saved with the snapshot.
                 const token = "0b6c1f2e-3d4a-4b5c-8d6e-7f8091a2b3c4"
+                const summary = "Moved retries into the adapter."
+                const savedAnnouncement = (dir: string) =>
+                    JSON.parse(fs.readFileSync(path.join(dir, "metadata.json"), "utf-8")).tracker.planAnnouncement
                 const planComments = {
                     published: {
                         state: "published",
@@ -260,14 +275,69 @@ describe("workflow reviewer isolation", () => {
                             tracker: { ...metadata.tracker, planComment },
                         }),
                     )
+                    await assert.rejects(
+                        preparePresentation.execute("test", { entityDir }, undefined, undefined, ctx),
+                        /pass announcement/,
+                    )
+                    await assert.rejects(
+                        preparePresentation.execute(
+                            "test",
+                            {
+                                entityDir,
+                                announcement: { summary, origin: { kind: "task", entityDir: "elsewhere" } },
+                            },
+                            undefined,
+                            undefined,
+                            ctx,
+                        ),
+                        /no Task origin/,
+                    )
+                    assert.equal(savedAnnouncement(directory), undefined)
                     const content = JSON.stringify(
-                        (await preparePresentation.execute("test", { entityDir }, undefined, undefined, ctx)).content,
+                        (
+                            await preparePresentation.execute(
+                                "test",
+                                { entityDir, announcement: { summary } },
+                                undefined,
+                                undefined,
+                                ctx,
+                            )
+                        ).content,
                     )
                     assert.match(content, /Target:.*plan\.md/)
                     assert.match(content, /Plan update announcement:/)
+                    assert.match(content, /Moved retries into the adapter/)
                     assert.match(content, state === "pending" ? /first publication is pending/ : /already published/)
+                    assert.deepEqual(savedAnnouncement(directory), {
+                        state: "presented",
+                        summary,
+                        after: planFingerprint(plan),
+                    })
                     assert.equal(fs.readFileSync(path.join(directory, "plan.md"), "utf-8"), acceptedPlan)
                 }
+                // An earlier update still being published must finish first.
+                fs.writeFileSync(
+                    metadataPath,
+                    JSON.stringify({
+                        ...metadata,
+                        phase: "planning",
+                        tracker: {
+                            ...metadata.tracker,
+                            planComment: planComments.published,
+                            planAnnouncement: { state: "announcing", token, body: "Earlier." },
+                        },
+                    }),
+                )
+                await assert.rejects(
+                    preparePresentation.execute(
+                        "test",
+                        { entityDir, announcement: { summary } },
+                        undefined,
+                        undefined,
+                        ctx,
+                    ),
+                    /still being published/,
+                )
                 const linearEntityDir = ".project/.local/gigs/ENG-7-example"
                 const linearDirectory = path.join(repository, linearEntityDir)
                 fs.mkdirSync(linearDirectory)
@@ -299,7 +369,7 @@ describe("workflow reviewer isolation", () => {
                     (
                         await preparePresentation.execute(
                             "test",
-                            { entityDir: linearEntityDir },
+                            { entityDir: linearEntityDir, announcement: { summary } },
                             undefined,
                             undefined,
                             ctx,
@@ -307,6 +377,7 @@ describe("workflow reviewer isolation", () => {
                     ).content,
                 )
                 assert.match(linearContent, /Plan update announcement:.*already published/)
+                assert.equal(savedAnnouncement(linearDirectory).state, "presented")
                 fs.writeFileSync(metadataPath, JSON.stringify({ ...metadata, phase: "planning" }))
                 writeReviewRound(directory, "plan", 2, "blocked")
                 const blockedSnapshot = path.join(reviewRoundDir(directory, "plan", 2), "candidate.md")
@@ -1324,6 +1395,125 @@ describe("workflow reviewer isolation", () => {
             await assert.rejects(run({ phase: "conflict-merge" }), /parents don't match conflict-plan-003/)
         } finally {
             fs.rmSync(parent, { recursive: true, force: true })
+        }
+    })
+})
+
+describe("plan announcement writes", () => {
+    type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown>
+
+    it("shows a presented summary during the target write and follows the write's outcome", async () => {
+        const repository = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "workflow-plan-announcement-writes-")))
+        const entityDir = ".project/.local/gigs/7-example"
+        const directory = path.join(repository, entityDir)
+        const metadataPath = path.join(directory, "metadata.json")
+        const target = path.join(directory, "plan.md")
+        try {
+            cp.execFileSync("git", ["init", "-q", repository])
+            fs.mkdirSync(directory, { recursive: true })
+            fs.writeFileSync(path.join(repository, ".gitignore"), "/.project/.local\n")
+            fs.writeFileSync(
+                path.join(repository, ".project/config.json"),
+                JSON.stringify({ branches: { format: "identifier-title" } }),
+            )
+            const metadata = {
+                title: "Example",
+                slug: "example",
+                createdAt: "2026-01-01T00:00:00Z",
+                entity: "gig",
+                kind: "feature",
+                phase: "planning",
+                branch: { state: "ready", name: "7-example", start: "main", target: "main", source: "generated" },
+                tracker: {
+                    provider: "github",
+                    repository: { owner: "example", repo: "project" },
+                    external: { issueNumber: 7 },
+                    planComment: {
+                        state: "published",
+                        token: "0b6c1f2e-3d4a-4b5c-8d6e-7f8091a2b3c4",
+                        id: 5,
+                        url: "https://github.com/example/project/issues/7#issuecomment-5",
+                    },
+                },
+            }
+            const summary = "Moved retries into the adapter."
+            const plan = "# Plan\n\n## Overview\n\nA plan.\n"
+            const presented = { state: "presented", summary, after: planFingerprint(plan) }
+            const present = (planAnnouncement?: unknown) =>
+                fs.writeFileSync(
+                    metadataPath,
+                    JSON.stringify({ ...metadata, tracker: { ...metadata.tracker, planAnnouncement } }),
+                )
+            const saved = () => JSON.parse(fs.readFileSync(metadataPath, "utf-8")).tracker.planAnnouncement
+
+            const handlers = new Map<string, Handler[]>()
+            registerReviewTools({
+                events: createEventBus(),
+                on: (name: string, handler: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
+                registerTool() {},
+            } as never)
+            const widgets: (string[] | undefined)[] = []
+            const ctx = { cwd: repository, ui: { setWidget: (_key: string, lines?: string[]) => widgets.push(lines) } }
+            const emit = async (name: string, event: Record<string, unknown>) => {
+                for (const handler of handlers.get(name) ?? []) await handler(event, ctx)
+            }
+            let id = 0
+            // One write as pi runs it: tool_call, then (unless blocked) the write and tool_result, then tool_execution_end.
+            const write = async (filePath: string, content: string, outcome: "ok" | "error" | "blocked" = "ok") => {
+                const toolCallId = `call-${++id}`
+                const input = { path: filePath, content }
+                await emit("tool_call", { toolName: "write", toolCallId, input })
+                if (outcome !== "blocked") {
+                    if (outcome === "ok") fs.writeFileSync(path.resolve(repository, filePath), content)
+                    await emit("tool_result", { toolName: "write", toolCallId, input, isError: outcome === "error" })
+                }
+                await emit("tool_execution_end", { toolName: "write", toolCallId, isError: outcome !== "ok" })
+            }
+
+            // Accepted as presented: the summary shows during the write, then is accepted.
+            present(presented)
+            await write(path.join(entityDir, "plan.md"), plan)
+            assert.deepEqual(widgets, [
+                ["Plan update announcement, approved together with this diff:", "", summary],
+                undefined,
+            ])
+            assert.deepEqual(saved(), { ...presented, state: "accepted" })
+            // A later write of the accepted plan clears the summary.
+            await write(target, `${plan}\nMore.\n`)
+            assert.equal(saved(), undefined)
+
+            // Accepted with the user's edits: fingerprinted to the file as written.
+            present(presented)
+            await write(target, `${plan}\nUser edit.\n`)
+            assert.deepEqual(saved(), {
+                ...presented,
+                state: "accepted",
+                after: planFingerprint(`${plan}\nUser edit.\n`),
+            })
+
+            // A blocked write clears the widget and keeps the presented summary for the retry.
+            present(presented)
+            widgets.length = 0
+            await write(target, plan, "blocked")
+            assert.equal(widgets.length, 2)
+            assert.equal(widgets.at(-1), undefined)
+            assert.deepEqual(saved(), presented)
+
+            // A rejected or failed write clears it.
+            await write(target, plan, "error")
+            assert.equal(saved(), undefined)
+
+            // Other files and entities without a saved summary are ignored.
+            present(presented)
+            widgets.length = 0
+            await write(path.join(directory, "notes.md"), "# Notes\n")
+            assert.deepEqual(saved(), presented)
+            present()
+            await write(target, plan)
+            assert.deepEqual(widgets, [])
+            assert.equal(saved(), undefined)
+        } finally {
+            fs.rmSync(repository, { recursive: true, force: true })
         }
     })
 })
