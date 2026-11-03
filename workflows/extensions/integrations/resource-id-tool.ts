@@ -82,7 +82,7 @@ export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIds
                 })
                 const entityDir = input.entityDir.replace(/^@/, "")
                 const result = await (async () => {
-                    if (input.action === "beginCreation") return beginPullRequestCreation(ctx.cwd, entityDir)
+                    if (input.action === "beginCreation") return beginPullRequestCreation(ctx.cwd, entityDir, tools)
                     if (input.action === "recordCreation") {
                         const recorded = await recordPullRequestCreation(ctx.cwd, entityDir, input.evidence, tools)
                         for (const ids of recorded.resourceIds) memo.record(ids)

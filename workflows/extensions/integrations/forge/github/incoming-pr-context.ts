@@ -4,8 +4,8 @@ import { INCOMING_CHECKOUT_TOOLS } from "../../../pr/operations.js"
 import { isDeepStrictEqual } from "node:util"
 
 import {
-    isMcpTool,
     mcpResponsePayload,
+    requireMcpTool,
     resolveMcpTool,
     type McpToolCatalog,
 } from "../../../../../extensions/__lib/mcp.js"
@@ -160,8 +160,8 @@ export function incomingRevision(
 ): IncomingRevision {
     const identity = pullRequest(selected.repository, String(selected.number))
     const args = evidence.arguments
+    requireMcpTool(evidence.tool, forge.mcpServer, "pull_request_read", tools, "Incoming PR evidence")
     if (
-        !isMcpTool(evidence.tool, forge.mcpServer, "pull_request_read", tools) ||
         args.method !== "get" ||
         args.pullNumber !== selected.number ||
         typeof args.owner !== "string" ||

@@ -310,7 +310,7 @@ describe("resource ID operations", () => {
             )
             assert.throws(
                 () => resourceIdsFromRead(prScope, { ...evidence, tool: "mcp__other__pull_request_read" }, mcpTools),
-                /configured registered tool/,
+                /mcp__github__pull_request_read/,
             )
             assert.throws(
                 () =>
@@ -491,7 +491,7 @@ describe("resource ID operations", () => {
     it("refuses a second PR intent and never creates one for an Epic", async () => {
         const f = fixture()
         try {
-            await assert.rejects(beginPullRequestCreation(f.root, f.directory), /PR intent already exists/)
+            await assert.rejects(beginPullRequestCreation(f.root, f.directory, mcpTools), /PR intent already exists/)
             const epicDir = path.join(f.root, ".project/.local/epics/9-rollout")
             fs.mkdirSync(epicDir, { recursive: true })
             fs.writeFileSync(
@@ -511,7 +511,23 @@ describe("resource ID operations", () => {
                     },
                 }),
             )
-            await assert.rejects(beginPullRequestCreation(f.root, epicDir), /Epics never create pull requests/)
+            await assert.rejects(
+                beginPullRequestCreation(f.root, epicDir, mcpTools),
+                /Epics never create pull requests/,
+            )
+        } finally {
+            f.cleanup()
+        }
+    })
+
+    it("saves no PR intent when the configured create tool is unavailable", async () => {
+        const f = fixture()
+        try {
+            delete f.metadata.forge
+            fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+            const before = fs.readFileSync(f.file, "utf8")
+            await assert.rejects(beginPullRequestCreation(f.root, f.directory, new Map()), /create_pull_request/)
+            assert.equal(fs.readFileSync(f.file, "utf8"), before)
         } finally {
             f.cleanup()
         }
@@ -525,7 +541,11 @@ describe("resource ID operations", () => {
                 fs.writeFileSync(f.file, JSON.stringify(f.metadata))
                 f.git(["add", "."])
                 f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
-                await beginPullRequestCreation(f.root, f.directory)
+                const begun = await beginPullRequestCreation(f.root, f.directory, mcpTools)
+                assert.deepEqual(begun.mutation, {
+                    tool: "mcp__github__create_pull_request",
+                    arguments: { ...repo, head: prScope.head, base: prScope.target, title: "Example" },
+                })
                 const intent = fs.readFileSync(f.file, "utf8")
                 assert.deepEqual(JSON.parse(intent).forge, {
                     provider: "github",
@@ -539,22 +559,25 @@ describe("resource ID operations", () => {
                     mcpText: { content: [{ type: "text", text: JSON.stringify(payload) }] },
                     mcpStructured: { content: [], structuredContent: payload },
                 }
-                const result = await recordPullRequestCreation(
-                    f.root,
-                    f.directory,
-                    {
-                        tool: "mcp__github__create_pull_request",
-                        arguments: {
-                            ...repo,
-                            head: prScope.head,
-                            base: prScope.target,
-                            title: "Example",
-                            body: "Approved",
-                        },
-                        response: responses[format],
-                    },
-                    mcpTools,
+                const created = {
+                    tool: begun.mutation.tool,
+                    arguments: { ...begun.mutation.arguments, body: "Approved" },
+                    response: responses[format],
+                }
+                // A short provider name is rejected with the expected name and leaves nothing recorded.
+                await assert.rejects(
+                    recordPullRequestCreation(
+                        f.root,
+                        f.directory,
+                        { ...created, tool: "create_pull_request" },
+                        mcpTools,
+                    ),
+                    (error: Error) =>
+                        error.message.includes("mcp__github__create_pull_request") &&
+                        error.message.includes("got create_pull_request"),
                 )
+                assert.equal(readResourceIdsCache(f.directory), undefined)
+                const result = await recordPullRequestCreation(f.root, f.directory, created, mcpTools)
                 assert.deepEqual(Object.keys(result).sort(), ["entity", "resourceIds"])
                 assert.deepEqual(result.resourceIds[0].value, { number: 7, url: pr.html_url })
                 const recorded = readResourceIdsCache(f.directory)

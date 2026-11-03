@@ -1,7 +1,7 @@
 import * as path from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
-import { isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { isMcpTool, mcpResponsePayload, requireMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { readEntityStatus, resolveEntityDirectory, type EntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
@@ -136,8 +136,7 @@ function assertProjectAddress(
         )
 }
 function requireTool(evidence: ProviderEvidence, scope: ResourceIdsScope, tool: string, tools: McpToolCatalog): void {
-    if (!isMcpTool(evidence.tool, scope.mcpServer, tool, tools))
-        throw new Error("provider evidence does not come from the configured registered tool")
+    requireMcpTool(evidence.tool, scope.mcpServer, tool, tools, "provider evidence")
 }
 
 export function resourceIdsFromRead(

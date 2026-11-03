@@ -3,7 +3,12 @@ import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
 
-import { getMcpToolName, isMcpTool, mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import {
+    getMcpToolName,
+    mcpResponsePayload,
+    requireMcpTool,
+    type McpToolCatalog,
+} from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { type LifecycleState, PRIORITY_NOT_SET } from "../__lib/domain.js"
 import {
@@ -379,8 +384,7 @@ export function recordEpicTaskIssue(cwd: string, input: RecordEpicTaskIssueInput
 function createdMarker(ctx: Context, task: EpicTask, evidence: Static<typeof EvidenceSchema>): string {
     const tracker = ctx.tracker
     const operation = tracker.provider === "github" ? "issue_write" : "save_issue"
-    if (!isMcpTool(evidence.tool, tracker.mcpServer, operation, ctx.tools))
-        throw new Error("create evidence is not from the configured registered tool")
+    requireMcpTool(evidence.tool, tracker.mcpServer, operation, ctx.tools, "Task issue create evidence")
     const args = evidence.arguments
     if (args.title !== task.title) throw new Error("create evidence is for another Task title")
     const response = mcpResponsePayload(evidence.response)

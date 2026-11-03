@@ -3,6 +3,7 @@ import {
     getMcpToolName,
     isMcpTool,
     mcpResponsePayload,
+    requireMcpTool,
     type McpToolCatalog,
 } from "../../../../../extensions/__lib/mcp.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
@@ -89,8 +90,7 @@ function callScope(
     expected: Record<string, unknown>,
     tools: McpToolCatalog,
 ) {
-    if (!isMcpTool(evidence.tool, board.mcpServer, tool, tools))
-        throw new Error("Project evidence is not from the configured tool")
+    requireMcpTool(evidence.tool, board.mcpServer, tool, tools, "Project evidence")
     if (!matchesGitHubProjectAddress(evidence.arguments, board.project))
         throw new Error("Project evidence owner, owner_type, and project_number do not match configured scope")
     for (const [key, value] of Object.entries(expected)) {
