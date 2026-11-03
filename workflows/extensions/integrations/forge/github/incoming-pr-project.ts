@@ -3,14 +3,20 @@ import {
     getMcpToolName,
     isMcpTool,
     mcpResponsePayload,
-    requireMcpTool,
     type McpToolCatalog,
 } from "../../../../../extensions/__lib/mcp.js"
+import {
+    itemFieldValue,
+    projectAddress,
+    projectCall,
+    requireProjectCall,
+    singleSelectField,
+    type GitHubProjectScope,
+} from "../../github-project-reads.js"
 import { EvidenceSchema } from "../../resource-id-tool.js"
 import type { ProviderEvidence } from "../../resource-id-operations.js"
 import { incomingPullRequestContext, incomingRevision } from "./incoming-pr-context.js"
 import { planGitHubMerge } from "./merge.js"
-import { matchesGitHubProjectAddress } from "../../policy.js"
 
 const membership = Type.Union([
     Type.Object(
@@ -83,68 +89,35 @@ function integer(value: unknown): number {
         throw new Error("Invalid native Project ID")
     return value
 }
-function callScope(
-    evidence: Pick<ProviderEvidence, "tool" | "arguments">,
-    board: Board,
-    tool: string,
-    expected: Record<string, unknown>,
-    tools: McpToolCatalog,
-) {
-    requireMcpTool(evidence.tool, board.mcpServer, tool, tools, "Project evidence")
-    if (!matchesGitHubProjectAddress(evidence.arguments, board.project))
-        throw new Error("Project evidence owner, owner_type, and project_number do not match configured scope")
-    for (const [key, value] of Object.entries(expected)) {
-        const actual = evidence.arguments[key]
-        const matches =
-            ["item_owner", "item_repo"].includes(key) && typeof actual === "string" && typeof value === "string"
-                ? actual.toLowerCase() === value.toLowerCase()
-                : actual === value
-        if (!matches) throw new Error(`Project evidence ${key} does not match configured scope`)
-    }
-}
-function call(
-    evidence: ProviderEvidence,
-    board: Board,
-    tool: string,
-    expected: Record<string, unknown>,
-    tools: McpToolCatalog,
-) {
-    callScope(evidence, board, tool, expected, tools)
-    return mcpResponsePayload(evidence.response)
+function scope(board: Board): GitHubProjectScope {
+    return { mcpServer: board.mcpServer, ...board.project }
 }
 function address(board: Board) {
-    return { owner: board.project.owner, owner_type: board.project.ownerType, project_number: board.project.number }
+    return projectAddress(scope(board))
 }
-function field(board: Board, evidence: ProviderEvidence, tools: McpToolCatalog): number {
-    const response = call(evidence, board, "projects_get", { method: "get_project_field" }, tools)
-    const id = integer(response.id)
-    if (
-        evidence.arguments.field_id !== id ||
-        response.name !== board.status.field ||
-        response.data_type !== "single_select" ||
-        !Array.isArray(response.options)
-    )
-        throw new Error("Project Status must be the exact configured single-select field")
-    const options = response.options.map((option) => {
-        const name = object(option, "Status option").name
-        return typeof name === "string" ? name : text(object(name, "Status option name").raw)
-    })
-    if (Object.values(board.status.values).some((value) => !options.includes(value)))
+function field(board: Board, evidence: ProviderEvidence, tools: McpToolCatalog): { id: number; name: string } {
+    const status = singleSelectField(scope(board), evidence, board.status.field, tools)
+    if (Object.values(board.status.values).some((value) => !status.options.includes(value)))
         throw new Error("Configured Project Status options are missing")
-    return id
+    return status
 }
 function item(
     board: Board,
     evidence: ProviderEvidence,
     repository: string,
     number: number,
-    fieldId: number,
+    statusField: { id: number; name: string },
     tools: McpToolCatalog,
 ) {
     // An add response carries only the node `id` and numeric `item_id`, never the PR or Status, so it is no item evidence.
     const mutation = isMcpTool(evidence.tool, board.mcpServer, "projects_write", tools)
-    const expected = { method: mutation ? "update_project_item" : "get_project_item" }
-    const response = call(evidence, board, mutation ? "projects_write" : "projects_get", expected, tools)
+    const response = projectCall(
+        scope(board),
+        evidence,
+        mutation ? "projects_write" : "projects_get",
+        { method: mutation ? "update_project_item" : "get_project_item" },
+        tools,
+    )
     const id = integer(response.id)
     const content = object(response.content, "Project content")
     if (
@@ -161,15 +134,11 @@ function item(
         !Array.isArray(response.fields)
     )
         throw new Error("Read the configured Status field on this exact PR item")
-    const fields = response.fields
-        .map((value) => object(value, "Project item field"))
-        .filter((value) => value.name === board.status.field)
-    if (fields.length > 1 || (fields.length === 1 && fields[0].id !== fieldId))
-        throw new Error("Ambiguous Project Status identity")
-    if (mutation && fields.length !== 1)
+    const observed = itemFieldValue(response, statusField)
+    if (mutation && observed.state === "absent")
         throw new Error("Mutation success lacks required Status facts; obtain the exact item read")
-    const value = fields[0]?.value
-    const status = value == null ? null : text(object(value, "Status value").name)
+    // A read that lists Status but returns no entry for it shows an empty Status.
+    const status = observed.state === "present" ? observed.value : null
     if (mutation) {
         const changed = object(evidence.arguments.updated_field, "updated Project field")
         if (changed.name !== board.status.field || changed.value !== status)
@@ -180,15 +149,11 @@ function item(
 function absence(board: Board, pages: ProviderEvidence[], repository: string, number: number, tools: McpToolCatalog) {
     let after: string | undefined
     pages.forEach((page, index) => {
-        const response = call(
+        const response = projectCall(
+            scope(board),
             page,
-            board,
             "projects_list",
-            {
-                method: "list_project_items",
-                query: `repo:${repository} is:pr`,
-                after,
-            },
+            { method: "list_project_items", query: `repo:${repository} is:pr`, after },
             tools,
         )
         if (page.arguments.before !== undefined || !Array.isArray(response.items))
@@ -227,7 +192,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
             tools,
         )
         const response = mcpResponsePayload(input.evidence.response)
-        const fieldId = field(board, input.fieldEvidence, tools)
+        const statusField = field(board, input.fieldEvidence, tools)
         const repository = `${revision.repository.owner}/${revision.repository.repo}`
         const values = board.status.values
         const mutation = (
@@ -287,13 +252,13 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                 pull_request_number: revision.number,
             })
         } else {
-            const observed = item(board, input.membership.evidence, repository, revision.number, fieldId, tools)
+            const observed = item(board, input.membership.evidence, repository, revision.number, statusField, tools)
             if (input.membership.state === "added" || input.membership.state === "reconciled") {
                 const attempt =
                     input.membership.state === "added" ? input.membership.creation : input.membership.attempt
-                callScope(
+                requireProjectCall(
+                    scope(board),
                     attempt,
-                    board,
                     "projects_write",
                     {
                         method: "add_project_item",
@@ -303,6 +268,7 @@ export function incomingProjectContext(cwd: string, input: IncomingProjectContex
                         pull_request_number: revision.number,
                     },
                     tools,
+                    "Project",
                 )
                 if (input.membership.state === "added") {
                     const added = mcpResponsePayload(input.membership.creation.response)

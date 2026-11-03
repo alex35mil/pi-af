@@ -4,6 +4,7 @@ import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-cod
 import { Type } from "typebox"
 import { Value } from "typebox/value"
 
+import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { workflowTools } from "../__lib/tools.js"
 import {
@@ -15,14 +16,8 @@ import {
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "./config.js"
-import {
-    SetWorkflowPhaseSchema,
-    setWorkflowPhase,
-    GitHubPhaseInputSchema,
-    LinearPhaseInputSchema,
-    githubPhaseFacts,
-    linearPhaseFacts,
-} from "./phase.js"
+import { SetWorkflowPhaseSchema, setWorkflowPhase, LinearPhaseInputSchema, linearPhaseFacts } from "./phase.js"
+import { GitHubPhaseInputSchema, githubPhaseFacts } from "./github-phase-evidence.js"
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "./policy.js"
 
 async function updateEntity<T extends { status: EntityStatus; changed: boolean }>(
@@ -42,30 +37,41 @@ async function updateEntity<T extends { status: EntityStatus; changed: boolean }
     })
 }
 
-export function registerWorkflowOperations(pi: ExtensionAPI): void {
+export function registerWorkflowOperations(pi: ExtensionAPI, mcpTools: McpToolCatalog): void {
     const tools = workflowTools(pi, "integrations")
     const properties = Type.Omit(SetWorkflowPhaseSchema, ["native"]).properties
     const phaseOperations = [
-        ["set_github_workflow_phase", GitHubPhaseInputSchema],
-        ["set_linear_workflow_phase", LinearPhaseInputSchema],
+        ["set_github_workflow_phase", GitHubPhaseInputSchema, "the actual Project field and item reads"],
+        [
+            "set_linear_workflow_phase",
+            LinearPhaseInputSchema,
+            "fresh label catalog and selection facts; omit only genuinely empty native leaf values",
+        ],
     ] as const
-    for (const [name, nativeSchema] of phaseOperations) {
+    for (const [name, nativeSchema, facts] of phaseOperations) {
         const parameters = Type.Object({ ...properties, native: nativeSchema }, { additionalProperties: false })
         tools.registerTool({
             name,
             label: name,
-            description:
-                "Set In Progress workflow Phase and calculate reconciliation from fresh provider-specific native facts. Omit only genuinely empty native leaf values. Local metadata only; apply a changed assignment through the configured MCP tool. Does not change lifecycle or grant approval.",
+            description: `Set In Progress workflow Phase and calculate reconciliation from ${facts}. Local metadata only; apply a changed assignment through the configured MCP tool. Does not change lifecycle or grant approval.`,
             parameters,
             async execute(_id, params, _signal, _update, ctx) {
-                const native =
-                    name === "set_github_workflow_phase"
-                        ? githubPhaseFacts(Value.Parse(GitHubPhaseInputSchema, params.native))
-                        : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
-                const input = Value.Parse(SetWorkflowPhaseSchema, { ...params, native })
-                const result = await updateEntity(ctx.cwd, input.entityDir, (status, environment) =>
-                    setWorkflowPhase(status, environment, input),
-                )
+                const result = await updateEntity(ctx.cwd, params.entityDir, (status, environment, directory) => {
+                    const native =
+                        name === "set_github_workflow_phase"
+                            ? githubPhaseFacts(
+                                  environment.tracker,
+                                  { name: path.basename(directory), status },
+                                  Value.Parse(GitHubPhaseInputSchema, params.native),
+                                  mcpTools,
+                              )
+                            : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
+                    return setWorkflowPhase(
+                        status,
+                        environment,
+                        Value.Parse(SetWorkflowPhaseSchema, { ...params, native }),
+                    )
+                })
                 return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result }
             },
         })

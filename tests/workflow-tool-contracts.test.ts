@@ -16,13 +16,10 @@ import { Value } from "typebox/value"
 import { EntityInitializationSchema } from "../workflows/extensions/init/entity.ts"
 import { IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import { ReviewRequestSchema } from "../workflows/extensions/review/index.ts"
-import {
-    GitHubPhaseInputSchema,
-    LinearPhaseInputSchema,
-    githubPhaseFacts,
-    linearPhaseFacts,
-} from "../workflows/extensions/integrations/phase.ts"
+import { LinearPhaseInputSchema, linearPhaseFacts } from "../workflows/extensions/integrations/phase.ts"
+import { GitHubPhaseInputSchema } from "../workflows/extensions/integrations/github-phase-evidence.ts"
 import { claudeCodeSchema } from "./claude-code-schema-fixture.ts"
+import { githubPhaseReads } from "./workflow-phase-fixtures.ts"
 import {
     codingFactories,
     expectedWorkflowTools,
@@ -32,6 +29,37 @@ import {
 import { answer, call, nativeSessionFixture } from "./native-session-fixture.ts"
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value))
+// An in-memory MCP server offering read-only tools that answer every call with "<server>-ok".
+function memoryMcp(name: string, tools: string[]) {
+    return (pi: Parameters<typeof registerNativeMcp>[0]) =>
+        registerNativeMcp(pi, {
+            createTransport() {
+                const { client, server } = createInMemoryTransportPair()
+                server.onMessage((message) => {
+                    if (!("id" in message) || !("method" in message)) return
+                    const result =
+                        message.method === "initialize"
+                            ? {
+                                  protocolVersion: "2025-11-25",
+                                  capabilities: { tools: {} },
+                                  serverInfo: { name, version: "1" },
+                              }
+                            : message.method === "tools/list"
+                              ? {
+                                    tools: tools.map((tool) => ({
+                                        name: tool,
+                                        inputSchema: { type: "object", properties: {} },
+                                        annotations: { readOnlyHint: true },
+                                    })),
+                                }
+                              : { content: [{ type: "text", text: `${name}-ok` }] }
+                    void server.send({ jsonrpc: "2.0", id: message.id, result })
+                })
+                void server.start()
+                return client
+            },
+        })
+}
 function measurement(context: TranscriptContext) {
     const tools = getCurrentTools(context.messages)
     const serialized = JSON.stringify(
@@ -127,15 +155,22 @@ describe("workflow model-facing contracts", () => {
         assert.ok("anyOf" in json(mcp).properties.registrations.items)
     })
 
-    it("maps only genuine native empty leaves to domain nulls and still requires read facts", () => {
-        const github = {
-            field: { name: "Phase", dataType: "SINGLE_SELECT", options: ["Planning", "Execution", "Self-Review"] },
-        }
+    it("takes GitHub Phase reads as evidence and maps only genuine Linear empty leaves to domain nulls", () => {
+        const github = githubPhaseReads({
+            server: "github",
+            project: { owner: "o", ownerType: "user", number: 1 },
+            repository: { owner: "o", repo: "r" },
+            issueNumber: 1,
+        })
         assert.ok(Value.Check(GitHubPhaseInputSchema, github))
-        assert.equal(githubPhaseFacts(github).provider, "github")
-        assert.deepEqual(githubPhaseFacts(github), { provider: "github", ...github, current: null })
-        assert.equal(Value.Check(GitHubPhaseInputSchema, {}), false)
-        assert.equal(Value.Check(GitHubPhaseInputSchema, { ...github, current: null }), false)
+        assert.equal(Value.Check(GitHubPhaseInputSchema, { field: github.field }), false)
+        assert.equal(
+            Value.Check(GitHubPhaseInputSchema, {
+                field: { name: "Phase", dataType: "SINGLE_SELECT", options: ["Planning"] },
+                current: "Planning",
+            }),
+            false,
+        )
         const linear = { catalog: [{ id: "group", name: "Phase", isGroup: true }], applied: [] }
         assert.ok(Value.Check(LinearPhaseInputSchema, linear))
         assert.deepEqual(linearPhaseFacts(linear), {
@@ -199,38 +234,8 @@ describe("workflow model-facing contracts", () => {
     })
 
     it("keeps native MCP discovery alongside deferred workflow operations without loading the workflow catalog", async () => {
-        const mcp = (pi: Parameters<typeof registerNativeMcp>[0]) =>
-            registerNativeMcp(pi, {
-                createTransport() {
-                    const { client, server } = createInMemoryTransportPair()
-                    server.onMessage((message) => {
-                        if (!("id" in message) || !("method" in message)) return
-                        const result =
-                            message.method === "initialize"
-                                ? {
-                                      protocolVersion: "2025-11-25",
-                                      capabilities: { tools: {} },
-                                      serverInfo: { name: "memory", version: "1" },
-                                  }
-                                : message.method === "tools/list"
-                                  ? {
-                                        tools: [
-                                            {
-                                                name: "echo",
-                                                inputSchema: { type: "object", properties: {} },
-                                                annotations: { readOnlyHint: true },
-                                            },
-                                        ],
-                                    }
-                                  : { content: [{ type: "text", text: "memory-ok" }] }
-                        void server.send({ jsonrpc: "2.0", id: message.id, result })
-                    })
-                    void server.start()
-                    return client
-                },
-            })
         const h = await nativeSessionFixture({
-            extensions: [...codingFactories, mcp, ...workflowFactories],
+            extensions: [...codingFactories, memoryMcp("memory", ["echo"]), ...workflowFactories],
             tools: ["+codemode"],
             setup(root) {
                 fs.writeFileSync(path.join(root, "agent/permissions.json"), JSON.stringify({ defaultMode: "allow" }))
@@ -346,9 +351,15 @@ describe("workflow model-facing contracts", () => {
             if (layout === "directory") delete process.env.PI_AF_RUNTIME
             else process.env.PI_AF_RUNTIME = "sandbox"
             const h = await nativeSessionFixture({
-                extensions: [...codingFactories, ...workflowFactories],
+                extensions: [...codingFactories, memoryMcp("github", ["projects_get"]), ...workflowFactories],
                 tools: ["+codemode"],
                 setup(root) {
+                    fs.writeFileSync(
+                        path.join(root, "agent/mcp.json"),
+                        JSON.stringify({
+                            mcpServers: { github: { url: "https://github.invalid/mcp", exposure: "codemode" } },
+                        }),
+                    )
                     git(root, "init", "-q", "-b", "main")
                     git(root, "config", "user.name", "Fixture")
                     git(root, "config", "user.email", "fixture@example.invalid")
@@ -425,14 +436,18 @@ describe("workflow model-facing contracts", () => {
                 const initial = JSON.parse(fs.readFileSync(metadataPath, "utf8"))
                 git(h.root, "switch", initial.branch.name)
                 await invoke(`text(await tools.initialize_integration({entityDir:${JSON.stringify(directory)}}));`)
-                const native = JSON.stringify({
-                    field: {
-                        name: "Phase",
-                        dataType: "SINGLE_SELECT",
-                        options: ["Planning", "Execution", "Self-Review"],
-                    },
-                })
-                for (const phase of ["execution", "selfReview", "planning"]) {
+                const target = {
+                    server: "github",
+                    project: { owner: "fixture", ownerType: "user" as const, number: 1 },
+                    repository: { owner: "fixture", repo: "app" },
+                    issueNumber: 9,
+                }
+                for (const [phase, current] of [
+                    ["execution", "Planning"],
+                    ["selfReview", "Execution"],
+                    ["planning", null],
+                ] as const) {
+                    const native = JSON.stringify(githubPhaseReads(target, current))
                     await invoke(
                         `text(await tools.set_github_workflow_phase({entityDir:${JSON.stringify(directory)},phase:${JSON.stringify(phase)},lifecycle:"inProgress",native:${native}}));`,
                     )

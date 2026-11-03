@@ -16,7 +16,7 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 **Input conventions:**
 
 - Each tool takes only its own operation's fields; no `action`, `operation`, entity, or provider selector.
-- Optional fact fields may be omitted only when they were read and found empty ([Phase](./phase.md#fresh-native-facts)).
+- Optional fact fields may be omitted only when they were read and found empty. GitHub Phase takes the provider reads as evidence instead ([Phase](./phase.md#fresh-native-facts)).
 
 ## Initialization
 
