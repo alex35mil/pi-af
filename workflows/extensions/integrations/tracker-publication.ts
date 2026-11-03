@@ -12,9 +12,9 @@ import {
     type EntityStatus,
     readEntityStatus,
     resolveEntityDirectory,
-    taskMarker,
     writeEntityStatus,
 } from "../__lib/entity.js"
+import { resolveAnnouncementOrigin, withPlanAnnouncement } from "./announcement-state.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
@@ -78,10 +78,10 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
     const render = (source: string, token: string) =>
         `${renderProviderBody(source, { kind: adapter.presentation })}\n\n${planPublicationMarker(token)}`
     const announcements = () => adapter.announcements()
-    const announcementPending = () => ({
+    const announcementPending = (pending: Extract<PlanAnnouncement, { state: "announcing" }>) => ({
         state: "recovery-required" as const,
         reason: "the plan update landed but its announcement isn't confirmed; post or recover it first",
-        mutation: announcements().create(announcement!.body),
+        mutation: announcements().create(pending.body),
         lookups: announcements().lookups(),
     })
 
@@ -92,7 +92,7 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
                 reason: "first publication creation is pending; recover before another publication",
                 lookups: adapter.recoveryLookups(),
             }
-        if (announcement?.state === "announcing") return announcementPending()
+        if (announcement?.state === "announcing") return announcementPending(announcement)
         if (saved.state === "unpublished") {
             const token = randomUUID()
             // Resolve the native tool before consuming the first-publication state.
@@ -106,7 +106,7 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
 
     if (input.action === "prepareUpdate") {
         if (saved.state !== "published") throw new Error("prepareUpdate requires a published plan")
-        if (announcement?.state === "announcing") return announcementPending()
+        if (announcement?.state === "announcing") return announcementPending(announcement)
         const current = adapter.currentBody(input.reads, saved)
         const update = adapter.update(saved.id, render(input.source, saved.token))
         const published = restoreProviderSource(current, { kind: adapter.presentation }, status.title).source
@@ -121,12 +121,11 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             if (announcement) context.saveAnnouncement(undefined)
             return { state: "unchanged" as const }
         }
-        if (!input.announcement)
-            throw new Error("an update to a published plan needs an announcement: the approved summary")
+        const approved = approvedAnnouncement(input.announcement, announcement, input.source)
         const token = randomUUID()
         const body = renderAnnouncement({
-            fromTask: context.resolveOrigin(input.announcement.origin),
-            summary: input.announcement.summary,
+            fromTask: context.resolveOrigin(approved.origin),
+            summary: approved.summary,
             plan: adapter.announcementPlan(saved),
             diff,
             token,
@@ -140,7 +139,7 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
     if (saved.state === "unpublished") throw new Error("plan publication has no creation attempt to record or recover")
 
     if (input.action === "record") {
-        if (announcement) {
+        if (announcement?.state === "plan-update" || announcement?.state === "announcing") {
             if (saved.state !== "published") throw new Error("a plan announcement requires a published plan")
             if (announcement.state === "plan-update") {
                 const { token, body, after } = announcement
@@ -161,6 +160,8 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
         if (saved.state !== "pending") throw new Error("record requires a pending first-publication creation")
         const identity = adapter.record(input.evidence, saved.token)
         adapter.save({ state: "published", token: saved.token, ...identity })
+        // A first publication is never announced, so a summary saved for it no longer applies.
+        if (announcement) context.saveAnnouncement(undefined)
         return { state: "published" as const, ...identity }
     }
 
@@ -201,6 +202,23 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
     return { state: "identified" as const, ...identity, body }
 }
 
+// The summary for an update: an explicit input always wins, covering editorial edits made outside
+// presentation and stale saved state; otherwise the summary accepted with this exact plan.
+function approvedAnnouncement(
+    input: AnnouncementInput | undefined,
+    saved: PlanAnnouncement | undefined,
+    source: string,
+): AnnouncementInput {
+    if (input) return input
+    if (saved?.state === "accepted" && saved.after === planFingerprint(source)) {
+        const { summary, origin } = saved
+        return origin ? { summary, origin } : { summary }
+    }
+    throw new Error(
+        "an update to a published plan needs an announcement: present the plan with its summary through the plan presentation tool, or pass the approved summary as announcement",
+    )
+}
+
 export async function trackerPublication(cwd: string, raw: TrackerPublicationInput, tools: McpToolCatalog) {
     const input = Value.Parse(TrackerPublicationSchema, raw)
     const root = project.resolveRootDir(cwd)
@@ -212,38 +230,31 @@ export async function trackerPublication(cwd: string, raw: TrackerPublicationInp
         assertEntityEnvironment(status, environment)
         const tracker = status.tracker
         const server = environment.tracker.mcpServer
-        const save = (record: TrackerRecord) => writeEntityStatus(directory, { ...status, tracker: record })
-        // Only an Epic update can come from a Task, and the Task must be one of its own.
-        const resolveOrigin = (origin: AnnouncementInput["origin"]): string | undefined => {
-            if (origin === undefined) return undefined
-            switch (status.entity) {
-                case "epic": {
-                    const task = resolveEntityDirectory(root, cwd, origin.entityDir)
-                    if (path.dirname(task) !== path.join(directory, "tasks"))
-                        throw new Error("the announcing Task must be a Task of this Epic")
-                    return taskMarker(readEntityStatus(task))
-                }
-                case "task":
-                case "gig":
-                    throw new Error(`a ${status.entity} plan update has no Task origin; omit origin`)
-            }
+        // Publication and announcement saves can follow each other in one call; each builds on the latest record.
+        let current = tracker
+        const save = (record: TrackerRecord) => {
+            current = record
+            writeEntityStatus(directory, { ...status, tracker: record })
         }
-        const announcing = (record: TrackerRecord) => ({
-            announcement: record.planAnnouncement,
-            saveAnnouncement: (state: PlanAnnouncement | undefined) => {
-                const { planAnnouncement: _, ...rest } = record
-                save((state ? { ...rest, planAnnouncement: state } : rest) as TrackerRecord)
-            },
-        })
-        const context = { status, resolveOrigin, ...announcing(tracker) }
+        const context = {
+            status,
+            resolveOrigin: (origin: AnnouncementInput["origin"]) =>
+                resolveAnnouncementOrigin(root, cwd, directory, status, origin),
+            announcement: tracker.planAnnouncement,
+            saveAnnouncement: (state: PlanAnnouncement | undefined) => save(withPlanAnnouncement(current, state)),
+        }
         if (tracker.provider === "github")
             return runPublication(input, {
                 ...context,
-                adapter: githubPublication(tracker, server, tools, (planComment) => save({ ...tracker, planComment })),
+                adapter: githubPublication(tracker, server, tools, (planComment) =>
+                    save({ ...(current as typeof tracker), planComment }),
+                ),
             })
         return runPublication(input, {
             ...context,
-            adapter: linearPublication(tracker, server, tools, (planDocument) => save({ ...tracker, planDocument })),
+            adapter: linearPublication(tracker, server, tools, (planDocument) =>
+                save({ ...(current as typeof tracker), planDocument }),
+            ),
         })
     })
 }

@@ -32,7 +32,7 @@ Lifecycle stays `inProgress` and Phase stays Planning throughout: drafting, revi
 
 1. Set Planning with the Phase tool for the configured tracker. Then call `review_epic`, `review_task`, or `review_gig` with `entityDir` and `phase: "plan"`. The tool snapshots the draft and numbers the round.
 2. Adjudicate every finding as described in [review](./review.md). Repeat until review approves with no unresolved user decision.
-3. When review approves, call `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` with `entityDir`. It returns the approved snapshot path and the target path. Read the snapshot and write its exact content to the target with the write tool, which shows the user the approval diff. Don't print the candidate first. When the plan is already published, the result asks for the [announcement](./integrations/shared.md#plan-update-announcements) summary; show it in the same message as the diff.
+3. When review approves, call `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` with `entityDir`. It returns the approved snapshot path and the target path. Read the snapshot and write its exact content to the target with the write tool, which shows the user the approval diff. Don't print the candidate first. When the plan is already published, the tool requires the [announcement](./integrations/shared.md#plan-update-announcements) summary.
 4. A rejection or an unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
 5. When the user edits the target directly, compare it with the reviewed snapshot. Editorial edits may proceed. A material change to behavior, strategy, or decomposition goes back into the draft and through review again.
 6. Before acceptance, record every material user note in the accepted artifact or `notes.md`, whichever owns it. The root `epic.md` or `plan.md` is the only accepted plan.
@@ -47,6 +47,6 @@ When accepted behavior, strategy, scope, or decomposition must change after exec
 1. Refuse when lifecycle is `done`; separately initialized work owns later changes.
 2. When lifecycle is `inReview`, restore `inProgress`: update and re-read native Status.
 3. Set Planning with the Phase tool and apply any returned native assignment.
-4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance. Show the [announcement](./integrations/shared.md#plan-update-announcements) summary with the diff.
+4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance, with the [announcement](./integrations/shared.md#plan-update-announcements) summary.
 
 Editorial changes that don't alter behavior, strategy, scope, or decomposition skip replanning. A published plan's editorial change is still announced; its summary says it's editorial.

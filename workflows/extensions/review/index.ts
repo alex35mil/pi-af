@@ -20,10 +20,18 @@ import {
 } from "../__lib/entity.js"
 import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import { resolveAnnouncementOrigin, savePlanAnnouncement } from "../integrations/announcement-state.js"
+import {
+    type AnnouncementInput,
+    AnnouncementInputSchema,
+    type PlanAnnouncement,
+    planFingerprint,
+} from "../integrations/plan-announcement.js"
 import type { PublicationState } from "../integrations/plan-publication.js"
 import { trackerPlanPublication } from "../integrations/records.js"
 import { executeReviewRound, recordRoundResponse, renderReviewRoundResult } from "./round.js"
 import { reviewerEnvironment } from "./model.js"
+import { registerPlanAnnouncementWrites } from "./plan-announcement-writes.js"
 import { registerPullRequestReview } from "./pull-request.js"
 import { buildEpicReviewPrompt } from "./epic.js"
 import { reviewAgentOutputInstructions, ReviewResponseFindingInputSchema, reviewResponseFindings } from "./findings.js"
@@ -181,6 +189,13 @@ const optionalPresentationProperties = {
     snapshot: Type.Optional(
         Type.String({ description: "Optional reviewed plan snapshot path, e.g. reviews/plan-002/candidate.md" }),
     ),
+    announcement: Type.Optional(
+        Type.Object(AnnouncementInputSchema.properties, {
+            additionalProperties: false,
+            description:
+                "Required when the plan is published or its first publication is pending; rejected when it is unpublished. The plan-update announcement summary, shown to the user with the diff and approved with it; origin only for an Epic update made from one of its Tasks.",
+        }),
+    ),
 }
 
 export const PreparePlanPresentationSchema = Type.Union([
@@ -248,6 +263,7 @@ interface ParentEpicContext {
 export default function (pi: ExtensionAPI) {
     const tools = workflowTools(pi, "reviews")
     registerPullRequestReview(pi)
+    registerPlanAnnouncementWrites(pi)
     const reviews = [
         ["epic", Type.Omit(EpicReviewRequestSchema, ["entity"])],
         ["task", deliverableToolParameters(TASK_DIRECTORY)],
@@ -384,7 +400,7 @@ export default function (pi: ExtensionAPI) {
             name: `prepare_${entity}_plan_presentation`,
             label: `prepare_${entity}_plan_presentation`,
             description:
-                "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff. When the plan is already published, or its first publication is pending, the result also asks for the plan-update announcement summary to show with the diff.",
+                "Validate and select an Epic, Task, or Gig's approved planning snapshot. Return snapshot and target paths for the write tool to present the approval diff. When the plan is already published, or its first publication is pending, `announcement` is required: its summary is saved, shown to the user while the target is written, and used when the update is published.",
             parameters,
 
             async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -400,7 +416,21 @@ export default function (pi: ExtensionAPI) {
                 }
                 assertReviewEntity(entityDir, input.entity)
                 assertReviewPhase(entityDir, "plan")
-                const publication = trackerPlanPublication(readEntityStatus(entityDir).tracker)
+                const status = readEntityStatus(entityDir)
+                const publication = trackerPlanPublication(status.tracker)
+                const announcement = planPresentationAnnouncement(
+                    publication.state,
+                    status.tracker.planAnnouncement,
+                    input.announcement,
+                )
+                if (announcement.publication !== "unpublished")
+                    resolveAnnouncementOrigin(
+                        project.resolveRootDir(ctx.cwd),
+                        ctx.cwd,
+                        entityDir,
+                        status,
+                        announcement.announcement.origin,
+                    )
 
                 const snapshotPath = input.snapshot
                     ? resolveSnapshotPath(ctx.cwd, entityDir, input.snapshot)
@@ -417,9 +447,22 @@ export default function (pi: ExtensionAPI) {
                     path.join(entityDir, input.entity === "epic" ? "epic.md" : "plan.md"),
                 )
 
-                return textResult(
-                    presentationInstructions({ subject: "plan", publication: publication.state }, relSnapshot, relPlan),
-                )
+                switch (announcement.publication) {
+                    case "unpublished":
+                        break
+                    case "published":
+                    case "pending": {
+                        const { summary, origin } = announcement.announcement
+                        const after = planFingerprint(fs.readFileSync(snapshotPath, "utf-8"))
+                        savePlanAnnouncement(entityDir, {
+                            state: "presented",
+                            summary,
+                            ...(origin ? { origin } : {}),
+                            after,
+                        })
+                    }
+                }
+                return textResult(presentationInstructions({ subject: "plan", announcement }, relSnapshot, relPlan))
             },
         })
     }
@@ -783,8 +826,46 @@ export async function newestApprovedFinalSnapshot(entityDir: string, explicit?: 
     return snapshotPath
 }
 
-/** What a presentation hands to the user; only a plan carries publication state for its update announcement. */
-type Presentation = { subject: "plan"; publication: PublicationState<unknown>["state"] } | { subject: "completion" }
+/**
+ * A plan presentation's announcement: a first publication isn't announced; an update to a published
+ * plan, or one whose first publication may have landed, carries the summary approved with the diff.
+ */
+type PlanPresentationAnnouncement =
+    | { publication: "unpublished" }
+    | { publication: "published" | "pending"; announcement: AnnouncementInput }
+
+/** What a presentation hands to the user; only a plan carries its update announcement. */
+type Presentation = { subject: "plan"; announcement: PlanPresentationAnnouncement } | { subject: "completion" }
+
+/** Validate the presentation's announcement input against the plan's publication and in-flight state. */
+export function planPresentationAnnouncement(
+    publication: PublicationState<unknown>["state"],
+    saved: PlanAnnouncement | undefined,
+    input: AnnouncementInput | undefined,
+): PlanPresentationAnnouncement {
+    switch (publication) {
+        case "unpublished":
+            if (input) throw new Error("an unpublished plan's first publication isn't announced; omit announcement")
+            return { publication }
+        case "published":
+        case "pending":
+            if (!input)
+                throw new Error(
+                    `this plan is ${publication === "published" ? "already published" : "pending its first publication"}, so its update is announced: pass announcement with a short summary of what changed and why, saying when the change is only editorial`,
+                )
+            switch (saved?.state) {
+                case undefined:
+                case "presented":
+                case "accepted":
+                    return { publication, announcement: input }
+                case "plan-update":
+                case "announcing":
+                    throw new Error(
+                        "an earlier plan update is still being published; finish its publication and announcement first",
+                    )
+            }
+    }
+}
 
 function presentationInstructions(presentation: Presentation, relSnapshot: string, relTarget: string): string {
     let artifact: string
@@ -792,7 +873,7 @@ function presentationInstructions(presentation: Presentation, relSnapshot: strin
     switch (presentation.subject) {
         case "plan":
             artifact = "plan"
-            notes = planUpdateAnnouncementInstructions(presentation.publication)
+            notes = planUpdateAnnouncementInstructions(presentation.announcement)
             break
         case "completion":
             artifact = "completion artifact"
@@ -814,21 +895,23 @@ const COMPLETION_ACCEPTANCE_INSTRUCTION =
     "Accepting this diff authorizes no commit, push, or PR. After acceptance, say the work is ready to submit and wait for an explicit request to submit or ship."
 
 const ANNOUNCEMENT_SUMMARY_INSTRUCTION =
-    "Before writing Target, draft a short summary of what changed and why; say so when the change is only editorial. Show it in the same message as the diff: accepting the diff approves the plan update and its announcement together. Pass that summary as the announcement when publishing."
+    "The summary is saved and shown to the user while Target is written; accepting the diff approves the plan update and its announcement together. Publishing uses it, so don't pass it again."
 
 // A published plan's update is announced on its tracker item, so the summary is approved with the diff.
-function planUpdateAnnouncementInstructions(publication: PublicationState<unknown>["state"]): string[] {
-    switch (publication) {
+function planUpdateAnnouncementInstructions(presentation: PlanPresentationAnnouncement): string[] {
+    switch (presentation.publication) {
         case "unpublished":
             return []
         case "published":
             return [
                 "Plan update announcement: this plan is already published on its tracker item, so this update will be announced there.",
+                `Summary: ${presentation.announcement.summary}`,
                 ANNOUNCEMENT_SUMMARY_INSTRUCTION,
             ]
         case "pending":
             return [
                 "Plan update announcement: the plan's first publication is pending and may already have landed. If recovery confirms it, this update will be announced on the tracker item.",
+                `Summary: ${presentation.announcement.summary}`,
                 ANNOUNCEMENT_SUMMARY_INSTRUCTION,
             ]
     }

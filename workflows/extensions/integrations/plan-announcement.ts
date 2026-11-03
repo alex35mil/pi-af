@@ -9,6 +9,11 @@ import { unifiedDiff } from "./plan-diff.js"
 // Announcing an update to a published plan, for any entity, so the change reaches the people
 // watching the issue instead of silently editing the plan in place.
 //
+// - `presented`: the plan presentation saved the approved-with-the-diff summary; the target isn't
+//   written yet. `after` fingerprints the presented snapshot.
+// - `accepted`: the first write of the target after presentation succeeded. `after` fingerprints
+//   the file as written, including user edits made on acceptance; publication uses this summary
+//   when the source matches.
 // - `plan-update`: the announcement is drafted and the plan update isn't confirmed. `after`
 //   fingerprints the updated plan: a published plan matching it proves the update landed;
 //   otherwise it didn't, and a new preparation replaces the draft.
@@ -16,14 +21,7 @@ import { unifiedDiff } from "./plan-diff.js"
 //   any other plan publication.
 const token = Type.String({ pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" })
 const body = Type.String({ minLength: 1 })
-export const PlanAnnouncementSchema = Type.Union([
-    Type.Object(
-        { state: Type.Literal("plan-update"), token, body, after: Type.String({ pattern: "^[0-9a-f]{64}$" }) },
-        { additionalProperties: false },
-    ),
-    Type.Object({ state: Type.Literal("announcing"), token, body }, { additionalProperties: false }),
-])
-export type PlanAnnouncement = Static<typeof PlanAnnouncementSchema>
+const fingerprint = Type.String({ pattern: "^[0-9a-f]{64}$" })
 
 // An Epic update made from one of its Tasks names that Task. Every other update has no origin.
 export const AnnouncementOriginSchema = Type.Object(
@@ -33,18 +31,42 @@ export const AnnouncementOriginSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const summary = Type.String({
+    minLength: 1,
+    description: "The approved Markdown summary of what changed and why, including when the change is only editorial",
+})
 export const AnnouncementInputSchema = Type.Object(
-    {
-        origin: Type.Optional(AnnouncementOriginSchema),
-        summary: Type.String({
-            minLength: 1,
-            description:
-                "The approved Markdown summary of what changed and why, including when the change is only editorial",
-        }),
-    },
+    { origin: Type.Optional(AnnouncementOriginSchema), summary },
     { additionalProperties: false },
 )
 export type AnnouncementInput = Static<typeof AnnouncementInputSchema>
+
+export const PlanAnnouncementSchema = Type.Union([
+    Type.Object(
+        {
+            state: Type.Literal("presented"),
+            summary,
+            origin: Type.Optional(AnnouncementOriginSchema),
+            after: fingerprint,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            state: Type.Literal("accepted"),
+            summary,
+            origin: Type.Optional(AnnouncementOriginSchema),
+            after: fingerprint,
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        { state: Type.Literal("plan-update"), token, body, after: fingerprint },
+        { additionalProperties: false },
+    ),
+    Type.Object({ state: Type.Literal("announcing"), token, body }, { additionalProperties: false }),
+])
+export type PlanAnnouncement = Static<typeof PlanAnnouncementSchema>
 // Where the announcement's plan link points. GitHub's plan comment is on the same issue, so a
 // bare fragment keeps the reader in the same view; Linear's plan is a separate document.
 export type AnnouncementPlan = { presentation: "github"; commentId: number } | { presentation: "linear"; url: string }
