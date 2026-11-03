@@ -8,7 +8,7 @@ import {
 import { hasAnnouncementMarker } from "./plan-announcement.js"
 import { assertPlanCommentUrl, type PlanComment } from "./plan-comment.js"
 import { hasPublicationMarker, type PublicationAdapter } from "./plan-publication.js"
-import { requirePublicationCall } from "./publication-evidence.js"
+import { requireProviderCall } from "./provider-evidence.js"
 import type { GitHubTrackerRecord } from "./records.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
@@ -26,7 +26,7 @@ export function githubPublication(
         arguments: args,
     })
     const requireCall = (evidence: ProviderEvidence, operation: string, args: Record<string, unknown>) =>
-        requirePublicationCall(evidence, server, operation, args, tools)
+        requireProviderCall(evidence, { server, operation, expected: args }, tools, "plan publication")
     const identity = (id: unknown, url: unknown) => {
         if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 1 || typeof url !== "string")
             throw new Error(

@@ -59,13 +59,6 @@ export const SetWorkflowPhaseSchema = Type.Object(
 )
 export type SetWorkflowPhaseInput = Static<typeof SetWorkflowPhaseSchema>
 
-export const GitHubPhaseInputSchema = Type.Object(
-    {
-        field: NativePhaseFactsSchema.anyOf[0].properties.field,
-        current: Type.Optional(NameSchema),
-    },
-    { additionalProperties: false },
-)
 export const LinearPhaseInputSchema = Type.Object(
     {
         catalog: Type.Array(
@@ -88,9 +81,6 @@ export const LinearPhaseInputSchema = Type.Object(
 )
 
 /** Absence denotes the observed native empty value, never missing overall read evidence. */
-export function githubPhaseFacts(input: Static<typeof GitHubPhaseInputSchema>): NativePhaseFacts {
-    return { provider: "github", field: input.field, current: input.current ?? null }
-}
 export function linearPhaseFacts(input: Static<typeof LinearPhaseInputSchema>): NativePhaseFacts {
     return {
         provider: "linear",
@@ -141,7 +131,8 @@ export function validateGitHubPhaseField(
     tracker: GitHubTracker,
     facts: Extract<NativePhaseFacts, { provider: "github" }>,
 ): void {
-    if (facts.field.name !== tracker.fields.phase.field || facts.field.dataType !== "SINGLE_SELECT") {
+    // GitHub spells the type SINGLE_SELECT in GraphQL and single_select through the MCP.
+    if (facts.field.name !== tracker.fields.phase.field || facts.field.dataType.toLowerCase() !== "single_select") {
         throw new Error("configured GitHub Phase requires its exact Project single-select field")
     }
     for (const name of Object.values(tracker.fields.phase.values)) {

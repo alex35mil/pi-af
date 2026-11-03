@@ -51,11 +51,9 @@ During In Progress, native Phase equals the metadata Phase. Outside In Progress,
 
 ### Fresh native facts
 
-Omit an optional field only when you actually read it and it was empty. Code turns that absence into null. Never omit a value you didn't read.
+**GitHub:** pass the actual `projects_get` reads unchanged as evidence: `get_project_field` for the configured Phase field, and `get_project_item` for the entity's Project item with Phase in `field_names`. Code extracts the options and current selection, and checks the Project, issue, and field. The field must include every configured Phase option; extra options are kept.
 
-**GitHub:** `{ field: { name, dataType, options }, current }`, with the exact field name, the native `SINGLE_SELECT` type, all option names, and the current selection. The field must include every configured Phase option; extra options are kept.
-
-**Linear:** `{ catalog, applied }`, both required even when empty.
+**Linear:** `{ catalog, applied }`, both required even when empty. Omit an optional field only when you actually read it and it was empty. Code turns that absence into null. Never omit a value you didn't read.
 
 - `applied`: every currently applied label ID.
 - `catalog`: the selected group, all its children, and any same-named groups needed to prove scope and identity. Finish pagination first. Each entry has `id`, `name`, and `isGroup`, plus `team`, `parentId`, `groupType`, and `retiredAt` when present.

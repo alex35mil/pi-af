@@ -15,7 +15,7 @@ import {
     type PublishedPlan,
 } from "./plan-publication.js"
 import { LINEAR_PLAN_DOCUMENT_TITLE } from "./projection.js"
-import { requirePublicationCall } from "./publication-evidence.js"
+import { requireProviderCall } from "./provider-evidence.js"
 import type { LinearTrackerRecord } from "./records.js"
 import type { ProviderEvidence } from "./resource-id-operations.js"
 
@@ -48,7 +48,7 @@ export function linearPublication(
         arguments: args,
     })
     const requireCall = (evidence: ProviderEvidence, operation: string, args: Record<string, unknown>) =>
-        requirePublicationCall(evidence, server, operation, args, tools)
+        requireProviderCall(evidence, { server, operation, expected: args }, tools, "plan publication")
     const parentRead = () => call(parent.operation, parent.args)
     const listing = {
         limit: 50,

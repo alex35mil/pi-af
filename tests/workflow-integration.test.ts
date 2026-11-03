@@ -9,7 +9,7 @@ import { describe, it, type TestContext } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
-import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { githubPhaseReads, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 
 import {
@@ -975,6 +975,63 @@ describe("workflow integration configuration", () => {
                 changed: true,
             })
             assert.equal(context.phaseProjection?.inProgress, "execution")
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("prepares GitHub Phase from the Project field and item reads as the MCP returns them", async () => {
+        const cwd = temporaryProject()
+        try {
+            prepareWorkflowProject(cwd)
+            prepareArtifactPersistence(cwd)
+            const entityDir = writeGitHubGigEntity(cwd)
+            type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
+            const tools = new Map<string, Tool>()
+            let publish: ((data: unknown) => void) | undefined
+            registerIntegrations({
+                events: {
+                    on: (event: string, handler: (data: unknown) => void) => {
+                        if (event === "mcp:tool-catalog") publish = handler
+                        return () => {}
+                    },
+                },
+                on: () => {},
+                registerCommand: () => {},
+                registerTool: (tool: Tool) => tools.set(tool.name, tool),
+            } as unknown as ExtensionAPI)
+            publish!(mcpTools)
+            const target = {
+                server: "github",
+                project: { owner: "ALEX", ownerType: "user" as const, number: 3 },
+                repository: { owner: "alex", repo: "example" },
+                issueNumber: 42,
+            }
+            const prepare = (native: unknown, lifecycle = "inProgress") =>
+                tools.get("prepare_github_phase_mutation")!.execute(
+                    "phase",
+                    { entityDir, lifecycle, native },
+                    undefined,
+                    undefined,
+                    withToolExecution({
+                        cwd,
+                    } as ExtensionContext),
+                )
+            const prepared = await prepare(githubPhaseReads(target))
+            assert.deepEqual((prepared.details as { phaseMutation: unknown }).phaseMutation, {
+                provider: "github",
+                field: "Phase",
+                value: "Execution",
+                changed: true,
+            })
+            const cleared = await prepare(githubPhaseReads(target, null), "done")
+            assert.deepEqual((cleared.details as { phaseMutation: unknown }).phaseMutation, {
+                provider: "github",
+                field: "Phase",
+                value: null,
+                changed: false,
+            })
+            await assert.rejects(prepare(githubPhaseReads({ ...target, issueNumber: 43 })), /durable issue/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }

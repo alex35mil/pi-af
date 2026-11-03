@@ -19,8 +19,9 @@ import {
     type NativePhaseFacts,
 } from "../workflows/extensions/integrations/phase.ts"
 import type { WorkflowEnvironment } from "../workflows/extensions/integrations/policy.ts"
-import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { githubPhaseReads, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
+import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 
 const statuses = {
     backlog: "Backlog",
@@ -239,10 +240,13 @@ describe("workflow operations", () => {
         const git = (...args: string[]) => cp.execFileSync("git", args, { cwd: root, stdio: "pipe" })
         type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
         const tools = new Map<string, Tool>()
-        registerWorkflowOperations({
-            on() {},
-            registerTool: (tool: Tool) => tools.set(tool.name, tool),
-        } as unknown as ExtensionAPI)
+        registerWorkflowOperations(
+            {
+                on() {},
+                registerTool: (tool: Tool) => tools.set(tool.name, tool),
+            } as unknown as ExtensionAPI,
+            workflowMcpCatalog("github"),
+        )
         assert.deepEqual([...tools.keys()], ["set_github_workflow_phase", "set_linear_workflow_phase"])
         const ctx = withToolExecution({ cwd: root } as ExtensionContext)
         try {
@@ -260,14 +264,22 @@ describe("workflow operations", () => {
             writeEntityStatus(directory, entity("github"))
             const file = path.join(directory, "metadata.json")
             const before = fs.readFileSync(file, "utf8")
-            const nativeInput = {
-                field: {
-                    name: "Phase",
-                    dataType: "SINGLE_SELECT",
-                    options: Object.values(phaseValues),
-                },
-                current: "Planning",
-            }
+            const target = { server: "github", project: github.project, repository, issueNumber: 11 }
+            const nativeInput = githubPhaseReads(target)
+            const otherIssue = githubPhaseReads({ ...target, issueNumber: 12 })
+            await assert.rejects(
+                tools
+                    .get("set_github_workflow_phase")!
+                    .execute(
+                        "other-issue",
+                        { entityDir: directory, phase: "execution", lifecycle: "inProgress", native: otherIssue },
+                        undefined,
+                        undefined,
+                        ctx,
+                    ),
+                /durable issue/,
+            )
+            assert.equal(fs.readFileSync(file, "utf8"), before)
             const phaseTool = tools.get("set_github_workflow_phase")!
             await assert.rejects(
                 phaseTool.execute(
@@ -315,7 +327,7 @@ describe("workflow operations", () => {
                     entityDir: directory,
                     phase: "execution",
                     lifecycle: "inProgress",
-                    native: { ...nativeInput, current: "Execution" },
+                    native: githubPhaseReads(target, "Execution"),
                 },
                 undefined,
                 undefined,
