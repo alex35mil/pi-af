@@ -233,6 +233,7 @@ describe("workflow guidance structure", () => {
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
+                "inspect_integrations",
             ],
             task: [
                 "prepare_task_plan_presentation",
@@ -240,6 +241,7 @@ describe("workflow guidance structure", () => {
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
+                "inspect_integrations",
             ],
             gig: [
                 "prepare_gig_plan_presentation",
@@ -247,8 +249,9 @@ describe("workflow guidance structure", () => {
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
+                "inspect_integrations",
             ],
-            pr: ["inspect_session_analysis"],
+            pr: ["inspect_session_analysis", "inspect_integrations"],
             "project-setup": ["inspect_permissions", "inspect_project_setup"],
         }
         for (const [skill, tools] of Object.entries(required)) {

@@ -110,7 +110,7 @@ To report workflow problems from any consuming project, set `workflowProject` in
 
 - `"sessionAnalysis": true` in the same file ends every shipped Task or Gig, completed Epic, and shipped incoming PR with an in-chat analysis of the session for workflow problems ([session analysis](./session-analysis.md)).
 - It's off when absent or `false`, and it costs tokens. It's global only; no project configuration can set it.
-- It doesn't need `workflowProject`, but reporting a finding does.
+- It needs `workflowProject`: it searches that project's tracker for findings that are already reported. Without it, the analysis reports the error and ends.
 
 **Targets:**
 

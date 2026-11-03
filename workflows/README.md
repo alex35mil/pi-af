@@ -65,7 +65,7 @@ Set the source reference once in private global `workflows.json` in Pi's agent d
 
  See [source configuration](references/setup.md#workflow-reporting-source) and [report preparation](references/queue.md#prepare-a-workflow-report).
 
-To catch problems agents recover from quietly, add `"sessionAnalysis": true` to the same global `workflows.json`. After a Task or Gig ships, an Epic completes, or an incoming PR ships, the agent reviews the session in chat and lists workflow errors and friction worth reporting; you choose which to report. It's off by default because it costs tokens. See [session analysis](references/session-analysis.md).
+To catch problems agents recover from quietly, add `"sessionAnalysis": true` to the same global `workflows.json`. After a Task or Gig ships, an Epic completes, or an incoming PR ships, the agent reviews the session in chat, searches the workflow tracker for findings that are already reported, and lists the rest of the workflow errors and friction worth reporting; you choose which to report. It needs `workflowProject`. It's off by default because it costs tokens. See [session analysis](references/session-analysis.md).
 
 ## Working lifecycle
 
