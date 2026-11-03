@@ -31,7 +31,7 @@ These tools read local configuration, authority, and entity state. They never ca
 | Reconcile native Phase | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation`, with the fresh facts in [Phase](../phase.md#fresh-native-facts) |
 | Ship a Task or Gig | `prepare_integration_shipping`, then `prepare_integration_merge` only when a merge is needed |
 
-- `target: "current"` covers ordinary work. `target: "workflow"` is only for workflow-problem reports through Todo; when reporting, read [queue](../queue.md#prepare-a-workflow-report). Use the returned tracker configuration.
+- `target: "current"` covers ordinary work. `target: "workflow"` is only for workflow-problem reports through Todo and for [session analysis](../session-analysis.md) searches; when reporting, read [queue](../queue.md#prepare-a-workflow-report). Use the returned tracker configuration.
 - The returned local `projectRoot` is never report content. Missing or invalid source configuration stops with a corrective error, without starting setup or falling back.
 - `prepare_integration_merge` takes the PR read as `evidence` and checks the recorded PR number, repository, head, base, and local branch SHA. It returns squash-merge arguments pinned to the head, complete merged proof, or a blocker.
 

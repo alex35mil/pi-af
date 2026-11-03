@@ -3,6 +3,7 @@ name: pr
 description: "Use for /pr <URL>, /pr #NN, or an explicit request to inspect, review, or integrate an existing incoming GitHub pull request. Does not initialize an Epic, Task, or Gig."
 allowed-tools:
     - "inspect_session_analysis"
+    - "inspect_integrations"
     - "inspect_incoming_pr_context"
     - "plan_incoming_pr_merge"
     - "plan_incoming_pr_intake"
