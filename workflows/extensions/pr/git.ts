@@ -2,20 +2,15 @@ import * as cp from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { promisify } from "node:util"
+import {
+    FAILING_PROGRAM as FAILING_MERGE_DRIVER,
+    GIT_HELPER_CONFIG_PATTERN,
+    gitHelperOverride,
+    inheritedGitRelocation,
+} from "../__lib/git.js"
 import type { Repository } from "../integrations/forge/github/incoming-pr-context.js"
 
 const execFile = promisify(cp.execFile)
-const relocation = [
-    "GIT_DIR",
-    "GIT_COMMON_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_CONFIG",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_CONFIG_COUNT",
-]
 const settings = [
     "core.hooksPath=/dev/null",
     "core.fsmonitor=false",
@@ -50,7 +45,7 @@ export async function headBranchRef(directory: string, ref: string, signal?: Abo
 // Configuration/artifact readers also use Git. Reject relocation before invoking any of them,
 // rather than temporarily mutating process.env in a parallel tool runtime.
 export function assertGitEnvironment(): void {
-    const found = relocation.filter((key) => process.env[key] !== undefined)
+    const found = inheritedGitRelocation()
     if (found.length)
         throw new Error(
             `Unset inherited Git relocation/configuration settings before continuing: ${found.join(", ")}. No checkout changes made.`,
@@ -129,15 +124,7 @@ async function safeSettings(directory: string, prefix: string[], signal?: AbortS
     try {
         keys = await execute(
             directory,
-            [
-                ...prefix,
-                ...args,
-                "config",
-                "--null",
-                "--name-only",
-                "--get-regexp",
-                "^(filter\\..*\\.(clean|smudge|process|required)|merge\\..*\\.driver)$",
-            ],
+            [...prefix, ...args, "config", "--null", "--name-only", "--get-regexp", GIT_HELPER_CONFIG_PATTERN],
             signal,
         )
     } catch (error) {
@@ -145,11 +132,9 @@ async function safeSettings(directory: string, prefix: string[], signal?: AbortS
         keys = ""
     }
     for (const key of keys.split("\0").filter(Boolean)) {
-        // A disabled custom merge driver must report a conflict, not silently accept ours.
-        const value = key.startsWith("merge.") ? "/usr/bin/false" : key.endsWith(".required") ? "false" : ""
-        if (key.startsWith("merge.") && !fs.existsSync(value))
-            throw new Error("Trusted failing merge driver /usr/bin/false is unavailable")
-        args.push("-c", `${key}=${value}`)
+        if (key.startsWith("merge.") && !fs.existsSync(FAILING_MERGE_DRIVER))
+            throw new Error(`Trusted failing merge driver ${FAILING_MERGE_DRIVER} is unavailable`)
+        args.push("-c", gitHelperOverride(key, FAILING_MERGE_DRIVER))
     }
     return args
 }

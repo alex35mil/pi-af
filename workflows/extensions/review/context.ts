@@ -6,6 +6,10 @@ export const REVIEW_AUTHORITY_INSTRUCTIONS = [
     "Within workflow guidance, established user decisions override Project Policies, and Project Policies override reusable workflow skills and references.",
 ] as const
 
+// Entity reviewers launch with the read-only `git_read` tool (see `git-read.ts`).
+export const REVIEW_GIT_INSTRUCTIONS =
+    "Use the git_read tool for history, diffs, blame, and merges in the repository; it runs read-only Git subcommands without a shell."
+
 export const REVIEW_DOCUMENT_INSTRUCTIONS =
     "For current plan/result/report documents, check that the nonempty ## Overview accurately represents the full supporting sections and keeps material limitations visible. Tracker overviews explain the brief with ### Plan highlights; completion overviews explain the delivered outcome or report conclusion and material uncertainty. Both portions are reviewed together; summaries never replace required contract or evidence."
 

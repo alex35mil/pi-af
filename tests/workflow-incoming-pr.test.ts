@@ -468,6 +468,7 @@ describe("incoming PR private review", () => {
                     additionalFiles: [],
                     agentName: "incoming-pr-review",
                     progressLabel: "test",
+                    toolset: "files",
                 },
                 async (options) => {
                     assert.equal(options.cwd, f.root)
@@ -476,6 +477,7 @@ describe("incoming PR private review", () => {
                         "prompt.md",
                         { kind: "standard", model: options.model },
                         options.session,
+                        options.toolset,
                     )
                     assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls")
                     assert.ok(args.includes("--no-extensions"))
@@ -794,6 +796,7 @@ describe("incoming PR private review", () => {
                             additionalFiles: [],
                             agentName: "test",
                             progressLabel: "test",
+                            toolset: "files",
                         },
                         async () => result,
                     ),
@@ -814,6 +817,7 @@ describe("incoming PR private review", () => {
                             additionalFiles: [],
                             agentName: "test",
                             progressLabel: "test",
+                            toolset: "files",
                         },
                         async () => result,
                     ),

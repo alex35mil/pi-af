@@ -112,3 +112,11 @@ Workflow skills allow routine `.project/` bookkeeping. Offer explicit artifact d
 - Before changing local settings, the tool checks the file is outside Git and ensures exact `/.agents/permissions.local.json` in `.git/info/exclude`. It never changes the index, and a no-op adds no exclusion.
 
 Artifact persistence and permission-settings persistence are separate user decisions.
+
+## Reviewer tools
+
+Workflow reviewers run headless under the user's permission settings. An `ask` result there blocks the call, because there's no UI to answer it.
+
+- Epic, Task, and Gig reviewers use `read`, `grep`, `find`, `ls`, and the read-only `git_read`. Incoming-PR reviewers use the first four.
+- When the effective `defaultMode` is `ask`, tell the user to allow those tools by name in their own settings, or reviewers can't inspect the repository.
+- `configure_permissions` accepts only MCP selectors, so the user edits these rules by hand. Never add them without approval.

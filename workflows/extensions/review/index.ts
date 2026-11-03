@@ -18,6 +18,7 @@ import {
     readPendingEntries,
     resolveEntityPath,
 } from "../__lib/entity.js"
+import * as Git from "../__lib/git.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import type { PublicationState } from "../integrations/plan-publication.js"
 import { trackerPlanPublication } from "../integrations/records.js"
@@ -32,6 +33,7 @@ import {
     readOptional,
     REVIEW_AUTHORITY_INSTRUCTIONS,
     REVIEW_DOCUMENT_INSTRUCTIONS,
+    REVIEW_GIT_INSTRUCTIONS,
     truncate,
 } from "./context.js"
 
@@ -40,16 +42,46 @@ const REVIEW_OUTCOME_FILE = "outcome.json"
 const REVIEW_REPORT_FILE = "report.json"
 const CANDIDATE_FILE = "candidate.md"
 
-type ReviewPhase = "plan" | "interim" | "final"
+const REVIEW_PHASES = ["plan", "interim", "final", "conflict-plan", "conflict-merge"] as const
+type ReviewPhase = (typeof REVIEW_PHASES)[number]
 /** Review categories whose rounds snapshot a candidate that a presentation tool can hand to the user. */
 type SnapshotPhase = "plan" | "final"
 type ReviewEntity = "epic" | "task" | "gig"
 
-/** What a Deliverable review round reviews, with the snapshot only the categories that take one carry. */
+/**
+ * A merge conflict between a Deliverable branch and its target, as a `conflict-plan` round saw it.
+ * `preMergeBase` is the branch commit the target merges into: the branch head, or, when replanning
+ * after a committed but unpushed merge of this target, that merge's first parent.
+ */
+export interface ConflictRecord {
+    branch: string
+    target: string
+    preMergeBase: string
+    targetSha: string
+    resolution: string
+}
+
+/** What a Deliverable review round reviews, with the inputs only its category carries. */
 export type DeliverableReviewRound =
     | { phase: "plan"; planSnapshot: string }
     | { phase: "interim"; subject?: string }
     | { phase: "final"; completionSnapshot: string }
+    | { phase: "conflict-plan"; conflict: ConflictRecord; record: string }
+    | { phase: "conflict-merge"; conflict: ConflictRecord; merge: string; record: string }
+
+const CONFLICT_RECORD_FILE = "conflict.json"
+const MERGE_RECORD_FILE = "merge.json"
+const Sha = Type.String({ pattern: "^[0-9a-f]{40,64}$" })
+const ConflictRecordSchema = Type.Object(
+    {
+        branch: Type.String({ minLength: 1 }),
+        target: Type.String({ minLength: 1 }),
+        preMergeBase: Sha,
+        targetSha: Sha,
+        resolution: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+)
 
 const ReviewOutcomeSchema = Type.Object(
     {
@@ -63,43 +95,80 @@ const optionalReviewerProperties = {
     model: Type.Optional(Type.String({ description: "Optional pi model pattern for the reviewer" })),
 }
 
+const subjectProperty = Type.String({ description: "Interim review subject/question" })
+const resolutionProperty = Type.String({
+    minLength: 1,
+    description:
+        "conflict-plan only: the plain-words resolution plan, naming each conflicting file, what each side changed, and how each conflict is kept or combined",
+})
+
+// One strict object per Deliverable review category, so each input exists only where it's used.
+function deliverableRequests<E extends "task" | "gig">(entity: E, directory: string) {
+    const base = { entity: Type.Literal(entity), entityDir: Type.String({ description: directory }) }
+    const strict = { additionalProperties: false } as const
+    return [
+        Type.Object({ ...base, phase: Type.Literal("plan"), ...optionalReviewerProperties }, strict),
+        Type.Object(
+            {
+                ...base,
+                phase: Type.Literal("interim"),
+                subject: Type.Optional(subjectProperty),
+                ...optionalReviewerProperties,
+            },
+            strict,
+        ),
+        Type.Object({ ...base, phase: Type.Literal("final"), ...optionalReviewerProperties }, strict),
+        Type.Object(
+            {
+                ...base,
+                phase: Type.Literal("conflict-plan"),
+                resolution: resolutionProperty,
+                ...optionalReviewerProperties,
+            },
+            strict,
+        ),
+        Type.Object({ ...base, phase: Type.Literal("conflict-merge"), ...optionalReviewerProperties }, strict),
+    ] as const
+}
+
+const EpicReviewRequestSchema = Type.Object(
+    {
+        entity: Type.Literal("epic"),
+        entityDir: Type.String({ description: `Epic directory under ${EPIC_ROOT}/` }),
+        phase: Type.Enum(["plan"], { type: "string" }),
+        ...optionalReviewerProperties,
+    },
+    { additionalProperties: false },
+)
+const TASK_DIRECTORY = "Task directory under an Epic's tasks/ directory"
+const GIG_DIRECTORY = `Gig directory under ${GIG_ROOT}/`
+
 export const ReviewRequestSchema = Type.Union([
-    Type.Object(
-        {
-            entity: Type.Literal("epic"),
-            entityDir: Type.String({ description: `Epic directory under ${EPIC_ROOT}/` }),
-            phase: Type.Enum(["plan"], { type: "string" }),
-            ...optionalReviewerProperties,
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            entity: Type.Literal("task"),
-            entityDir: Type.String({ description: "Task directory under an Epic's tasks/ directory" }),
-            phase: StringEnum(["plan", "interim", "final"] as const),
-            subject: Type.Optional(Type.String({ description: "Interim review subject/question" })),
-            ...optionalReviewerProperties,
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            entity: Type.Literal("gig"),
-            entityDir: Type.String({ description: `Gig directory under ${GIG_ROOT}/` }),
-            phase: StringEnum(["plan", "interim", "final"] as const),
-            subject: Type.Optional(Type.String({ description: "Interim review subject/question" })),
-            ...optionalReviewerProperties,
-        },
-        { additionalProperties: false },
-    ),
+    EpicReviewRequestSchema,
+    ...deliverableRequests("task", TASK_DIRECTORY),
+    ...deliverableRequests("gig", GIG_DIRECTORY),
 ])
 type ReviewAgentParams = Static<typeof ReviewRequestSchema>
+
+// Tool roots must be plain objects, so each tool declares every input flat; parsing into
+// `ReviewRequestSchema` then rejects inputs its category doesn't take.
+function deliverableToolParameters(directory: string) {
+    return Type.Object(
+        {
+            entityDir: Type.String({ description: directory }),
+            phase: StringEnum(REVIEW_PHASES),
+            subject: Type.Optional(subjectProperty),
+            resolution: Type.Optional(resolutionProperty),
+            ...optionalReviewerProperties,
+        },
+        { additionalProperties: false },
+    )
+}
 
 export const RecordReviewResponseSchema = Type.Object(
     {
         entityDir: Type.String({ description: "Epic, Task, or Gig directory" }),
-        phase: StringEnum(["plan", "interim", "final"] as const),
+        phase: StringEnum(REVIEW_PHASES),
         round: Type.Integer({ minimum: 1 }),
         findings: Type.Array(ReviewResponseFindingInputSchema),
         status: Type.String({ minLength: 1, description: "Plain-language correction and review status" }),
@@ -180,17 +249,18 @@ export default function (pi: ExtensionAPI) {
     const tools = workflowTools(pi, "reviews")
     registerPullRequestReview(pi)
     const reviews = [
-        ["epic", ReviewRequestSchema.anyOf[0]],
-        ["task", ReviewRequestSchema.anyOf[1]],
-        ["gig", ReviewRequestSchema.anyOf[2]],
+        ["epic", Type.Omit(EpicReviewRequestSchema, ["entity"])],
+        ["task", deliverableToolParameters(TASK_DIRECTORY)],
+        ["gig", deliverableToolParameters(GIG_DIRECTORY)],
     ] as const
-    for (const [entity, schema] of reviews) {
-        const parameters = Type.Omit(schema, ["entity"])
+    for (const [entity, parameters] of reviews) {
         tools.registerTool({
             name: `review_${entity}`,
             label: `review_${entity}`,
             description:
-                "Run one strict Epic, Task, or Gig planning review, or a Task/Gig interim or final implementation review. Persists one numbered local review round and pauses immediately when the configured blocked-review confirmation threshold is reached.",
+                entity === "epic"
+                    ? "Run one strict Epic planning review. Persists one numbered local review round and pauses immediately when the configured blocked-review confirmation threshold is reached."
+                    : "Run one strict Task/Gig review: plan, interim (optional subject), final, conflict-plan (required resolution: the proposed merge-conflict resolution, reviewed against the actual conflicts with the fetched target), or conflict-merge (the committed merge of the target into the branch, reviewed against the approved resolution). Persists one numbered local review round and pauses immediately when the configured blocked-review confirmation threshold is reached.",
             parameters,
 
             async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -208,6 +278,13 @@ export default function (pi: ExtensionAPI) {
                 assertReviewEntity(entityDir, input.entity)
                 assertReviewPhase(entityDir, phase)
                 assertReviewPreconditions(entityDir, phase)
+                const subject =
+                    input.entity === "epic"
+                        ? ({ entity: "epic" } as const)
+                        : ({
+                              entity: "deliverable",
+                              prepared: await prepareDeliverableRound(ctx.cwd, entityDir, input),
+                          } as const)
 
                 const round = await nextReviewRound(entityDir, phase)
                 const reviewRoundDir = await createReviewRoundDirectory(entityDir, phase, round)
@@ -215,8 +292,8 @@ export default function (pi: ExtensionAPI) {
 
                 let snapshotPath: string | undefined
                 let prompt: string
-                if (input.entity === "epic") {
-                    snapshotPath = await snapshotCandidate(entityDir, input.phase, round)
+                if (subject.entity === "epic") {
+                    snapshotPath = await snapshotCandidate(entityDir, "plan", round)
                     prompt = await buildEpicReviewPrompt(
                         ctx,
                         entityDir,
@@ -225,7 +302,7 @@ export default function (pi: ExtensionAPI) {
                         input.instructions,
                     )
                 } else {
-                    const reviewRound = await snapshotDeliverableRound(entityDir, input, round)
+                    const reviewRound = await snapshotDeliverableRound(entityDir, subject.prepared, round)
                     snapshotPath = deliverableRoundSnapshot(reviewRound)
                     prompt = await buildDeliverableReviewPrompt(ctx, entityDir, reviewRound, input.instructions)
                 }
@@ -241,6 +318,7 @@ export default function (pi: ExtensionAPI) {
                     model: input.model,
                     agentName: `${input.entity}-review`,
                     progressLabel: `${input.entity === "epic" ? "Epic" : "Deliverable"} review agent`,
+                    toolset: "filesAndGit",
                     onUpdate: (update) => onUpdate?.(textResult(update)),
                 }).catch(async (error: unknown) => {
                     const message = error instanceof Error ? error.message : String(error)
@@ -276,7 +354,15 @@ export default function (pi: ExtensionAPI) {
             const input: RecordReviewResponseParams = Value.Parse(RecordReviewResponseSchema, params)
             assertArtifactPersistencePrepared(ctx.cwd)
             const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
-            readEntityStatus(entityDir)
+            const status = readEntityStatus(entityDir)
+            switch (status.entity) {
+                case "epic":
+                    if (input.phase !== "plan") throw new Error("Epic reviews have only the plan category")
+                    break
+                case "task":
+                case "gig":
+                    break
+            }
 
             const roundName = `${input.phase}-${input.round.toString().padStart(3, "0")}`
             const roundDir = path.join(entityDir, LOCAL_REVIEWS_DIR, roundName)
@@ -389,12 +475,19 @@ function resolveEntityDir(cwd: string, raw: string): string {
 
 export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
     const status = readEntityStatus(directory)
-    const requiredPhase = phase === "plan" ? "planning" : "selfReview"
-    if (status.phase !== requiredPhase) {
-        throw new Error(
-            `${entityLabel(status)} ${phase} review requires Phase ${phase === "plan" ? "Planning" : "Self-Review"}`,
-        )
-    }
+    const [requiredPhase, label] = ((): ["planning" | "selfReview", string] => {
+        switch (phase) {
+            case "plan":
+                return ["planning", "Planning"]
+            case "interim":
+            case "final":
+            case "conflict-plan":
+            case "conflict-merge":
+                return ["selfReview", "Self-Review"]
+        }
+    })()
+    if (status.phase !== requiredPhase)
+        throw new Error(`${entityLabel(status)} ${phase} review requires Phase ${label}`)
 }
 
 /**
@@ -415,7 +508,16 @@ export function assertReviewPreconditions(directory: string, phase: ReviewPhase)
         case "gig":
             break
     }
-    if (phase !== "final") return
+    switch (phase) {
+        case "plan":
+        case "interim":
+        // Conflict rounds check repository state in `prepareConflictRound`.
+        case "conflict-plan":
+        case "conflict-merge":
+            return
+        case "final":
+            break
+    }
     const pendingEntries = readPendingEntries(directory)
     if (pendingEntries.length > 0)
         throw new Error(
@@ -760,18 +862,125 @@ function deliverableStatus(entityDir: string) {
     }
 }
 
-async function snapshotDeliverableRound(
+/** A Deliverable round's checked inputs, resolved before its directory exists so a refusal consumes no round. */
+export type PreparedDeliverableRound =
+    | { phase: "plan" }
+    | { phase: "interim"; subject?: string }
+    | { phase: "final" }
+    | { phase: "conflict-plan"; conflict: ConflictRecord }
+    | { phase: "conflict-merge"; conflict: ConflictRecord; merge: string; planRound: string }
+
+function commitParents(root: string, commit: string): string[] {
+    return Git.run(root, ["rev-parse", `${commit}^@`])
+        .split("\n")
+        .filter(Boolean)
+}
+
+/**
+ * The conflict between the stored branch and the fetched `origin/<target>`, for a `conflict-plan` round.
+ * When the branch head is an unpushed merge of that same target (replanning after a committed merge),
+ * the conflict is the one between its first parent and the target: where `git reset --keep` returns.
+ */
+export function conflictForPlan(root: string, entityDir: string, resolution: string): ConflictRecord {
+    const { branch } = deliverableStatus(entityDir)
+    const targetRef = `refs/remotes/origin/${branch.target}`
+    if (!Git.succeeds(root, ["rev-parse", "--verify", "--quiet", `${targetRef}^{commit}`]))
+        throw new Error(`conflict-plan review requires the fetched target ${targetRef}; fetch origin first`)
+    const targetSha = Git.run(root, ["rev-parse", `${targetRef}^{commit}`])
+    const head = Git.run(root, ["rev-parse", `refs/heads/${branch.name}^{commit}`])
+    const parents = commitParents(root, head)
+    const pushed = Git.succeeds(root, ["merge-base", "--is-ancestor", head, `refs/remotes/origin/${branch.name}`])
+    const preMergeBase = parents.length === 2 && parents[1] === targetSha && !pushed ? parents[0] : head
+    if (Git.succeeds(root, ["merge-base", "--is-ancestor", targetSha, preMergeBase]))
+        throw new Error(`${branch.name} already contains ${targetRef}; there is no conflict to plan`)
+    return { branch: branch.name, target: branch.target, preMergeBase, targetSha, resolution }
+}
+
+/**
+ * The merge under a `conflict-merge` round and the plan it must follow. Only the newest `conflict-plan`
+ * round counts, it must have approved, and the merge's parents must be exactly the pre-merge base and
+ * target SHA that round recorded, so a plan for an earlier conflict never covers a later merge.
+ */
+export async function conflictForMerge(root: string, entityDir: string) {
+    const newest = (await readReviewRounds(entityDir, "conflict-plan")).at(-1)
+    if (!newest) throw new Error("conflict-merge review requires an approved conflict-plan round")
+    const outcomePath = path.join(newest.directory, REVIEW_OUTCOME_FILE)
+    const outcome = fs.existsSync(outcomePath) ? await readReviewOutcome(newest.directory) : undefined
+    if (outcome?.exitCode !== 0 || outcome.signoff !== "approved")
+        throw new Error(`conflict-merge review requires the newest conflict-plan round to be approved: ${newest.entry}`)
+    const conflict: ConflictRecord = Value.Parse(
+        ConflictRecordSchema,
+        JSON.parse(await fs.promises.readFile(path.join(newest.directory, CONFLICT_RECORD_FILE), "utf-8")),
+    )
+    const { branch } = deliverableStatus(entityDir)
+    if (conflict.branch !== branch.name || conflict.target !== branch.target)
+        throw new Error(`${newest.entry} recorded a different branch or target than the stored branch contract`)
+    const merge = Git.run(root, ["rev-parse", `refs/heads/${branch.name}^{commit}`])
+    const parents = commitParents(root, merge)
+    if (parents.length !== 2) throw new Error(`conflict-merge review requires ${branch.name} to end in a merge commit`)
+    if (parents[0] !== conflict.preMergeBase || parents[1] !== conflict.targetSha)
+        throw new Error(
+            `the merge's parents don't match ${newest.entry} (pre-merge base ${conflict.preMergeBase}, target ${conflict.targetSha}); review a resolution plan for this merge first`,
+        )
+    return { conflict, merge, planRound: newest.entry }
+}
+
+export async function prepareDeliverableRound(
+    cwd: string,
     entityDir: string,
     input: Extract<ReviewAgentParams, { entity: "task" | "gig" }>,
+): Promise<PreparedDeliverableRound> {
+    switch (input.phase) {
+        case "plan":
+        case "final":
+            return { phase: input.phase }
+        case "interim":
+            return { phase: "interim", subject: input.subject }
+        case "conflict-plan":
+            return {
+                phase: "conflict-plan",
+                conflict: conflictForPlan(project.resolveRootDir(cwd), entityDir, input.resolution),
+            }
+        case "conflict-merge":
+            return { phase: "conflict-merge", ...(await conflictForMerge(project.resolveRootDir(cwd), entityDir)) }
+    }
+}
+
+async function writeRoundRecord(entityDir: string, phase: ReviewPhase, round: number, name: string, value: unknown) {
+    const file = path.join(entityDir, LOCAL_REVIEWS_DIR, `${phase}-${round.toString().padStart(3, "0")}`, name)
+    await fs.promises.writeFile(file, `${JSON.stringify(value, null, 4)}\n`, { encoding: "utf-8", flag: "wx" })
+    return file
+}
+
+export async function snapshotDeliverableRound(
+    entityDir: string,
+    prepared: PreparedDeliverableRound,
     round: number,
 ): Promise<DeliverableReviewRound> {
-    switch (input.phase) {
+    switch (prepared.phase) {
         case "plan":
             return { phase: "plan", planSnapshot: await snapshotCandidate(entityDir, "plan", round) }
         case "interim":
-            return { phase: "interim", subject: input.subject }
+            return { phase: "interim", subject: prepared.subject }
         case "final":
             return { phase: "final", completionSnapshot: await snapshotCandidate(entityDir, "final", round) }
+        case "conflict-plan": {
+            const record = await writeRoundRecord(
+                entityDir,
+                prepared.phase,
+                round,
+                CONFLICT_RECORD_FILE,
+                prepared.conflict,
+            )
+            return { phase: "conflict-plan", conflict: prepared.conflict, record }
+        }
+        case "conflict-merge": {
+            const record = await writeRoundRecord(entityDir, prepared.phase, round, MERGE_RECORD_FILE, {
+                merge: prepared.merge,
+                planRound: prepared.planRound,
+            })
+            return { phase: "conflict-merge", conflict: prepared.conflict, merge: prepared.merge, record }
+        }
     }
 }
 
@@ -783,6 +992,9 @@ function deliverableRoundSnapshot(round: DeliverableReviewRound): string | undef
             return undefined
         case "final":
             return round.completionSnapshot
+        case "conflict-plan":
+        case "conflict-merge":
+            return round.record
     }
 }
 
@@ -803,6 +1015,46 @@ function deliverableKindReviewFocus(kind: DeliverableKind): string {
     }
 }
 
+function deliverableRoundFocus(round: DeliverableReviewRound, completionArtifact: string): string {
+    switch (round.phase) {
+        case "plan":
+            return "Plan review focus: concise kind-specific sufficiency. Do not require boilerplate sections. Check for hidden assumptions, testability/verification, risky files, and ambiguous product/domain decisions."
+        case "interim":
+            return "Interim review focus: adversarially review current work or the requested subject. Inspect only what is needed and call out uncertainty, missing evidence, and concrete next actions."
+        case "final":
+            return `Final review focus: correctness against the approved plan and current kind strategy, regressions, security, tests/verification, and missed requirements. Verify that the reviewed completion artifact (${completionArtifact} candidate) accurately describes the implementation and only verification that actually ran. Root result.md or report.md files, when present, are previously accepted artifacts shown as context, not the artifact under review.`
+        case "conflict-plan":
+            return [
+                "Conflict resolution plan focus: the Deliverable's PR conflicts with its target, and the plan below says how a merge of the target into the branch will resolve it. Nothing is merged yet.",
+                `Inspect the actual conflicts yourself: git_read merge-tree with ["--write-tree", "--name-only", "--messages", "${round.conflict.preMergeBase}", "${round.conflict.targetSha}"] lists them, and git_read diff, show, and log on both sides show what each side changed since their merge base.`,
+                "Check that the plan covers every conflicting file and hunk, keeps the intent of both sides, describes each side's change accurately, and stays within the accepted plan's behavior. A resolution that changes accepted behavior needs material replanning, not a resolution plan.",
+            ].join("\n")
+        case "conflict-merge":
+            return [
+                `Conflict merge focus: ${round.merge} merges the target into the branch and resolves the conflicts. Review it against the approved resolution plan below.`,
+                `Inspect the exact resolution: git_read show with ["--remerge-diff", "${round.merge}"] shows how the committed result differs from Git's automatic merge, including conflict markers. Use git_read diff and show on either parent for context.`,
+                "Check that the resolution follows the plan, loses no change from either side, adds no unrelated change, and leaves no conflict markers. Call out missing verification of the merged result.",
+            ].join("\n")
+    }
+}
+
+function conflictContext(round: Extract<DeliverableReviewRound, { phase: "conflict-plan" | "conflict-merge" }>) {
+    const { conflict } = round
+    const merge = round.phase === "conflict-merge" ? [`- Merge commit: ${round.merge}`] : []
+    return [
+        "# Merge conflict",
+        "",
+        `- Branch: ${conflict.branch}, merging from ${conflict.preMergeBase}`,
+        `- Target: ${conflict.target} at ${conflict.targetSha}`,
+        ...merge,
+        "",
+        round.phase === "conflict-plan" ? "# Resolution plan under review" : "# Approved resolution plan",
+        "",
+        fence(truncate(conflict.resolution, MAX_EMBEDDED_FILE_BYTES), "markdown"),
+        "",
+    ]
+}
+
 export async function buildDeliverableReviewPrompt(
     ctx: ExtensionContext,
     gigDir: string,
@@ -814,6 +1066,7 @@ export async function buildDeliverableReviewPrompt(
     let planPath: string
     let completionSnapshot: string | undefined
     let subject: string | undefined
+    let conflict: string[] = []
     switch (round.phase) {
         case "plan":
             planPath = round.planSnapshot
@@ -825,6 +1078,11 @@ export async function buildDeliverableReviewPrompt(
         case "final":
             planPath = path.join(gigDir, "plan.md")
             completionSnapshot = round.completionSnapshot
+            break
+        case "conflict-plan":
+        case "conflict-merge":
+            planPath = path.join(gigDir, "plan.md")
+            conflict = conflictContext(round)
             break
     }
     const relPlanPath = path.relative(ctx.cwd, planPath)
@@ -843,6 +1101,7 @@ export async function buildDeliverableReviewPrompt(
     const projectPolicies = await readProjectPolicies(ctx.cwd)
     const previousReviews = await readPreviousReviewArtifacts(gigDir, phase)
     const diff = phase === "final" ? await getGitDiff(ctx.cwd) : ""
+    const { branch } = entityStatus
 
     return [
         "# Review Agent Request",
@@ -860,6 +1119,8 @@ export async function buildDeliverableReviewPrompt(
         ...REVIEW_AUTHORITY_INSTRUCTIONS,
         REVIEW_DOCUMENT_INSTRUCTIONS,
         "Review the artifacts and repository state. Be specific, terse, and actionable.",
+        REVIEW_GIT_INSTRUCTIONS,
+        `The Deliverable branch is ${branch.name}; its target is ${branch.target}. For example, git_read log with ["--oneline", "${branch.target}..${branch.name}"] lists the branch's commits.`,
         parentEpic
             ? "The parent Epic is the canonical initiative contract. Verify that the Task aligns with it and that every user-approved contract change is reflected in epic.md. Unresolved drift blocks final signoff."
             : "",
@@ -874,11 +1135,7 @@ export async function buildDeliverableReviewPrompt(
         reviewAgentOutputInstructions(),
         "",
         deliverableKindReviewFocus(entityStatus.kind),
-        phase === "plan"
-            ? "Plan review focus: concise kind-specific sufficiency. Do not require boilerplate sections. Check for hidden assumptions, testability/verification, risky files, and ambiguous product/domain decisions."
-            : phase === "final"
-              ? `Final review focus: correctness against the approved plan and current kind strategy, regressions, security, tests/verification, and missed requirements. Verify that the reviewed completion artifact (${completionFiles(entityStatus.kind).artifact} candidate) accurately describes the implementation and only verification that actually ran. Root result.md or report.md files, when present, are previously accepted artifacts shown as context, not the artifact under review.`
-              : "Interim review focus: adversarially review current work or the requested subject. Inspect only what is needed and call out uncertainty, missing evidence, and concrete next actions.",
+        deliverableRoundFocus(round, completionFiles(entityStatus.kind).artifact),
         instructions ? `\nExtra instructions:\n${instructions}` : "",
         projectPolicies ? ["", "# Project Policies (.project/policies.md)", "", projectPolicies].join("\n") : "",
         "",
@@ -896,6 +1153,7 @@ export async function buildDeliverableReviewPrompt(
         "",
         fence(truncate(metadata || "(missing)", MAX_EMBEDDED_FILE_BYTES), "json"),
         "",
+        ...conflict,
         completion
             ? [
                   `# ${relCompletionSnapshot} (completion artifact under review)`,

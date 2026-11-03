@@ -201,17 +201,26 @@ describe("reviewer provider loading", () => {
                 model: "claude-code/review-fixture",
                 extensionPath: h.extensionPath,
             })
-            const args = buildReviewerArgs("review", "prompt.md", launch, { directory: "/tmp/session", resume: false })
+            const args = buildReviewerArgs(
+                "review",
+                "prompt.md",
+                launch,
+                { directory: "/tmp/session", resume: false },
+                "files",
+            )
             assert.equal(args[args.indexOf("--tools") + 1], "read,grep,find,ls")
             for (const flag of ["--no-extensions", "--no-skills", "--no-prompt-templates"])
                 assert.ok(args.includes(flag))
             assert.equal(args[args.indexOf("--session-dir") + 1], "/tmp/session")
             assert.equal(args.includes("--no-session"), false)
             assert.equal(args.includes("--continue"), false)
-            const resumed = buildReviewerArgs("review", "prompt.md", launch, {
-                directory: "/tmp/session",
-                resume: true,
-            })
+            const resumed = buildReviewerArgs(
+                "review",
+                "prompt.md",
+                launch,
+                { directory: "/tmp/session", resume: true },
+                "files",
+            )
             assert.deepEqual(
                 resumed.filter((value) => !args.includes(value)),
                 ["--continue"],
@@ -235,10 +244,13 @@ describe("reviewer provider loading", () => {
                 const launch = await resolveReviewerLaunch(h.environment, selection)
                 assert.deepEqual(launch, { kind: "standard", model: selection })
                 assert.equal(
-                    buildReviewerArgs("review", "prompt.md", launch, {
-                        directory: "/tmp/session",
-                        resume: false,
-                    }).filter((value) => value === "--extension").length,
+                    buildReviewerArgs(
+                        "review",
+                        "prompt.md",
+                        launch,
+                        { directory: "/tmp/session", resume: false },
+                        "files",
+                    ).filter((value) => value === "--extension").length,
                     2,
                 )
             }
@@ -355,6 +367,7 @@ describe("reviewer provider loading", () => {
                 session: { directory: fs.mkdtempSync(path.join(h.root, "session-")), resume: false },
                 agentName: "isolation-fixture",
                 progressLabel: "test",
+                toolset: "files",
             })
             assert.equal(result.exitCode, 0, result.stderr)
             assert.match(result.finalOutput, /"signoff":"approved"/)

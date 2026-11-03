@@ -10,6 +10,22 @@ import { resolveReviewerLaunch, type ReviewerEnvironment, type ReviewerLaunch } 
 const SHARED_EXTENSIONS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../extensions")
 const RULES_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "rules/index.ts")
 const PERMISSIONS_EXTENSION_PATH = path.join(SHARED_EXTENSIONS_ROOT, "permissions/index.ts")
+const GIT_READ_EXTENSION_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "git-read.ts")
+
+/**
+ * What the reviewer subprocess can use. Entity reviews read the trusted repository with Git too;
+ * incoming-PR reviews keep file reads only.
+ */
+export type ReviewerToolset = "files" | "filesAndGit"
+
+function reviewerTools(toolset: ReviewerToolset): { tools: string; extensions: string[] } {
+    switch (toolset) {
+        case "files":
+            return { tools: "read,grep,find,ls", extensions: [] }
+        case "filesAndGit":
+            return { tools: "read,grep,find,ls,git_read", extensions: [GIT_READ_EXTENSION_PATH] }
+    }
+}
 
 type ReviewStatus = "running" | "completed" | "failed"
 
@@ -24,6 +40,7 @@ export interface ReviewAgentRunOptions {
     cwd: string
     prompt: string
     session: ReviewerSession
+    toolset: ReviewerToolset
     signal?: AbortSignal
     model?: string
     agentName: string
@@ -45,7 +62,7 @@ export async function runReviewAgent(options: ReviewAgentRunOptions): Promise<Re
     const promptPath = path.join(tmpDir, "prompt.md")
     await fs.promises.writeFile(promptPath, options.prompt, { encoding: "utf-8", mode: 0o600 })
 
-    const args = buildReviewerArgs(options.agentName, promptPath, launch, options.session)
+    const args = buildReviewerArgs(options.agentName, promptPath, launch, options.session, options.toolset)
 
     const invocation = getPiInvocation(args)
     const child = spawn(invocation.command, invocation.args, {
@@ -148,7 +165,9 @@ export function buildReviewerArgs(
     promptPath: string,
     launch: ReviewerLaunch,
     session: ReviewerSession,
+    toolset: ReviewerToolset,
 ): string[] {
+    const { tools, extensions } = reviewerTools(toolset)
     const args = [
         "--mode",
         "json",
@@ -160,10 +179,11 @@ export function buildReviewerArgs(
         RULES_EXTENSION_PATH,
         "--extension",
         PERMISSIONS_EXTENSION_PATH,
+        ...extensions.flatMap((extension) => ["--extension", extension]),
         "--no-skills",
         "--no-prompt-templates",
         "--tools",
-        "read,grep,find,ls",
+        tools,
         "--name",
         agentName,
     ]

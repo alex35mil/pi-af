@@ -107,4 +107,5 @@ export const expectedWorkflowTools = [
     "commit_incoming_pr_fixes",
     "cleanup_incoming_pr_checkout",
     "cleanup_delivery_branch",
+    "prepare_merge_resolution_comment",
 ] as const

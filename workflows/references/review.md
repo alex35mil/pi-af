@@ -1,12 +1,12 @@
 # Review
 
-How to handle findings from every Epic, Task, and Gig plan, interim, and final review.
+How to handle findings from every Epic, Task, and Gig review, in every category.
 
 ## Phase during review
 
-The review tool's `plan`, `interim`, or `final` category is separate from workflow Phase. Which Phase each review activity uses is defined in [Phase transitions](./phase.md#transitions). Reconcile native Phase before starting or presenting a review.
+The review tool's category is separate from workflow Phase. Which Phase each review activity uses is defined in [Phase transitions](./phase.md#transitions). Reconcile native Phase before starting or presenting a review.
 
-A pause at the blocked-review checkpoint stays in the Phase where the review ran: Planning for plan reviews, Self-Review for interim and final reviews.
+A pause at the blocked-review checkpoint stays in the Phase where the review ran: Planning for plan reviews, Self-Review for every other category.
 
 ## Handling a round
 

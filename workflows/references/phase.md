@@ -18,9 +18,9 @@ Phase is the current activity; Status is the lifecycle. Every initialized Epic, 
 | Confirmed completion or cancellation | Done, Canceled | keep last | absent |
 
 - Use Planning for `review_epic`, `review_task`, or `review_gig` with category `plan`, and for the plan-presentation tool.
-- Enter Self-Review before interim or final review and before user review of delivered work. Stay there while waiting for feedback.
+- Enter Self-Review before interim, final, `conflict-plan`, or `conflict-merge` review and before user review of delivered work. Stay there while waiting for feedback.
 - After corrections, repeat the required review in the Phase for that activity.
-- The review tool's `plan`, `interim`, or `final` category is not a workflow Phase.
+- The review tool's category is not a workflow Phase.
 - Plan acceptance, completion artifacts, and review approval remain required for the work being done.
 
 **In Review** starts only after real submission for external human review: a successfully created or recovered reviewable PR, or successful publication of approved revisions.

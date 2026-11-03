@@ -11,6 +11,7 @@ import {
     readOptional,
     REVIEW_AUTHORITY_INSTRUCTIONS,
     REVIEW_DOCUMENT_INSTRUCTIONS,
+    REVIEW_GIT_INSTRUCTIONS,
 } from "./context.js"
 import { reviewAgentOutputInstructions } from "./findings.js"
 
@@ -39,6 +40,7 @@ export async function buildEpicReviewPrompt(
         ...REVIEW_AUTHORITY_INSTRUCTIONS,
         REVIEW_DOCUMENT_INSTRUCTIONS,
         "Inspect repository context only where needed to validate the initiative contract and decomposition.",
+        REVIEW_GIT_INSTRUCTIONS,
         "Be terse. Do not demand implementation detail, test plans, success criteria, risk registers, status tracking, or other boilerplate.",
         "Apply product/user criteria only where relevant. For infrastructure, migration, or internal work, evaluate operational outcomes, invariants, boundaries, and observable system changes instead.",
         "",

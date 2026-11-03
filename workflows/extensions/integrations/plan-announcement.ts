@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { StringEnum } from "@earendil-works/pi-ai"
 import { type Static, Type } from "typebox"
 
+import { foldedDiff, MAX_COMMENT_BODY } from "./comment-diff.js"
 import { unifiedDiff } from "./plan-diff.js"
 
 // Announcing an update to a published plan, for any entity, so the change reaches the people
@@ -57,9 +58,6 @@ function planLink(plan: AnnouncementPlan): string {
     }
 }
 
-// Comment bodies on both trackers stay well under GitHub's 65,536-character limit.
-const MAX_BODY = 60_000
-
 export function planAnnouncementMarker(token: string): string {
     return `<!-- plan-announcement:${token} -->`
 }
@@ -100,12 +98,6 @@ export function planSourceDiff(published: string, source: string): string {
     return unifiedDiff(comparablePlan(published), comparablePlan(source))
 }
 
-function fenced(diff: string): string {
-    const longest = Math.max(2, ...[...diff.matchAll(/`+/g)].map((match) => match[0].length))
-    const fence = "`".repeat(longest + 1)
-    return `${fence}diff\n${diff}\n${fence}`
-}
-
 export function renderAnnouncement(input: {
     // The marker of the Task an Epic update came from.
     fromTask?: string
@@ -121,17 +113,8 @@ export function renderAnnouncement(input: {
         `[View the updated plan](${planLink(input.plan)})`,
     ]
     const marker = planAnnouncementMarker(input.token)
-    const block = fenced(input.diff)
-    // A diff line starting with `+++` would close a Linear fold early, so it stays unfolded.
-    const folded = (() => {
-        switch (input.plan.presentation) {
-            case "github":
-                return `<details>\n<summary>Plan diff</summary>\n\n${block}\n\n</details>`
-            case "linear":
-                return /^\+\+\+/m.test(input.diff) ? block : `+++ Plan diff\n\n${block}\n\n+++`
-        }
-    })()
+    const folded = foldedDiff(input.plan.presentation, "Plan diff", input.diff)
     const full = [...head, folded, marker].join("\n\n")
-    if (full.length <= MAX_BODY) return full
+    if (full.length <= MAX_COMMENT_BODY) return full
     return [...head, "The plan diff is too large to include here; see the updated plan.", marker].join("\n\n")
 }

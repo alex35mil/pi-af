@@ -54,6 +54,7 @@ async function runRound(directory: string, outputs: ReviewAgentRunResult[]) {
             additionalFiles: [],
             agentName: "test",
             progressLabel: "test",
+            toolset: "filesAndGit",
         },
         async (options) => {
             calls.push(options)
@@ -784,6 +785,30 @@ describe("workflow reviewer isolation", () => {
             }),
             false,
         )
+        // Each input exists only for the category that uses it.
+        const gig = { entity: "gig", entityDir: ".project/.local/gigs/example" }
+        const checks: Array<[Record<string, unknown>, boolean]> = [
+            [{ phase: "conflict-plan", resolution: "Keep both lines." }, true],
+            [{ phase: "conflict-plan" }, false],
+            [{ phase: "conflict-plan", resolution: "" }, false],
+            [{ phase: "conflict-merge" }, true],
+            [{ phase: "conflict-merge", resolution: "Keep both lines." }, false],
+            [{ phase: "final", resolution: "Keep both lines." }, false],
+            [{ phase: "interim", subject: "Parser" }, true],
+            [{ phase: "final", subject: "Parser" }, false],
+            [{ phase: "conflict-plan", resolution: "Keep both lines.", subject: "Parser" }, false],
+        ]
+        for (const [input, valid] of checks)
+            assert.equal(Value.Check(ReviewRequestSchema, { ...gig, ...input }), valid, JSON.stringify(input))
+        assert.equal(
+            Value.Check(ReviewRequestSchema, {
+                entity: "epic",
+                entityDir: ".project/.local/epics/example",
+                phase: "conflict-plan",
+                resolution: "Keep both lines.",
+            }),
+            false,
+        )
     })
 
     it("requires immediate legitimacy judgment at the configured blocked-review threshold", async () => {
@@ -842,20 +867,31 @@ describe("workflow reviewer isolation", () => {
     })
 
     it("loads active rules and the same permission extension used by every agent", () => {
-        const args = buildReviewerArgs(
-            "Deliverable Reviewer",
-            "/tmp/prompt.md",
-            { kind: "standard", model: undefined },
-            { directory: "/tmp/session", resume: false },
-        )
-        const extensions = args.flatMap((value, index) => (value === "--extension" ? [args[index + 1]] : []))
-
-        assert.equal(args.includes("--no-extensions"), true)
-        assert.deepEqual(
-            extensions.map((value) => value.replaceAll(path.sep, "/").split("/").slice(-2).join("/")),
-            ["rules/index.ts", "permissions/index.ts"],
-        )
-        for (const extension of extensions) assert.equal(fs.existsSync(extension), true)
+        const launched = (toolset: "files" | "filesAndGit") => {
+            const args = buildReviewerArgs(
+                "Deliverable Reviewer",
+                "/tmp/prompt.md",
+                { kind: "standard", model: undefined },
+                { directory: "/tmp/session", resume: false },
+                toolset,
+            )
+            assert.equal(args.includes("--no-extensions"), true)
+            const extensions = args.flatMap((value, index) => (value === "--extension" ? [args[index + 1]] : []))
+            for (const extension of extensions) assert.equal(fs.existsSync(extension), true)
+            return {
+                tools: args[args.indexOf("--tools") + 1],
+                extensions: extensions.map((value) => value.replaceAll(path.sep, "/").split("/").slice(-2).join("/")),
+            }
+        }
+        // Entity reviews read the trusted repository with git_read; incoming-PR reviews don't load it.
+        assert.deepEqual(launched("filesAndGit"), {
+            tools: "read,grep,find,ls,git_read",
+            extensions: ["rules/index.ts", "permissions/index.ts", "review/git-read.ts"],
+        })
+        assert.deepEqual(launched("files"), {
+            tools: "read,grep,find,ls",
+            extensions: ["rules/index.ts", "permissions/index.ts"],
+        })
     })
 
     it("creates ignored review directories after a fresh checkout", async () => {
@@ -1003,6 +1039,8 @@ describe("workflow reviewer isolation", () => {
                 assert.match(reviewPrompt, /Project Policies override reusable workflow skills and references/)
                 assert.match(reviewPrompt, /## Overview accurately represents the full supporting sections/)
                 assert.match(reviewPrompt, /keeps material limitations visible/)
+                // Every entity reviewer launches with git_read, so every entity prompt names it.
+                assert.match(reviewPrompt, /git_read/)
                 assert.match(reviewPrompt, /### Plan highlights/)
             }
             assert.match(deliverablePrompt, /Unique bugfix evidence/)
@@ -1109,6 +1147,183 @@ describe("workflow reviewer isolation", () => {
             assert.match(auditPrompt, /Audit focus: declared scope and criteria/)
         } finally {
             fs.rmSync(repository, { recursive: true, force: true })
+        }
+    })
+
+    it("ties conflict-merge rounds to the approved conflict-plan for that exact merge", async () => {
+        const parent = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-review-conflict-"))
+        const root = path.join(parent, "work")
+        const git = (...args: string[]) => cp.execFileSync("git", args, { cwd: root, encoding: "utf-8" }).trim()
+        const write = (content: string) => fs.writeFileSync(path.join(root, "notes.md"), content)
+        // Merges the target into the branch, resolving the conflict to `content`.
+        const mergeTarget = (content: string) => {
+            cp.spawnSync("git", ["merge", "-q", "--no-ff", "--no-commit", "origin/main"], { cwd: root })
+            write(content)
+            git("add", "notes.md")
+            git("commit", "-q", "--no-edit")
+            return git("rev-parse", "HEAD")
+        }
+        const changeTarget = (content: string) => {
+            git("switch", "-q", "main")
+            write(content)
+            git("commit", "-q", "-am", "target change")
+            git("push", "-q", "origin", "main")
+            git("switch", "-q", branch)
+            return git("rev-parse", "origin/main")
+        }
+        const branch = "7-example"
+        try {
+            cp.execFileSync("git", ["init", "-q", "--bare", path.join(parent, "origin.git")])
+            fs.mkdirSync(root)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test")
+            git("remote", "add", "origin", path.join(parent, "origin.git"))
+            fs.writeFileSync(path.join(root, ".gitignore"), "/.project/.local\n")
+            write("a\nbase\nc\n")
+            git("add", ".")
+            git("commit", "-q", "-m", "initial")
+            git("push", "-q", "origin", "main")
+            git("switch", "-q", "-c", branch)
+            write("a\nbranch\nc\n")
+            git("commit", "-q", "-am", "branch change")
+            git("push", "-q", "origin", branch)
+            const branchHead = git("rev-parse", "HEAD")
+            const targetSha = changeTarget("a\ntarget\nc\n")
+
+            fs.mkdirSync(path.join(root, ".project"))
+            fs.writeFileSync(
+                path.join(root, ".project/config.json"),
+                JSON.stringify({ branches: { format: "identifier-title" } }),
+            )
+            prepareArtifactPersistence(root)
+            const entityDir = ".project/.local/gigs/7-example"
+            const directory = path.join(root, entityDir)
+            fs.mkdirSync(directory, { recursive: true })
+            fs.writeFileSync(path.join(directory, "plan.md"), "# Plan\n\n## Overview\n\nAccepted.\n")
+            fs.writeFileSync(
+                path.join(directory, "metadata.json"),
+                JSON.stringify({
+                    title: "Example",
+                    slug: "example",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    phase: "selfReview",
+                    entity: "gig",
+                    kind: "feature",
+                    branch: { state: "ready", name: branch, start: "main", target: "main", source: "generated" },
+                    tracker: {
+                        provider: "github",
+                        repository: { owner: "example", repo: "project" },
+                        external: { issueNumber: 7 },
+                        planComment: { state: "unpublished" },
+                    },
+                }),
+            )
+            const tools: Parameters<ExtensionAPI["registerTool"]>[0][] = []
+            registerReviewTools({
+                events: createEventBus(),
+                on() {},
+                registerTool: (tool: (typeof tools)[number]) => tools.push(tool),
+            } as never)
+            const review = tools.find((tool) => tool.name === "review_gig")!
+            const stop = new Error("Reached the reviewer subprocess boundary")
+            const ctx = { cwd: root } as never
+            const run = (params: Record<string, unknown>) =>
+                review.execute(
+                    "test",
+                    { entityDir, ...params },
+                    undefined,
+                    () => {
+                        throw stop
+                    },
+                    ctx,
+                )
+            const reachesReviewer = (params: Record<string, unknown>) =>
+                assert.rejects(run(params), (error: unknown) => error === stop)
+            const recorded = (phase: string, round: number, file: string) =>
+                JSON.parse(fs.readFileSync(path.join(reviewRoundDir(directory, phase, round), file), "utf-8"))
+
+            // The plan round records the conflict between the branch head and the fetched target.
+            await reachesReviewer({ phase: "conflict-plan", resolution: "Keep both lines." })
+            const firstConflict = recorded("conflict-plan", 1, "conflict.json")
+            assert.deepEqual(firstConflict, {
+                branch,
+                target: "main",
+                preMergeBase: branchHead,
+                targetSha,
+                resolution: "Keep both lines.",
+            })
+            const planPrompt = await buildDeliverableReviewPrompt(ctx, directory, {
+                phase: "conflict-plan",
+                conflict: firstConflict,
+                record: "conflict.json",
+            })
+            assert.match(planPrompt, /Keep both lines\./)
+            assert.ok(
+                planPrompt.includes(`"--write-tree", "--name-only", "--messages", "${branchHead}", "${targetSha}"`),
+            )
+
+            // No merge review before the newest plan round approves, or before the merge exists.
+            await assert.rejects(run({ phase: "conflict-merge" }), /newest conflict-plan round to be approved/)
+            writeReviewRound(directory, "conflict-plan", 1, "approved")
+            await assert.rejects(run({ phase: "conflict-merge" }), /end in a merge commit/)
+
+            // Conflict rounds record adjudications for Deliverables; Epic directories accept only plan.
+            const respond = tools.find((tool) => tool.name === "record_review_response")!
+            const response = { round: 1, findings: [], status: "No findings." }
+            await respond.execute("test", { entityDir, phase: "conflict-plan", ...response }, undefined, undefined, ctx)
+            assert.ok(fs.existsSync(path.join(reviewRoundDir(directory, "conflict-plan", 1), "response.md")))
+            const epicDir = ".project/.local/epics/7-example"
+            fs.mkdirSync(path.join(root, epicDir), { recursive: true })
+            fs.writeFileSync(
+                path.join(root, epicDir, "metadata.json"),
+                fs
+                    .readFileSync(path.join(directory, "metadata.json"), "utf-8")
+                    .replace(/"entity":"gig","kind":"feature"/, '"entity":"epic"'),
+            )
+            await assert.rejects(
+                respond.execute(
+                    "test",
+                    { entityDir: epicDir, phase: "conflict-merge", ...response },
+                    undefined,
+                    undefined,
+                    ctx,
+                ),
+                /Epic reviews have only the plan category/,
+            )
+
+            const merge = mergeTarget("a\nbranch\ntarget\nc\n")
+            await reachesReviewer({ phase: "conflict-merge" })
+            assert.deepEqual(recorded("conflict-merge", 1, "merge.json"), { merge, planRound: "conflict-plan-001" })
+            const mergePrompt = await buildDeliverableReviewPrompt(ctx, directory, {
+                phase: "conflict-merge",
+                conflict: firstConflict,
+                merge,
+                record: "merge.json",
+            })
+            assert.ok(mergePrompt.includes(`"--remerge-diff", "${merge}"`))
+            assert.match(mergePrompt, /Approved resolution plan/)
+
+            // Replanning on the unpushed merge records its first parent, where the reset returns.
+            await reachesReviewer({ phase: "conflict-plan", resolution: "Keep only the target line." })
+            assert.equal(recorded("conflict-plan", 2, "conflict.json").preMergeBase, branchHead)
+            // An older approval never covers a newer, unapproved plan.
+            writeReviewRound(directory, "conflict-plan", 2, "blocked")
+            await assert.rejects(run({ phase: "conflict-merge" }), /conflict-plan-002/)
+            await reachesReviewer({ phase: "conflict-plan", resolution: "Keep only the target line." })
+            writeReviewRound(directory, "conflict-plan", 3, "approved")
+            git("reset", "-q", "--keep", `${merge}^1`)
+            mergeTarget("a\ntarget\nc\n")
+            await reachesReviewer({ phase: "conflict-merge" })
+            assert.equal(recorded("conflict-merge", 2, "merge.json").planRound, "conflict-plan-003")
+
+            // A plan recorded for an earlier conflict never covers a later merge.
+            git("push", "-q", "origin", branch)
+            changeTarget("a\nnewer target\nc\n")
+            mergeTarget("a\nnewer target\nc\n")
+            await assert.rejects(run({ phase: "conflict-merge" }), /parents don't match conflict-plan-003/)
+        } finally {
+            fs.rmSync(parent, { recursive: true, force: true })
         }
     })
 })
