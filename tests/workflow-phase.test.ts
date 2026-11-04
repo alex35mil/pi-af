@@ -373,6 +373,11 @@ describe("shared workflow Phase", () => {
         const project = linearFacts()
         project.catalog[0].groupType = null
         assert.equal(resolveLinearPhaseGroup(linear, "epic", project.catalog).values.selfReview, "selfReview")
+        project.catalog[0].groupType = "multiSelect"
+        assert.throws(
+            () => resolveLinearPhaseGroup(linear, "epic", project.catalog),
+            /Project Phase requires a single-select group/,
+        )
 
         const teamScoped = structuredClone(linear)
         teamScoped.phase.issues.scope = "team"

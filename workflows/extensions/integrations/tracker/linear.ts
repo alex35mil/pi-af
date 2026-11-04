@@ -55,15 +55,18 @@ export interface LinearWorkspaceInspectionOptions {
     signal?: AbortSignal
 }
 
+export function linearClientFor(credentialEnv: string, options: LinearWorkspaceInspectionOptions = {}): LinearClient {
+    const token = (options.env ?? process.env)[credentialEnv]
+    if (!token) throw new Error(`environment variable ${credentialEnv} is not set`)
+    return new LinearClient(options.fetch ?? fetch, token, options.signal)
+}
+
 export async function inspectLinearWorkspace(
     rawInput: unknown,
     options: LinearWorkspaceInspectionOptions = {},
 ): Promise<LinearWorkspaceInspection> {
     const input = Value.Parse(LinearWorkspaceInspectionToolSchema, rawInput)
-    const token = (options.env ?? process.env)[input.credentialEnv]
-    if (!token) throw new Error(`environment variable ${input.credentialEnv} is not set`)
-
-    const client = new LinearClient(options.fetch ?? fetch, token, options.signal)
+    const client = linearClientFor(input.credentialEnv, options)
     const workspace = await client.getWorkspace()
     const [teams, issueStatuses] = await Promise.all([client.listTeams(), client.listIssueStatuses()])
     const statusesByTeam = new Map<string, LinearStatus[]>()
@@ -84,7 +87,8 @@ export async function inspectLinearWorkspace(
     }
 }
 
-class LinearClient {
+/** Linear's public GraphQL API, authenticated with an environment-backed key. */
+export class LinearClient {
     readonly fetchImpl: typeof fetch
     readonly token: string
     readonly signal?: AbortSignal
@@ -190,7 +194,7 @@ class LinearClient {
         return statuses
     }
 
-    private async graphql(query: string, variables: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    async graphql(query: string, variables: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
         const authorizationHeaders = this.authorizationHeader
             ? [this.authorizationHeader]
             : [this.token, `Bearer ${this.token}`]

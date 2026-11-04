@@ -20,6 +20,13 @@ import {
 import { inspectProjectMcp } from "../integrations/mcp.js"
 import { inspectLinearWorkspace, LinearWorkspaceInspectionToolSchema } from "../integrations/tracker/linear.js"
 import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-project.js"
+import {
+    ApplyLabelSetupSchema,
+    InspectLabelSetupSchema,
+    type LabelSetupToolInput,
+    PreviewLabelSetupSchema,
+    runLabelSetup,
+} from "./label-setup.js"
 import { configureProjectMcp, ProjectMcpConfigurationSchema } from "./mcp.js"
 import { INCOMING_PR_WORKFLOW_PATH, IncomingPrIntakeSchema, renderIncomingPrIntake } from "./incoming-pr-intake.js"
 import {
@@ -177,6 +184,43 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
+    const labelOperations = [
+        [
+            "inspect_label_setup",
+            "inspect",
+            InspectLabelSetupSchema,
+            "Read the tracker's label catalog (GitHub repository labels, or Linear issue and Project labels with groups), each label's usage, and the managed set setup last applied. Changes nothing.",
+        ],
+        [
+            "preview_label_setup",
+            "preview",
+            PreviewLabelSetupSchema,
+            "Plan label catalog changes for the desired labels: creates, updates, renames, restores, and removals (delete when unused, retire when used), plus every decision the user must answer. Returns a planHash; changes nothing.",
+        ],
+        [
+            "apply_label_setup",
+            "apply",
+            ApplyLabelSetupSchema,
+            "Apply an approved label setup preview by its exact planHash, verify the catalog afterwards, and return the configuration to save. Refuses a changed plan or unanswered decisions.",
+        ],
+    ] as const
+    for (const [name, operation, parameters, description] of labelOperations) {
+        tools.registerTool({
+            name,
+            label: name,
+            description,
+            parameters,
+            async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+                const input = { ...Value.Parse(parameters, params), operation } as LabelSetupToolInput
+                const result = await runLabelSetup(input, { cwd: ctx.cwd, signal })
+                return {
+                    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                    details: result,
+                }
+            },
+        })
+    }
+
     const [repository, inspect, project, preview, apply] = GitHubProjectSetupToolSchema.anyOf
     const operations = [
         ["inspect_github_repository_setup", "inspectRepository", repository],
@@ -191,7 +235,7 @@ export default function (pi: ExtensionAPI): void {
             name,
             label: name,
             description:
-                "Inspect Projects and views, preview or apply explicitly approved fields, labels, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
+                "Inspect Projects and views, preview or apply explicitly approved fields, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
             parameters,
             async execute(_toolCallId, params, signal) {
                 const input = Value.Parse(GitHubProjectSetupToolSchema, {

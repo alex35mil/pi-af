@@ -38,27 +38,6 @@ const StatusOptionsSchema = Type.Object(
     { additionalProperties: false },
 )
 
-const RepositoryLabelSchema = Type.Object(
-    {
-        name: OneLineSchema,
-        color: Type.String({ pattern: "^#[0-9A-Fa-f]{6}$" }),
-        description: Type.String(),
-    },
-    { additionalProperties: false },
-)
-
-const DeliverableKindLabelsSchema = Type.Object(
-    {
-        feature: RepositoryLabelSchema,
-        bugfix: RepositoryLabelSchema,
-        research: RepositoryLabelSchema,
-        refactor: RepositoryLabelSchema,
-        audit: RepositoryLabelSchema,
-        chore: RepositoryLabelSchema,
-    },
-    { additionalProperties: false },
-)
-
 const ProjectOwnerSchema = Type.Object(
     { login: OneLineSchema, type: Type.Enum(["user", "org"], { type: "string" }) },
     { additionalProperties: false },
@@ -153,21 +132,6 @@ export const GitHubProjectSpecificationSchema = Type.Object(
         project: ProjectSourceSchema,
         presentation: PresentationSchema,
         defaultRepository: DefaultRepositorySchema,
-        // Kind labels are provisioned and configured only when the user opts in.
-        labels: Type.Optional(
-            Type.Object(
-                {
-                    kind: Type.Object(
-                        {
-                            epic: RepositoryLabelSchema,
-                            deliverableKinds: DeliverableKindLabelsSchema,
-                        },
-                        { additionalProperties: false },
-                    ),
-                },
-                { additionalProperties: false },
-            ),
-        ),
         fields: Type.Object(
             {
                 status: Type.Object(
@@ -251,47 +215,6 @@ export const GITHUB_PROJECT_DEFAULTS = {
         sortBy: { field: "priority", order: "configured-option-order" },
         fieldSum: "count",
         sliceBy: "none",
-    },
-    labels: {
-        kind: {
-            epic: {
-                name: "Kind: Epic",
-                color: "#8250DF",
-                description: "A multi-deliverable initiative.",
-            },
-            deliverableKinds: {
-                feature: {
-                    name: "Kind: Feature",
-                    color: "#0969DA",
-                    description: "New user-visible or system capability.",
-                },
-                bugfix: {
-                    name: "Kind: Bugfix",
-                    color: "#CF222E",
-                    description: "Correction of defective behavior.",
-                },
-                research: {
-                    name: "Kind: Research",
-                    color: "#1A7F37",
-                    description: "Investigation producing evidence and conclusions.",
-                },
-                refactor: {
-                    name: "Kind: Refactor",
-                    color: "#BC4C00",
-                    description: "Behavior-preserving structural improvement.",
-                },
-                audit: {
-                    name: "Kind: Audit",
-                    color: "#9A6700",
-                    description: "Evidence-based assessment and recommendations.",
-                },
-                chore: {
-                    name: "Kind: Chore",
-                    color: "#57606A",
-                    description: "Maintenance or operational work.",
-                },
-            },
-        },
     },
     status: {
         field: "Status",
@@ -395,10 +318,13 @@ interface RepositoryDetails {
     repo: string
     ownerType: "user" | "org"
 }
-interface RepositoryLabel {
+/** A repository label as the REST label list returns it; `color` is normalized to `#RRGGBB`. */
+export interface RepositoryLabel {
+    id: string
     name: string
     color: string
     description: string
+    archived: boolean
 }
 
 interface ProjectFieldDefinition {
@@ -444,7 +370,6 @@ type ProvisioningAction =
                 }
             }
           | { kind: "configure-native-status"; details: ProjectFieldDefinition }
-          | { kind: "create-repository-label"; details: Static<typeof RepositoryLabelSchema> }
           | { kind: "set-project-visibility"; details: { visibility: "private" | "public" } }
           | { kind: "set-project-description"; details: { current: string | null; desired: string } }
           | {
@@ -988,32 +913,87 @@ class GitHubClient {
         )
     }
 
-    async getRepositoryLabel(
+    /** Every repository label, archived ones included, with full pagination. */
+    async listRepositoryLabels(repository: Static<typeof RepositorySchema>): Promise<RepositoryLabel[]> {
+        const labels: RepositoryLabel[] = []
+        for (let page = 1; ; page++) {
+            const result = array(
+                await this.rest("GET", `${labelsPath(repository)}?per_page=100&page=${page}`),
+                "repository labels",
+            )
+            labels.push(...result.map(repositoryLabel))
+            if (result.length < 100) return labels
+        }
+    }
+
+    /** How many issues and pull requests, in any state, carry each named label. */
+    async repositoryLabelUsage(
         repository: Static<typeof RepositorySchema>,
-        name: string,
-    ): Promise<RepositoryLabel | undefined> {
-        const result = await this.rest(
-            "GET",
-            `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/labels/${encodeURIComponent(name)}`,
-            undefined,
-            true,
-        )
-        return result === undefined ? undefined : repositoryLabel(result)
+        names: readonly string[],
+    ): Promise<Map<string, number>> {
+        const usage = new Map<string, number>()
+        for (let start = 0; start < names.length; start += 50) {
+            const batch = names.slice(start, start + 50)
+            const variables: Record<string, unknown> = { owner: repository.owner, repo: repository.repo }
+            const declarations = batch.map((_, index) => `$l${index}: String!`).join(", ")
+            const selections = batch
+                .map(
+                    (_, index) =>
+                        `l${index}: label(name: $l${index}) { issues { totalCount } pullRequests { totalCount } }`,
+                )
+                .join("\n")
+            batch.forEach((name, index) => (variables[`l${index}`] = name))
+            const data = await this.graphql(
+                `query LabelUsage($owner: String!, $repo: String!, ${declarations}) {
+                    repository(owner: $owner, name: $repo) { ${selections} }
+                }`,
+                variables,
+            )
+            const repositoryData = record(data.repository, "repository")
+            batch.forEach((name, index) => {
+                const label = repositoryData[`l${index}`]
+                if (label === null || label === undefined) {
+                    usage.set(name, 0)
+                    return
+                }
+                const value = record(label, "label usage")
+                usage.set(
+                    name,
+                    number(record(value.issues, "label issues").totalCount, "label issue count") +
+                        number(record(value.pullRequests, "label pull requests").totalCount, "label PR count"),
+                )
+            })
+        }
+        return usage
     }
 
     async createRepositoryLabel(
         repository: Static<typeof RepositorySchema>,
-        label: Static<typeof RepositoryLabelSchema>,
+        label: { name: string; color: string; description: string },
     ): Promise<void> {
-        await this.rest(
-            "POST",
-            `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/labels`,
-            {
-                name: label.name,
-                color: label.color.slice(1),
-                description: label.description,
-            },
-        )
+        await this.rest("POST", labelsPath(repository), {
+            name: label.name,
+            color: label.color.slice(1),
+            description: label.description,
+        })
+    }
+
+    /** Renames, recolors, redescribes, archives, or unarchives a label addressed by its current name. */
+    async updateRepositoryLabel(
+        repository: Static<typeof RepositorySchema>,
+        currentName: string,
+        change: { name?: string; color?: string; description?: string; archived?: boolean },
+    ): Promise<void> {
+        await this.rest("PATCH", `${labelsPath(repository)}/${encodeURIComponent(currentName)}`, {
+            ...(change.name !== undefined ? { new_name: change.name } : {}),
+            ...(change.color !== undefined ? { color: change.color.slice(1) } : {}),
+            ...(change.description !== undefined ? { description: change.description } : {}),
+            ...(change.archived !== undefined ? { archived: change.archived } : {}),
+        })
+    }
+
+    async deleteRepositoryLabel(repository: Static<typeof RepositorySchema>, name: string): Promise<void> {
+        await this.rest("DELETE", `${labelsPath(repository)}/${encodeURIComponent(name)}`)
     }
 
     async listIssueFields(organization: string): Promise<IssueField[]> {
@@ -1132,7 +1112,9 @@ class GitHubClient {
     }
 }
 
-function clientFor(credentialEnv: string, options: GitHubProjectSetupOptions): GitHubClient {
+export type { GitHubClient }
+
+export function clientFor(credentialEnv: string, options: GitHubProjectSetupOptions): GitHubClient {
     const token = (options.env ?? process.env)[credentialEnv]
     if (!token) throw new Error(`environment variable ${credentialEnv} is not set`)
     return new GitHubClient(options.fetch ?? fetch, token, options.signal)
@@ -1204,7 +1186,6 @@ async function previewGitHubProject(
         }
     }
 
-    await planRepositoryLabel(specification, client, actions, conflicts)
     await planOrganizationMetadata(specification, repository, client, actions, conflicts)
     if (specification.project.mode === "new" && conflicts.length === 0) {
         for (const field of desiredProjectFields(specification)) {
@@ -1411,31 +1392,6 @@ function planProjectField(
     return { actions, conflicts }
 }
 
-function desiredRepositoryLabels(specification: GitHubProjectSpecification) {
-    const kind = specification.labels?.kind
-    return kind ? [kind.epic, ...Object.values(kind.deliverableKinds)] : []
-}
-
-async function planRepositoryLabel(
-    specification: GitHubProjectSpecification,
-    client: GitHubClient,
-    actions: ProvisioningAction[],
-    conflicts: string[],
-): Promise<void> {
-    for (const desired of desiredRepositoryLabels(specification)) {
-        const existing = await client.getRepositoryLabel(specification.repository, desired.name)
-        if (!existing) {
-            actions.push({
-                kind: "create-repository-label",
-                description: `Create repository label ${JSON.stringify(desired.name)} with color ${desired.color} and description ${JSON.stringify(desired.description)}`,
-                details: desired,
-            })
-        } else if (!compatibleRepositoryLabel(existing, desired)) {
-            conflicts.push(`repository label ${JSON.stringify(desired.name)} has incompatible color or description`)
-        }
-    }
-}
-
 function desiredOrganizationFields(specification: GitHubProjectSpecification) {
     return [
         ...(specification.fields.priority.scope === "issue"
@@ -1597,8 +1553,6 @@ async function applyGitHubProject(
             client,
             specification.project.mode === "new" || specification.project.mode === "resume-created",
         )
-        stage = "repository labels"
-        await provisionRepositoryLabel(specification, client)
         stage = "organization metadata"
         await provisionOrganizationMetadata(specification, repository, client)
 
@@ -1613,7 +1567,6 @@ async function applyGitHubProject(
         const conflicts: string[] = []
         planProjectSettings(specification.project, verified, repository, verificationActions)
         planProjectFields(specification, verified, false, verificationActions, conflicts)
-        await planRepositoryLabel(specification, client, verificationActions, conflicts)
         await planOrganizationMetadata(specification, repository, client, verificationActions, conflicts)
         if (conflicts.length > 0 || verificationActions.length > 0) {
             throw new Error(
@@ -2067,39 +2020,6 @@ async function provisionProjectFields(
     }
 }
 
-async function provisionRepositoryLabel(
-    specification: GitHubProjectSpecification,
-    client: GitHubClient,
-): Promise<void> {
-    const actions: ProvisioningAction[] = []
-    const conflicts: string[] = []
-    await planRepositoryLabel(specification, client, actions, conflicts)
-    if (conflicts.length > 0) throw new Error(conflicts.join("; "))
-    for (const action of actions) {
-        if (action.kind !== "create-repository-label") continue
-        try {
-            await client.createRepositoryLabel(specification.repository, action.details)
-        } catch (error) {
-            const existing = await readAfterFailure(error, () =>
-                client.getRepositoryLabel(specification.repository, action.details.name),
-            )
-            if (!existing) throw error
-            if (!compatibleRepositoryLabel(existing, action.details)) {
-                throw contextError(
-                    `repository label ${JSON.stringify(action.details.name)} has incompatible state`,
-                    error,
-                )
-            }
-        }
-    }
-    for (const desired of desiredRepositoryLabels(specification)) {
-        const verified = await client.getRepositoryLabel(specification.repository, desired.name)
-        if (!verified || !compatibleRepositoryLabel(verified, desired)) {
-            throw new Error(`GitHub did not persist repository label ${JSON.stringify(desired.name)} exactly`)
-        }
-    }
-}
-
 async function provisionOrganizationMetadata(
     specification: GitHubProjectSpecification,
     repository: RepositoryDetails,
@@ -2160,10 +2080,6 @@ function assertSpecification(specification: GitHubProjectSpecification): void {
     if (new Set(priorityNames).size !== priorityNames.length)
         throw new Error("GitHub Priority option names must be distinct")
     if (priorityNames.includes("not set")) throw new Error("GitHub Priority must not contain exact option `not set`")
-    const labelNames = desiredRepositoryLabels(specification).map((label) => label.name.toLowerCase())
-    if (new Set(labelNames).size !== labelNames.length) {
-        throw new Error("GitHub Kind label names must be distinct case-insensitively")
-    }
     const projectFieldNames = desiredProjectFields(specification).map((field) => field.name)
     if (new Set(projectFieldNames).size !== projectFieldNames.length) {
         throw new Error("GitHub Project field names must be distinct")
@@ -2221,14 +2137,6 @@ function exactProjectField(existing: ProjectField, desired: ProjectFieldDefiniti
     )
 }
 
-function compatibleRepositoryLabel(existing: RepositoryLabel, desired: Static<typeof RepositoryLabelSchema>): boolean {
-    return (
-        existing.name === desired.name &&
-        existing.color.toLowerCase() === desired.color.toLowerCase() &&
-        existing.description === desired.description
-    )
-}
-
 function compatibleIssueField(
     existing: IssueField,
     dataType: "text" | "single_select",
@@ -2250,22 +2158,6 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             ownerType: specification.projectOwner.type,
             number: projectNumber,
         },
-        ...(specification.labels
-            ? {
-                  labels: {
-                      groups: {
-                          kind: {
-                              appliesTo: ["epic", "deliverable"],
-                              cardinality: "exactlyOne",
-                              values: {
-                                  epic: specification.labels.kind.epic,
-                                  ...specification.labels.kind.deliverableKinds,
-                              },
-                          },
-                      },
-                  },
-              }
-            : {}),
         fields: {
             status: {
                 field: specification.fields.status.field,
@@ -2314,10 +2206,16 @@ function projectSummary(raw: unknown): ProjectSummary {
 function repositoryLabel(raw: unknown): RepositoryLabel {
     const value = record(raw, "repository label")
     return {
+        id: text(value.node_id, "repository label node_id"),
         name: text(value.name, "repository label name"),
-        color: `#${text(value.color, "repository label color")}`,
+        color: `#${text(value.color, "repository label color").toUpperCase()}`,
         description: typeof value.description === "string" ? value.description : "",
+        archived: typeof value.archived_at === "string",
     }
+}
+
+function labelsPath(repository: Static<typeof RepositorySchema>): string {
+    return `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/labels`
 }
 
 function hash(value: unknown): string {

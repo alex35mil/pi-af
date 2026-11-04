@@ -149,9 +149,11 @@ export function resolveLinearPhaseGroup(tracker: LinearTracker, entity: EntityTy
         throw new Error("Linear Phase requires one active group in the exact configured scope")
     }
     const group = groups[0]
-    // Project label groups are single-select by the provider's documented contract.
-    if (entity !== "epic" && group.groupType !== "singleSelect") {
-        throw new Error("Linear issue Phase requires a single-select group")
+    // Both label kinds can be multi-select. A Project label group without a type is single-select
+    // by Linear's schema contract; an issue label group always reports its type.
+    const singleSelect = group.groupType === "singleSelect" || (entity === "epic" && group.groupType === null)
+    if (!singleSelect) {
+        throw new Error(`Linear ${entity === "epic" ? "Project" : "issue"} Phase requires a single-select group`)
     }
     const children = catalog.filter((label) => label.parentId === group.id)
     const values = Object.fromEntries(
