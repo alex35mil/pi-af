@@ -45,6 +45,12 @@ import {
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "../integrations/policy.js"
 import { loadIntegrationConfig } from "../integrations/config.js"
 import {
+    completeSelection,
+    LabelSelectionFailure,
+    LabelSelectionSchema,
+    selectedLabelNames,
+} from "../integrations/label-selection.js"
+import {
     GitHubTrackerObjectSchema,
     LinearGigIssueObjectSchema,
     LinearProjectObjectSchema,
@@ -81,23 +87,38 @@ export const TaskInitializationPropertiesSchema = Type.Object(
 )
 const gigProperties = { kind: DeliverableKindSchema }
 
+const epicProperties = { ...baseProperties, entity: Type.Literal("epic") }
+const gigEntityProperties = { ...baseProperties, ...gigProperties, entity: Type.Literal("gig") }
+// Only new work picks labels before its tracker object exists; adopted work keeps its own.
+const preflightLabels = { labels: Type.Optional(LabelSelectionSchema) }
+
 // The read-only checks that run before a new Epic or Gig tracker object is created.
 export const EpicPreflightSchema = Type.Object(
-    { ...baseProperties, entity: Type.Literal("epic") },
+    { ...epicProperties, ...preflightLabels },
     { additionalProperties: false },
 )
 export const GigPreflightSchema = Type.Object(
-    { ...baseProperties, ...gigProperties, entity: Type.Literal("gig") },
+    { ...gigEntityProperties, ...preflightLabels },
     { additionalProperties: false },
 )
 export const PreflightSchema = Type.Union([EpicPreflightSchema, GigPreflightSchema])
 export type PreflightInput = Static<typeof PreflightSchema>
 
+/** The fields an Epic or Gig's init tool shares with its preflight, without the label selection. */
+export const EpicInitializationPropertiesSchema = Type.Object(
+    Type.Omit(Type.Object(epicProperties), ["entity"]).properties,
+    { additionalProperties: false },
+)
+export const GigInitializationPropertiesSchema = Type.Object(
+    Type.Omit(Type.Object(gigEntityProperties), ["entity"]).properties,
+    { additionalProperties: false },
+)
+
 // Initialization records an existing tracker object, created or adopted, as the entity.
 export const EntityInitializationSchema = Type.Union([
     Type.Object(
         {
-            ...EpicPreflightSchema.properties,
+            ...epicProperties,
             object: Type.Union([GitHubTrackerObjectSchema, LinearProjectObjectSchema]),
         },
         { additionalProperties: false },
@@ -112,7 +133,7 @@ export const EntityInitializationSchema = Type.Union([
     ),
     Type.Object(
         {
-            ...GigPreflightSchema.properties,
+            ...gigEntityProperties,
             object: Type.Union([GitHubTrackerObjectSchema, LinearGigIssueObjectSchema]),
         },
         { additionalProperties: false },
@@ -164,13 +185,28 @@ export function preflightEntity(input: PreflightInput, options: InitializeEntity
     const tracker = environment.tracker
     if (projectConfig.branches.format === "tracker" && tracker.provider !== "linear")
         throw new Error("the tracker branch format requires a Linear tracker")
+    const itemType = input.entity === "epic" ? "epic" : "deliverable"
+    const kind = input.entity === "epic" ? "epic" : input.kind
+    let labels: string[]
+    try {
+        labels = selectedLabelNames(
+            tracker.labels,
+            itemType,
+            kind,
+            completeSelection(tracker.labels, itemType, input.labels ?? {}),
+        )
+    } catch (error) {
+        if (error instanceof LabelSelectionFailure) throw new Error(`labels: ${error.message}`)
+        throw error
+    }
     return {
         state: "ready" as const,
         entity: input.entity,
         tracker: tracker.provider,
         resource: tracker.provider === "linear" && input.entity === "epic" ? ("project" as const) : ("issue" as const),
         start: prepared.start,
-        next: "Create only the tracker object with the approved title and Request, then call the matching init tool with its evidence.",
+        labels,
+        next: "Create only the tracker object with the approved title and Request and these labels, then call the matching init tool with its evidence.",
     }
 }
 

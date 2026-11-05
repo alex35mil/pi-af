@@ -30,6 +30,7 @@ allowed-tools:
     - "prepare_integration_shipping"
     - "prepare_integration_merge"
     - "prepare_tracker_mutation"
+    - "prepare_label_mutation"
     - "prepare_github_phase_mutation"
     - "prepare_linear_phase_mutation"
     - "resolve_resource_ids"
@@ -135,6 +136,7 @@ Epic branch: <the Epic's branch name>
 ### <Task-sized unit>
 
 Kind: <feature | bugfix | refactor | research | audit | chore>
+Labels: <group=value, …, only with label groups configured>
 
 <Owned outcome, relevant settled behavior and constraints, and scope boundary. Any Markdown.>
 ```

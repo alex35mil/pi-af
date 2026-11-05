@@ -9,9 +9,12 @@ export interface EpicTask {
     // The Task's tracker reference (`#12` or `ENG-12`) once its issue exists.
     marker?: string
     kind: DeliverableKind
+    // `Labels: group=value, …`: the Task's label selection, grouped by label group. Without the
+    // line, every group is empty; Task issue processing checks it against the configuration.
+    labels: Record<string, string[]>
     // `Status: canceled`: removed from the plan; its issue is canceled, never started.
     canceled: boolean
-    // The section body after the `Kind:` and `Status:` lines; becomes the issue description.
+    // The section body after the `Kind:`, `Labels:`, and `Status:` lines; becomes the issue description.
     description: string
 }
 
@@ -112,7 +115,15 @@ function parseTask(section: Line[]): ParsedTask {
         return fail(`invalid Kind ${JSON.stringify(kind)}`)
     }
     let descriptionStart = kindLine.index + 1
-    const statusLine = fields[1]
+    let nextField = 1
+    const labelsLine = fields[1]
+    let labels: Record<string, string[]> = {}
+    if (labelsLine && !labelsLine.fenced && /^Labels:/.test(labelsLine.text.trim())) {
+        labels = parseLabels(labelsLine.text.trim().slice("Labels:".length), fail)
+        descriptionStart = labelsLine.index + 1
+        nextField = 2
+    }
+    const statusLine = fields[nextField]
     let canceled = false
     if (statusLine && !statusLine.fenced && /^Status:/.test(statusLine.text.trim())) {
         if (!/^Status:\s*canceled\s*$/.test(statusLine.text.trim()))
@@ -131,10 +142,27 @@ function parseTask(section: Line[]): ParsedTask {
         title,
         ...(tagged ? { marker: tagged[1] } : {}),
         kind: validatedKind!,
+        labels,
         canceled,
         description,
         headingIndex: heading.index,
     }
+}
+
+/** `area=frontend, area=backend, perf=perf` → `{ area: ["frontend", "backend"], perf: ["perf"] }`. */
+function parseLabels(text: string, fail: (message: string) => never): Record<string, string[]> {
+    const labels: Record<string, string[]> = {}
+    const pairs = text.split(",").map((pair) => pair.trim())
+    if (pairs.length === 1 && pairs[0] === "") return labels
+    for (const pair of pairs) {
+        const match = /^([a-z][a-z0-9-]*)=([a-z][a-z0-9-]*)$/.exec(pair)
+        if (!match) fail(`invalid Labels entry ${JSON.stringify(pair)}; use \`group=value\``)
+        const [, group, value] = match!
+        const values = (labels[group] ??= [])
+        if (values.includes(value)) fail(`Labels repeats ${JSON.stringify(pair)}`)
+        values.push(value)
+    }
+    return labels
 }
 
 export function hasEpicTasksSection(content: string): boolean {

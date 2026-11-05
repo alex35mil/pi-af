@@ -4,11 +4,45 @@ export const phaseValues = {
     selfReview: "Self-Review",
 }
 
-export function linearPhases() {
+const label = (name: string) => ({ name, color: "#8250DF", description: "" })
+
+export function linearPhaseGroup(scope: "workspace" | "team" = "workspace", group = "Phase") {
     return {
-        issues: { scope: "workspace" as const, group: "Phase", values: { ...phaseValues } },
-        projects: { scope: "workspace" as const, group: "Phase", values: { ...phaseValues } },
+        scope,
+        group: label(group),
+        values: {
+            planning: label(phaseValues.planning),
+            execution: label(phaseValues.execution),
+            selfReview: label(phaseValues.selfReview),
+        },
     }
+}
+
+export function linearPhases() {
+    return { issues: linearPhaseGroup(), projects: linearPhaseGroup() }
+}
+
+export const kindLabelNames = {
+    epic: "Kind: Epic",
+    feature: "Kind: Feature",
+    bugfix: "Kind: Bugfix",
+    research: "Kind: Research",
+    refactor: "Kind: Refactor",
+    audit: "Kind: Audit",
+    chore: "Kind: Chore",
+}
+
+/** The `kind` group with one label per workflow kind, named from `names`. */
+export function kindGroup(names: Record<keyof typeof kindLabelNames, string> = kindLabelNames) {
+    return {
+        appliesTo: ["epic", "deliverable"] as ("epic" | "deliverable")[],
+        cardinality: "exactlyOne" as const,
+        values: Object.fromEntries(Object.entries(names).map(([key, name]) => [key, label(name)])),
+    }
+}
+
+export function kindLabels(names?: Record<keyof typeof kindLabelNames, string>) {
+    return { groups: { kind: kindGroup(names) } }
 }
 
 const statuses = {

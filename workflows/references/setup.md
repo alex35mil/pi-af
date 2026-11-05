@@ -145,13 +145,21 @@ Use only the source tracker's MCP tools already registered in the reporting sess
         "phase": {
             "issues": {
                 "scope": "workspace",
-                "group": "Phase",
-                "values": { "planning": "Planning", "execution": "Execution", "selfReview": "Self-Review" }
+                "group": { "name": "Phase", "color": "#8250DF", "description": "" },
+                "values": {
+                    "planning": { "name": "Planning", "color": "#8250DF", "description": "" },
+                    "execution": { "name": "Execution", "color": "#8250DF", "description": "" },
+                    "selfReview": { "name": "Self-Review", "color": "#8250DF", "description": "" }
+                }
             },
             "projects": {
                 "scope": "workspace",
-                "group": "Phase",
-                "values": { "planning": "Planning", "execution": "Execution", "selfReview": "Self-Review" }
+                "group": { "name": "Phase", "color": "#8250DF", "description": "" },
+                "values": {
+                    "planning": { "name": "Planning", "color": "#8250DF", "description": "" },
+                    "execution": { "name": "Execution", "color": "#8250DF", "description": "" },
+                    "selfReview": { "name": "Self-Review", "color": "#8250DF", "description": "" }
+                }
             }
         },
         "statuses": {
@@ -184,15 +192,14 @@ Use only the source tracker's MCP tools already registered in the reporting sess
 
 **Phase groups:**
 
-- Both mappings are required. Each has `scope: workspace | team`, one exact group name, and distinct child names for `planning`, `execution`, and `selfReview`. Team scope means the configured team; workspace scope means no team.
-- Through registered label reads, with pagination, require the active group and all three children, and single-select for issue groups. Project-label groups are mutually exclusive by Linear's contract.
-- Setup stays read-only and asks the user to fix missing or incompatible groups. Runtime reconciliation is in [Phase](./phase.md).
+- Both mappings are required. Each has `scope: workspace | team`, the group's label definition, and distinct child definitions for `planning`, `execution`, and `selfReview`. Team scope means the configured team; workspace scope means no team.
+- Phase groups are single-select, for issues and Projects. The label setup tools create and check them with the other label groups ([label groups](#label-groups)). Runtime reconciliation is in [Phase](./phase.md).
 
 **Workspace inspection:**
 
 - During guided setup, `inspect_linear_workspace` reads the workspace, the authenticated viewer, accessible teams, team issue statuses, and Project statuses, through Linear's public GraphQL API, without mutating anything.
 - `viewer.name` is the Full Name; `viewer.displayName` is the workspace-unique Username and is returned as `viewer.username`.
-- Setup saves only the team, status names, and Phase group scopes, names, and children the user selects. Provider IDs, viewer identity, and credentials stay out of configuration.
+- Setup saves only the team, status names, Phase groups, and label groups the user selects. Provider IDs, viewer identity, and credentials stay out of configuration.
 - A recognized official MCP registration supplies its credential environment-variable name, never its value.
 
 **Branch names with `tracker`:**
@@ -209,15 +216,16 @@ Never hand-build GitHub tracker configuration. Use the exact `trackerConfig` ret
 - the Project owner, owner type (`user` or `org`), and the Project's URL number;
 - one Project Status field mapping `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled` to distinct names;
 - one Project Phase single-select field mapping `planning`, `execution`, and `selfReview` to distinct names;
-- Priority, with `issue` or `project` scope, a field name, and unique non-empty values that exclude lowercase `not set`;
-- when the user opts in, the repository Kind label names for Epic and all six Deliverable kinds.
+- Priority, with `issue` or `project` scope, a field name, and unique non-empty values that exclude lowercase `not set`.
+
+It contains no `labels`; add the section the label setup tools return ([label groups](#label-groups)).
 
 **Constraints:**
 
-- All Project-scoped field names are distinct, and Kind label names are distinct case-insensitively.
+- All Project-scoped field names are distinct.
 - Status and Phase are always Project-scoped.
-- Phase projects In Progress activity. With Kind labels configured, initialization and queue intake apply exactly one managed Kind label; without them, no Kind is projected.
-- Native GitHub issue Type stays independent and unmanaged. Never substitute other labels, Custom Properties, or another field scope.
+- Phase projects In Progress activity.
+- Native GitHub issue Type stays independent and unmanaged. Never substitute labels, Custom Properties, or another field scope.
 
 Example returned configuration for a Project-contained tracker (use the actual output, not these sample identities):
 
@@ -228,19 +236,6 @@ Example returned configuration for a Project-contained tracker (use the actual o
         "mcpServer": "github",
         "repository": { "owner": "octocat", "repo": "example" },
         "project": { "owner": "octocat", "ownerType": "user", "number": 3 },
-        "labels": {
-            "kind": {
-                "epic": "Kind: Epic",
-                "deliverableKinds": {
-                    "feature": "Kind: Feature",
-                    "bugfix": "Kind: Bugfix",
-                    "research": "Kind: Research",
-                    "refactor": "Kind: Refactor",
-                    "audit": "Kind: Audit",
-                    "chore": "Kind: Chore"
-                }
-            }
-        },
         "fields": {
             "status": {
                 "field": "Status",
@@ -266,6 +261,42 @@ Example returned configuration for a Project-contained tracker (use the actual o
     }
 }
 ```
+
+### Label groups
+
+`tracker.labels` is optional on both trackers. Never hand-build it: use the `configuration` that the approved `apply_label_setup` returns.
+
+```json
+{
+    "labels": {
+        "groups": {
+            "area": {
+                "appliesTo": ["epic", "deliverable"],
+                "cardinality": "zeroOrMore",
+                "values": {
+                    "frontend": { "name": "Area: Frontend", "color": "#1D76DB", "description": "" }
+                }
+            }
+        },
+        "unmanaged": { "keep": [{ "name": "good first issue" }] },
+        "retired": [{ "name": "Area: Legacy" }]
+    }
+}
+```
+
+- **Groups:** each has `appliesTo` (`epic`, `deliverable`, or both), a `cardinality` (`exactlyOne`, `zeroOrOne`, `oneOrMore`, or `zeroOrMore`), and values keyed by stable lowercase keys. Each value is a label definition: `name`, `color` (`#RRGGBB`), and `description`.
+- **`kind`:** the reserved group for Kind. It must be `exactlyOne`, its values must be exactly `epic` and the six Deliverable kinds its `appliesTo` covers, and its value comes from the item's Kind.
+- **Linear groups** add `scope` (`workspace` or `team`) and an optional `nativeGroup` label definition. With it, the values are children of a native group: single-select for at most one value, multi-select otherwise.
+- **`unmanaged.keep`** and **`retired`** record the user's answers about labels outside the configuration. Linear entries also name the `catalog` (`issue` or `project`) and `scope`.
+- **Names:** managed label names are distinct case-insensitively per GitHub repository, and per Linear catalog across workspace and team. Linear's reserved names are rejected.
+
+**Setup:**
+
+- `inspect_label_setup` reads the catalog, with usage, and the managed set setup last applied. `preview_label_setup` plans the changes and reports every decision the user must answer. `apply_label_setup` takes the approved `planHash`.
+- These tools take the tracker identity and the credential variable as input, like GitHub Project setup.
+- Labels outside the configuration are always the user's decision: remove or keep, and for a label retired outside setup, leave retired, restore and keep, or delete. Setup suggests no default.
+- A removal deletes an unused label and retires one items carry (archives it on GitHub). Present every removal with its usage before approval.
+- Setup changes only the catalog. Runtime applies labels to items ([labels](./integrations/shared.md#labels)).
 
 ### GitHub forge
 

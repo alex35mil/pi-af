@@ -32,6 +32,7 @@ allowed-tools:
     - "prepare_integration_shipping"
     - "prepare_integration_merge"
     - "prepare_tracker_mutation"
+    - "prepare_label_mutation"
     - "prepare_github_phase_mutation"
     - "prepare_linear_phase_mutation"
     - "begin_resource_creation"
@@ -76,7 +77,7 @@ A Task always starts from the queued issue its parent Epic's [Task issue process
    - When this clone has no local directory for the Epic, [restore it](../../references/epic.md#restore-an-epic). Otherwise [compare](../../references/epic.md#compare-with-the-published-plan) its `epic.md` with the published plan.
    - An untagged Task means issue processing hasn't finished: resume the Epic first.
    - A `Status: canceled` Task can't start.
-2. **Adopt the issue:** read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Task adoption preflight, including the parent check, then follow the adopted intake in [artifacts](../../references/artifacts.md#initialization-inputs). The Kind comes from the plan's `Kind:` line; a conflicting GitHub Kind label stops for a user choice.
+2. **Adopt the issue:** read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Task adoption preflight, including the parent check, then follow the adopted intake in [artifacts](../../references/artifacts.md#initialization-inputs). The Kind comes from the plan's `Kind:` line; a conflicting `kind` label stops for a user choice.
 3. **Routing:** the parent's `Task target:` line decides the target ([Epic routing](../../references/epic.md#routing)). When it's missing or conflicts with the intended target, resolve it through Epic replanning first. An `epic` target needs the Epic branch locally.
 4. **Initialize:** call `init_github_task` or `init_linear_task` with the repo-relative `parentEpicDir`, the title, Request, and slug, and the issue as `object`.
    - The issue's marker selects the plan Task, which supplies the Kind. The plan is never rewritten.

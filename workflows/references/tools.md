@@ -41,7 +41,8 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 | Prepare plan publication | `prepare_integration_projection` |
 | Prepare PR submission | `prepare_integration_pull_request` |
 | Prepare shipping; validate PR merge evidence | `prepare_integration_shipping`, `prepare_integration_merge` |
-| Prepare a label, lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
+| Prepare a lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
+| Prepare an item's label change | `prepare_label_mutation` |
 | Check whether a finished workflow ends with session analysis | `inspect_session_analysis` |
 | Calculate native Phase without changing metadata | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
 | Set metadata Phase and calculate native Phase | `set_github_workflow_phase`, `set_linear_workflow_phase` |
@@ -64,6 +65,7 @@ None of these call providers or turn identity, lifecycle, or merge facts into ca
 
 - **Setup:** `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, `render_incoming_pr_intake`.
 - **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
+- **Label catalog:** `inspect_label_setup`, `preview_label_setup`, `apply_label_setup`, for both trackers.
 - **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
   - Task and Gig reviews also have `conflict-plan` and `conflict-merge` categories for [conflict resolution](./deliverable/conflicts.md).
   - Epic, Task, and Gig reviewers read files with `read`, `grep`, `find`, and `ls`, and Git with the read-only `git_read`. They run headless under your permission settings, so with `defaultMode: "ask"` those tools must be allowed. Incoming-PR reviewers get file reads only.

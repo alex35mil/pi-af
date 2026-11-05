@@ -12,6 +12,7 @@ import {
     INCOMING_PR_INTAKE_SCRIPT,
     renderIncomingPrIntake,
 } from "../workflows/extensions/project-setup/incoming-pr-intake.ts"
+import { kindLabels } from "./workflow-phase-fixtures.ts"
 
 function input() {
     return {
@@ -21,19 +22,7 @@ function input() {
             mcpServer: "tracker",
             repository: { owner: "upstream", repo: "issues" },
             project: { owner: "board-owner", ownerType: "user", number: 2 },
-            labels: {
-                kind: {
-                    epic: "Epic",
-                    deliverableKinds: {
-                        feature: "Feature",
-                        bugfix: "Bugfix",
-                        research: "Research",
-                        refactor: "Refactor",
-                        audit: "Audit",
-                        chore: "Chore",
-                    },
-                },
-            },
+            labels: kindLabels(),
             fields: {
                 status: {
                     field: "Status",

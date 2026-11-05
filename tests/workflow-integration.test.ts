@@ -9,7 +9,7 @@ import { describe, it, type TestContext } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Value } from "typebox/value"
-import { githubPhaseReads, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { githubPhaseReads, kindLabelNames, kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 
 import {
@@ -25,6 +25,7 @@ import registerIntegrations, {
 } from "../workflows/extensions/integrations/index.ts"
 
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
+import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { linearPriorityNumber } from "../workflows/extensions/integrations/records.ts"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
@@ -39,16 +40,8 @@ const statuses = {
     done: "Done",
     canceled: "Canceled",
 }
-const deliverableKinds = {
-    feature: "Kind: Feature",
-    bugfix: "Kind: Bugfix",
-    research: "Kind: Research",
-    refactor: "Kind: Refactor",
-    audit: "Kind: Audit",
-    chore: "Kind: Chore",
-}
 
-function config(scope: "project" | "issue" = "project", kindLabels = true) {
+function config(scope: "project" | "issue" = "project", withKindLabels = true) {
     return {
         provider: "github" as const,
         mcpServer: "github",
@@ -58,16 +51,7 @@ function config(scope: "project" | "issue" = "project", kindLabels = true) {
             ownerType: scope === "project" ? ("user" as const) : ("org" as const),
             number: 3,
         },
-        ...(kindLabels
-            ? {
-                  labels: {
-                      kind: {
-                          epic: "Kind: Epic",
-                          deliverableKinds: { ...deliverableKinds },
-                      },
-                  },
-              }
-            : {}),
+        ...(withKindLabels ? { labels: kindLabels() } : {}),
         fields: {
             status: { field: "Status", values: { ...statuses } },
             phase: { field: "Phase", values: { ...phaseValues } },
@@ -584,35 +568,113 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("applies the configured Kind label in queue intake only when Kind labels are on", () => {
+    it("plans an item's complete label set and keeps the selection on a Kind change", () => {
+        const cwd = temporaryProject()
+        try {
+            const area = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrMore",
+                values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+            }
+            const perf = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrOne",
+                values: { perf: { name: "Perf", color: "#1D76DB", description: "" } },
+            }
+            prepareWorkflowProject(cwd, { ...config(), labels: { groups: { ...kindLabels().groups, area, perf } } })
+            prepareArtifactPersistence(cwd)
+            const gig = initializeEntity(
+                {
+                    entity: "gig",
+                    title: "Work",
+                    slug: "work",
+                    request: "Work",
+                    kind: "bugfix",
+                    object: { issueId: 1, issueNumber: 7, issueUrl: "https://github.com/alex/example/issues/7" },
+                },
+                { cwd },
+            )
+            const ctx = { cwd } as ExtensionContext
+            const plan = (labels: unknown, names: string[]) =>
+                (
+                    buildIntegrationContext(
+                        ctx,
+                        {
+                            operation: "labelMutation",
+                            entityDir: gig.directory,
+                            ...(labels ? { labels } : {}),
+                            current: { provider: "github", names },
+                        } as Parameters<typeof buildIntegrationContext>[1],
+                        mcpTools,
+                    ) as { labelMutation?: unknown }
+                ).labelMutation
+            // A Kind change from feature to bugfix keeps Area: FE and Perf, and keeps an unrelated label.
+            assert.deepEqual(plan(undefined, ["Kind: Feature", "Area: FE", "Perf", "customer"]), {
+                provider: "github",
+                labels: ["customer", "Area: FE", "Perf", "Kind: Bugfix"],
+                changed: true,
+                unknown: ["customer"],
+            })
+            assert.deepEqual(plan({ area: [], perf: ["perf"] }, ["Kind: Bugfix", "Area: FE", "Perf"]), {
+                provider: "github",
+                labels: ["Perf", "Kind: Bugfix"],
+                changed: true,
+                unknown: [],
+            })
+            // A correction that leaves out a group fails instead of dropping that group's labels.
+            assert.deepEqual((plan({ area: [] }, ["Kind: Bugfix", "Area: FE", "Perf"]) as { error: unknown }).error, {
+                kind: "missingGroup",
+                group: "perf",
+                values: ["perf"],
+            })
+            assert.match(JSON.stringify(plan({ nope: [] }, [])), /"state":"invalid"/)
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("returns queue intake labels from the Kind and the selection, on both trackers", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
             prepareArtifactPersistence(cwd)
             const ctx = { cwd } as ExtensionContext
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, "Kind: Refactor")
-            assert.equal(
-                buildIntegrationContext(ctx, { ...queueSelection, entity: "epic", kind: "epic" }, mcpTools).kindLabel,
-                "Kind: Epic",
+            const labels = (input: Parameters<typeof buildIntegrationContext>[1]) =>
+                (buildIntegrationContext(ctx, input, mcpTools) as { labels?: unknown }).labels
+            assert.deepEqual(labels(queueSelection), ["Kind: Refactor"])
+            assert.deepEqual(labels({ ...queueSelection, entity: "epic", kind: "epic" }), ["Kind: Epic"])
+            assert.deepEqual(labels({ ...queueSelection, kind: "not set" }), [])
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(
+                    path.join(cwd, ".project/integrations.json"),
+                    JSON.stringify({ tracker, forge: forgeConfig() }),
+                )
+            const area = {
+                appliesTo: ["deliverable"],
+                cardinality: "oneOrMore",
+                values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+            }
+            write({ ...config("project"), labels: { groups: { ...kindLabels().groups, area } } })
+            assert.deepEqual(labels({ ...queueSelection, labels: { area: ["fe"] } }), ["Area: FE", "Kind: Refactor"])
+            assert.deepEqual(
+                (labels(queueSelection) as { error: unknown }).error,
+                { kind: "cardinality", group: "area", cardinality: "oneOrMore", selected: [] },
+                "a required group without a value is reported, not dropped",
             )
-            assert.equal(buildIntegrationContext(ctx, { ...queueSelection, kind: "not set" }, mcpTools).kindLabel, null)
-            fs.writeFileSync(
-                path.join(cwd, ".project/integrations.json"),
-                JSON.stringify({
-                    tracker: config("project", false),
-                    forge: forgeConfig(),
-                }),
+            assert.match(
+                JSON.stringify(labels({ ...queueSelection, labels: { kind: ["bugfix"], area: ["fe"] } })),
+                /comes from the item's Kind/,
             )
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
-            fs.writeFileSync(
-                path.join(cwd, ".project/integrations.json"),
-                JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
-            )
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
-            assert.equal(
-                buildIntegrationContext(ctx, { operation: "inspect", target: "current" }, mcpTools).kindLabel,
-                undefined,
-            )
+            write(config("project", false))
+            assert.deepEqual(labels(queueSelection), [])
+            write({
+                ...linearConfig(),
+                labels: { groups: { kind: { ...kindLabels().groups.kind, scope: "workspace" } } },
+            })
+            assert.deepEqual(labels(queueSelection), ["Kind: Refactor"], "Linear queue intake applies labels too")
+            write(linearConfig())
+            assert.deepEqual(labels(queueSelection), [])
+            assert.equal(labels({ operation: "inspect", target: "current" }), undefined)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }
@@ -699,11 +761,11 @@ describe("workflow integration configuration", () => {
             writeConfig(duplicateProjectField)
             assert.throws(() => loadIntegrationConfig(cwd), /Project field names must be distinct/)
 
-            const duplicateKindLabel = config("project")
-            duplicateKindLabel.labels!.kind.deliverableKinds.bugfix =
-                duplicateKindLabel.labels!.kind.deliverableKinds.feature.toUpperCase()
-            writeConfig(duplicateKindLabel)
-            assert.throws(() => loadIntegrationConfig(cwd), /label names must be distinct case-insensitively/)
+            writeConfig({
+                ...config("project"),
+                labels: kindLabels({ ...kindLabelNames, bugfix: kindLabelNames.feature.toUpperCase() }),
+            })
+            assert.throws(() => loadIntegrationConfig(cwd), /"KIND: FEATURE" is used more than once/)
 
             const phaseCollision = config("project")
             phaseCollision.fields.phase.field = phaseCollision.fields.status.field
@@ -1098,31 +1160,162 @@ describe("workflow integration configuration", () => {
             const valid = config("project")
             const write = (tracker: unknown) =>
                 fs.writeFileSync(integrationPath, JSON.stringify({ tracker, forge: forgeConfig() }))
-            const { audit, ...otherKinds } = valid.labels!.kind.deliverableKinds
+            const { audit, ...otherKinds } = kindLabelNames
             write({
                 ...valid,
-                labels: {
-                    kind: {
-                        ...valid.labels!.kind,
-                        deliverableKinds: { ...otherKinds, review: audit },
-                    },
-                },
+                labels: kindLabels({ ...otherKinds, review: audit } as unknown as typeof kindLabelNames),
             })
-            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
-            write({
-                ...valid,
-                fields: {
-                    ...valid.fields,
-                    type: {
-                        scope: "project",
-                        field: "Kind",
-                        epic: "Epic",
-                        deliverableKinds,
-                    },
-                },
-            })
+            assert.throws(() => loadIntegrationConfig(cwd), /`kind` label group values must be exactly/)
+            write({ ...valid, fields: { ...valid.fields, type: { scope: "project", field: "Kind" } } })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
             write({ ...valid, fields: { labels: true } })
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("validates label groups, the kind group, and kept or retired labels", () => {
+        const cwd = temporaryProject()
+        try {
+            fs.mkdirSync(path.join(cwd, ".project"))
+            const integrationPath = path.join(cwd, ".project", "integrations.json")
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(integrationPath, JSON.stringify({ tracker, forge: forgeConfig() }))
+            const label = (name: string, description = "") => ({ name, color: "#1D76DB", description })
+            const area = {
+                appliesTo: ["epic", "deliverable"],
+                cardinality: "zeroOrMore",
+                values: { frontend: label("Area: Frontend"), backend: label("Area: Backend") },
+            }
+            const github = (labels: unknown) => ({ ...config("project", false), labels })
+            const loads = (tracker: unknown) => {
+                write(tracker)
+                return loadIntegrationConfig(cwd)
+            }
+            const rejects = (tracker: unknown, error: RegExp) => {
+                write(tracker)
+                assert.throws(() => loadIntegrationConfig(cwd), error)
+            }
+
+            assert.ok(loads(github({ groups: { ...kindLabels().groups, area } })))
+            assert.ok(loads(github({})))
+            assert.ok(loads(github({ groups: { area } })), "the kind group is optional")
+
+            const epicOnly = { appliesTo: ["epic"], cardinality: "exactlyOne", values: { epic: label("Kind: Epic") } }
+            assert.ok(loads(github({ groups: { kind: epicOnly } })))
+            rejects(
+                github({ groups: { kind: { ...epicOnly, values: { ...epicOnly.values, feature: label("F") } } } }),
+                /values must be exactly "epic" for its `appliesTo`/,
+            )
+            rejects(
+                github({ groups: { kind: { ...kindLabels().groups.kind, cardinality: "zeroOrOne" } } }),
+                /must be `exactlyOne`/,
+            )
+            rejects(github({ groups: { Area: area } }), /invalid \.project\/integrations\.json/)
+            rejects(github({ groups: { area: { ...area, appliesTo: [] } } }), /invalid \.project\/integrations\.json/)
+            rejects(github({ groups: { area: { ...area, values: {} } } }), /invalid \.project\/integrations\.json/)
+            rejects(
+                github({ groups: { area: { ...area, cardinality: "some" } } }),
+                /invalid \.project\/integrations\.json/,
+            )
+            rejects(
+                github({
+                    groups: { area, other: { ...area, values: { fe: label("area: frontend") } } },
+                }),
+                /"area: frontend" is used more than once in the GitHub repository/,
+            )
+            rejects(
+                github({ groups: { area: { ...area, values: { fe: label("Area: Frontend", "x".repeat(101)) } } } }),
+                /description exceeds 100 characters/,
+            )
+
+            assert.ok(
+                loads(github({ groups: { area }, unmanaged: { keep: [{ name: "bug" }] }, retired: [{ name: "old" }] })),
+            )
+            rejects(
+                github({ groups: { area }, unmanaged: { keep: [{ name: "area: backend" }] } }),
+                /names a managed label/,
+            )
+            rejects(
+                github({ unmanaged: { keep: [{ name: "bug" }] }, retired: [{ name: "BUG" }] }),
+                /can't be both kept and retired/,
+            )
+            rejects(github({ retired: [{ name: "old" }, { name: "Old" }] }), /listed twice in retired/)
+
+            const linear = (labels: unknown) => ({ ...linearConfig(), labels })
+            const linearArea = { ...area, scope: "workspace" }
+            assert.ok(loads(linear({ groups: { area: { ...linearArea, nativeGroup: label("Area") } } })))
+            rejects(
+                linear({
+                    groups: {
+                        area: linearArea,
+                        perf: { ...linearArea, scope: "team", values: { perf: label("area: backend") } },
+                    },
+                }),
+                /used more than once in the Linear issue label catalog/,
+            )
+            assert.ok(
+                loads(
+                    linear({
+                        groups: {
+                            area: { ...linearArea, appliesTo: ["epic"] },
+                            perf: {
+                                ...linearArea,
+                                appliesTo: ["deliverable"],
+                                values: { fe: label("Area: Frontend") },
+                            },
+                        },
+                    }),
+                ),
+                "Project and issue labels are separate catalogs",
+            )
+            rejects(
+                linear({ groups: { area: { ...linearArea, values: { s: label("Status") } } } }),
+                /reserves the label name/,
+            )
+            rejects(
+                linear({ groups: { area: { ...linearArea, values: { p: label("planning") } } } }),
+                /"planning" is used more than once/,
+            )
+            assert.ok(
+                loads(
+                    linear({
+                        groups: { area: { ...linearArea, appliesTo: ["deliverable"] } },
+                        unmanaged: { keep: [{ name: "Area: Frontend", catalog: "project", scope: "team" }] },
+                    }),
+                ).tracker.provider === "linear",
+                "a kept Project label may share a name with a managed issue label",
+            )
+            rejects(
+                linear({
+                    groups: { area: { ...linearArea, appliesTo: ["deliverable"] } },
+                    unmanaged: { keep: [{ name: "Area: Frontend", catalog: "issue", scope: "team" }] },
+                }),
+                /names a managed label/,
+            )
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("rejects the old label shapes through normal validation", () => {
+        const cwd = temporaryProject()
+        try {
+            fs.mkdirSync(path.join(cwd, ".project"))
+            const integrationPath = path.join(cwd, ".project", "integrations.json")
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(integrationPath, JSON.stringify({ tracker, forge: forgeConfig() }))
+            write({
+                ...config("project", false),
+                labels: { kind: { epic: "Kind: Epic", deliverableKinds: { feature: "Kind: Feature" } } },
+            })
+            assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
+            const linear = linearConfig()
+            write({
+                ...linear,
+                phase: { ...linear.phase, issues: { scope: "workspace", group: "Phase", values: phaseValues } },
+            })
             assert.throws(() => loadIntegrationConfig(cwd), /invalid \.project\/integrations\.json/)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })

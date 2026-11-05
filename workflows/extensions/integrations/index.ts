@@ -9,6 +9,18 @@ import * as project from "../../../extensions/__lib/project.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
+import { type WorkflowKind } from "./labels.js"
+import {
+    LabelFactsSchema,
+    LabelSelectionFailure,
+    LabelSelectionSchema,
+    type LabelFacts,
+    type LabelSelection,
+    completeSelection,
+    planGitHubLabelUpdate,
+    planLinearLabelUpdate,
+    selectedLabelNames,
+} from "./label-selection.js"
 import { LifecycleStateSchema } from "../__lib/domain.js"
 import {
     NativePhaseFactsSchema,
@@ -94,8 +106,9 @@ export const IntegrationContextSchema = Type.Union([
             priority: Type.String({ minLength: 1 }),
             kind: Type.Enum(["not set", "feature", "bugfix", "research", "refactor", "audit", "chore", "epic"], {
                 type: "string",
-                description: "Approved Kind, or not set. Applied as a label only when Kind labels are configured.",
+                description: "Approved Kind, or not set. Applied as a label only when a `kind` label group covers it.",
             }),
+            labels: Type.Optional(LabelSelectionSchema),
         },
         { additionalProperties: false },
     ),
@@ -112,7 +125,21 @@ export const IntegrationContextSchema = Type.Union([
         {
             operation: Type.Literal("trackerMutation"),
             entityDir: Type.String({ minLength: 1 }),
-            change: Type.Enum(["labels", "lifecycle", "priority", "hierarchy"], { type: "string" }),
+            change: Type.Enum(["lifecycle", "priority", "hierarchy"], { type: "string" }),
+        },
+        { additionalProperties: false },
+    ),
+    Type.Object(
+        {
+            operation: Type.Literal("labelMutation"),
+            entityDir: Type.String({ minLength: 1 }),
+            labels: Type.Optional(
+                Type.Union([LabelSelectionSchema], {
+                    description:
+                        "The new selection. Omit it to keep the item's current selection, for example on a Kind change.",
+                }),
+            ),
+            current: LabelFactsSchema,
         },
         { additionalProperties: false },
     ),
@@ -257,7 +284,7 @@ export default function (pi: ExtensionAPI): void {
         },
     })
 
-    const [merge, , incoming, inspect, queue, adopt, shippingMerge, mutation, phase, entity] =
+    const [merge, , incoming, inspect, queue, adopt, shippingMerge, mutation, labelMutation, phase, entity] =
         IntegrationContextSchema.anyOf
     const contexts = [
         ["inspect_integrations", "inspect", inspect],
@@ -270,6 +297,7 @@ export default function (pi: ExtensionAPI): void {
         ["prepare_integration_shipping", "shippingRead", entity],
         ["prepare_integration_merge", "shippingMerge", shippingMerge],
         ["prepare_tracker_mutation", "trackerMutation", mutation],
+        ["prepare_label_mutation", "labelMutation", labelMutation],
         ["inspect_incoming_pr_context", "incomingPullRequest", incoming],
         ["plan_incoming_pr_merge", "incomingPullRequestMerge", merge],
     ] as const
@@ -440,6 +468,7 @@ function persistsEntityArtifacts(operation: WorkflowContextInput["operation"]): 
         case "shippingRead":
         case "shippingMerge":
         case "trackerMutation":
+        case "labelMutation":
             return true
     }
 }
@@ -447,7 +476,9 @@ function persistsEntityArtifacts(operation: WorkflowContextInput["operation"]): 
 function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput, tools: McpToolCatalog) {
     const operation = input.operation
     const entityDir = "entityDir" in input ? input.entityDir : undefined
-    const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation"].includes(operation)
+    const trackerOnly = ["queueIntake", "adopt", "artifactProjection", "trackerMutation", "labelMutation"].includes(
+        operation,
+    )
     const forgeOnly = ["pullRequest", "shippingRead", "shippingMerge"].includes(operation)
     const environment = resolveWorkflowEnvironment(loadIntegrationConfig(cwd))
     assertArtifactPersistencePrepared(cwd)
@@ -504,7 +535,25 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
               ...(shipping ? { shipping } : {}),
           }
     const github = environment.tracker.provider === "github"
-    const kindLabel = input.operation === "queueIntake" ? queueKindLabel(environment, input.kind) : undefined
+    const queueLabels =
+        input.operation === "queueIntake"
+            ? labelsOrFailure(() =>
+                  selectedLabelNames(
+                      environment.tracker.labels,
+                      input.entity === "epic" ? "epic" : "deliverable",
+                      input.kind === "not set" ? undefined : input.kind,
+                      completeSelection(
+                          environment.tracker.labels,
+                          input.entity === "epic" ? "epic" : "deliverable",
+                          input.labels ?? {},
+                      ),
+                  ),
+              )
+            : undefined
+    const labelMutation =
+        input.operation === "labelMutation"
+            ? labelsOrFailure(() => planLabelMutation(environment, entity!.status, input.labels, input.current))
+            : undefined
 
     return {
         state: "enabled" as const,
@@ -513,7 +562,8 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
             ? { phaseProjection: phaseProjectionContract(entity.status.phase, tracker.config, entity.status.entity) }
             : {}),
         ...(phaseMutation ? { phaseMutation } : {}),
-        ...(input.operation === "queueIntake" ? { kindLabel: kindLabel ?? null } : {}),
+        ...(queueLabels ? { labels: queueLabels } : {}),
+        ...(labelMutation ? { labelMutation } : {}),
         projection: {
             source: "exact accepted epic.md or plan.md",
             contentPolicy:
@@ -549,11 +599,59 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     }
 }
 
-// The configured GitHub Kind label for queued work; none for Linear, `not set`, or no label set.
-function queueKindLabel(environment: WorkflowEnvironment, kind: string): string | undefined {
-    const labels = environment.tracker.provider === "github" ? environment.tracker.labels?.kind : undefined
-    if (!labels || kind === "not set") return undefined
-    return kind === "epic" ? labels.epic : labels.deliverableKinds[kind as keyof typeof labels.deliverableKinds]
+/** A label result, or the selection's typed failure for the agent to report or correct. */
+function labelsOrFailure<T>(plan: () => T): T | { state: "invalid"; reason: string; error: unknown } {
+    try {
+        return plan()
+    } catch (error) {
+        if (error instanceof LabelSelectionFailure)
+            return { state: "invalid", reason: error.message, error: error.reason }
+        throw error
+    }
+}
+
+/**
+ * The complete label set for an item, from its fresh labels. The `kind` label follows the item's
+ * workflow Kind; without a new selection, the item's current selection is kept. A given selection
+ * must name every group: on an existing item, a left-out group would silently drop its labels.
+ */
+function planLabelMutation(
+    environment: WorkflowEnvironment,
+    status: ReturnType<typeof readWorkflowEntity>["status"],
+    selection: LabelSelection | undefined,
+    current: LabelFacts,
+) {
+    const itemType = status.entity === "epic" ? "epic" : "deliverable"
+    const kind: WorkflowKind = status.entity === "epic" ? "epic" : status.kind
+    const tracker = environment.tracker
+    if (tracker.provider === "github") {
+        if (current.provider !== "github") throw new Error("label facts don't match the configured GitHub tracker")
+        return {
+            provider: "github" as const,
+            ...planGitHubLabelUpdate(tracker.labels, itemType, kind, selection, current.names),
+        }
+    }
+    if (current.provider !== "linear") throw new Error("label facts don't match the configured Linear tracker")
+    const update = planLinearLabelUpdate(
+        tracker.labels,
+        itemType === "epic" ? tracker.phase.projects : tracker.phase.issues,
+        tracker.team,
+        itemType,
+        kind,
+        selection,
+        {
+            catalog: current.catalog.map((label) => ({
+                id: label.id,
+                name: label.name,
+                team: label.team ?? null,
+                parentId: label.parentId ?? null,
+                isGroup: label.isGroup,
+                retiredAt: label.retiredAt ?? null,
+            })),
+            applied: current.applied,
+        },
+    )
+    return { provider: "linear" as const, ...update }
 }
 
 export function renderEntityProviderBody(

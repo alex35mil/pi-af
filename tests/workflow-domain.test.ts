@@ -8,7 +8,7 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import { Value } from "typebox/value"
-import { linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
+import { kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 
 import { entityName, formatBranchName, readyBranch, slugify } from "../workflows/extensions/__lib/domain.ts"
 import { readEntityStatus, readEpicTaskProgress, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
@@ -459,6 +459,33 @@ describe("workflow domain", () => {
         } finally {
             fs.rmSync(linear, { recursive: true, force: true })
             fs.rmSync(github, { recursive: true, force: true })
+        }
+    })
+
+    it("returns the labels to create new work with, from its Kind and selection", () => {
+        const cwd = temporaryRepository()
+        try {
+            const integrationsPath = path.join(cwd, ".project/integrations.json")
+            const integrations = JSON.parse(fs.readFileSync(integrationsPath, "utf-8"))
+            const area = {
+                appliesTo: ["epic", "deliverable"],
+                cardinality: "zeroOrMore",
+                values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+            }
+            integrations.tracker.labels = { groups: { ...kindLabels().groups, area } }
+            fs.writeFileSync(integrationsPath, JSON.stringify(integrations))
+            const base = { title: "Work", slug: "work", request: "Work" }
+            assert.deepEqual(
+                preflightEntity({ ...base, entity: "gig", kind: "chore", labels: { area: ["fe"] } }, { cwd }).labels,
+                ["Area: FE", "Kind: Chore"],
+            )
+            assert.deepEqual(preflightEntity({ ...base, entity: "epic" }, { cwd }).labels, ["Kind: Epic"])
+            assert.throws(
+                () => preflightEntity({ ...base, entity: "gig", kind: "chore", labels: { area: ["be"] } }, { cwd }),
+                /labels: label group "area" has no value "be"/,
+            )
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
         }
     })
 

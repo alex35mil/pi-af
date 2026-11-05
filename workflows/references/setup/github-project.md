@@ -76,7 +76,7 @@ Presentation is a setup-only input to preview and apply, never runtime configura
   - GitHub supports visibility, not a controllable card-field order, so setup promises no Board field order.
 - **Table views** keep ordered-field matching.
 - **Semantic references:** list configured Status, Priority, and Phase as `{ "kind": "workflow", "field": "status" | "priority" | "phase" }`, never by literal field name, so custom-named metadata resolves to the right field. Other fields use `{ "kind": "field", "name": "..." }`. A missing or ambiguous field blocks; it's never dropped silently.
-- **Label-backed Kind:** when the user opts in, Kind is represented by repository labels, not a Project field.
+- **Labels:** Kind and other label groups are repository labels, managed by the label setup tools ([label groups](../setup.md#label-groups)), not by Project setup.
 - **Sorting:** a fresh Board's Priority sort needs the configured Priority field exposed on the Project, even when it isn't visible. Hiding it doesn't replace attaching issue-scoped Priority.
 
 ### Priority order

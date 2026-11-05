@@ -5,7 +5,8 @@ import { Value } from "typebox/value"
 import { LifecycleStateSchema, PhaseSchema, type LifecycleState, type Phase, projectedPhase } from "../__lib/domain.js"
 import type { EntityType } from "../__lib/domain.js"
 import type { EntityStatus } from "../__lib/entity.js"
-import type { GitHubTracker, LinearTracker, PhaseLabelGroup, TrackerConfig } from "./config.js"
+import type { GitHubTracker, LinearTracker, TrackerConfig } from "./config.js"
+import type { LinearPhaseGroup } from "./labels.js"
 import { assertEntityEnvironment, type WorkflowEnvironment } from "./policy.js"
 
 const NameSchema = Type.String({ minLength: 1 })
@@ -123,7 +124,7 @@ export function phaseProjectionContract(phase: Phase, tracker: TrackerConfig, en
     }
 }
 
-function linearGroup(tracker: LinearTracker, entity: EntityType): PhaseLabelGroup {
+function linearGroup(tracker: LinearTracker, entity: EntityType): LinearPhaseGroup {
     return entity === "epic" ? tracker.phase.projects : tracker.phase.issues
 }
 
@@ -143,18 +144,20 @@ export function validateGitHubPhaseField(
 export function resolveLinearPhaseGroup(tracker: LinearTracker, entity: EntityType, catalog: LinearFacts["catalog"]) {
     const configured = linearGroup(tracker, entity)
     const team = configured.scope === "workspace" ? null : tracker.team
-    const groups = catalog.filter((label) => label.name === configured.group && label.team === team)
+    const groups = catalog.filter((label) => label.name === configured.group.name && label.team === team)
     if (groups.length !== 1 || !groups[0].isGroup || groups[0].retiredAt !== null) {
         throw new Error("Linear Phase requires one active group in the exact configured scope")
     }
     const group = groups[0]
-    // Project label groups are single-select by the provider's documented contract.
-    if (entity !== "epic" && group.groupType !== "singleSelect") {
-        throw new Error("Linear issue Phase requires a single-select group")
+    // Both label kinds can be multi-select. A Project label group without a type is single-select
+    // by Linear's schema contract; an issue label group always reports its type.
+    const singleSelect = group.groupType === "singleSelect" || (entity === "epic" && group.groupType === null)
+    if (!singleSelect) {
+        throw new Error(`Linear ${entity === "epic" ? "Project" : "issue"} Phase requires a single-select group`)
     }
     const children = catalog.filter((label) => label.parentId === group.id)
     const values = Object.fromEntries(
-        Object.entries(configured.values).map(([phase, name]) => {
+        Object.entries(configured.values).map(([phase, { name }]) => {
             const matches = children.filter((label) => label.name === name)
             if (
                 matches.length !== 1 ||

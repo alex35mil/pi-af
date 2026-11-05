@@ -1,5 +1,48 @@
 # Upgrading
 
+## Label groups
+
+Labels in `.project/integrations.json` are now label groups under `tracker.labels.groups`. Each label stores its name, color, and description. Kind is the group with the reserved key `kind`. A configuration in the old shape fails validation, which stops every workflow command until it's migrated.
+
+**GitHub Kind labels.** Replace `tracker.labels.kind`:
+
+```json
+"labels": {
+    "kind": {
+        "epic": "Kind: Epic",
+        "deliverableKinds": { "feature": "Kind: Feature", "bugfix": "Kind: Bugfix" }
+    }
+}
+```
+
+with the `kind` group:
+
+```json
+"labels": {
+    "groups": {
+        "kind": {
+            "appliesTo": ["epic", "deliverable"],
+            "cardinality": "exactlyOne",
+            "values": {
+                "epic": { "name": "Kind: Epic", "color": "#8250DF", "description": "A multi-deliverable initiative." },
+                "feature": { "name": "Kind: Feature", "color": "#0969DA", "description": "New user-visible or system capability." },
+                "bugfix": { "name": "Kind: Bugfix", "color": "#CF222E", "description": "Correction of defective behavior." }
+            }
+        }
+    }
+}
+```
+
+- Keep each label name exactly as it was. `epic` becomes a value key next to the six Deliverable kinds (`feature`, `bugfix`, `research`, `refactor`, `audit`, `chore`), and all seven are required when `appliesTo` lists both item types. The examples above are shortened.
+- Copy each label's current color and description from the repository's label settings, so the next setup run proposes no changes.
+- Without Kind labels, leave `labels` out.
+
+**Linear Phase groups.** In `tracker.phase.issues` and `tracker.phase.projects`, `group` and each Phase value change from a name to a label definition. `"group": "Phase"` becomes `"group": { "name": "Phase", "color": "#…", "description": "…" }`, and the same applies to `planning`, `execution`, and `selfReview`. Use the existing names and the current colors and descriptions from Linear's label settings.
+
+After editing, run `/project-setup` once. It checks the configured labels against the tracker and lists every label outside the configuration, and you decide whether to keep or remove each one. Your answers are saved, so later runs ask only about labels added since.
+
+No `.project` artifact migration is needed.
+
 ## Assigning work to the user who starts it
 
 Starting an Epic, Task, or Gig now assigns its tracker item to the authenticated user. On GitHub this uses `get_me` from the `context` toolset. Add `context` to `X-MCP-Toolsets` in each GitHub tracker registration (for example `context,issues,projects,pull_requests`) by rerunning `/project-setup` or editing the MCP registration, then reload Pi. Until then, work starts without an assignee. Linear needs no change.

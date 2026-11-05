@@ -24,9 +24,12 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 4. **Entity type.** Require `epic` or `gig` before checking mutation capability.
    - Never queue a Task. To add one, replan its Epic; acceptance creates the Task's issue ([Epic Tasks](./epic-tasks.md#progress-and-replanning)).
    - Recommend a standalone Gig for independent workflow reports.
-5. **Kind** (GitHub with configured Kind labels only): `inspect_integrations` shows `labels.kind`. Reuse the Kind the request states (Epic, or a Deliverable kind); otherwise recommend the best fit and present it, or `not set`, with the other fields.
+5. **Kind and labels** (when `inspect_integrations` shows `labels.groups`):
+   - Reuse the Kind the request states (Epic, or a Deliverable kind); otherwise recommend the best fit, or `not set`.
+   - Pick a value for each other group from Project Policies and the request, and ask only when one can't be derived.
+   - Present both with the other fields.
 6. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
-   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, and `kind` (`not set` when Kind labels aren't configured). Apply the returned `kindLabel` when it isn't null. Reconcile any difference from the approved destination; changed content or destination needs approval again.
+   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, `kind`, and the label selection. Create the item with the returned `labels`; an `invalid` result names the group to fix. Reconcile any difference from the approved destination; changed content or destination needs approval again.
    - Use only its selected registered tools, under normal permissions. Let native mutations validate their own inputs; don't preflight labels, options, workspaces, or statuses.
    - Never load the source project's credentials or run its MCP settings.
 
@@ -36,10 +39,10 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 
 - An approved intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
 - **GitHub:** create an ordinary issue. Add it to the configured Project, then set Status and Priority with named writes addressed by issue. When an item ID is needed, follow the [Project item ID rule](./integrations/tracker/github.md#project-item-ids).
-- **Linear:** create only the selected Project or projectless Gig, with team, state, and Priority together.
+- **Linear:** create only the selected Project or projectless Gig, with team, state, Priority, and labels together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
 
-Apart from that optional Kind label, adding work assigns no native issue Type, Linear label or kind, native Phase, assignee, branch, artifact, or pending record. Starting the work assigns it.
+Apart from those labels, adding work assigns no native issue Type, native Phase, assignee, branch, artifact, or pending record. Starting the work assigns it.
 
 ## Prepare a workflow report
 
