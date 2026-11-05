@@ -14,7 +14,13 @@ export const LOCAL_MCP_SETTINGS_EXCLUDE = "/.agents/mcp.local.json"
 const EnvironmentNameSchema = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })
 const ServerNameSchema = Type.String({ minLength: 1, pattern: "^[A-Za-z0-9_-]+$" })
 const SettingsTargetSchema = Type.Enum(["project", "local"], { type: "string" })
-const GitHubRoleSchema = Type.Enum(["tracker", "forge"], { type: "string" })
+
+/**
+ * Every GitHub registration gets every workflow toolset, whatever role it serves here: the same
+ * server also files workflow reports to a GitHub-tracked workflow source. `context` provides
+ * get_me, which resolves the login that starting work assigns.
+ */
+export const GITHUB_MCP_TOOLSETS = ["context", "issues", "projects", "pull_requests"] as const
 
 const LinearRegistrationSchema = Type.Object(
     {
@@ -30,7 +36,6 @@ const GitHubRegistrationSchema = Type.Object(
         provider: Type.Enum(["github"], { type: "string" }),
         name: ServerNameSchema,
         credentialEnv: EnvironmentNameSchema,
-        roles: Type.Array(GitHubRoleSchema, { minItems: 1, uniqueItems: true }),
     },
     { additionalProperties: false },
 )
@@ -129,17 +134,11 @@ function registrationConfig(registration: Registration): Record<string, unknown>
         }
     }
 
-    const roles = new Set(registration.roles)
-    const toolsets = [
-        // `context` provides get_me, which resolves the login that starting work assigns.
-        ...(roles.has("tracker") ? ["context", "issues", "projects"] : []),
-        ...(roles.has("forge") ? ["pull_requests"] : []),
-    ]
     return {
         url: "https://api.githubcopilot.com/mcp/",
         headers: {
             Authorization: authorization,
-            "X-MCP-Toolsets": toolsets.join(","),
+            "X-MCP-Toolsets": GITHUB_MCP_TOOLSETS.join(","),
         },
     }
 }

@@ -42,7 +42,8 @@ Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help se
 
 - one branch format for every entity: `identifier-title`, `username/identifier-title`, or Linear's own naming;
 - the tracker and forge, with official MCP registration;
-- read-only Linear workspace discovery;
+- read-only Linear workspace discovery, plus separately approved creation of missing Linear statuses;
+- separately approved label catalog setup for both trackers, including Linear Phase groups;
 - separately approved GitHub Project/field provisioning and recovery;
 - optional Project Policies and accepted-artifact diff gates.
 

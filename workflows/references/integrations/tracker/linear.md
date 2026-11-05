@@ -17,7 +17,7 @@ This procedure extends [integration roles](../shared.md).
 **Workspace:**
 
 - During `/project-setup`, `inspect_linear_workspace` reads the workspace identity, the viewer's name and username, teams, and issue and Project statuses through Linear's public GraphQL API. It's read-only and never replaces MCP tracker operations.
-- Select exact team and status names; don't infer meaning from them. For branch naming, read [setup](../../setup.md#linear-tracker).
+- Select exact team and status names; don't infer meaning from them. Setup creates a missing status only through the approved status setup. For status setup and branch naming, read [setup](../../setup.md#linear-tracker).
 
 **Labels:** setup creates and checks Phase groups and every configured label group through the label setup tools ([setup](../../setup.md#label-groups)).
 

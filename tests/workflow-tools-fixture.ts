@@ -79,6 +79,8 @@ export const expectedWorkflowTools = [
     "inspect_permissions",
     "configure_permissions",
     "inspect_linear_workspace",
+    "preview_linear_status_setup",
+    "apply_linear_status_setup",
     "render_incoming_pr_intake",
     "inspect_github_repository_setup",
     "inspect_github_project_setup",
