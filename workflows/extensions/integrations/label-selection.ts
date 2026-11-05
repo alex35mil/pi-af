@@ -5,6 +5,7 @@ import {
     type Cardinality,
     type GitHubLabelGroup,
     type GitHubLabels,
+    groupValuesFor,
     KIND_GROUP_KEY,
     type LabelItemType,
     type LinearLabelGroup,
@@ -95,17 +96,9 @@ function describe(reason: LabelSelectionError): string {
 type AnyGroup = GitHubLabelGroup | LinearLabelGroup
 type AnyLabels = GitHubLabels | LinearLabels
 
-const DELIVERABLE_KINDS = new Set(["feature", "bugfix", "research", "refactor", "audit", "chore"])
-
-/** A group's values for one item type: only `kind` splits its values by item type. */
+/** A group's value keys and label names for one item type. */
 function groupValues(key: string, group: AnyGroup, itemType: LabelItemType): [string, string][] {
-    if (!group.appliesTo.includes(itemType)) return []
-    return Object.entries(group.values)
-        .filter(
-            ([value]) =>
-                key !== KIND_GROUP_KEY || (itemType === "epic" ? value === "epic" : DELIVERABLE_KINDS.has(value)),
-        )
-        .map(([value, definition]) => [value, definition.name])
+    return groupValuesFor(key, group, itemType).map(([value, definition]) => [value, definition.name])
 }
 
 function groupsFor(labels: AnyLabels | undefined, itemType: LabelItemType): [string, AnyGroup][] {

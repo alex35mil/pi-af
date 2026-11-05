@@ -5,7 +5,7 @@ import {
     type LabelLocation,
     type GitHubLabelEntry,
     type GitHubLabels,
-    KIND_GROUP_KEY,
+    groupValuesFor,
     type LabelDefinition,
     type LabelItemType,
     type LinearLabelCatalog,
@@ -63,13 +63,6 @@ function groupTypeFor(cardinality: string): GroupType {
     return cardinality === "exactlyOne" || cardinality === "zeroOrOne" ? "singleSelect" : "multiSelect"
 }
 
-const DELIVERABLE_KIND_KEYS = new Set(["feature", "bugfix", "research", "refactor", "audit", "chore"])
-
-function valueAppliesTo(group: string, value: string, itemType: LabelItemType): boolean {
-    if (group !== KIND_GROUP_KEY) return true
-    return itemType === "epic" ? value === "epic" : DELIVERABLE_KIND_KEYS.has(value)
-}
-
 export function githubManagedEntries(labels: GitHubLabels | undefined): ManagedEntry[] {
     return Object.entries(labels?.groups ?? {}).flatMap(([group, config]) =>
         Object.entries(config.values).map(([value, definition]) => ({
@@ -118,8 +111,7 @@ export function linearManagedEntries(labels: LinearLabels | undefined, phase: Li
             })
         }
         for (const [group, config] of Object.entries(labels?.groups ?? {})) {
-            if (!config.appliesTo.includes(itemType)) continue
-            const values = Object.entries(config.values).filter(([value]) => valueAppliesTo(group, value, itemType))
+            const values = groupValuesFor(group, config, itemType)
             if (values.length === 0) continue
             const groupKey = config.nativeGroup ? entryKey(catalog, group, null) : null
             if (config.nativeGroup && groupKey) {

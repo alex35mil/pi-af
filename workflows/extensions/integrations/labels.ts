@@ -146,17 +146,20 @@ function kindValuesFor(itemType: LabelItemType): readonly WorkflowKind[] {
     }
 }
 
-function kindItemType(kind: WorkflowKind): LabelItemType {
-    return kind === "epic" ? "epic" : "deliverable"
-}
-
-type AnyLabels = GitHubLabels | LinearLabels
-
-/** The configured `kind` label for an item's Kind, or none when no `kind` group covers its item type. */
-export function kindLabelName(labels: AnyLabels | undefined, kind: WorkflowKind): string | undefined {
-    const group = labels?.groups?.[KIND_GROUP_KEY]
-    if (!group || !group.appliesTo.includes(kindItemType(kind))) return undefined
-    return group.values[kind]?.name
+/**
+ * A group's values for one item type, as `[valueKey, definition]` pairs. A group that doesn't apply
+ * to the item type has none; only `kind` splits its values by item type.
+ */
+export function groupValuesFor(
+    key: string,
+    group: GitHubLabelGroup | LinearLabelGroup,
+    itemType: LabelItemType,
+): [string, LabelDefinition][] {
+    if (!group.appliesTo.includes(itemType)) return []
+    const entries = Object.entries(group.values)
+    if (key !== KIND_GROUP_KEY) return entries
+    const allowed = new Set<string>(kindValuesFor(itemType))
+    return entries.filter(([value]) => allowed.has(value))
 }
 
 // Linear rejects these label names because they duplicate native features.
@@ -182,15 +185,6 @@ function assertKindGroup(group: GitHubLabelGroup | LinearLabelGroup): void {
             `the \`kind\` label group values must be exactly ${expected.map((key) => JSON.stringify(key)).join(", ")} for its \`appliesTo\``,
         )
     }
-}
-
-/** Value keys of a group that apply to one item type; only `kind` splits values by item type. */
-function valuesForItemType(key: string, group: GitHubLabelGroup | LinearLabelGroup, itemType: LabelItemType) {
-    if (!group.appliesTo.includes(itemType)) return []
-    const entries = Object.entries(group.values)
-    if (key !== KIND_GROUP_KEY) return entries
-    const allowed = new Set<string>(kindValuesFor(itemType))
-    return entries.filter(([value]) => allowed.has(value))
 }
 
 function assertDistinctNames(domain: string, names: readonly string[]): Set<string> {
@@ -273,7 +267,7 @@ export function assertLinearLabels(labels: LinearLabels | undefined, phase: Line
             phaseGroup.group.name,
             ...Object.values(phaseGroup.values).map((value) => value.name),
             ...groups.flatMap(([key, group]) => {
-                const values = valuesForItemType(key, group, itemType)
+                const values = groupValuesFor(key, group, itemType)
                 if (values.length === 0) return []
                 return [
                     ...(group.nativeGroup ? [group.nativeGroup.name] : []),
