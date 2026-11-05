@@ -50,6 +50,73 @@
                             "description": "Maintenance or operational work."
                         }
                     }
+                },
+                "area": {
+                    "appliesTo": ["epic", "deliverable"],
+                    "cardinality": "oneOrMore",
+                    "values": {
+                        "workflows": {
+                            "name": "Area: Workflows",
+                            "color": "#006B75",
+                            "description": "Epic, Task, Gig, and PR workflows: skills, references, and workflow extensions."
+                        },
+                        "context": {
+                            "name": "Area: Extension - Context",
+                            "color": "#DDF4FF",
+                            "description": "The context extension: /context session introspection."
+                        },
+                        "fetch": {
+                            "name": "Area: Extension - Fetch",
+                            "color": "#DDF4FF",
+                            "description": "The fetch extension: URL retrieval as Markdown."
+                        },
+                        "mcp": {
+                            "name": "Area: Extension - MCP",
+                            "color": "#DDF4FF",
+                            "description": "The mcp extension: MCP server integration."
+                        },
+                        "permissions": {
+                            "name": "Area: Extension - Permissions",
+                            "color": "#DDF4FF",
+                            "description": "The permissions extension: allow, deny, and ask rules."
+                        },
+                        "rules": {
+                            "name": "Area: Extension - Rules",
+                            "color": "#DDF4FF",
+                            "description": "The rules extension: rule files injected into the system prompt."
+                        },
+                        "status": {
+                            "name": "Area: Extension - Status",
+                            "color": "#DDF4FF",
+                            "description": "The status extension: runtime and rate-limit status entries."
+                        },
+                        "web-search": {
+                            "name": "Area: Extension - Web Search",
+                            "color": "#DDF4FF",
+                            "description": "The web-search extension: Brave Search tool."
+                        },
+                        "tooling": {
+                            "name": "Area: Tooling",
+                            "color": "#EDEDED",
+                            "description": "Tests, dependencies, Pi upgrades, repository configuration, and the bundled commit skill."
+                        }
+                    }
+                },
+                "provider": {
+                    "appliesTo": ["epic", "deliverable"],
+                    "cardinality": "zeroOrMore",
+                    "values": {
+                        "github": {
+                            "name": "Provider: GitHub",
+                            "color": "#24292F",
+                            "description": "Specific to the GitHub tracker or forge."
+                        },
+                        "linear": {
+                            "name": "Provider: Linear",
+                            "color": "#5E6AD2",
+                            "description": "Specific to the Linear tracker."
+                        }
+                    }
                 }
             }
         },
