@@ -9,15 +9,47 @@
             "number": 2
         },
         "labels": {
-            "kind": {
-                "epic": "Kind: Epic",
-                "deliverableKinds": {
-                    "feature": "Kind: Feature",
-                    "bugfix": "Kind: Bugfix",
-                    "research": "Kind: Research",
-                    "refactor": "Kind: Refactor",
-                    "audit": "Kind: Audit",
-                    "chore": "Kind: Chore"
+            "groups": {
+                "kind": {
+                    "appliesTo": ["epic", "deliverable"],
+                    "cardinality": "exactlyOne",
+                    "values": {
+                        "epic": {
+                            "name": "Kind: Epic",
+                            "color": "#8250DF",
+                            "description": "A multi-deliverable initiative."
+                        },
+                        "feature": {
+                            "name": "Kind: Feature",
+                            "color": "#0969DA",
+                            "description": "New user-visible or system capability."
+                        },
+                        "bugfix": {
+                            "name": "Kind: Bugfix",
+                            "color": "#CF222E",
+                            "description": "Correction of defective behavior."
+                        },
+                        "research": {
+                            "name": "Kind: Research",
+                            "color": "#1A7F37",
+                            "description": "Investigation producing evidence and conclusions."
+                        },
+                        "refactor": {
+                            "name": "Kind: Refactor",
+                            "color": "#BC4C00",
+                            "description": "Behavior-preserving structural improvement."
+                        },
+                        "audit": {
+                            "name": "Kind: Audit",
+                            "color": "#9A6700",
+                            "description": "Evidence-based assessment and recommendations."
+                        },
+                        "chore": {
+                            "name": "Kind: Chore",
+                            "color": "#57606A",
+                            "description": "Maintenance or operational work."
+                        }
+                    }
                 }
             }
         },
