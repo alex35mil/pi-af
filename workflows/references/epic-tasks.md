@@ -12,6 +12,7 @@ Accepted `epic.md` lists Tasks as `### ` sections under one `## Tasks` section. 
 ### [#12] Build the parser
 
 Kind: feature
+Labels: area=backend, perf=perf
 
 Owned outcome, settled contract, and stopping boundary. Any Markdown: paragraphs, lists, code blocks.
 
@@ -24,7 +25,8 @@ Kind: chore
 
 - **Heading:** `<title>` before the Task's issue exists, then `[<marker>] <title>`. Titles are unique within the Epic.
 - **Kind:** the first body line, one of `feature`, `bugfix`, `refactor`, `research`, `audit`, or `chore`. A Task starts with this Kind.
-- **Status:** an optional `Status: canceled` line after `Kind:`, only on a tagged Task. It removes the Task from the plan.
+- **Labels:** an optional `Labels: group=value, …` line right after `Kind:`, with values for the label groups that apply to Deliverables, never `kind`. A group that needs a value and has none blocks the Task's issue processing.
+- **Status:** an optional `Status: canceled` line after `Kind:` and `Labels:`, only on a tagged Task. It removes the Task from the plan.
 - **Description:** the rest of the section. It must not be empty, and becomes the issue's description.
 
 Code rejects anything else, including a Task section outside `## Tasks`.
@@ -44,7 +46,7 @@ Run it after every accepted `epic.md` revision and on every Epic or Task resume,
 **Rules:**
 
 - Plan acceptance approves these creates, cancellations, and board updates, with no second confirmation. Rerunning after an interruption needs no new approval.
-- Created issues are sub-issues on GitHub with the Task's Kind label, or Project issues on Linear.
+- Created issues are sub-issues on GitHub, or Project issues on Linear, with the Task's `kind` label and its `Labels:` values.
 - A tagged Task whose issue is In Progress, In Review, or Done has started, with or without a local Task directory; it may have started in another clone.
 - A tagged Task that hasn't started must be a child of this Epic in Backlog, Todo, or Canceled. A local Task directory on a queued issue is an error.
 - Processing ensures every queued Task's board state itself, whatever Project automations did first: on the Project, Status Todo (Backlog or empty becomes Todo), and the Epic's Priority when the Task has none. A Priority already set on the Task is kept, and a Canceled issue is left alone. To defer a Task, mark it `Status: canceled` or replan; a manual Backlog move is reverted.

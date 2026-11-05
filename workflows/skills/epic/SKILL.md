@@ -136,6 +136,7 @@ Epic branch: <the Epic's branch name>
 ### <Task-sized unit>
 
 Kind: <feature | bugfix | refactor | research | audit | chore>
+Labels: <group=value, …, only with label groups configured>
 
 <Owned outcome, relevant settled behavior and constraints, and scope boundary. Any Markdown.>
 ```

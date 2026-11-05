@@ -138,11 +138,7 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
    - Show teams as numbered choices. For the selected team, show its issue statuses and the workspace or team Project statuses, with native type and scope.
    - The user picks six distinct issue names and six distinct Project names for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`.
    - Never infer lifecycle meaning from names or types. Each saved name must identify one status unambiguously. Native Priority needs no configuration.
-4. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker).
-   - Read Project and issue labels through registered tools, with pagination.
-   - The user picks one workspace or team group for Projects and one for issues, each with active Planning, Execution, and Self-Review children. Verify membership and issue single-select.
-   - Missing or incompatible groups need user fixes first; setup never mutates Linear.
-   - Save scopes, names, and child mappings, not provider IDs.
+4. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker). The user picks the group and child names, scope, and colors for Projects and for issues. The label step creates or checks them.
 
 ### 4. Branch naming
 
@@ -194,9 +190,7 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
    - Organization repositories: ask one of: 1. Project-contained, 2. Organization-native, 3. Custom (each field separately).
    - For organization-native or custom scope, ask whether missing Issue Fields should be created (this needs an organization repository and admin token permissions) or switched to Project scope.
 7. **Defaults.** Offer the editable `defaults`: six Status options, the Phase field and its options, and Priority options.
-   - Ask whether to use Kind labels: 1. Yes (`labels`), 2. No. With yes, offer the default Epic and six Deliverable Kind labels and include them in the specification; with no, omit `labels`.
-   - Label names, colors, and descriptions are exact inputs; only names are saved.
-   - Kind label names stay distinct case-insensitively, and all Project field names, Phase included, stay distinct.
+   - All Project field names, Phase included, stay distinct.
    - Option colors, descriptions, visual order, and extra options aren't runtime inputs; configured names are.
 8. **Presentation.** Offer the Board defaults ([presentation](../../references/setup/github-project.md#presentation)).
    - Name, layout, and visible fields are editable.
@@ -207,20 +201,20 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 **Field rules:**
 
 - Status and Phase are always Project fields. Phase has Planning, Execution, and Self-Review and projects In Progress activity.
-- Kind labels are optional. When configured, setup owns the Epic and six Deliverable Kind labels, and initialization and queue intake apply exactly one.
+- Labels come from the label step, not from Project setup.
 - Native issue Type stays unmanaged. Never use labels for lifecycle or Priority, or Custom Properties for anything.
 - A personal Project may use organization issue metadata when its repository belongs to that organization, but availability never selects the scope. Project-contained configuration ignores organization metadata.
 
 **Preview, apply, and confirm:**
 
 1. **Preview.** Build the strict specification and call `preview_github_project_setup`.
-   - A blocked preview changes nothing. Resolve incompatible fields or labels without deleting native fields, or select an exact-title Project as `resume-created`. Resolve Priority order mismatches as [described](../../references/setup/github-project.md#priority-order).
+   - A blocked preview changes nothing. Resolve incompatible fields without deleting native fields, or select an exact-title Project as `resume-created`. Resolve Priority order mismatches as [described](../../references/setup/github-project.md#priority-order).
    - A new or confirmed `resume-created` empty Project updates the native Status field in place, keeping matching option IDs. An ordinary existing Project's incompatible Status is never changed.
 2. **Present every effect** in plain terms:
    - owner, resolved title, visibility, and the short-description replacement;
    - repository association and default repository (setting the default also links it);
    - the native Status update, fields, options, and scopes;
-   - managed labels, Issue Field visibility, and organization-level creation;
+   - Issue Field visibility and organization-level creation;
    - exact view changes (for a fresh Board, everything listed in [preview and approval](../../references/setup/github-project.md#preview-and-approval));
    - every returned manual step.
 3. **Approve and apply.** Require explicit approval of that exact `planHash`, then call `apply_github_project_setup` with the unchanged specification and hash. A general approval of the later file proposal never counts.
@@ -233,6 +227,18 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
 6. **Configuration.** Use only the returned `trackerConfig` in `.project/integrations.json`. Presentation and manual confirmation stay out of runtime configuration.
 
 When initialized entities are already bound to another GitHub Project, stop. Replacing the Project needs a separate, user-directed migration.
+
+#### Labels
+
+For either tracker, after its configuration, read [label groups](../../references/setup.md#label-groups), then:
+
+1. **Choose groups.** Ask whether to use Kind labels for Epics, Deliverables, both, or neither, and offer the default `kind` group. Then ask for other groups: key, `appliesTo`, cardinality, and values, plus scope and native backing on Linear. On Linear, include the Phase groups.
+2. **Inspect and preview.** Call `inspect_label_setup`, show the existing labels, then call `preview_label_setup`.
+3. **Decisions.** Ask the user about each returned decision, exactly as listed, and preview again with the answers until none remain.
+4. **Approve and apply.** Present every action, with removals and their usage called out separately. Require approval of that exact `planHash`, then call `apply_label_setup`.
+5. **Save.** Use only the returned `configuration` in `.project/integrations.json`.
+
+A rerun can change only labels. Reuse the saved groups and lists as the desired starting point.
 
 #### GitHub forge
 

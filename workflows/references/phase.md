@@ -57,10 +57,10 @@ During In Progress, native Phase equals the metadata Phase. Outside In Progress,
 
 - `applied`: every currently applied label ID.
 - `catalog`: the selected group, all its children, and any same-named groups needed to prove scope and identity. Finish pagination first. Each entry has `id`, `name`, and `isGroup`, plus `team`, `parentId`, `groupType`, and `retiredAt` when present.
-- The configured group must resolve to one active group in its workspace or team scope, and each Phase to one active child of it. Issue groups must be `singleSelect`. Project groups are single-select by Linear's contract, so omit `groupType` there.
+- The configured group must resolve to one active group in its workspace or team scope, and each Phase to one active child of it. Issue groups must be `singleSelect`. Project groups must be `singleSelect` too; omit `groupType` only when Linear reports none, which it treats as single-select.
 - Use Project-label reads for Projects and issue-label reads for issues.
 - Same-named children outside the group are unrelated labels and must survive. Replacing Phase removes every applied child of the managed group, including extras, and changes no other ID.
 
 ## Setup
 
-GitHub setup provisions or validates the Project field and options under its preview and hash approval. Linear setup is read-only: it requires one Project-label group and one issue-label group, each with the three active children, and asks the user to fix anything missing. Runtime never creates native metadata.
+GitHub setup provisions or validates the Project field and options under its preview and hash approval. On Linear, the label setup tools create or check one Project-label group and one issue-label group, each single-select with the three active children, under the same approval ([label groups](./setup.md#label-groups)). Runtime never creates native metadata.

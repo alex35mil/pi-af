@@ -26,7 +26,7 @@ Adoption applies only to an explicitly selected existing issue, before initializ
 
 **Stops adoption:** the wrong repository, Project, or parent, a non-queue Status, ambiguity, denied access, or an unconfigured Priority.
 
-**Kind:** a single configured Kind label on the issue becomes the initialized Kind unless the user changes it. Missing or conflicting Kind needs a user choice. After initialization, workflow metadata owns Kind.
+**Kind:** a single `kind` group label on the issue becomes the initialized Kind unless the user changes it. Missing or conflicting Kind needs a user choice. After initialization, workflow metadata owns Kind.
 
 ## Initialize
 
@@ -35,7 +35,7 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 **Create new work** (after preflight):
 
 - Call registered `get_me` once and use its `login` as the authenticated user for this operation.
-- One registered `issue_write` create with the approved title and Request, the Kind label when Kind labels are configured, issue-scoped Priority, and that login as the only assignee. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing), with no assignee.
+- One registered `issue_write` create with the approved title and Request, the labels preflight returned, issue-scoped Priority, and that login as the only assignee. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing), with no assignee.
 - No duplicate, label, or option preflight. Pass the returned numeric ID, number, and URL to `init_github_<entity>` as `object`. A minimal ID-and-URL success isn't automatically uncertain.
 
 **Board setup** (after initialization, for new and adopted work):
@@ -43,7 +43,7 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 1. Add the issue to the configured Project unless that's already proven, and record the add evidence with `record_resource_ids`. Follow the [Project item ID rule](#project-item-ids).
 2. Set In Progress, Priority, and Planning in the Phase field with Project writes addressed by the issue, not by item ID. Combine supported issue-field writes.
 3. For adopted work and a started Task, call registered `get_me` once, then run one `issue_write` update that sets its login as the only assignee. A new issue already has it.
-4. Reuse labels and parent assignment proven at creation. Otherwise read current labels or hierarchy, keep unrelated labels, and call `prepare_tracker_mutation` with `change: labels`, or Task-only `hierarchy`, only when a correction is needed.
+4. Reuse labels and parent assignment proven at creation. For adopted work and a started Task, read the issue's labels and call `prepare_label_mutation` with the selection ([labels](../shared.md#labels)). For a Task's parent, call `prepare_tracker_mutation` with `hierarchy` only when a correction is needed.
 
 **When `get_me` is unavailable or fails:** start the work without an assignee. Report that assignment was skipped and that the GitHub registration needs the `context` toolset.
 
@@ -67,12 +67,12 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 **What's projected:**
 
 - Native Phase exists only during In Progress and equals the metadata Phase.
-- With configured Kind labels, exactly one managed Kind label matches the workflow Kind; without them, no Kind is projected.
+- With a configured `kind` group, exactly one `kind` label matches the workflow Kind; without it, no Kind is projected.
 - Keep unrelated labels. Reuse this operation's reads and write only when the intended set differs. Confirm labels when a mutation's success doesn't show the full applied set; no full label-catalog preflight is needed.
 
 **Changing values:**
 
-- Use `prepare_tracker_mutation` with exactly one change: `labels`, `lifecycle`, `priority`, or Task `hierarchy`.
+- Use `prepare_tracker_mutation` with exactly one change: `lifecycle`, `priority`, or Task `hierarchy`. Labels change through `prepare_label_mutation`, with the issue's label names as its current facts, and apply as one `issue_write` update.
 - For Phase, use `prepare_github_phase_mutation` with this operation's Phase field and item reads ([fresh native facts](../../phase.md#fresh-native-facts)), and apply only a changed field value.
 - Priority follows its configured Project or issue scope.
 - Lifecycle and Priority are provider authority: never cached and never replaced by a local fallback.
@@ -80,7 +80,7 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 ## Queue and plan publication
 
-**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with no Phase, the `kindLabel` that `inspect_queue_intake` returns (none when it's null), and set the selected Status and Priority.
+**Queue intake** follows [queue](../../queue.md). Queued work has no workflow artifact, cache, or checkpoint. Create the issue with no Phase, the `labels` that `inspect_queue_intake` returns, and set the selected Status and Priority.
 
 **Plan publication:**
 

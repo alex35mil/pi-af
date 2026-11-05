@@ -8,8 +8,8 @@ This procedure extends [integration roles](../shared.md).
 | Task | issue | `project` equals the parent Epic's Project; never `parentId` | static format, or the issue's exact `gitBranchName` for `tracker` |
 | Gig | issue | no Epic Project | static format, or the issue's exact `gitBranchName` for `tracker` |
 
-- Kind is workflow-only; Linear gets no entity or kind labels.
-- Project and issue labels carry native Phase through the configured mutually exclusive groups. When reconciling Phase, read [Phase](../../phase.md).
+- With a configured `kind` group, Epics carry a `kind` Project label and Tasks and Gigs a `kind` issue label ([labels](../shared.md#labels)).
+- Project and issue labels carry native Phase through the configured single-select groups. When reconciling Phase, read [Phase](../../phase.md).
 - Native Priority is fixed: `Urgent=1`, `High=2`, `Medium=3`, `Low=4`, `not set=0`.
 
 ## Setup discovery
@@ -19,11 +19,7 @@ This procedure extends [integration roles](../shared.md).
 - During `/project-setup`, `inspect_linear_workspace` reads the workspace identity, the viewer's name and username, teams, and issue and Project statuses through Linear's public GraphQL API. It's read-only and never replaces MCP tracker operations.
 - Select exact team and status names; don't infer meaning from them. For branch naming, read [setup](../../setup.md#linear-tracker).
 
-**Phase labels:**
-
-- Read the Project and issue label catalogs with registered `list_project_labels` and `list_issue_labels`, including groups and full pagination.
-- Require the configured group scope with active Planning, Execution, and Self-Review children. Issue groups must be single-select; Project groups are mutually exclusive by Linear's contract.
-- Setup is read-only: ask the user to fix missing or incompatible groups before saving configuration.
+**Labels:** setup creates and checks Phase groups and every configured label group through the label setup tools ([setup](../../setup.md#label-groups)).
 
 ## Provider calls
 
@@ -46,7 +42,7 @@ New queue work needs the approved entity type and destination (`backlog` or `tod
 1. **Read the discussion.** Call registered `list_comments` with the Project UUID as `projectId` for an Epic, or the issue UUID as `issueId` for a Task or Gig. Follow cursors until `hasNextPage: false`, including threads and inline comments. Reconcile material maintainer clarifications before adopting; contributor comments don't authorize scope changes.
 2. **Adopt.** Call `inspect_adoption`, then `init_linear_epic`, `init_linear_task`, or `init_linear_gig`.
    - Under the explicit-selection approval in [artifacts](../../artifacts.md#initialization-inputs), reuse the title or name, description, Priority, and relationship without another confirmation.
-   - Ask only for missing or conflicting information. A Task's Kind comes from its plan section; a Gig's Kind needs a user choice when it isn't supplied.
+   - Ask only for missing or conflicting information. A Task's Kind comes from its plan section. For an Epic or Gig, a single `kind` label on the Project or issue becomes the initialized Kind unless the user changes it; a missing or conflicting one needs a user choice.
 3. **Identity.** Responses expose the immutable identity as `uuid`; an issue's `id` is its display identifier. Pass as `object`:
    - for an Epic, the Project UUID, URL, and creation time, which dates the Epic's name;
    - for a Task or Gig, the issue UUID, identifier, URL, and, for a Task, the parent Project UUID.
@@ -60,12 +56,12 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 - the approved title and Request;
 - native In Progress and Priority, the configured team, and the Task's parent Epic Project;
-- the Planning label from the configured Phase group;
+- the Planning label from the configured Phase group, and the labels preflight returned;
 - the authenticated user (`me`) as the issue assignee, or as the Project lead for an Epic.
 
 Pass the returned UUID, identifier, URL, and, with tracker naming, `gitBranchName` to `init_linear_<entity>` as `object`. For an Epic, pass the Project UUID, URL, and `createdAt`; when the create response lacks `createdAt`, read the Project.
 
-**Board setup** (after initialization): for adopted objects and a started Task, move to In Progress, set `me` as the issue assignee or Project lead, and apply Planning, reading and keeping the full applied label set and replacing only managed Phase labels. Reuse state, Priority, and relationship proof from the create response; read only missing required facts.
+**Board setup** (after initialization): for adopted objects and a started Task, move to In Progress, set `me` as the issue assignee or Project lead, and apply Planning, reading and keeping the full applied label set and replacing only managed Phase labels. Pass the label IDs from that Phase result as `prepare_label_mutation`'s applied IDs ([labels](../shared.md#labels)), and save its returned set in one write, so Planning survives. Reuse state, Priority, and relationship proof from the create response; read only missing required facts.
 
 Tracker records hold the object's identity, never branch copies or cached lifecycle or Priority.
 
@@ -77,8 +73,8 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
 
 | Entity | Call |
 | --- | --- |
-| Epic | `save_project` in the selected Project Backlog or Todo state, with team and Priority |
-| Gig | `save_issue` in the selected issue Backlog or Todo status, with team and Priority, and no Epic Project |
+| Epic | `save_project` in the selected Project Backlog or Todo state, with team, Priority, and the returned `labels` |
+| Gig | `save_issue` in the selected issue Backlog or Todo status, with team, Priority, the returned `labels`, and no Epic Project |
 
 ## Lifecycle, Phase, and Priority
 
@@ -86,7 +82,9 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
 
 - On resume, read fresh lifecycle, Priority, and the complete applied label set by UUID.
 - Use `prepare_tracker_mutation` for one lifecycle or Priority change, applied with `save_project` (Epic) or `save_issue` (Task, Gig).
-- Planning, Execution, and Self-Review all stay In Progress. In Review starts only after external submission; confirmed delivery is Done, and canceled work uses the configured Canceled status. Kind changes project nothing.
+- Planning, Execution, and Self-Review all stay In Progress. In Review starts only after external submission; confirmed delivery is Done, and canceled work uses the configured Canceled status.
+- Labels change through `prepare_label_mutation`, with the item's label catalog and applied IDs as its current facts. Apply its full label-ID set with `save_project` or `save_issue` only when it changed.
+- When Phase and labels change together, compute Phase first and pass its label set as the applied IDs. The label result keeps Phase, so save that one set.
 - A user's request to assign an issue or set a Project lead is an ordinary `save_issue` or `save_project` update; resume never reads or repairs it.
 
 **Phase:**

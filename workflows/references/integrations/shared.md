@@ -27,7 +27,8 @@ These tools read local configuration, authority, and entity state. They never ca
 | Set up the board for a new entity, or resume one | `initialize_integration`, `resume_integration` |
 | Publish an accepted plan (tracker only) | `prepare_integration_projection` |
 | Submit a PR (forge only) | `prepare_integration_pull_request` |
-| Correct labels, lifecycle, Priority, or Task hierarchy (tracker only) | `prepare_tracker_mutation` |
+| Correct lifecycle, Priority, or Task hierarchy (tracker only) | `prepare_tracker_mutation` |
+| Set an item's labels from a selection, or follow a Kind change (tracker only) | `prepare_label_mutation` |
 | Reconcile native Phase | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation`, with the fresh facts in [Phase](../phase.md#fresh-native-facts) |
 | Ship a Task or Gig | `prepare_integration_shipping`, then `prepare_integration_merge` only when a merge is needed |
 
@@ -69,12 +70,12 @@ These tools read local configuration, authority, and entity state. They never ca
 
 The tracker object comes first; the local entity is named from it. New work and adoption end in the same initialization call.
 
-1. **Preflight new work.** Call `preflight_epic` or `preflight_gig` with the approved values. A Task never creates its object; it adopts the issue its parent's [Task issue processing](../epic-tasks.md#task-issue-processing) created. It runs every local check that doesn't need the tracker object and changes nothing. A failure stops before anything is created on the tracker.
+1. **Preflight new work.** Call `preflight_epic` or `preflight_gig` with the approved values, the label selection included. It returns the labels to create the object with. A Task never creates its object; it adopts the issue its parent's [Task issue processing](../epic-tasks.md#task-issue-processing) created. It runs every local check that doesn't need the tracker object and changes nothing. A failure stops before anything is created on the tracker.
 2. **Get the object.**
    - New work: create only the tracker object, with the approved title and Request, as the provider reference describes. No search first.
    - Adoption: use the explicitly selected object after its provider preflight.
 3. **Initialize.** Call `init_github_<entity>` or `init_linear_<entity>` with the object's identity as `object`. It names the directory and branch from the object, creates the local entity with a ready branch, and records the object's Resource IDs.
-4. **Set up the board.** Call `initialize_integration`, then apply the provider reference's board steps: Project membership, In Progress, Priority, Planning Phase, Task hierarchy, the Kind label when configured, and the assignee. These are ordinary absolute updates; a failure is reconciled on resume, except assignment.
+4. **Set up the board.** Call `initialize_integration`, then apply the provider reference's board steps: Project membership, In Progress, Priority, Planning Phase, Task hierarchy, labels when configured, and the assignee. These are ordinary absolute updates; a failure is reconciled on resume, except assignment.
 
 **Assignment:** whoever starts the work owns it. Initialization assigns the authenticated user to the tracker item, new or adopted, replacing existing assignees. Set it once and trust a clear success; never read it back or reconcile it later. Queue intake and Task issue processing assign nobody.
 
@@ -158,7 +159,17 @@ For initialized entities, update workflow kind, `phase`, and artifacts first.
 
 - Lifecycle and Priority are native tracker Status and Priority.
 - For the tracker object, read the required fresh values, then set only the intended absolute lifecycle, Priority, or changed labels. Verify required outcome facts that a clear-success response didn't include. Reconcile uncertain or partial results before retrying.
-- With configured GitHub Kind labels, keep the one managed Kind label in step with the workflow kind. Linear gets no Kind label.
+- With a configured `kind` label group, keep the item's `kind` label in step with the workflow kind, on both trackers.
 - A provider failure never rolls back workflow artifacts.
 
 Adding work to Backlog or Todo creates no workflow artifact or saved recovery state. Recover uncertain results by reading provider state.
+
+## Labels
+
+- Label groups live in `labels.groups`. Each value maps to one tracker label, and the group's cardinality limits how many an item carries. Read the configuration with `inspect_integrations`.
+- The `kind` value always comes from the item's Kind. Values for other groups come from Project Policies and the work; ask the user only when one can't be derived.
+- For new work, present the chosen labels with the other intake values, so they're approved together.
+- New work gets its labels from preflight or queue intake. Existing work changes them only through `prepare_label_mutation`, which returns the complete label set; apply it only when `changed`.
+- On a Kind change, call `prepare_label_mutation` without a selection, so only the `kind` label changes. A correction passes a value for every group.
+- An `invalid` result names the group and the problem. Report it and ask; never fix a value on your own.
+- Mention the `unknown` labels it returns and suggest `/project-setup`. Runtime never creates, edits, removes, or keeps catalog labels.
