@@ -294,3 +294,37 @@ export function assertLinearLabels(labels: LinearLabels | undefined, phase: Line
         (entry) => managedByCatalog.get(entry.catalog)!,
     )
 }
+
+/** Where a label lives: one GitHub repository, or a Linear catalog at workspace or team level. */
+export type LabelLocation =
+    | { catalog: "repository"; scope: "repository" }
+    | { catalog: LinearLabelCatalog; scope: LinearLabelScope }
+
+/** A label as the unknown-label rule sees it; managed labels are excluded before it's asked. */
+export interface UnknownLabelCandidate {
+    name: string
+    location: LabelLocation
+    /** The label's native Linear group, when it has one. */
+    parentName: string | null
+}
+
+export interface UnknownLabelLists {
+    keep: readonly { name: string; location: LabelLocation }[]
+    retired: readonly { name: string; location: LabelLocation }[]
+}
+
+const sameLocation = (a: LabelLocation, b: LabelLocation) => a.catalog === b.catalog && a.scope === b.scope
+
+/**
+ * The one rule for an unknown label, shared by setup and runtime: a label that isn't managed is
+ * unknown unless it, or the native group it belongs to, is on the keep list, or it's on the retired
+ * list. Setup lists exactly these labels, so runtime never mentions one setup won't ask about.
+ */
+export function isUnknownLabel(label: UnknownLabelCandidate, lists: UnknownLabelLists): boolean {
+    const listed = (entries: UnknownLabelLists["keep"], name: string) =>
+        entries.some(
+            (entry) => sameLocation(entry.location, label.location) && entry.name.toLowerCase() === name.toLowerCase(),
+        )
+    if (listed(lists.keep, label.name) || listed(lists.retired, label.name)) return false
+    return label.parentName === null || !listed(lists.keep, label.parentName)
+}

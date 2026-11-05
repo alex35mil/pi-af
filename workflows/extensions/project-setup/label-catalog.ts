@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto"
 
 import {
+    isUnknownLabel,
+    type LabelLocation,
     type GitHubLabelEntry,
     type GitHubLabels,
     KIND_GROUP_KEY,
@@ -617,12 +619,20 @@ class Planner {
 
     planUnknown(): void {
         const listed = (list: readonly ListEntry[], label: TrackerLabel) => list.some((item) => sameEntry(item, label))
-        const keptGroup = (label: TrackerLabel) => {
-            const parent = label.parentId
-                ? this.input.catalog.find((candidate) => candidate.id === label.parentId)
-                : undefined
-            return parent ? listed(this.keep, parent) : false
-        }
+        const asLocation = (entry: { catalog: CatalogKey; scope: CatalogScope }) => entry as LabelLocation
+        // The keep list decides through the shared rule; a retired entry whose label is active again is
+        // handled below, because setup drops that stale entry and asks about the label anew.
+        const kept = (label: TrackerLabel) =>
+            !isUnknownLabel(
+                {
+                    name: label.name,
+                    location: asLocation(label),
+                    parentName: label.parentId
+                        ? (this.input.catalog.find((candidate) => candidate.id === label.parentId)?.name ?? null)
+                        : null,
+                },
+                { keep: this.keep.map((entry) => ({ name: entry.name, location: asLocation(entry) })), retired: [] },
+            )
         const unclaimed = this.input.catalog.filter((label) => !this.claimed.has(label.id))
         const unknownGroups = new Map<string, TrackerLabel[]>()
         for (const label of unclaimed) {
@@ -634,7 +644,7 @@ class Planner {
         for (const label of unclaimed) {
             if (label.parentId && unknownGroups.has(label.parentId)) continue
             if (label.isGroup && !unknownGroups.has(label.id)) continue
-            if (listed(this.keep, label) || keptGroup(label)) continue
+            if (kept(label)) continue
             const onRetiredList = listed(this.retired, label)
             if (onRetiredList && label.retired) continue
             if (onRetiredList) this.dropFrom("retired", label, "the label is active again")

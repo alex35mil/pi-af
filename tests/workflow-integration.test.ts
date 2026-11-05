@@ -25,6 +25,7 @@ import registerIntegrations, {
 } from "../workflows/extensions/integrations/index.ts"
 
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
+import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { linearPriorityNumber } from "../workflows/extensions/integrations/records.ts"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
@@ -567,35 +568,113 @@ describe("workflow integration configuration", () => {
         }
     })
 
-    it("applies the configured Kind label in queue intake only when Kind labels are on", () => {
+    it("plans an item's complete label set and keeps the selection on a Kind change", () => {
+        const cwd = temporaryProject()
+        try {
+            const area = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrMore",
+                values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+            }
+            const perf = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrOne",
+                values: { perf: { name: "Perf", color: "#1D76DB", description: "" } },
+            }
+            prepareWorkflowProject(cwd, { ...config(), labels: { groups: { ...kindLabels().groups, area, perf } } })
+            prepareArtifactPersistence(cwd)
+            const gig = initializeEntity(
+                {
+                    entity: "gig",
+                    title: "Work",
+                    slug: "work",
+                    request: "Work",
+                    kind: "bugfix",
+                    object: { issueId: 1, issueNumber: 7, issueUrl: "https://github.com/alex/example/issues/7" },
+                },
+                { cwd },
+            )
+            const ctx = { cwd } as ExtensionContext
+            const plan = (labels: unknown, names: string[]) =>
+                (
+                    buildIntegrationContext(
+                        ctx,
+                        {
+                            operation: "labelMutation",
+                            entityDir: gig.directory,
+                            ...(labels ? { labels } : {}),
+                            current: { provider: "github", names },
+                        } as Parameters<typeof buildIntegrationContext>[1],
+                        mcpTools,
+                    ) as { labelMutation?: unknown }
+                ).labelMutation
+            // A Kind change from feature to bugfix keeps Area: FE and Perf, and keeps an unrelated label.
+            assert.deepEqual(plan(undefined, ["Kind: Feature", "Area: FE", "Perf", "customer"]), {
+                provider: "github",
+                labels: ["customer", "Area: FE", "Perf", "Kind: Bugfix"],
+                changed: true,
+                unknown: ["customer"],
+            })
+            assert.deepEqual(plan({ area: [], perf: ["perf"] }, ["Kind: Bugfix", "Area: FE", "Perf"]), {
+                provider: "github",
+                labels: ["Perf", "Kind: Bugfix"],
+                changed: true,
+                unknown: [],
+            })
+            // A correction that leaves out a group fails instead of dropping that group's labels.
+            assert.deepEqual((plan({ area: [] }, ["Kind: Bugfix", "Area: FE", "Perf"]) as { error: unknown }).error, {
+                kind: "missingGroup",
+                group: "perf",
+                values: ["perf"],
+            })
+            assert.match(JSON.stringify(plan({ nope: [] }, [])), /"state":"invalid"/)
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
+    it("returns queue intake labels from the Kind and the selection, on both trackers", () => {
         const cwd = temporaryProject()
         try {
             prepareWorkflowProject(cwd)
             prepareArtifactPersistence(cwd)
             const ctx = { cwd } as ExtensionContext
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, "Kind: Refactor")
-            assert.equal(
-                buildIntegrationContext(ctx, { ...queueSelection, entity: "epic", kind: "epic" }, mcpTools).kindLabel,
-                "Kind: Epic",
+            const labels = (input: Parameters<typeof buildIntegrationContext>[1]) =>
+                (buildIntegrationContext(ctx, input, mcpTools) as { labels?: unknown }).labels
+            assert.deepEqual(labels(queueSelection), ["Kind: Refactor"])
+            assert.deepEqual(labels({ ...queueSelection, entity: "epic", kind: "epic" }), ["Kind: Epic"])
+            assert.deepEqual(labels({ ...queueSelection, kind: "not set" }), [])
+            const write = (tracker: unknown) =>
+                fs.writeFileSync(
+                    path.join(cwd, ".project/integrations.json"),
+                    JSON.stringify({ tracker, forge: forgeConfig() }),
+                )
+            const area = {
+                appliesTo: ["deliverable"],
+                cardinality: "oneOrMore",
+                values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+            }
+            write({ ...config("project"), labels: { groups: { ...kindLabels().groups, area } } })
+            assert.deepEqual(labels({ ...queueSelection, labels: { area: ["fe"] } }), ["Area: FE", "Kind: Refactor"])
+            assert.deepEqual(
+                (labels(queueSelection) as { error: unknown }).error,
+                { kind: "cardinality", group: "area", cardinality: "oneOrMore", selected: [] },
+                "a required group without a value is reported, not dropped",
             )
-            assert.equal(buildIntegrationContext(ctx, { ...queueSelection, kind: "not set" }, mcpTools).kindLabel, null)
-            fs.writeFileSync(
-                path.join(cwd, ".project/integrations.json"),
-                JSON.stringify({
-                    tracker: config("project", false),
-                    forge: forgeConfig(),
-                }),
+            assert.match(
+                JSON.stringify(labels({ ...queueSelection, labels: { kind: ["bugfix"], area: ["fe"] } })),
+                /comes from the item's Kind/,
             )
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
-            fs.writeFileSync(
-                path.join(cwd, ".project/integrations.json"),
-                JSON.stringify({ tracker: linearConfig(), forge: forgeConfig() }),
-            )
-            assert.equal(buildIntegrationContext(ctx, queueSelection, mcpTools).kindLabel, null)
-            assert.equal(
-                buildIntegrationContext(ctx, { operation: "inspect", target: "current" }, mcpTools).kindLabel,
-                undefined,
-            )
+            write(config("project", false))
+            assert.deepEqual(labels(queueSelection), [])
+            write({
+                ...linearConfig(),
+                labels: { groups: { kind: { ...kindLabels().groups.kind, scope: "workspace" } } },
+            })
+            assert.deepEqual(labels(queueSelection), ["Kind: Refactor"], "Linear queue intake applies labels too")
+            write(linearConfig())
+            assert.deepEqual(labels(queueSelection), [])
+            assert.equal(labels({ operation: "inspect", target: "current" }), undefined)
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true })
         }

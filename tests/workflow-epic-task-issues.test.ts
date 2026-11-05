@@ -37,7 +37,7 @@ function git(cwd: string, ...args: string[]) {
     return cp.execFileSync("git", args, { cwd, encoding: "utf-8" }).trim()
 }
 
-function repo(tracker: "github" | "linear") {
+function repo(tracker: "github" | "linear", labels?: unknown) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "epic-task-issues-"))
     git(root, "init", "-qb", "main")
     git(root, "config", "user.email", "test@example.com")
@@ -60,7 +60,7 @@ function repo(tracker: "github" | "linear") {
                           mcpServer: "github",
                           repository,
                           project: { owner: "example", ownerType: "user", number: 3 },
-                          labels: kindLabels(),
+                          labels: labels ?? kindLabels(),
                           fields: {
                               status: { field: "Status", values: statuses },
                               phase: { field: "Phase", values: { ...phaseValues } },
@@ -72,6 +72,7 @@ function repo(tracker: "github" | "linear") {
                           mcpServer: "linear",
                           team: "Engineering",
                           phase: linearPhases(),
+                          ...(labels ? { labels } : {}),
                           statuses: { issues: statuses, projects: statuses },
                       },
             forge: { provider: "github", mcpServer: "github", repository },
@@ -451,6 +452,43 @@ describe("Epic Task issue processing", () => {
             assert.deepEqual(run({ status: "Todo", priority: "Low" }), { state: "complete" })
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("creates Task issues with the kind label and the Task's Labels selection on both trackers", () => {
+        const area = {
+            appliesTo: ["deliverable"],
+            cardinality: "oneOrMore",
+            values: { fe: { name: "Area: FE", color: "#1D76DB", description: "" } },
+        }
+        for (const provider of ["github", "linear"] as const) {
+            const groups = {
+                kind: { ...kindLabels().groups.kind, ...(provider === "linear" ? { scope: "workspace" } : {}) },
+                area: { ...area, ...(provider === "linear" ? { scope: "workspace" } : {}) },
+            }
+            const { root, directory, epicPath } = repo(provider, { groups })
+            try {
+                fs.writeFileSync(epicPath, plan(section("Parser", undefined, "Labels: area=fe\n")))
+                const result = planEpicTaskIssues(
+                    root,
+                    { entityDir: directory, epicPriority: "High", children: [] },
+                    tools,
+                )
+                const create =
+                    result.state === "steps-needed" && result.steps[0].effect === "create" ? result.steps[0] : undefined
+                assert.deepEqual(create?.mutation.arguments.labels, ["Area: FE", "Kind: Feature"], provider)
+
+                fs.writeFileSync(epicPath, plan(section("Parser")))
+                const blocked = planEpicTaskIssues(
+                    root,
+                    { entityDir: directory, epicPriority: "High", children: [] },
+                    tools,
+                )
+                assert.equal(blocked.state, "blocked", `${provider}: a required group needs a value`)
+                assert.match(blocked.state === "blocked" ? blocked.reason : "", /label group "area" is oneOrMore/)
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true })
+            }
         }
     })
 

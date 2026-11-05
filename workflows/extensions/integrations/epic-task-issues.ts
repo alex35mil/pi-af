@@ -23,7 +23,7 @@ import { refreshAcceptedAnnouncement } from "./announcement-state.js"
 import { assertConfiguredPriority, loadIntegrationConfig, type TrackerConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
 import { linearPriorityNumber } from "./records.js"
-import { kindLabelName } from "./labels.js"
+import { completeSelection, LabelSelectionFailure, selectedLabelNames } from "./label-selection.js"
 import { EvidenceSchema } from "./resource-id-tool.js"
 
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
@@ -274,16 +274,15 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
                 state_reason: "not_planned",
             }),
         })
-        const kindLabel = (task: EpicTask) => kindLabelName(tracker.labels, task.kind)
         return {
             create: (task) => {
-                const label = kindLabel(task)
+                const labels = taskLabels(tracker, task)
                 return call("issue_write", {
                     method: "create",
                     ...repository,
                     title: task.title,
                     body: task.description,
-                    ...(label ? { labels: [label] } : {}),
+                    ...(labels.length > 0 ? { labels } : {}),
                     parent_issue_number: epicNumber,
                 })
             },
@@ -335,15 +334,18 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
     const projectId = ctx.status.tracker.external.projectId
     const statuses = tracker.statuses.issues
     return {
-        create: (task) =>
-            call("save_issue", {
+        create: (task) => {
+            const labels = taskLabels(tracker, task)
+            return call("save_issue", {
                 team: tracker.team,
                 title: task.title,
                 description: task.description,
                 project: projectId,
                 state: statuses.todo,
                 priority: linearPriorityNumber(epicPriority),
-            }),
+                ...(labels.length > 0 ? { labels } : {}),
+            })
+        },
         repairBoard(title, child) {
             const backlog = child.status === undefined || child.status === statuses.backlog
             const priority = child.priority === undefined && epicPriority !== PRIORITY_NOT_SET
@@ -365,6 +367,22 @@ function nativeCalls(ctx: Context, epicPriority: string): NativeCalls {
             { title, marker, effect: "cancel", mutation: call("save_issue", { id: marker, state: statuses.canceled }) },
         ],
         closeIfOpen: () => [],
+    }
+}
+
+/** A Task issue's labels: its `kind` label and its `Labels:` selection, checked against the configuration. */
+function taskLabels(tracker: TrackerConfig, task: EpicTask): string[] {
+    try {
+        return selectedLabelNames(
+            tracker.labels,
+            "deliverable",
+            task.kind,
+            completeSelection(tracker.labels, "deliverable", task.labels),
+        )
+    } catch (error) {
+        if (error instanceof LabelSelectionFailure)
+            throw new Error(`Epic Task ${JSON.stringify(task.title)}: ${error.message}`)
+        throw error
     }
 }
 
