@@ -7,8 +7,9 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { runLabelSetup } from "../workflows/extensions/project-setup/label-setup.ts"
+import { parseLabelSetupInput, runLabelSetup } from "../workflows/extensions/project-setup/label-setup.ts"
 import { kindLabels } from "./workflow-phase-fixtures.ts"
+import { registeredWorkflowTools } from "./workflow-tools-fixture.ts"
 
 interface FakeLabel {
     node_id: string
@@ -344,11 +345,49 @@ describe("label setup tools", () => {
     })
 })
 
-/** A Linear GraphQL double with two teams and a fixed label catalog; it answers reads only. */
-function fakeLinear(catalog: { issue: Record<string, unknown>[]; project: Record<string, unknown>[] }): typeof fetch {
+/**
+ * A Linear GraphQL double with two teams and a label catalog. With `writes`, it also applies label
+ * create, update, delete, restore, and retire mutations to the catalog and records each one.
+ */
+function fakeLinear(
+    catalog: { issue: Record<string, unknown>[]; project: Record<string, unknown>[] },
+    writes?: string[],
+): typeof fetch {
+    let nextId = 1
     return async (_input, init) => {
-        const query = String(JSON.parse(String(init?.body)).query)
+        const body = JSON.parse(String(init?.body))
+        const query = String(body.query)
         const reply = (data: unknown) => new Response(JSON.stringify({ data }), { status: 200 })
+        const mutation = /(issueLabel|projectLabel)(Create|Update|Delete|Restore|Retire)\(/.exec(query)
+        if (mutation && writes) {
+            const [, kind, verb] = mutation
+            const list = kind === "issueLabel" ? catalog.issue : catalog.project
+            const { id, input } = body.variables as { id?: string; input?: Record<string, unknown> }
+            const label = list.find((node) => node.id === id)
+            const name = String(input?.name ?? label?.name)
+            writes.push(`${verb} ${name}`)
+            if (verb === "Create") {
+                const created = linearLabel(`new-${nextId++}`, name, {
+                    color: input?.color,
+                    description: input?.description,
+                    isGroup: input?.isGroup === true,
+                    groupType: input?.groupType ?? null,
+                    team: input?.teamId ? { id: input.teamId } : null,
+                    parent: input?.parentId ? { id: input.parentId } : null,
+                })
+                list.push(created)
+                return reply({ [`${kind}Create`]: { success: true, [kind]: { id: created.id } } })
+            }
+            if (!label) throw new Error(`fake Linear: no label ${id}`)
+            if (verb === "Delete") list.splice(list.indexOf(label), 1)
+            if (verb === "Retire") label.retiredAt = "2026-11-05T00:00:00Z"
+            if (verb === "Restore") label.retiredAt = null
+            if (verb === "Update") {
+                const { parentId, ...rest } = input ?? {}
+                Object.assign(label, rest, parentId !== undefined ? { parent: parentId ? { id: parentId } : null } : {})
+            }
+            return reply({ [`${kind}${verb}`]: { success: true } })
+        }
         if (query.includes("LabelSetupTeams"))
             return reply({
                 teams: {
@@ -467,6 +506,133 @@ describe("Linear label setup", () => {
         } finally {
             fs.rmSync(sameTeam, { recursive: true, force: true })
             fs.rmSync(otherTeam, { recursive: true, force: true })
+        }
+    })
+
+    it("adopts a misplaced label and remaps another on first setup, then verifies", async () => {
+        const def = (name: string) => ({ name, color: "#1D76DB", description: "" })
+        const labels = {
+            groups: {
+                kind: {
+                    appliesTo: ["deliverable" as const],
+                    cardinality: "exactlyOne" as const,
+                    scope: "workspace" as const,
+                    nativeGroup: def("Kind"),
+                    values: {
+                        feature: def("Feature"),
+                        bugfix: def("Bug"),
+                        research: def("Research"),
+                        refactor: def("Refactor"),
+                        audit: def("Audit"),
+                        chore: def("Chore"),
+                    },
+                },
+            },
+        }
+        const catalog = linearPhaseCatalog("p", "singleSelect")
+        catalog.issue.push(
+            linearLabel("feature", "Feature", { issues: { nodes: [{ id: "i1" }] } }),
+            linearLabel("bug", "Bug"),
+            linearLabel("improvement", "Improvement", { issues: { nodes: [{ id: "i2" }] } }),
+        )
+        const writes: string[] = []
+        const cwd = project()
+        const options = { cwd, fetch: fakeLinear(catalog, writes), env: { LINEAR_KEY: "k" } }
+        const request = {
+            target: linearTarget("ALE"),
+            labels,
+            phase: phases,
+            remap: [
+                {
+                    name: "Improvement",
+                    catalog: "issue" as const,
+                    scope: "workspace" as const,
+                    group: "kind",
+                    value: "refactor",
+                },
+            ],
+            answers: {
+                "misplaced:issue:kind:feature": "adopt",
+                "misplaced:issue:kind:bugfix": "replace",
+                "single-select:issue:kind": "proceed",
+            },
+        }
+        try {
+            const preview = await runLabelSetup({ operation: "preview", ...request }, options)
+            assert.equal(preview.state, "ready", JSON.stringify(preview.decisions))
+            const applied = await runLabelSetup(
+                { operation: "apply", ...request, approvedPlanHash: preview.planHash as string },
+                options,
+            )
+            assert.equal(applied.state, "applied")
+            assert.equal(writes[0], "Delete Bug", "the replaced label is deleted before anything is created")
+            assert.ok(writes.indexOf("Create Kind") < writes.indexOf("Update Feature"))
+            assert.ok(writes.includes("Update Refactor"), "Improvement is renamed in place")
+            assert.ok(!writes.includes("Create Refactor"))
+            const byName = (name: string) => catalog.issue.find((node) => node.name === name)
+            assert.equal(byName("Improvement"), undefined)
+            assert.equal(byName("Refactor")?.id, "improvement", "the remapped label keeps its id and items")
+            assert.equal(byName("Feature")?.id, "feature")
+            assert.deepEqual(
+                (applied.configuration as { labels: typeof labels }).labels.groups,
+                labels.groups,
+                "the remap list isn't saved",
+            )
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+})
+
+describe("label setup input validation", () => {
+    const phase = {
+        scope: "workspace" as const,
+        group: { name: "Phase", color: "#8250DF", description: "" },
+        values: {
+            planning: { name: "Planning", color: "#8250DF", description: "" },
+            execution: { name: "Execution", color: "#8250DF", description: "" },
+            selfReview: { name: "Self-Review", color: "#8250DF", description: "" },
+        },
+    }
+
+    it("reports only the target provider's errors", () => {
+        const input = {
+            target: { provider: "linear", credentialEnv: "LINEAR_KEY", team: "ALE" },
+            phase: { issues: phase, projects: phase },
+            labels: {
+                groups: {
+                    area: {
+                        appliesTo: ["deliverable"],
+                        cardinality: "zeroOrMore",
+                        scope: "team",
+                        values: { myArea: { name: "A", color: "#1D76DB", description: "" } },
+                    },
+                },
+            },
+        }
+        assert.throws(
+            () => parseLabelSetupInput("preview", input),
+            (error: Error) =>
+                /for linear is invalid/.test(error.message) &&
+                /myArea/.test(error.message) &&
+                !/scope|nativeGroup|anyOf/.test(error.message),
+        )
+    })
+
+    it("rejects a GitHub remap entry shaped for Linear", () => {
+        const input = {
+            target,
+            labels: area("Area: Frontend"),
+            remap: [{ name: "bug", catalog: "issue", scope: "workspace", group: "area", value: "frontend" }],
+        }
+        assert.throws(() => parseLabelSetupInput("preview", input), /for github is invalid[\s\S]*remap/)
+    })
+
+    it("validates in prepareArguments, before Pi's union check", () => {
+        for (const name of ["inspect_label_setup", "preview_label_setup", "apply_label_setup"]) {
+            const prepare = registeredWorkflowTools().find((tool) => tool.name === name)?.prepareArguments
+            assert.ok(prepare, name)
+            assert.throws(() => prepare({ target: { provider: "linear" } }), /for linear is invalid/)
         }
     })
 })

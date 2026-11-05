@@ -2,7 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { Type } from "typebox"
+import { type Static, Type } from "typebox"
 import { Value } from "typebox/value"
 import { workflowTools } from "../__lib/tools.js"
 
@@ -23,7 +23,7 @@ import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-pr
 import {
     ApplyLabelSetupSchema,
     InspectLabelSetupSchema,
-    type LabelSetupToolInput,
+    parseLabelSetupInput,
     PreviewLabelSetupSchema,
     runLabelSetup,
 } from "./label-setup.js"
@@ -246,8 +246,13 @@ export default function (pi: ExtensionAPI): void {
             label: name,
             description,
             parameters,
+            // Runs before Pi validates the loose union parameters, so errors name only the target provider's schema.
+            prepareArguments(args) {
+                parseLabelSetupInput(operation, args)
+                return args as Static<typeof parameters>
+            },
             async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-                const input = { ...Value.Parse(parameters, params), operation } as LabelSetupToolInput
+                const input = parseLabelSetupInput(operation, params)
                 const result = await runLabelSetup(input, { cwd: ctx.cwd, signal })
                 return {
                     content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],

@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { type Static, Type } from "typebox"
+import { type Static, type TSchema, Type } from "typebox"
 import { Value } from "typebox/value"
 
 import * as project from "../../../extensions/__lib/project.js"
@@ -10,11 +10,12 @@ import {
     assertGitHubLabels,
     assertLinearLabels,
     GitHubLabelsSchema,
+    LinearLabelCatalogSchema,
+    LinearLabelScopeSchema,
     LinearLabelsSchema,
     LinearPhaseGroupsSchema,
     type GitHubLabels,
     type LinearLabels,
-    type LinearPhaseGroups,
 } from "../integrations/labels.js"
 import { type LinearClient, linearClientFor } from "../integrations/tracker/linear.js"
 import { clientFor, type GitHubClient } from "./github-project.js"
@@ -23,6 +24,7 @@ import {
     type CatalogKey,
     type CatalogPlan,
     type CatalogScope,
+    entryKey,
     githubListEntries,
     githubManagedEntries,
     type GroupType,
@@ -32,6 +34,7 @@ import {
     type ManagedEntry,
     planCatalog,
     planHash,
+    type RemapEntry,
     type TrackerLabel,
 } from "./label-catalog.js"
 
@@ -65,6 +68,68 @@ const AnswersSchema = Type.Record(Type.String({ minLength: 1 }), Type.String({ m
     description: "The user's answer to each reported decision, keyed by decision id",
 })
 
+const KeySchema = Type.String({ pattern: "^[a-z][a-z0-9-]*$" })
+const LabelNameSchema = Type.String({ minLength: 1 })
+const GitHubRemapSchema = Type.Object(
+    { name: LabelNameSchema, group: KeySchema, value: KeySchema },
+    { additionalProperties: false },
+)
+const LinearRemapSchema = Type.Object(
+    {
+        name: LabelNameSchema,
+        catalog: LinearLabelCatalogSchema,
+        scope: LinearLabelScopeSchema,
+        group: KeySchema,
+        // Absent: the label becomes the group's native label group.
+        value: Type.Optional(KeySchema),
+    },
+    { additionalProperties: false },
+)
+const remapDescription =
+    "Existing labels the user maps onto configured values; setup renames, moves, and restyles each in place, so items keep it. Each value takes at most one label."
+const approvedPlanHash = Type.String({ pattern: "^[a-f0-9]{64}$" })
+
+const GitHubDesired = {
+    target: GitHubTargetSchema,
+    labels: GitHubLabelsSchema,
+    remap: Type.Optional(Type.Array(GitHubRemapSchema)),
+    answers: Type.Optional(AnswersSchema),
+}
+const LinearDesired = {
+    target: LinearTargetSchema,
+    labels: LinearLabelsSchema,
+    phase: LinearPhaseGroupsSchema,
+    remap: Type.Optional(Type.Array(LinearRemapSchema)),
+    answers: Type.Optional(AnswersSchema),
+}
+const object = <T extends Record<string, TSchema>>(properties: T) =>
+    Type.Object(properties, { additionalProperties: false })
+
+/** The exact input for each operation and provider; validation picks one by `target.provider`. */
+const providerSchemas = {
+    inspect: { github: object({ target: GitHubTargetSchema }), linear: object({ target: LinearTargetSchema }) },
+    preview: { github: object(GitHubDesired), linear: object(LinearDesired) },
+    apply: {
+        github: object({ ...GitHubDesired, approvedPlanHash }),
+        linear: object({ ...LinearDesired, approvedPlanHash }),
+    },
+} as const
+
+type GitHubPreviewInput = Static<typeof providerSchemas.preview.github>
+type LinearPreviewInput = Static<typeof providerSchemas.preview.linear>
+type DesiredInput = GitHubPreviewInput | LinearPreviewInput
+
+export type LabelSetupToolInput =
+    | { operation: "inspect"; target: Static<typeof TargetSchema> }
+    | ({ operation: "preview" } & DesiredInput)
+    | ({ operation: "apply"; approvedPlanHash: string } & DesiredInput)
+export type LabelSetupOperation = LabelSetupToolInput["operation"]
+
+/*
+ * The registered parameters describe both providers for the model. They're deliberately loose:
+ * `parseLabelSetupInput` validates against the target provider's exact schema, so errors come
+ * from that provider only, never from the other branch of a union.
+ */
 const desiredProperties = {
     target: TargetSchema,
     labels: Type.Union([GitHubLabelsSchema, LinearLabelsSchema], {
@@ -73,20 +138,40 @@ const desiredProperties = {
     phase: Type.Optional(
         Type.Union([LinearPhaseGroupsSchema], { description: "Linear only: the desired `tracker.phase` groups" }),
     ),
+    remap: Type.Optional(
+        Type.Union([Type.Array(GitHubRemapSchema), Type.Array(LinearRemapSchema)], {
+            description: `${remapDescription} GitHub entries name the label, group, and value; Linear entries also name the catalog and scope, and omit value to map a label group onto the group's native label group.`,
+        }),
+    ),
     answers: Type.Optional(AnswersSchema),
 }
 
 export const InspectLabelSetupSchema = Type.Object({ target: TargetSchema }, { additionalProperties: false })
 export const PreviewLabelSetupSchema = Type.Object(desiredProperties, { additionalProperties: false })
 export const ApplyLabelSetupSchema = Type.Object(
-    { ...desiredProperties, approvedPlanHash: Type.String({ pattern: "^[a-f0-9]{64}$" }) },
+    { ...desiredProperties, approvedPlanHash },
     { additionalProperties: false },
 )
 
-export type LabelSetupToolInput =
-    | ({ operation: "inspect" } & Static<typeof InspectLabelSetupSchema>)
-    | ({ operation: "preview" } & Static<typeof PreviewLabelSetupSchema>)
-    | ({ operation: "apply" } & Static<typeof ApplyLabelSetupSchema>)
+/**
+ * Validates tool input against the exact schema for its operation and `target.provider`, and
+ * reports only that schema's errors.
+ */
+export function parseLabelSetupInput(operation: LabelSetupOperation, raw: unknown): LabelSetupToolInput {
+    const provider = (raw as { target?: { provider?: unknown } } | null)?.target?.provider
+    if (provider !== "github" && provider !== "linear")
+        throw new Error('label setup input is invalid: target.provider must be "github" or "linear"')
+    const schema = providerSchemas[operation][provider]
+    if (!Value.Check(schema, raw)) {
+        const errors = [
+            ...new Set(
+                [...Value.Errors(schema, raw)].map((error) => `  - ${error.instancePath || "/"}: ${error.message}`),
+            ),
+        ]
+        throw new Error(`label setup input for ${provider} is invalid:\n${errors.join("\n")}`)
+    }
+    return { operation, ...(raw as object) } as LabelSetupToolInput
+}
 
 export interface LabelSetupOptions {
     cwd: string
@@ -106,17 +191,7 @@ export async function runLabelSetup(
     input: LabelSetupToolInput,
     options: LabelSetupOptions,
 ): Promise<Record<string, unknown>> {
-    switch (input.operation) {
-        case "inspect":
-            Value.Parse(InspectLabelSetupSchema, { target: input.target })
-            break
-        case "preview":
-            Value.Parse(PreviewLabelSetupSchema, withoutOperation(input))
-            break
-        case "apply":
-            Value.Parse(ApplyLabelSetupSchema, withoutOperation(input))
-            break
-    }
+    parseLabelSetupInput(input.operation, withoutOperation(input))
     const adapter = adapterFor(input.target, options)
     const previous = await readPrevious(options.cwd, adapter)
     const catalog = await adapter.readCatalog()
@@ -129,7 +204,7 @@ export async function runLabelSetup(
                 : null,
         }
     }
-    const desired = desiredFor(input.target, input.labels, input.phase)
+    const desired = desiredFor(input)
     const plan = planCatalog({
         catalog,
         desired: desired.entries,
@@ -137,8 +212,16 @@ export async function runLabelSetup(
         keep: desired.keep,
         retired: desired.retired,
         answers: input.answers ?? {},
+        remap: desired.remap,
     })
-    const hash = planHash({ target: input.target, desired: desired.raw, answers: input.answers ?? {}, catalog, plan })
+    const hash = planHash({
+        target: input.target,
+        desired: desired.raw,
+        remap: input.remap ?? [],
+        answers: input.answers ?? {},
+        catalog,
+        plan,
+    })
     const removals = plan.actions.filter((action) => action.kind === "retire" || action.kind === "delete")
     // Built and validated before any write, so an invalid result never follows tracker changes.
     const configuration = plan.decisions.length === 0 ? configurationFor(input, plan) : undefined
@@ -209,14 +292,9 @@ function withoutManagedListEntries<T extends GitHubLabels | LinearLabels>(
     } as T
 }
 
-function desiredFor(
-    target: LabelSetupToolInput["target"],
-    rawLabels: GitHubLabels | LinearLabels,
-    phase: LinearPhaseGroups | undefined,
-) {
-    if (target.provider === "github") {
-        const labels = Value.Parse(GitHubLabelsSchema, rawLabels)
-        if (phase) throw new Error("GitHub label setup takes no Phase groups; GitHub Phase is a Project field")
+function desiredFor(input: DesiredInput) {
+    if (input.target.provider === "github") {
+        const { labels, remap } = input as GitHubPreviewInput
         const entries = githubManagedEntries(labels)
         assertGitHubLabels(withoutManagedListEntries(labels, entries))
         return {
@@ -224,16 +302,31 @@ function desiredFor(
             entries,
             keep: githubListEntries(labels.unmanaged?.keep),
             retired: githubListEntries(labels.retired),
+            remap: (remap ?? []).map(
+                (entry): RemapEntry => ({
+                    name: entry.name,
+                    catalog: "repository",
+                    scope: "repository",
+                    key: entryKey("repository", entry.group, entry.value),
+                }),
+            ),
         }
     }
-    if (!phase) throw new Error("Linear label setup needs the Phase groups")
-    const labels = Value.Parse(LinearLabelsSchema, rawLabels)
+    const { labels, phase, remap } = input as LinearPreviewInput
     assertLinearLabels(withoutManagedListEntries(labels, linearManagedEntries(labels, phase)), phase)
     return {
         raw: { labels, phase },
         entries: linearManagedEntries(labels, phase),
         keep: linearListEntries(labels.unmanaged?.keep),
         retired: linearListEntries(labels.retired),
+        remap: (remap ?? []).map(
+            (entry): RemapEntry => ({
+                name: entry.name,
+                catalog: entry.catalog,
+                scope: entry.scope,
+                key: entryKey(entry.catalog, entry.group, entry.value ?? null),
+            }),
+        ),
     }
 }
 
@@ -369,7 +462,7 @@ function verify(desired: readonly ManagedEntry[], catalog: readonly TrackerLabel
     if (problems.length > 0) throw new Error(`label setup verification failed: ${problems.join("; ")}`)
 }
 
-function configurationFor(input: Extract<LabelSetupToolInput, { operation: "preview" | "apply" }>, plan: CatalogPlan) {
+function configurationFor(input: DesiredInput, plan: CatalogPlan) {
     const withLists = <T extends GitHubLabels | LinearLabels>(labels: T, keep: unknown[], retired: unknown[]): T => {
         const { unmanaged: _unmanaged, retired: _retired, ...rest } = labels
         return {
@@ -380,14 +473,14 @@ function configurationFor(input: Extract<LabelSetupToolInput, { operation: "prev
     }
     if (input.target.provider === "github") {
         const strip = (entries: ListEntry[]) => entries.map((entry) => ({ name: entry.name }))
-        const labels = withLists(input.labels as GitHubLabels, strip(plan.keep), strip(plan.retired))
+        const labels = withLists((input as GitHubPreviewInput).labels, strip(plan.keep), strip(plan.retired))
         assertGitHubLabels(labels)
         return { labels }
     }
     const linear = (entries: ListEntry[]) =>
         entries.map((entry) => ({ name: entry.name, catalog: entry.catalog, scope: entry.scope }))
-    const phase = input.phase as LinearPhaseGroups
-    const labels = withLists(input.labels as LinearLabels, linear(plan.keep), linear(plan.retired))
+    const { phase, labels: desired } = input as LinearPreviewInput
+    const labels = withLists(desired, linear(plan.keep), linear(plan.retired))
     assertLinearLabels(labels, phase)
     return { labels, phase }
 }
