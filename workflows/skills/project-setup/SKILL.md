@@ -240,8 +240,8 @@ When initialized entities are already bound to another GitHub Project, stop. Rep
 For either tracker, after its configuration, read [label groups](../../references/setup.md#label-groups), then:
 
 1. **Choose groups.** Ask whether to use Kind labels for Epics, Deliverables, both, or neither, and offer the default `kind` group. Then ask for other groups: key, `appliesTo`, cardinality, and values, plus scope and native backing on Linear. On Linear, include the Phase groups.
-2. **Inspect and preview.** Call `inspect_label_setup`, show the existing labels, then call `preview_label_setup`.
-3. **Decisions.** Ask the user about each returned decision, exactly as listed, and preview again with the answers until none remain.
+2. **Inspect and preview.** Call `inspect_label_setup` and show the existing labels. Ask whether any should become configured values, and pass those as `remap`. Then call `preview_label_setup`.
+3. **Decisions.** Ask the user about each returned decision, exactly as listed, and preview again with the answers until none remain. Present each conflict with its `resolution`.
 4. **Approve and apply.** Present every action, with removals and their usage called out separately. Require approval of that exact `planHash`, then call `apply_label_setup`.
 5. **Save.** Use only the returned `configuration` in `.project/integrations.json`.
 

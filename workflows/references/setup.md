@@ -304,6 +304,10 @@ Example returned configuration for a Project-contained tracker (use the actual o
 - These tools take the tracker identity and the credential variable as input, like GitHub Project setup.
 - Labels outside the configuration are always the user's decision: remove or keep, and for a label retired outside setup, leave retired, restore and keep, or delete. Setup suggests no default.
 - A removal deletes an unused label and retires one items carry (archives it on GitHub). Present every removal with its usage before approval.
+- **Misplaced labels:** on first setup, a label with a configured name but in the wrong group, or a group of the wrong type, is a decision. Adopt moves it into place and keeps its items. Replace deletes it and creates the configured label, and is offered only when nothing carries it and, for a group, it has no child labels.
+- **Remap:** to make existing labels configured values, pass them as `remap`. Setup renames, moves, and restyles each in place, so items keep it. Each value takes at most one label; setup never merges labels. Remaps aren't saved.
+- **Single-select moves:** Linear keeps one label of a single-select group per item. When adopt or remap moves used labels into one, setup asks before planning it; present the warning and its alternatives.
+- **Name clashes:** removing an unused label clears a clash with its name. A retired label keeps its name taken. Every conflict that no answer clears carries a `resolution`; follow it, then preview again.
 - Setup changes only the catalog. Runtime applies labels to items ([labels](./integrations/shared.md#labels)).
 
 ### GitHub forge
