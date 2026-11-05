@@ -27,6 +27,12 @@ import {
     PreviewLabelSetupSchema,
     runLabelSetup,
 } from "./label-setup.js"
+import {
+    ApplyLinearStatusSetupSchema,
+    applyLinearStatusSetup,
+    PreviewLinearStatusSetupSchema,
+    previewLinearStatusSetup,
+} from "./linear-statuses.js"
 import { configureProjectMcp, ProjectMcpConfigurationSchema } from "./mcp.js"
 import { INCOMING_PR_WORKFLOW_PATH, IncomingPrIntakeSchema, renderIncomingPrIntake } from "./incoming-pr-intake.js"
 import {
@@ -170,6 +176,36 @@ export default function (pi: ExtensionAPI): void {
     })
 
     tools.registerTool({
+        name: "preview_linear_status_setup",
+        label: "preview_linear_status_setup",
+        description:
+            "Plan the Linear issue statuses (in the team) and workspace Project statuses to create so each lifecycle key maps to one status. Validates existing choices, computes positions, warns when the viewer isn't a workspace admin, and returns a planHash; changes nothing.",
+        parameters: PreviewLinearStatusSetupSchema,
+        async execute(_toolCallId, params, signal) {
+            const result = await previewLinearStatusSetup(params, { signal })
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                details: result,
+            }
+        },
+    })
+
+    tools.registerTool({
+        name: "apply_linear_status_setup",
+        label: "apply_linear_status_setup",
+        description:
+            "Create the approved Linear statuses by exact planHash: Project statuses first, then issue statuses. Never renames, reorders, archives, or deletes existing statuses. Confirms a failed create by reading again, verifies every mapping, and returns the statuses configuration to save.",
+        parameters: ApplyLinearStatusSetupSchema,
+        async execute(_toolCallId, params, signal) {
+            const result = await applyLinearStatusSetup(params, { signal })
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                details: result,
+            }
+        },
+    })
+
+    tools.registerTool({
         name: "render_incoming_pr_intake",
         label: "render_incoming_pr_intake",
         description:
@@ -289,7 +325,7 @@ export function projectSetupKickoffPrompt(request: string, context: ReturnType<t
         "Read-only setup context:",
         JSON.stringify(context, null, 2),
         "",
-        "Use the project-setup skill. Use this snapshot instead of running Git or shell discovery. Ask only the required configuration questions; do not initialize work. Linear setup API access is read-only; mutate providers only through an exact approved GitHub Project provisioning preview.",
+        "Use the project-setup skill. Use this snapshot instead of running Git or shell discovery. Ask only the required configuration questions; do not initialize work. Mutate providers only through exact approved previews: GitHub Project provisioning, Linear status setup, and label setup.",
     ].join("\n")
 }
 

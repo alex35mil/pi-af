@@ -12,13 +12,69 @@ export const LinearWorkspaceInspectionToolSchema = Type.Object(
 
 export type LinearWorkspaceInspectionInput = Static<typeof LinearWorkspaceInspectionToolSchema>
 
-interface LinearTeam {
+export interface LinearTeam {
     id: string
     key: string
     name: string
 }
 
-interface LinearStatus {
+/** Native categories Linear accepts for a new issue status (Duplicate and Triage are system-managed). */
+export const LINEAR_ISSUE_STATUS_TYPES = ["backlog", "unstarted", "started", "completed", "canceled"] as const
+/** Native categories Linear accepts for a new Project status. */
+export const LINEAR_PROJECT_STATUS_TYPES = ["backlog", "planned", "started", "paused", "completed", "canceled"] as const
+
+/** What setup sends to create a status. */
+export interface LinearStatusDefinition {
+    name: string
+    type: string
+    color: string
+    description: string
+}
+
+const STATUS_DESCRIPTIONS = {
+    backlog: "Potential work we may do later but have not committed to doing.",
+    todo: "Queued work we have committed to doing and can pick up next.",
+    inProgress: "Work being planned, executed, or reviewed locally.",
+    inReview: "Submitted work waiting for external human review.",
+    done: "Approved work confirmed delivered.",
+    canceled: "Canceled work.",
+} as const
+
+/**
+ * Suggested definitions for each lifecycle key, offered like the default Kind label group. They're
+ * editable suggestions for statuses the user chooses to create; setup never matches them to
+ * existing statuses on its own.
+ */
+export const LINEAR_STATUS_DEFAULTS = {
+    issues: {
+        backlog: { name: "Backlog", type: "backlog", color: "#BEC2C8", description: STATUS_DESCRIPTIONS.backlog },
+        todo: { name: "Todo", type: "unstarted", color: "#E2E2E2", description: STATUS_DESCRIPTIONS.todo },
+        inProgress: {
+            name: "In Progress",
+            type: "started",
+            color: "#F2C94C",
+            description: STATUS_DESCRIPTIONS.inProgress,
+        },
+        inReview: { name: "In Review", type: "started", color: "#8250DF", description: STATUS_DESCRIPTIONS.inReview },
+        done: { name: "Done", type: "completed", color: "#5E6AD2", description: STATUS_DESCRIPTIONS.done },
+        canceled: { name: "Canceled", type: "canceled", color: "#95A2B3", description: STATUS_DESCRIPTIONS.canceled },
+    },
+    projects: {
+        backlog: { name: "Backlog", type: "backlog", color: "#F2994A", description: STATUS_DESCRIPTIONS.backlog },
+        todo: { name: "Todo", type: "planned", color: "#D7D8DB", description: STATUS_DESCRIPTIONS.todo },
+        inProgress: {
+            name: "In Progress",
+            type: "started",
+            color: "#F2C94C",
+            description: STATUS_DESCRIPTIONS.inProgress,
+        },
+        inReview: { name: "In Review", type: "started", color: "#8250DF", description: STATUS_DESCRIPTIONS.inReview },
+        done: { name: "Completed", type: "completed", color: "#5E6AD2", description: STATUS_DESCRIPTIONS.done },
+        canceled: { name: "Canceled", type: "canceled", color: "#8A8F98", description: STATUS_DESCRIPTIONS.canceled },
+    },
+} as const satisfies Record<"issues" | "projects", Record<keyof typeof STATUS_DESCRIPTIONS, LinearStatusDefinition>>
+
+export interface LinearStatus {
     id: string
     name: string
     type: string
@@ -30,7 +86,7 @@ interface LinearIssueStatus extends LinearStatus {
     team: LinearTeam
 }
 
-interface LinearProjectStatus extends LinearStatus {
+export interface LinearProjectStatus extends LinearStatus {
     team: LinearTeam | null
 }
 
@@ -47,6 +103,7 @@ export interface LinearWorkspaceInspection {
     }
     teams: Array<LinearTeam & { issueStatuses: LinearStatus[] }>
     projectStatuses: LinearProjectStatus[]
+    statusDefaults: typeof LINEAR_STATUS_DEFAULTS
 }
 
 export interface LinearWorkspaceInspectionOptions {
@@ -84,6 +141,7 @@ export async function inspectLinearWorkspace(
             issueStatuses: sortStatuses(statusesByTeam.get(team.id) ?? []),
         })),
         projectStatuses: sortProjectStatuses(workspace.projectStatuses),
+        statusDefaults: LINEAR_STATUS_DEFAULTS,
     }
 }
 
@@ -137,6 +195,75 @@ export class LinearClient {
                 }
             }),
         }
+    }
+
+    async getViewerRole(): Promise<{ admin: boolean; owner: boolean }> {
+        const data = await this.graphql(`query ViewerRole { viewer { admin owner } }`)
+        const viewer = record(data.viewer, "Linear viewer")
+        return { admin: viewer.admin === true, owner: viewer.owner === true }
+    }
+
+    async listProjectStatuses(): Promise<LinearProjectStatus[]> {
+        return (await this.getWorkspace()).projectStatuses
+    }
+
+    async listTeamIssueStatuses(teamId: string): Promise<LinearStatus[]> {
+        let after: string | null = null
+        const statuses: LinearStatus[] = []
+        do {
+            const data = await this.graphql(
+                `query TeamIssueStatuses($teamId: String!, $after: String) {
+                    team(id: $teamId) {
+                        states(first: 100, after: $after) {
+                            nodes { id name type color position }
+                            pageInfo { hasNextPage endCursor }
+                        }
+                    }
+                }`,
+                { teamId, after },
+            )
+            const connection = record(record(data.team, "Linear team").states, "Linear team issue statuses")
+            for (const rawStatus of array(connection.nodes, "Linear team issue status nodes")) {
+                statuses.push(statusFields(record(rawStatus, "Linear issue status"), "issue status"))
+            }
+            after = nextCursor(connection.pageInfo, "Linear team issue statuses")
+        } while (after)
+        return sortStatuses(statuses)
+    }
+
+    /** The one team whose ID, key, or name equals the reference exactly. */
+    async resolveTeam(reference: string): Promise<LinearTeam> {
+        const matches = (await this.listTeams()).filter(
+            (team) => team.id === reference || team.key === reference || team.name === reference,
+        )
+        if (matches.length !== 1)
+            throw new Error(`Linear team ${JSON.stringify(reference)} matches ${matches.length} teams, not exactly one`)
+        return matches[0]
+    }
+
+    async createIssueStatus(
+        input: LinearStatusDefinition & { teamId: string; position: number },
+    ): Promise<LinearStatus> {
+        const data = await this.graphql(
+            `mutation IssueStatusCreate($input: WorkflowStateCreateInput!) {
+                workflowStateCreate(input: $input) { success workflowState { id name type color position } }
+            }`,
+            { input },
+        )
+        const payload = record(data.workflowStateCreate, "workflowStateCreate payload")
+        return statusFields(record(payload.workflowState, "created issue status"), "created issue status")
+    }
+
+    /** Creates a workspace-level Project status: no `teamId` is ever sent. */
+    async createProjectStatus(input: LinearStatusDefinition & { position: number }): Promise<LinearStatus> {
+        const data = await this.graphql(
+            `mutation ProjectStatusCreate($input: ProjectStatusCreateInput!) {
+                projectStatusCreate(input: $input) { success status { id name type color position } }
+            }`,
+            { input },
+        )
+        const payload = record(data.projectStatusCreate, "projectStatusCreate payload")
+        return statusFields(record(payload.status, "created Project status"), "created Project status")
     }
 
     async listTeams(): Promise<LinearTeam[]> {
@@ -218,10 +345,12 @@ export class LinearClient {
             if (!response.ok) throw linearHttpError(response.status, result)
             const root = record(result, "Linear GraphQL response")
             if (Array.isArray(root.errors) && root.errors.length > 0) {
-                const messages = root.errors
-                    .map((error) => String(record(error, "Linear GraphQL error").message))
-                    .join("; ")
-                throw new Error(`Linear GraphQL failed: ${messages}`)
+                const errors = root.errors.map((error) => record(error, "Linear GraphQL error"))
+                const messages = errors.map((error) => String(error.message)).join("; ")
+                throw new LinearApiError(
+                    `Linear GraphQL failed: ${messages}`,
+                    errors.some(isAuthorizationError) ? "unauthorized" : "failed",
+                )
             }
             this.authorizationHeader = authorization
             return record(root.data, "Linear GraphQL data")
@@ -299,14 +428,42 @@ async function responseJson(response: Response): Promise<unknown> {
     }
 }
 
-function linearHttpError(status: number, value: unknown): Error {
+/** A Linear API failure. `unauthorized` means the credential or the user lacks permission. */
+export class LinearApiError extends Error {
+    readonly reason: "unauthorized" | "failed"
+
+    constructor(message: string, reason: "unauthorized" | "failed") {
+        super(message)
+        this.name = "LinearApiError"
+        this.reason = reason
+    }
+}
+
+function isAuthorizationError(error: Record<string, unknown>): boolean {
+    const extensions = Value.Check(LinearApiRecordSchema, error.extensions) ? error.extensions : {}
+    const code = String(extensions.code ?? "").toUpperCase()
+    const type = String(extensions.type ?? "").toLowerCase()
+    return (
+        code === "FORBIDDEN" ||
+        code === "AUTHENTICATION_ERROR" ||
+        type === "forbidden" ||
+        type === "authentication error" ||
+        extensions.statusCode === 401 ||
+        extensions.statusCode === 403
+    )
+}
+
+function linearHttpError(status: number, value: unknown): LinearApiError {
     const message =
         Value.Check(LinearApiRecordSchema, value) && typeof value.error === "string"
             ? value.error
             : Value.Check(LinearApiRecordSchema, value) && typeof value.message === "string"
               ? value.message
               : `HTTP ${status}`
-    return new Error(`Linear API request failed (${status}): ${message}`)
+    return new LinearApiError(
+        `Linear API request failed (${status}): ${message}`,
+        status === 401 || status === 403 ? "unauthorized" : "failed",
+    )
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

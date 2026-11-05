@@ -65,6 +65,7 @@ None of these call providers or turn identity, lifecycle, or merge facts into ca
 
 - **Setup:** `inspect_project_setup`, `prepare_artifacts`, `configure_mcp`, `inspect_permissions`, `configure_permissions`, `inspect_linear_workspace`, `render_incoming_pr_intake`.
 - **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
+- **Linear statuses:** `preview_linear_status_setup`, `apply_linear_status_setup`. Apply takes the approved `planHash` and only creates statuses.
 - **Label catalog:** `inspect_label_setup`, `preview_label_setup`, `apply_label_setup`, for both trackers.
 - **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
   - Task and Gig reviews also have `conflict-plan` and `conflict-merge` categories for [conflict resolution](./deliverable/conflicts.md).

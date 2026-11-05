@@ -8,6 +8,8 @@ allowed-tools:
     - "inspect_permissions"
     - "configure_permissions"
     - "inspect_linear_workspace"
+    - "preview_linear_status_setup"
+    - "apply_linear_status_setup"
     - "inspect_github_repository_setup"
     - "inspect_github_project_setup"
     - "inspect_github_project"
@@ -35,9 +37,9 @@ Interactively configure the repository for Epic, Task, and Gig workflows.
 
 - inspect Linear read-only, through `inspect_linear_workspace`;
 - inspect GitHub;
-- create or complete GitHub Project configuration, but only through a separately approved `preview_github_project_setup` result.
+- change providers only through a separately approved preview: GitHub Project provisioning, Linear status setup, or label setup.
 
-**Never:** initialize an entity, mutate Linear, mutate GitHub work items or pull requests, stage files, alter the Git index, commit, or push.
+**Never:** initialize an entity, mutate Linear or GitHub outside those previews, mutate work items or pull requests, stage files, alter the Git index, commit, or push.
 
 ## Read first
 
@@ -83,7 +85,7 @@ For example:
 
 1. Tracker and forge roles, and their providers.
 2. Reuse or add MCP registrations; restart and resume when new ones are added.
-3. For Linear, the read-only workspace inspection.
+3. For Linear, the workspace inspection and status setup.
 4. Branch naming, filtered by tracker.
 5. Provider configuration for the selected roles. Once GitHub forge and Project are both known, offer fork-only incoming PR intake.
 6. Blocked-review confirmation.
@@ -130,15 +132,20 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
   - ask them to reload or restart Pi and restore this session. Not an empty session, and not `/project-setup` again; the restored conversation holds the approved answers.
 - After restoring, refresh with `inspect_project_setup`, continue from the next unanswered decision, and proceed only once the provider's registered tools are available.
 
-### 3. Linear workspace inspection
+### 3. Linear workspace inspection and statuses
 
 1. **Call `inspect_linear_workspace`** after the MCP server is active and before branch naming. Use the credential variable from the recognized registration, or ask for the variable's name only.
 2. **On a missing variable, denied access, or API failure,** report the exact error and ask whether to fix access or continue with manual team and status values. Never fall back silently.
 3. **Team and statuses:**
    - Show teams as numbered choices. For the selected team, show its issue statuses and the workspace or team Project statuses, with native type and scope.
-   - The user picks six distinct issue names and six distinct Project names for `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`.
+   - For each of `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`, the user picks an existing issue status and Project status, or a new one. Offer `statusDefaults` as editable definitions for new ones.
    - Never infer lifecycle meaning from names or types. Each saved name must identify one status unambiguously. Native Priority needs no configuration.
-4. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker). The user picks the group and child names, scope, and colors for Projects and for issues. The label step creates or checks them.
+4. **Creating statuses:** read [status setup](../../references/setup.md#linear-tracker).
+   - Call `preview_linear_status_setup`. A blocked preview changes nothing; resolve its problems with the user.
+   - Present every create (scope, name, type, color, position), the mappings, and any `permissionWarning`. Say created statuses can only be archived, never deleted.
+   - Require approval of that exact `planHash`, call `apply_linear_status_setup`, and save only its returned `statuses`.
+   - With nothing to create, save the picked names without applying.
+5. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker). The user picks the group and child names, scope, and colors for Projects and for issues. The label step creates or checks them.
 
 ### 4. Branch naming
 

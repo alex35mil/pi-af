@@ -1,5 +1,14 @@
 # Upgrading
 
+## GitHub MCP registrations get every workflow toolset
+
+`configure_mcp` now gives every GitHub registration `context,issues,projects,pull_requests`, whichever roles it serves. A registration used only for the forge previously got just `pull_requests`, so workflow reports to a GitHub-tracked workflow source couldn't create issues or set Project fields through it.
+
+- In each GitHub registration in `.agents/mcp.json`, `.agents/mcp.local.json`, or the global `mcp.json`, set `X-MCP-Toolsets` to `context,issues,projects,pull_requests`, then reload Pi.
+- `configure_mcp` no longer accepts `roles` for GitHub registrations; drop it from scripts that call the tool.
+
+No `.project` artifact migration is needed.
+
 ## Label groups
 
 Labels in `.project/integrations.json` are now label groups under `tracker.labels.groups`. Each label stores its name, color, and description. Kind is the group with the reserved key `kind`. A configuration in the old shape fails validation, which stops every workflow command until it's migrated.

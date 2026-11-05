@@ -525,7 +525,6 @@ describe("workflow project configuration", () => {
                             provider: "github",
                             name: "github-workflow",
                             credentialEnv: "GITHUB_WORKFLOW_TOKEN",
-                            roles: ["tracker", "forge"],
                         },
                     ],
                 },
@@ -568,13 +567,6 @@ describe("workflow project configuration", () => {
                             provider: "github",
                             name: "github-committed",
                             credentialEnv: "GITHUB_WORKFLOW_TOKEN",
-                            roles: ["forge"],
-                        },
-                        {
-                            provider: "github",
-                            name: "github-tracker",
-                            credentialEnv: "GITHUB_WORKFLOW_TOKEN",
-                            roles: ["tracker"],
                         },
                     ],
                 },
@@ -582,14 +574,25 @@ describe("workflow project configuration", () => {
             )
             assert.deepEqual(committed.changed, ["project"])
             const project = JSON.parse(fs.readFileSync(path.join(root, ".agents", "mcp.json"), "utf-8"))
-            assert.deepEqual(project.mcpServers["github-committed"], {
-                url: "https://api.githubcopilot.com/mcp/",
-                headers: {
-                    Authorization: "Bearer ${GITHUB_WORKFLOW_TOKEN}",
-                    "X-MCP-Toolsets": "pull_requests",
-                },
-            })
-            assert.equal(project.mcpServers["github-tracker"].headers["X-MCP-Toolsets"], "context,issues,projects")
+            // Every GitHub registration gets every workflow toolset, so a forge-only server can still file workflow reports.
+            assert.equal(
+                project.mcpServers["github-committed"].headers["X-MCP-Toolsets"],
+                "context,issues,projects,pull_requests",
+            )
+            assert.throws(
+                () =>
+                    configureProjectMcp(
+                        root,
+                        {
+                            target: "project",
+                            registrations: [
+                                { provider: "github", name: "gh-roles", credentialEnv: "T", roles: ["forge"] },
+                            ],
+                        },
+                        { globalSettingsPath },
+                    ),
+                (error: Error & { cause?: { source?: string } }) => error.cause?.source === "Parse",
+            )
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
