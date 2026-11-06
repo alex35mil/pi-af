@@ -21,7 +21,7 @@ import { writeTextAtomically } from "../__lib/files.js"
 import { assertArtifactPersistencePrepared, assertSandboxArtifactsLinked } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "../integrations/config.js"
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "../integrations/policy.js"
-import { restoreProviderSource } from "../integrations/projection.js"
+import type { RecoveryReads } from "../integrations/plan-publication.js"
 import { trackerReference, type TrackerObject, type TrackerRecord } from "../integrations/records.js"
 import type { ProviderEvidence } from "../integrations/resource-id-operations.js"
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
@@ -115,26 +115,43 @@ function publishedPlan(
     const noop = () => {
         throw new Error("plan restore never saves publication state")
     }
-    const adapter =
-        record.provider === "github"
-            ? githubPublication(record, server, tools, noop)
-            : linearPublication(record, server, tools, noop)
-    const candidates = adapter.recover(pages)
-    if (!Array.isArray(candidates))
-        throw new Error(
-            `read the remaining candidate documents first: ${candidates.lookups.map((call) => JSON.stringify(call.arguments)).join(", ")}`,
+    // The tracker record with its plan published as found, and the restored source.
+    const restore = <Q>(
+        candidates: { published: Q; body: string }[] | RecoveryReads,
+        source: (body: string) => string,
+        published: (state: Q) => TrackerRecord,
+    ) => {
+        if (!Array.isArray(candidates))
+            throw new Error(
+                `read the remaining candidate documents first: ${candidates.lookups.map((call) => JSON.stringify(call.arguments)).join(", ")}`,
+            )
+        if (candidates.length !== 1)
+            throw new Error(
+                `found ${candidates.length} published plans; restore needs exactly one, so investigate with the maintainer`,
+            )
+        return { source: source(candidates[0].body), tracker: published(candidates[0].published) }
+    }
+    let restored: { source: string; tracker: TrackerRecord }
+    if (record.provider === "github") {
+        const adapter = githubPublication(record, server, tools, noop)
+        restored = restore(
+            adapter.restoreCandidates(pages),
+            (body) => adapter.restore(body, title),
+            (planComment) => ({ ...record, planComment }),
         )
-    if (candidates.length !== 1)
-        throw new Error(
-            `found ${candidates.length} published plans; restore needs exactly one, so investigate with the maintainer`,
+    } else {
+        const adapter = linearPublication(record, server, tools, noop)
+        restored = restore(
+            adapter.restoreCandidates(pages),
+            (body) => adapter.restore(body, title),
+            (planDocument) => ({ ...record, planDocument }),
         )
-    const candidate = candidates[0] as { id: number | string; url: string; body: string }
-    const restored = restoreProviderSource(candidate.body, { kind: adapter.presentation }, title)
+    }
     // The restored plan must be usable before anything relies on it.
     if (!hasEpicTasksSection(restored.source)) throw new Error("published plan has no `## Tasks` section")
     parseEpicTasks(restored.source)
     const routing = parseEpicRouting(restored.source)
-    return { ...restored, id: candidate.id, url: candidate.url, routing }
+    return { ...restored, routing }
 }
 
 function unpublishedRecord(object: TrackerObject, environment: WorkflowEnvironment): TrackerRecord {
@@ -180,16 +197,7 @@ export function restoreEpic(cwd: string, input: RestoreEpicInput, tools: McpTool
             throw new Error(`a local Epic already exists for this tracker item: ${path.join(EPIC_ROOT, entry)}`)
     }
 
-    const tracker: TrackerRecord =
-        unpublished.provider === "github"
-            ? {
-                  ...unpublished,
-                  planComment: { state: "published", token: plan.token, id: plan.id as number, url: plan.url },
-              }
-            : {
-                  ...unpublished,
-                  planDocument: { state: "published", token: plan.token, id: plan.id as string, url: plan.url },
-              }
+    const tracker = plan.tracker
     const defaultBranch = resolveDefaultBranch(root)
     const status = Value.Parse(EntityStatusSchema, {
         entity: "epic",

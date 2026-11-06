@@ -1,8 +1,18 @@
 import { type Static, Type } from "typebox"
-import { publicationStateSchema } from "./plan-publication.js"
+import { PublicationTokenSchema, publicationStateSchema } from "./plan-publication.js"
 
-export const PlanCommentSchema = publicationStateSchema(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }))
+// A GitHub plan comment carries a hidden marker with its token, which GitHub doesn't render.
+export const PlanCommentSchema = publicationStateSchema(
+    { token: PublicationTokenSchema },
+    {
+        token: PublicationTokenSchema,
+        id: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+        url: Type.String({ minLength: 1 }),
+    },
+)
 export type PlanComment = Static<typeof PlanCommentSchema>
+export type PlanCommentPending = { token: string }
+export type PlanCommentPublished = { token: string; id: number; url: string }
 
 export function assertPlanCommentUrl(
     repository: { owner: string; repo: string },

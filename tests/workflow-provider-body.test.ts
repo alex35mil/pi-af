@@ -3,7 +3,13 @@ import "./host-runtime.ts"
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { planSourceDiff, renderAnnouncement } from "../workflows/extensions/integrations/plan-announcement.ts"
+import {
+    comparablePlan,
+    hasAnnouncementToken,
+    planFingerprint,
+    planSourceDiff,
+    renderAnnouncement,
+} from "../workflows/extensions/integrations/plan-announcement.ts"
 import { unifiedDiff } from "../workflows/extensions/integrations/plan-diff.ts"
 import { renderProviderBody } from "../workflows/extensions/integrations/projection.ts"
 
@@ -20,11 +26,23 @@ describe("workflow provider body renderer", () => {
         assert.ok(!github.includes("<details open>"))
     })
 
-    it("uses native Linear collapsed Markdown without changing the content", () => {
+    it("uses Linear's stored `>>>` fold without changing the content", () => {
         assert.equal(
             renderProviderBody(source, { kind: "linear-plan-document" }),
-            `${githubOverview.slice("# Plan\n\n".length)}\n\n+++ Full plan\n\n${details}\n\n+++`,
+            `${githubOverview.slice("# Plan\n\n".length)}\n\n>>> Full plan\n\n${details}\n\n>>>`,
         )
+    })
+
+    it("rejects Linear plans with a line Linear would read as a fold boundary", () => {
+        for (const invalid of [
+            source.replace("Make entries", ">>> Make entries"),
+            source.replace("Keep `src", ">>> Keep `src"),
+            source.replace("| Read | Complete |", "| Read | Complete |\n\n```\n>>> quoted\n```"),
+        ]) {
+            assert.throws(() => renderProviderBody(invalid, { kind: "linear-plan-document" }), /`>>>`/)
+            // GitHub has no such boundary.
+            renderProviderBody(invalid, { kind: "github-plan-comment" })
+        }
     })
 
     it("separates the PR overview from one fold per section, keeping Not run inside Verification", () => {
@@ -115,7 +133,7 @@ describe("workflow provider body renderer", () => {
         const support = "## Evidence\n\nKeep this indentation and trailing spaces.  "
         assert.equal(
             renderProviderBody(`${visible}\n\n\n${support}\n\n`, { kind: "linear-plan-document" }),
-            `${visible.slice("## Overview\n\n".length)}\n\n+++ Full plan\n\n${support}\n\n+++`,
+            `${visible.slice("## Overview\n\n".length)}\n\n>>> Full plan\n\n${support}\n\n>>>`,
         )
     })
 
@@ -170,6 +188,71 @@ describe("plan update announcements", () => {
         assert.match(planSourceDiff(plan, plan.replace("* kept", "- kept")), /^-\* kept\n\+- kept$/m)
     })
 
+    // ALE-7-shaped: what Linear returns for a plan it stored.
+    const written = [
+        "# Title",
+        "",
+        "## Overview",
+        "",
+        "- Keep [docs](https://x.y/a_b) and https://x.y/c.",
+        "- [x] Done with __bold__ and _em_, but `restore_epic_plan_source` and snake_case stay.",
+        "",
+        "| Left | Right |",
+        "|:---|---:|",
+        "| a | b |",
+        "",
+        "~~~ts",
+        "const a_b = __c__",
+        "~~~",
+        "",
+        "Trailing spaces.  ",
+    ].join("\n")
+    const stored = [
+        "## Overview",
+        "",
+        "* Keep [docs](<https://x.y/a_b>) and [https://x.y/c](<https://x.y/c>).",
+        "* [X] Done with **bold** and *em*, but `restore_epic_plan_source` and snake_case stay.",
+        "",
+        "| Left | Right |",
+        "| -- | -- |",
+        "| a | b |",
+        "",
+        "```ts",
+        "const a_b = __c__",
+        "```",
+        "",
+        "Trailing spaces.",
+    ].join("\n")
+
+    it("treats Linear's stored rewrites as unchanged and keeps code untouched", () => {
+        assert.equal(comparablePlan(stored), comparablePlan(written))
+        assert.equal(planFingerprint(stored), planFingerprint(written))
+        assert.equal(planSourceDiff(stored, written), "")
+        // Inside inline code and fenced code, underscores are content.
+        assert.notEqual(comparablePlan("Use `__init__`."), comparablePlan("Use `**init**`."))
+        assert.notEqual(comparablePlan("```\n__c__\n```"), comparablePlan("```\n**c**\n```"))
+        assert.equal(comparablePlan("a snake_case_name"), "a snake_case_name")
+    })
+
+    it("prints changed lines as written, undoing Linear's code-safe rewrites in removed lines", () => {
+        const revised = written
+            .replace("and https://x.y/c.", "and https://x.y/d.")
+            .replace("snake_case stay.", "snake_case changed.")
+        const diff = planSourceDiff(stored, revised)
+        assert.match(
+            diff,
+            /^-- Keep \[docs\]\(https:\/\/x\.y\/a_b\) and \[https:\/\/x\.y\/c\]\(https:\/\/x\.y\/c\)\.$/m,
+        )
+        assert.match(diff, /^\+- Keep \[docs\]\(https:\/\/x\.y\/a_b\) and https:\/\/x\.y\/d\.$/m)
+        assert.match(diff, /^-- \[x\] Done with \*\*bold\*\* .*`restore_epic_plan_source`/m)
+        assert.match(
+            diff,
+            /^\+- \[x\] Done with __bold__ and _em_, but `restore_epic_plan_source` and snake_case changed\.$/m,
+        )
+        // Unchanged context prints as the new source has it.
+        assert.match(diff, /^ \|:---\|---:\|$/m)
+    })
+
     it("renders the origin, summary, plan link and a provider-folded diff", () => {
         const common = { summary: "Changed.", token: "t", diff: "@@ -1 +1 @@\n-a\n+b" }
         const githubPlan = { presentation: "github", commentId: 555 } as const
@@ -186,18 +269,20 @@ describe("plan update announcements", () => {
             /<details>\n<summary>Plan diff<\/summary>\n\n```diff\n@@ -1 \+1 @@\n-a\n\+b\n```\n\n<\/details>/,
         )
         assert.ok(github.endsWith("<!-- plan-announcement:t -->"))
+        assert.ok(hasAnnouncementToken("github", github, "t"))
         // Without a Task origin, the heading names none.
         const linear = renderAnnouncement({ ...common, plan: linearPlan })
         assert.match(linear, /^\*\*Plan updated\*\*\n\nChanged\./)
-        assert.ok(linear.includes("[View the updated plan](https://linear.app/x/document/plan)"))
-        assert.match(linear, /\+\+\+ Plan diff\n\n```diff\n[\s\S]*\n```\n\n\+\+\+/)
-        // A `+++` diff line would end Linear's fold early, so that diff stays unfolded.
-        const unfolded = renderAnnouncement({
-            ...common,
-            diff: "+++ added",
-            plan: linearPlan,
-        })
-        assert.doesNotMatch(unfolded, /Plan diff/)
+        // Linear shows HTML comments, so its token rides on the plan link instead.
+        assert.ok(linear.includes("[View the updated plan](https://linear.app/x/document/plan?publication=t)"))
+        assert.doesNotMatch(linear, /<!--/)
+        assert.ok(hasAnnouncementToken("linear", linear, "t"))
+        assert.ok(hasAnnouncementToken("linear", linear.replace("(https", "(<https").replace("=t)", "=t>)"), "t"))
+        assert.equal(hasAnnouncementToken("linear", linear, "other"), false)
+        assert.match(linear, /\n>>> Plan diff\n\n```diff\n[\s\S]*\n```\n\n>>>$/)
+        // `>>>` folds hold diffs with `+++` lines too.
+        assert.match(renderAnnouncement({ ...common, diff: "+++ added", plan: linearPlan }), />>> Plan diff/)
+        assert.throws(() => renderAnnouncement({ ...common, summary: ">>> quoted", plan: linearPlan }), /`>>>`/)
         // A fence inside the diff gets a longer outer fence.
         assert.match(renderAnnouncement({ ...common, diff: "+```", plan: githubPlan }), /````diff/)
         const huge = renderAnnouncement({

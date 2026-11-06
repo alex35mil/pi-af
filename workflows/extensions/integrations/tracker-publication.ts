@@ -21,14 +21,12 @@ import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js
 import {
     type AnnouncementInput,
     AnnouncementInputSchema,
-    hasAnnouncementMarker,
     type PlanAnnouncement,
     planFingerprint,
     planSourceDiff,
     renderAnnouncement,
 } from "./plan-announcement.js"
-import { planPublicationMarker, type PublicationAdapter } from "./plan-publication.js"
-import { renderProviderBody, restoreProviderSource } from "./projection.js"
+import type { PublicationAdapter, PublicationIdentity } from "./plan-publication.js"
 import type { TrackerRecord } from "./records.js"
 import { EvidenceSchema } from "./resource-id-tool.js"
 import { githubPublication } from "./tracker-publication-github.js"
@@ -63,8 +61,8 @@ export const TrackerPublicationSchema = Type.Union([
 ])
 export type TrackerPublicationInput = Static<typeof TrackerPublicationSchema>
 
-interface PublicationContext<I> {
-    adapter: PublicationAdapter<I>
+interface PublicationContext<I, P, Q extends PublicationIdentity<I>> {
+    adapter: PublicationAdapter<I, P, Q>
     status: EntityStatus
     announcement: PlanAnnouncement | undefined
     saveAnnouncement(state: PlanAnnouncement | undefined): void
@@ -72,11 +70,12 @@ interface PublicationContext<I> {
     resolveOrigin(input: AnnouncementInput["origin"]): string | undefined
 }
 
-function runPublication<I>(input: TrackerPublicationInput, context: PublicationContext<I>) {
+function runPublication<I, P, Q extends PublicationIdentity<I>>(
+    input: TrackerPublicationInput,
+    context: PublicationContext<I, P, Q>,
+) {
     const { adapter, status, announcement } = context
     const saved = adapter.state
-    const render = (source: string, token: string) =>
-        `${renderProviderBody(source, { kind: adapter.presentation })}\n\n${planPublicationMarker(token)}`
     const announcements = () => adapter.announcements()
     const announcementPending = (pending: Extract<PlanAnnouncement, { state: "announcing" }>) => ({
         state: "recovery-required" as const,
@@ -94,22 +93,21 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             }
         if (announcement?.state === "announcing") return announcementPending(announcement)
         if (saved.state === "unpublished") {
-            const token = randomUUID()
             // Resolve the native tool before consuming the first-publication state.
-            const mutation = adapter.create(render(input.source, token))
-            adapter.save({ state: "pending", token })
+            const { mutation, pending } = adapter.create(input.source)
+            adapter.save(pending)
             return { state: "mutation-needed" as const, mutation }
         }
         // Every update to a published plan compares with it, to announce the change.
-        return { state: "reads-required" as const, lookups: adapter.currentReads(saved.id) }
+        return { state: "reads-required" as const, lookups: adapter.currentReads(saved) }
     }
 
     if (input.action === "prepareUpdate") {
         if (saved.state !== "published") throw new Error("prepareUpdate requires a published plan")
         if (announcement?.state === "announcing") return announcementPending(announcement)
         const current = adapter.currentBody(input.reads, saved)
-        const update = adapter.update(saved.id, render(input.source, saved.token))
-        const published = restoreProviderSource(current, { kind: adapter.presentation }, status.title).source
+        const update = adapter.update(saved, input.source)
+        const published = adapter.restore(current, status.title)
         // An earlier update landed without being recorded; finish its announcement.
         if (announcement?.state === "plan-update" && planFingerprint(published) === announcement.after) {
             const { token, body } = announcement
@@ -144,11 +142,7 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             if (announcement.state === "plan-update") {
                 const { token, body, after } = announcement
                 const content = adapter.recordUpdate(input.evidence, saved)
-                if (
-                    planFingerprint(
-                        restoreProviderSource(content, { kind: adapter.presentation }, status.title).source,
-                    ) !== after
-                )
+                if (planFingerprint(adapter.restore(content, status.title)) !== after)
                     throw new Error("the recorded plan update isn't the prepared one")
                 context.saveAnnouncement({ state: "announcing", token, body })
                 return { state: "mutation-needed" as const, mutation: announcements().create(body) }
@@ -158,17 +152,15 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             return { state: "announced" as const }
         }
         if (saved.state !== "pending") throw new Error("record requires a pending first-publication creation")
-        const identity = adapter.record(input.evidence, saved.token)
-        adapter.save({ state: "published", token: saved.token, ...identity })
+        const published = adapter.record(input.evidence, saved)
+        adapter.save(published)
         // A first publication is never announced, so a summary saved for it no longer applies.
         if (announcement) context.saveAnnouncement(undefined)
-        return { state: "published" as const, ...identity }
+        return { state: "published" as const, id: published.id, url: published.url }
     }
 
     if (announcement?.state === "announcing") {
-        const matches = announcements()
-            .bodies(input.pages)
-            .filter((body) => hasAnnouncementMarker(body, announcement.token))
+        const matches = announcements().matching(input.pages, announcement.token)
         if (matches.length === 1) {
             context.saveAnnouncement(undefined)
             return { state: "announced" as const }
@@ -181,25 +173,29 @@ function runPublication<I>(input: TrackerPublicationInput, context: PublicationC
             reason: `found ${matches.length} matching announcements; preserve state and investigate with the maintainer`,
         }
     }
-    const recovered = adapter.recover(input.pages, saved.token)
-    if (!Array.isArray(recovered)) return recovered
-    // A complete read with no marked publication proves a pending create never landed, so the
-    // same create is safe to send. Keeping the token lets a late earlier create show up as a duplicate.
-    if (recovered.length === 0 && saved.state === "pending")
-        return { state: "mutation-needed" as const, mutation: adapter.create(render(input.source, saved.token)) }
-    if (recovered.length !== 1)
-        return {
-            state: "blocked" as const,
-            reason: `found ${recovered.length} matching plan publications; preserve state and investigate with the maintainer, without creating a replacement`,
+    const recovered = adapter.recover(input.pages, saved)
+    switch (recovered.state) {
+        case "recovery-read-required":
+        case "blocked":
+            return recovered
+        case "absent": {
+            if (saved.state !== "pending")
+                return {
+                    state: "blocked" as const,
+                    reason: "the published plan is missing; investigate with the maintainer",
+                }
+            // A complete read without the pending publication proves its create never landed, so a
+            // create is safe to send. The provider decides what it keeps from the pending state.
+            const { mutation, pending } = adapter.create(input.source, saved)
+            adapter.save(pending)
+            return { state: "mutation-needed" as const, mutation }
         }
-    const { body, ...identity } = recovered[0]
-    if (saved.state === "published" && (identity.id !== saved.id || identity.url !== saved.url))
-        return {
-            state: "blocked" as const,
-            reason: "observed publication conflicts with the saved identity; do not replace it",
+        case "found": {
+            const { published, body } = recovered
+            if (saved.state === "pending") adapter.save(published)
+            return { state: "identified" as const, id: published.id, url: published.url, body }
         }
-    if (saved.state === "pending") adapter.save({ state: "published", token: saved.token, ...identity })
-    return { state: "identified" as const, ...identity, body }
+    }
 }
 
 // The summary for an update: an explicit input always wins, covering editorial edits made outside

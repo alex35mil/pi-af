@@ -129,7 +129,7 @@ Accepted plans and completion artifacts start with a concise `## Overview`, foll
 | Linear plan document | native title Plan, the overview, and `## Highlights` above a native folded Full plan |
 | GitHub PR | the delivered outcome or report conclusion, then a divider and one fold per supporting section; Not run stays inside Verification |
 
-GitHub folds use `<details>`; Linear uses native `+++` sections. Nothing is summarized or dropped.
+GitHub folds use `<details>`; Linear uses native `>>>` sections, so a Linear plan can't have a line starting with `>>>`. Nothing is summarized or dropped.
 
 - Published text never points at files under `.project/.local/`, since readers can't open them.
 - Older documents are brought into this shape through normal review before publication; reads never rewrite completed artifacts.

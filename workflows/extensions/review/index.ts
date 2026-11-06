@@ -27,7 +27,7 @@ import {
     type PlanAnnouncement,
     planFingerprint,
 } from "../integrations/plan-announcement.js"
-import type { PublicationState } from "../integrations/plan-publication.js"
+import type { PublicationPhase } from "../integrations/plan-publication.js"
 import { trackerPlanPublication } from "../integrations/records.js"
 import { executeReviewRound, recordRoundResponse, renderReviewRoundResult } from "./round.js"
 import { reviewerEnvironment } from "./model.js"
@@ -839,7 +839,7 @@ type Presentation = { subject: "plan"; announcement: PlanPresentationAnnouncemen
 
 /** Validate the presentation's announcement input against the plan's publication and in-flight state. */
 export function planPresentationAnnouncement(
-    publication: PublicationState<unknown>["state"],
+    publication: PublicationPhase,
     saved: PlanAnnouncement | undefined,
     input: AnnouncementInput | undefined,
 ): PlanPresentationAnnouncement {

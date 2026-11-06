@@ -1,5 +1,7 @@
 // Generated diffs posted in tracker and PR comments: one fence and fold format for every comment.
 
+import { LINEAR_FOLD_OPEN } from "./projection.js"
+
 // Comment bodies on both trackers stay well under GitHub's 65,536-character limit.
 export const MAX_COMMENT_BODY = 60_000
 
@@ -20,7 +22,8 @@ export function foldedDiff(presentation: CommentPresentation, title: string, dif
         case "github":
             return `<details>\n<summary>${title}</summary>\n\n${block}\n\n</details>`
         case "linear":
-            // A diff line starting with `+++` would close a Linear fold early, so it stays unfolded.
-            return /^\+\+\+/m.test(diff) ? block : `+++ ${title}\n\n${block}\n\n+++`
+            // Linear stores folds as `>>>`. Diff lines start with ` `, `+`, `-` or `@`, so none
+            // can end the fold early.
+            return `${LINEAR_FOLD_OPEN} ${title}\n\n${block}\n\n${LINEAR_FOLD_OPEN}`
     }
 }

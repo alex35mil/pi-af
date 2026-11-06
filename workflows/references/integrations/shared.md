@@ -11,7 +11,7 @@ The local entity artifacts stay authoritative for everything else.
 - Lifecycle and Priority live only on the tracker; nothing local replaces them.
 - The [MCP boundary](../core.md#mcp-boundary) and [outcome rules](../core.md#outcomes-and-recovery) apply to every provider call. When changing Phase, read [Phase](../phase.md).
 
-**Durable checkpoints** exist only for non-idempotent creation, duplicate-creation risk, or a user choice that can't be recovered elsewhere. Lifecycle, Priority, and board updates, and updates to an established publication, create none; recover them by reading provider state and retrying the absolute value. The first plan comment or document saves a pending token before its create; a PR saves its intent before its create.
+**Durable checkpoints** exist only for non-idempotent creation, duplicate-creation risk, or a user choice that can't be recovered elsewhere. Lifecycle, Priority, and board updates, and updates to an established publication, create none; recover them by reading provider state and retrying the absolute value. The first plan comment or document saves pending state before its create; a PR saves its intent before its create.
 
 ## Operations and Resource IDs
 
@@ -120,7 +120,8 @@ The tracker object comes first; the local entity is named from it. New work and 
 4. **PR bodies:** call `render_provider_body` with `destination: pullRequest` and publish its returned Markdown unchanged.
 5. **Rendering:** `projection.ts` owns presentation and closing references.
    - GitHub plans render `# Plan`, the overview prose, `## Highlights`, and a folded Full plan.
-   - Linear's native document title is Plan; the content is the overview prose, `## Highlights`, and a native folded Full plan, with no repeated H1.
+   - Linear's native document title is Plan; the content is the overview prose, `## Highlights`, and a native `>>>` folded Full plan, with no repeated H1 and no marker.
+   - Linear reads any line starting with `>>>` as a fold boundary, so a Linear plan or announcement summary with one fails locally.
    - Source headings and PR presentation are unchanged.
 6. **No second approval** is needed for deterministic renderer output, the opaque publication marker, or code-owned attribution. Any substantive omission, rewrite, addition, or new summary needs the full-candidate or exact-diff approval again. An incompatible source fails locally; fix and re-approve the source first.
 7. **Publish** the complete body only to its destination: the managed GitHub comment, the attached Linear document, or the PR body.
@@ -145,7 +146,8 @@ Identical source returns `unchanged`; nothing is published or announced.
 **Publication state:**
 
 - GitHub keeps plan-comment identity in `planComment`; Linear keeps plan-document identity in `planDocument`. They're not disposable Resource IDs.
-- Each is `unpublished` before the first attempt, `pending` with an opaque token before creation, then `published` with that token and the confirmed native ID and URL.
+- Each is `unpublished` before the first attempt, `pending` before creation, then `published` with the confirmed native ID and URL.
+- GitHub comments keep a hidden token marker. Linear shows HTML comments, so its documents have none, and announcements carry the token in the plan link.
 - Markers and signatures stay out of source artifacts.
 - New issues use the approved title and Request; later publication leaves those fields alone. Resume reuses saved state and never republishes on its own.
 

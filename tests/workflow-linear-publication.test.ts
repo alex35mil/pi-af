@@ -15,7 +15,6 @@ import { prepareArtifactPersistence } from "../workflows/extensions/__lib/projec
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
 import { type AnnouncementInput, planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { PlanDocumentSchema } from "../workflows/extensions/integrations/plan-document.ts"
-import { planPublicationMarker } from "../workflows/extensions/integrations/plan-publication.ts"
 import { trackerPublication } from "../workflows/extensions/integrations/tracker-publication.ts"
 import type { ProviderEvidence } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
@@ -113,8 +112,8 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
         trackerPublication(root, { entityDir: directory, action: "prepare", source: content }, catalog)
     const record = (evidence: ProviderEvidence) =>
         trackerPublication(root, { entityDir: directory, action: "record", evidence }, tools)
-    const recover = (pages: ProviderEvidence[]) =>
-        trackerPublication(root, { entityDir: directory, action: "recover", source, pages }, tools)
+    const recover = (pages: ProviderEvidence[], content = source) =>
+        trackerPublication(root, { entityDir: directory, action: "recover", source: content, pages }, tools)
     const parent = (): ProviderEvidence => ({
         tool: kind === "epic" ? "mcp__linear__get_project" : "mcp__linear__get_issue",
         arguments: kind === "epic" ? { query: "project-uuid" } : { id: "issue-uuid" },
@@ -123,26 +122,29 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
             uuid: kind === "epic" ? "project-uuid" : "issue-uuid",
         },
     })
-    const document = (content: string, id = documentId) => ({
+    const document = (content: string, id = documentId, title = "Plan") => ({
         id,
+        title,
         url: id === documentId ? url : `https://linear.app/example/document/plan-${id}`,
         content,
         archivedAt: null,
         issue: kind === "epic" ? null : { id: "ENG-1" },
         project: kind === "epic" ? { id: "P-ENG-1" } : null,
     })
-    const read = (content: string, id = documentId): ProviderEvidence => ({
+    const read = (content: string, id = documentId, title = "Plan"): ProviderEvidence => ({
         tool: "mcp__linear__get_document",
         arguments: { id },
-        response: document(content, id),
+        response: document(content, id, title),
     })
+    // A listed document: listings omit full content.
+    const listed = (id = documentId, title = "Plan") => ({ ...document("", id, title), content: undefined })
     const listing = (documents: Record<string, unknown>[], more = false, cursor?: string): ProviderEvidence => ({
         tool: "mcp__linear__list_documents",
         arguments: {
             limit: 50,
             includeArchived: true,
             orderBy: "createdAt",
-            fields: ["id", "url", "issue", "project"],
+            fields: ["id", "title", "url", "issue", "project"],
             ...(kind === "epic" ? { projectId: "project-uuid" } : {}),
             ...(cursor ? { cursor } : {}),
         },
@@ -181,10 +183,17 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
         parent,
         document,
         read,
+        listed,
         listing,
         update,
         dispose: () => fs.rmSync(root, { recursive: true, force: true }),
     }
+}
+
+// What Linear returns for content it stored: `*` bullets, a trailing space on the fold's closing
+// line, and the footer it was signed with.
+function linearStored(content: string): string {
+    return `${content.replaceAll("\n- ", "\n* ").replace(/\n>>>$/, "\n>>> ")}\n\n*Sent via Pi. Model: x/y.*`
 }
 
 function envelope(value: unknown, kind: "raw" | "text" | "structured") {
@@ -197,16 +206,20 @@ function envelope(value: unknown, kind: "raw" | "text" | "structured") {
 
 describe("managed Linear plan documents", () => {
     it("defines strict document states with native string identities", () => {
+        const fingerprint = planFingerprint(source)
         for (const state of [
             { state: "unpublished" },
-            { state: "pending", token },
-            { state: "published", token, id: documentId, url },
+            { state: "pending", fingerprint },
+            { state: "published", id: documentId, url },
         ])
             assert.equal(Value.Check(PlanDocumentSchema, state), true)
         for (const state of [
-            { state: "published", token, id: 42, url },
+            { state: "published", id: 42, url },
             { state: "pending" },
-            { state: "unpublished", token },
+            // Linear documents carry no marker, so no token.
+            { state: "pending", token },
+            { state: "published", token, id: documentId, url },
+            { state: "unpublished", fingerprint },
         ])
             assert.equal(Value.Check(PlanDocumentSchema, state), false)
     })
@@ -222,16 +235,17 @@ describe("managed Linear plan documents", () => {
                 assert.equal(args.title, "Plan")
                 assert.ok(typeof args.content === "string")
                 assert.match(args.content, /^Keep the original request\.\n\n## Highlights/)
-                assert.match(args.content, /\+\+\+ Full plan/)
-                assert.doesNotMatch(args.content, /GIG-|TASK-|EPIC-|\.project\//)
+                assert.match(args.content, /\n>>> Full plan\n[\s\S]*\n>>>$/)
+                assert.doesNotMatch(args.content, /GIG-|TASK-|EPIC-|\.project\/|<!--/)
                 assert.equal(
                     args[kind === "epic" ? "project" : "issue"],
                     kind === "epic" ? "project-uuid" : "issue-uuid",
                 )
                 assert.equal("description" in args, false)
-                const pending = f.saved().tracker.planDocument
-                assert.equal(pending.state, "pending")
-                assert.ok(args.content.endsWith(planPublicationMarker(pending.token)))
+                assert.deepEqual(f.saved().tracker.planDocument, {
+                    state: "pending",
+                    fingerprint: planFingerprint(source),
+                })
                 await f.record({
                     ...prepared.mutation,
                     response: {
@@ -243,8 +257,10 @@ describe("managed Linear plan documents", () => {
                 assert.equal(f.saved().tracker.planDocument.state, "published")
                 const verify = await f.prepare()
                 assert.equal(verify.state, "reads-required")
-                // Every update compares with the published plan; the same source is unchanged.
+                // Every update compares with the published plan; the same source is unchanged,
+                // including in the form Linear stores it.
                 assert.equal((await f.update(f.read(args.content))).state, "unchanged")
+                assert.equal((await f.update(f.read(linearStored(args.content)))).state, "unchanged")
                 const updated = await f.update(
                     f.read(args.content),
                     f.parent(),
@@ -254,12 +270,7 @@ describe("managed Linear plan documents", () => {
                 assert.ok(updated.state === "mutation-needed")
                 assert.deepEqual(Object.keys(updated.mutation.arguments).sort(), ["content", "id"])
                 assert.equal(updated.mutation.arguments.id, documentId)
-                assert.deepEqual(f.saved().tracker.planDocument, {
-                    state: "published",
-                    token: pending.token,
-                    id: documentId,
-                    url,
-                })
+                assert.deepEqual(f.saved().tracker.planDocument, { state: "published", id: documentId, url })
                 assert.equal(fs.readFileSync(path.join(f.root, f.directory, "brief.md"), "utf8"), brief)
                 const context = buildIntegrationContext(
                     { cwd: f.root } as ExtensionContext,
@@ -304,21 +315,31 @@ describe("managed Linear plan documents", () => {
                     issue: { id: "OTHER-1" },
                     project: null,
                 }))
-                const item = {
-                    ...f.document("truncated list preview"),
-                    content: undefined,
-                }
-                const evidence = [f.parent(), f.listing(unrelated, true), f.listing([item], false, "next")]
+                // Other documents on the parent aren't plan candidates.
+                const notes = f.listed("notes", "Notes")
+                const evidence = [f.parent(), f.listing(unrelated, true), f.listing([notes, f.listed()], false, "next")]
                 for (const page of evidence) page.response = envelope(page.response, kind)
                 const needed = await f.recover(evidence)
                 assert.equal(needed.state, "recovery-read-required")
                 if (needed.state !== "recovery-read-required") assert.fail()
-                assert.equal(needed.lookups[0].arguments.id, documentId)
-                const full = f.read(body)
+                assert.deepEqual(
+                    needed.lookups.map((lookup) => lookup.arguments.id),
+                    [documentId],
+                )
+                // Linear's stored form of the pending plan still matches its fingerprint.
+                const full = f.read(linearStored(body))
                 full.response = envelope(full.response, kind)
                 const recovered = await f.recover([...evidence, full])
                 assert.equal(recovered.state, "identified")
-                assert.equal(f.saved().tracker.planDocument.id, documentId)
+                assert.deepEqual(f.saved().tracker.planDocument, { state: "published", id: documentId, url })
+                // A published plan is recovered by its saved identity.
+                assert.equal((await f.recover([...evidence, full])).state, "identified")
+                const replaced = await f.recover([
+                    f.parent(),
+                    f.listing([f.listed("other-document")]),
+                    f.read(body, "other-document"),
+                ])
+                assert.equal(replaced.state, "blocked")
                 await assert.rejects(f.update(f.read(body, "other-document")), /conflicting|does not match/)
             } finally {
                 f.dispose()
@@ -333,11 +354,24 @@ describe("managed Linear plan documents", () => {
             const body = prepared.mutation.arguments.content
             assert.ok(typeof body === "string")
             const before = fs.readFileSync(f.file, "utf8")
-            const both = [f.document(body), f.document(body, "second")]
+            const both = [f.listed(), f.listed("second")]
             assert.equal(
                 (await f.recover([f.parent(), f.listing(both), f.read(body), f.read(body, "second")])).state,
                 "blocked",
             )
+            // A Plan document that doesn't match, here because Linear decoded `&amp;`, may still be
+            // the landed create: recovery stops instead of creating a second one.
+            const decoded = body.replace("All supporting", "All &amp; supporting")
+            const edited = source.replace("All supporting", "All &amp; supporting")
+            assert.equal(
+                (await f.recover([f.parent(), f.listing([f.listed()]), f.read(decoded.replace("&amp;", "&"))], edited))
+                    .state,
+                "blocked",
+            )
+            const archived = f.read(body)
+            archived.response = { ...f.document(body), archivedAt: "2026-01-01T00:00:00Z" }
+            assert.equal((await f.recover([f.parent(), f.listing([f.listed()]), archived])).state, "blocked")
+            const untitled = f.listing([{ ...f.listed(), title: undefined }])
             const narrowed = f.listing([])
             narrowed.arguments.query = "Plan"
             const wrongParent = f.parent()
@@ -352,6 +386,7 @@ describe("managed Linear plan documents", () => {
             const wrongServer = f.listing([])
             wrongServer.tool = "mcp__other__list_documents"
             for (const evidence of [
+                [f.parent(), untitled],
                 [f.parent(), f.listing([], true)],
                 [f.parent(), narrowed],
                 [wrongParent, f.listing([])],
@@ -403,7 +438,7 @@ describe("managed Linear plan documents", () => {
         }
     })
 
-    it("rejects unsafe creation evidence while retaining the pending token", async () => {
+    it("rejects unsafe creation evidence while retaining the pending fingerprint", async () => {
         const f = fixture()
         try {
             const prepared = await f.prepare()
@@ -413,7 +448,11 @@ describe("managed Linear plan documents", () => {
                 { ...prepared.mutation.arguments, issue: "wrong" },
                 { ...prepared.mutation.arguments, project: "project-uuid" },
                 { ...prepared.mutation.arguments, id: documentId },
-                { ...prepared.mutation.arguments, content: "no marker" },
+                { ...prepared.mutation.arguments, content: "not a rendered plan" },
+                {
+                    ...prepared.mutation.arguments,
+                    content: String(prepared.mutation.arguments.content).replace("All supporting", "Other"),
+                },
             ])
                 await assert.rejects(
                     f.record({
@@ -439,7 +478,7 @@ describe("managed Linear plan documents", () => {
     })
 
     for (const kind of ["epic", "gig"] as const)
-        it(`re-issues the same create when a complete listing finds the pending document was never saved (${kind})`, async () => {
+        it(`creates again when a complete listing finds no Plan document on the parent (${kind})`, async () => {
             const f = fixture(kind)
             try {
                 const prepared = await f.prepare()
@@ -447,26 +486,28 @@ describe("managed Linear plan documents", () => {
                 const pending = f.saved().tracker.planDocument
                 assert.equal(pending.state, "pending")
 
-                // A same-parent document without the marker is read in full first, then ruled out.
-                const other = { ...f.document("Unrelated", "other"), content: undefined }
-                const evidence = [f.parent(), f.listing([other])]
-                const needed = await f.recover(evidence)
-                assert.equal(needed.state, "recovery-read-required")
-                const reissued = await f.recover([...evidence, f.read("Unrelated", "other")])
+                // Same-parent documents with other titles aren't read or matched.
+                const evidence = [f.parent(), f.listing([f.listed("other", "Notes")])]
+                const reissued = await f.recover(evidence)
                 assert.ok(reissued.state === "mutation-needed")
                 assert.deepEqual(reissued.mutation, prepared.mutation)
                 assert.deepEqual(f.saved().tracker.planDocument, pending)
 
+                // A plan revised after a create that never landed publishes the revision.
+                const revised = source.replace("All supporting", "Revised supporting")
+                const recreated = await f.recover(evidence, revised)
+                assert.ok(recreated.state === "mutation-needed")
+                assert.match(String(recreated.mutation.arguments.content), /Revised supporting/)
+                assert.deepEqual(f.saved().tracker.planDocument, {
+                    state: "pending",
+                    fingerprint: planFingerprint(revised),
+                })
+
                 assert.equal(
-                    (await f.record({ ...reissued.mutation, response: { id: documentId, url } })).state,
+                    (await f.record({ ...recreated.mutation, response: { id: documentId, url } })).state,
                     "published",
                 )
-                assert.deepEqual(f.saved().tracker.planDocument, {
-                    state: "published",
-                    token: pending.token,
-                    id: documentId,
-                    url,
-                })
+                assert.deepEqual(f.saved().tracker.planDocument, { state: "published", id: documentId, url })
             } finally {
                 f.dispose()
             }
@@ -502,10 +543,7 @@ describe("managed Linear plan documents", () => {
                 )
                 await f.record({ ...prepared.mutation, response: { id: documentId, url } })
                 // Linear normalizes bullets on save; that alone isn't a change.
-                const stored = prepared.mutation.arguments.content.replace(
-                    "- One maintained plan.",
-                    "* One maintained plan.",
-                )
+                const stored = linearStored(prepared.mutation.arguments.content)
                 const revised = source.replace("All supporting details.", "All supporting details, revised.")
                 // The summary accepted at presentation is used without passing it again.
                 const metadata = f.saved()
@@ -527,9 +565,12 @@ describe("managed Linear plan documents", () => {
                 assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
                 const body = updated.announcement as string
                 assert.match(body, /^\*\*Plan updated\*\*\n\nDetails revised\./)
-                assert.match(body, /\n\+\+\+ Plan diff\n\n```diff\n/)
+                assert.match(body, /\n>>> Plan diff\n\n```diff\n/)
                 assert.match(body, /\n-All supporting details\.\n\+All supporting details, revised\.\n/)
                 assert.doesNotMatch(body, /^[-+]. One maintained plan/m)
+                // The token rides on the plan link; no HTML marker shows in Linear.
+                assert.match(body, new RegExp(`\\]\\(${url}\\?publication=[0-9a-f-]{36}\\)`))
+                assert.doesNotMatch(body, /<!--/)
                 const announce = await f.record({ ...updated.mutation, response: { id: documentId, url } })
                 assert.ok(announce.state === "mutation-needed")
                 assert.equal(announce.mutation.tool, "mcp__linear__save_comment")
@@ -542,6 +583,27 @@ describe("managed Linear plan documents", () => {
                 const recovered = await f.recover([comments([])])
                 assert.ok(recovered.state === "mutation-needed")
                 assert.deepEqual(recovered.mutation, announce.mutation)
+                // An earlier announcement on the item isn't this one; Linear may bracket link targets.
+                const earlier = body.replace(/publication=[0-9a-f-]+/, `publication=${token}`)
+                assert.equal((await f.recover([comments([{ body: earlier }])])).state, "mutation-needed")
+                const landed = body.replace(/\]\(([^)]+)\)/, "](<$1>)")
+                assert.equal((await f.recover([comments([{ body: earlier }, { body: landed }])])).state, "announced")
+                const metadataWithAnnouncement = f.saved()
+                fs.writeFileSync(
+                    f.file,
+                    JSON.stringify({
+                        ...metadataWithAnnouncement,
+                        tracker: {
+                            ...metadataWithAnnouncement.tracker,
+                            planAnnouncement: {
+                                state: "announcing",
+                                token: /publication=([0-9a-f-]+)/.exec(body)![1],
+                                body,
+                            },
+                        },
+                    }),
+                )
+                assert.equal((await f.recover([comments([{ body: landed }, { body: landed }])])).state, "blocked")
                 await assert.rejects(
                     f.record({
                         ...announce.mutation,
@@ -576,9 +638,10 @@ describe("managed Linear plan documents", () => {
             }
             write({ state: "unpublished" })
             assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
-            write({ state: "pending", token })
+            const fingerprint = planFingerprint(source)
+            write({ state: "pending", fingerprint })
             assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
-            write({ state: "published", token, id: documentId, url })
+            write({ state: "published", id: documentId, url })
             assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, pending)
             // A presented summary may wait on a first publication that may have landed, but not on none.
             const presented = { state: "presented", summary: "Revised.", after: planFingerprint(source) }
@@ -594,7 +657,7 @@ describe("managed Linear plan documents", () => {
             }
             present({ state: "unpublished" })
             assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
-            present({ state: "pending", token })
+            present({ state: "pending", fingerprint })
             assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, presented)
         } finally {
             f.dispose()

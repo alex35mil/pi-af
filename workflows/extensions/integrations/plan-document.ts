@@ -1,8 +1,15 @@
 import { type Static, Type } from "typebox"
 import { publicationStateSchema } from "./plan-publication.js"
 
-export const PlanDocumentSchema = publicationStateSchema(Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" }))
+// Linear renders any marker as visible text, so a plan document carries none. A pending creation
+// remembers the fingerprint of the plan it sent; a published one, the document's identity.
+export const PlanDocumentSchema = publicationStateSchema(
+    { fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }) },
+    { id: Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" }), url: Type.String({ minLength: 1 }) },
+)
 export type PlanDocument = Static<typeof PlanDocumentSchema>
+export type PlanDocumentPending = { fingerprint: string }
+export type PlanDocumentPublished = { id: string; url: string }
 
 export function assertPlanDocumentUrl(url: string): void {
     const parsed = new URL(url)

@@ -22,16 +22,31 @@ export function renderProviderBody(source: string, presentation: ProviderBodyPre
         body = `${overview}${separation}<hr />${separation}${folds.join(separation)}`
     } else {
         const details = trimSectionEnd(sections.map((section) => section.heading + section.content).join(""))
+        const visible = renderPlanOverview(overview, newline, presentation.kind)
+        if (presentation.kind === "linear-plan-document") {
+            assertNoLinearFoldLines(visible, "plan overview")
+            assertNoLinearFoldLines(details, "plan details")
+        }
         const folded =
             presentation.kind === "linear-plan-document"
-                ? `+++ Full plan${separation}${details}${separation}+++`
+                ? `${LINEAR_FOLD_OPEN} Full plan${separation}${details}${separation}${LINEAR_FOLD_OPEN}`
                 : renderGitHubDetails("Full plan", details, newline)
-        const visible = renderPlanOverview(overview, newline, presentation.kind)
         body = `${visible}${separation}${folded}`
     }
     return presentation.kind === "github-pull-request" && presentation.githubIssueNumber !== undefined
         ? `${body}${separation}---${separation}Closes #${presentation.githubIssueNumber}`
         : body
+}
+
+// Linear's native fold: `>>> Title` opens it and a bare `>>>` closes it. Linear treats any line
+// starting with `>>>` as a fold boundary, even inside fenced code, so content must not have one.
+export const LINEAR_FOLD_OPEN = ">>>"
+
+export function assertNoLinearFoldLines(text: string, label: string): void {
+    if (/^[ \t]*>>>/m.test(text))
+        throw new Error(
+            `Linear reads a line starting with \`>>>\` as a fold boundary, even inside code blocks; rewrite that line in the ${label} before publishing`,
+        )
 }
 
 interface ProviderSourceSection {
@@ -143,29 +158,29 @@ function removeRootHeading(source: string): string {
 const PUBLICATION_MARKER = /^<!-- plan-publication:([^ >]+) -->$/
 const ATTRIBUTION = /^(?:<sub>Sent via [^\r\n]+<\/sub>|\*Sent via [^\r\n]+\*)$/
 
-export interface RestoredPlan {
-    source: string
-    token: string
+// The publication marker tokens in a published body; GitHub plan comments carry exactly one.
+export function publicationMarkerTokens(body: string): string[] {
+    return body.split(/\r?\n/).flatMap((line) => PUBLICATION_MARKER.exec(line.trim())?.[1] ?? [])
 }
 
 // The inverse of tracker plan rendering: rebuilds the reviewed source from a published
-// GitHub comment or Linear document body. The root title comes from the tracker item.
+// GitHub comment or Linear document body, without its publication marker and attribution.
+// The root title comes from the tracker item.
 export function restoreProviderSource(
     body: string,
     presentation: Extract<ProviderBodyPresentation, { kind: "github-plan-comment" | "linear-plan-document" }>,
     title: string,
-): RestoredPlan {
+): string {
     const newline = body.includes("\r\n") ? "\r\n" : "\n"
     const lines = body.split(/\r?\n/)
-    const markers = lines.flatMap((line) => PUBLICATION_MARKER.exec(line.trim())?.[1] ?? [])
-    if (markers.length !== 1) throw new Error("published plan must carry exactly one plan publication marker")
     const kept = lines.filter((line) => !PUBLICATION_MARKER.test(line.trim()) && !ATTRIBUTION.test(line.trim()))
     let text = kept.join("\n").replace(/\s+$/, "")
 
+    // Linear stores the fold as `>>>`, sometimes with trailing spaces on its boundary lines.
     const fold =
         presentation.kind === "github-plan-comment"
             ? /\n*<details>\n<summary>Full plan<\/summary>\n\n([\s\S]*?)\n\n<\/details>$/.exec(text)
-            : /\n*\+\+\+ Full plan\n\n([\s\S]*?)\n\n\+\+\+$/.exec(text)
+            : /\n*>>> Full plan[ \t]*\n\n([\s\S]*?)\n\n>>>[ \t]*$/.exec(text)
     if (!fold) throw new Error("published plan has no Full plan fold to restore from")
     let overview = text.slice(0, fold.index)
     const details = fold[1]
@@ -175,7 +190,7 @@ export function restoreProviderSource(
     } else overview = `## Overview\n\n${overview}`
     overview = overview.replace(/^## Highlights$/m, "### Plan highlights")
     text = `# ${title.trim()}\n\n${overview.replace(/\s+$/, "")}\n\n${details}\n`
-    return { source: text.replaceAll("\n", newline), token: markers[0] }
+    return text.replaceAll("\n", newline)
 }
 
 export type ProjectionVerification =
