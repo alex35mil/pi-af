@@ -4,7 +4,8 @@ import { StringEnum } from "@earendil-works/pi-ai"
 import { type Static, Type } from "typebox"
 
 import { foldedDiff, MAX_COMMENT_BODY } from "./comment-diff.js"
-import { unifiedDiff } from "./plan-diff.js"
+import { type DiffLine, unifiedLineDiff } from "./plan-diff.js"
+import { assertNoLinearFoldLines } from "./projection.js"
 
 // Announcing an update to a published plan, for any entity, so the change reaches the people
 // watching the issue instead of silently editing the plan in place.
@@ -71,44 +72,111 @@ export type PlanAnnouncement = Static<typeof PlanAnnouncementSchema>
 // bare fragment keeps the reader in the same view; Linear's plan is a separate document.
 export type AnnouncementPlan = { presentation: "github"; commentId: number } | { presentation: "linear"; url: string }
 
-function planLink(plan: AnnouncementPlan): string {
+// The announcement's link to the plan. GitHub hides its token in an HTML-comment marker; Linear
+// renders that marker as text, so its token rides on the link as a query parameter.
+function planLink(plan: AnnouncementPlan, token: string): string {
     switch (plan.presentation) {
         case "github":
             return `#issuecomment-${plan.commentId}`
         case "linear":
-            return plan.url
+            return `${plan.url}?${LINEAR_TOKEN_PARAMETER}=${token}`
     }
 }
+
+const LINEAR_TOKEN_PARAMETER = "publication"
 
 export function planAnnouncementMarker(token: string): string {
     return `<!-- plan-announcement:${token} -->`
 }
 
-export function hasAnnouncementMarker(body: unknown, token: string): body is string {
-    return (
-        typeof body === "string" &&
-        body.split(/\r?\n/).filter((line) => line === planAnnouncementMarker(token)).length === 1
-    )
+// Whether a comment body is the announcement carrying this token, exactly once.
+export function hasAnnouncementToken(
+    presentation: AnnouncementPlan["presentation"],
+    body: unknown,
+    token: string,
+): body is string {
+    if (typeof body !== "string") return false
+    switch (presentation) {
+        case "github":
+            return body.split(/\r?\n/).filter((line) => line === planAnnouncementMarker(token)).length === 1
+        case "linear": {
+            // Linear may wrap a link target in angle brackets.
+            const link = new RegExp(`\\]\\(<?[^\\s()<>]*\\?${LINEAR_TOKEN_PARAMETER}=${token}>?\\)`, "g")
+            return [...body.matchAll(link)].length === 1
+        }
+    }
 }
 
-// The plan as readers see it, for comparison. Drops the root title, which restore takes from
-// the tracker, and normalizations Linear applies on save: `*` bullets and list blank lines.
-export function comparablePlan(source: string): string {
-    let fence: string | undefined
+// Plan comparison. Restore takes the root title from the tracker, and Linear rewrites Markdown
+// on save, so lines are compared by a key that undoes those rewrites. Blank lines outside code
+// don't count. Lines print as written; a removed line, read back from the provider, prints with
+// Linear's code-safe rewrites undone.
+type PlanLine = DiffLine & { display: string }
+
+function planLines(source: string): PlanLine[] {
+    let fence: { marker: string; length: number } | undefined
     return source
         .replace(/\r\n/g, "\n")
         .replace(/^#[ \t]+[^\n]*\n/, "")
         .split("\n")
-        .flatMap((line) => {
-            const opener = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+        .flatMap((text) => {
+            const opener = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(text)
             if (fence) {
-                if (opener && opener[0] === fence[0] && opener.length >= fence.length) fence = undefined
-                return [line]
+                const closes =
+                    opener && opener[2][0] === fence.marker && opener[2].length >= fence.length && !opener[3].trim()
+                if (closes) fence = undefined
+                // Linear turns `~~~` fences into backtick fences.
+                const key = closes ? "```" : text.trimEnd()
+                return [{ text, key, display: text }]
             }
-            if (opener) fence = opener
-            if (!line.trim()) return []
-            return [line.replace(/^(\s*)[*+](\s)/, "$1-$2").trimEnd()]
+            if (opener) {
+                fence = { marker: opener[2][0], length: opener[2].length }
+                return [{ text, key: `${opener[1]}\`\`\`${opener[3].trim()}`, display: text }]
+            }
+            if (!text.trim()) return []
+            return [{ text, key: comparableLine(text), display: displayLine(text) }]
         })
+}
+
+// Applies a rewrite to the parts of a line outside inline code spans.
+function outsideCode(line: string, rewrite: (text: string) => string): string {
+    return line
+        .split(/(`+[^`]*?`+)/)
+        .map((part, index) => (index % 2 === 1 ? part : rewrite(part)))
+        .join("")
+}
+
+// Undoes the rewrites Linear applies that can't alter code: list markers, task boxes and
+// angle-bracketed link targets.
+function displayLine(line: string): string {
+    return outsideCode(
+        line
+            .replace(/^(\s*)[*+](\s)/, "$1-$2")
+            .replace(/^(\s*)(\d+)\)(\s)/, "$1$2.$3")
+            .replace(/^(\s*-\s+)\[X\]/, "$1[x]"),
+        (text) => text.replace(/\]\(<([^<>\s]*)>\)/g, "]($1)"),
+    )
+}
+
+function comparableLine(line: string): string {
+    // Linear rewrites table delimiter rows to `| -- |` cells, dropping alignment.
+    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
+    if (line.includes("|") && cells.every((cell) => /^\s*:?-+:?\s*$/.test(cell)))
+        return `|${" -- |".repeat(cells.length)}`
+    return outsideCode(displayLine(line), (text) =>
+        text
+            // A bare URL Linear turned into a link back to the URL.
+            .replace(/\[(https?:\/\/[^\]\s]+)\]\(\1\)/g, "$1")
+            // Underscore emphasis becomes asterisks; underscores inside words stay.
+            .replace(/(^|[^\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])/g, "$1**$2**")
+            .replace(/(^|[^\w_*])_(?=\S)([^_]+?)(?<=\S)_(?![\w_])/g, "$1*$2*"),
+    ).trimEnd()
+}
+
+// The plan as compared: one key per meaningful line.
+export function comparablePlan(source: string): string {
+    return planLines(source)
+        .map((line) => line.key)
         .join("\n")
 }
 
@@ -116,8 +184,13 @@ export function planFingerprint(source: string): string {
     return createHash("sha256").update(comparablePlan(source)).digest("hex")
 }
 
+// The diff of the published plan against the new source, by comparison keys. Removed lines come
+// from the provider's copy and print in their display form; the rest print as the source has them.
 export function planSourceDiff(published: string, source: string): string {
-    return unifiedDiff(comparablePlan(published), comparablePlan(source))
+    return unifiedLineDiff(
+        planLines(published).map((line) => ({ text: line.display, key: line.key })),
+        planLines(source).map((line) => ({ text: line.text, key: line.key })),
+    )
 }
 
 export function renderAnnouncement(input: {
@@ -128,15 +201,16 @@ export function renderAnnouncement(input: {
     diff: string
     token: string
 }): string {
+    if (input.plan.presentation === "linear") assertNoLinearFoldLines(input.summary, "announcement summary")
     // The comment is always on the entity's own issue, so the heading needs no entity name.
     const head = [
         input.fromTask === undefined ? "**Plan updated**" : `**Plan updated** from Task ${input.fromTask}`,
         input.summary.trim(),
-        `[View the updated plan](${planLink(input.plan)})`,
+        `[View the updated plan](${planLink(input.plan, input.token)})`,
     ]
-    const marker = planAnnouncementMarker(input.token)
+    const marker = input.plan.presentation === "github" ? [planAnnouncementMarker(input.token)] : []
     const folded = foldedDiff(input.plan.presentation, "Plan diff", input.diff)
-    const full = [...head, folded, marker].join("\n\n")
+    const full = [...head, folded, ...marker].join("\n\n")
     if (full.length <= MAX_COMMENT_BODY) return full
-    return [...head, "The plan diff is too large to include here; see the updated plan.", marker].join("\n\n")
+    return [...head, "The plan diff is too large to include here; see the updated plan.", ...marker].join("\n\n")
 }

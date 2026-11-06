@@ -53,7 +53,7 @@ The initialization tool stores the title in `metadata.json` and the Request in `
 
 - Every tracker item keeps its original request title or name and description. New items use the approved title and Request; adopted items keep their existing content.
 - Accepted `epic.md` or `plan.md` publishes separately, as described in [provider bodies](./integrations/shared.md#provider-bodies): one issue comment on GitHub, one document attached to the issue or Project on Linear.
-- GitHub records hold `planComment`; Linear records hold `planDocument`. Each is `unpublished`, `pending` with an opaque token, or `published` with that token and the confirmed native ID and URL. This is authoritative identity, kept in `metadata.json`, not a disposable Resource ID.
+- GitHub records hold `planComment`: `unpublished`, `pending` with a token, or `published` with it plus native ID and URL. Linear `planDocument` keeps a plan fingerprint when pending, and ID and URL when published. Both are authoritative identity, not Resource IDs.
 
 ### Slugs
 

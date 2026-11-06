@@ -934,7 +934,7 @@ describe("workflow integration configuration", () => {
                     const fold =
                         provider === "github"
                             ? `<details>\n<summary>Full plan</summary>\n\n${details}\n\n</details>`
-                            : `+++ Full plan\n\n${details}\n\n+++`
+                            : `>>> Full plan\n\n${details}\n\n>>>`
                     assert.equal(
                         renderEntityProviderBody({ cwd } as ExtensionContext, {
                             entityDir,

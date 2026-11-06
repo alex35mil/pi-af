@@ -358,7 +358,6 @@ describe("workflow reviewer isolation", () => {
                             external: { issueId: "issue-7", identifier: "ENG-7" },
                             planDocument: {
                                 state: "published",
-                                token,
                                 id: "document-7",
                                 url: "https://linear.app/example/document/plan-7",
                             },

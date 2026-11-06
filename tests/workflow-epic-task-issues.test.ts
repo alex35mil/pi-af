@@ -593,17 +593,20 @@ describe("Epic routing and restore", () => {
         for (const kind of ["github-plan-comment", "linear-plan-document"] as const) {
             const footer =
                 kind === "github-plan-comment" ? "<sub>Sent via Pi. Model: a/b.</sub>" : "*Sent via Pi. Model: a/b.*"
-            const body = `${renderProviderBody(source, { kind })}\n\n<!-- plan-publication:tok -->\n\n${footer}`
-            assert.deepEqual(restoreProviderSource(body, { kind }, "Rollout"), { source, token: "tok" })
+            // Restore drops the publication marker and attribution; Linear documents need neither.
+            const marked = `${renderProviderBody(source, { kind })}\n\n<!-- plan-publication:tok -->\n\n${footer}`
+            assert.equal(restoreProviderSource(marked, { kind }, "Rollout"), source)
+            assert.equal(restoreProviderSource(renderProviderBody(source, { kind }), { kind }, "Rollout"), source)
         }
+        // Linear never returns a `+++` fold.
         assert.throws(
             () =>
                 restoreProviderSource(
-                    renderProviderBody(source, { kind: "github-plan-comment" }),
-                    { kind: "github-plan-comment" },
+                    renderProviderBody(source, { kind: "linear-plan-document" }).replaceAll(">>>", "+++"),
+                    { kind: "linear-plan-document" },
                     "R",
                 ),
-            /exactly one plan publication marker/,
+            /no Full plan fold/,
         )
     })
 
@@ -701,7 +704,7 @@ describe("Linear Epic restore", () => {
         const { root, directory, branch } = repo("linear")
         try {
             const source = accepted(branch).replace("[#11]", "[ENG-11]")
-            const body = `${renderProviderBody(source, { kind: "linear-plan-document" })}\n\n<!-- plan-publication:${token} -->`
+            const body = `${renderProviderBody(source, { kind: "linear-plan-document" })}\n\n*Sent via Pi. Model: a/b.*`
             const project = {
                 tool: "mcp__linear__get_project",
                 arguments: { query: "project-uuid" },
@@ -714,15 +717,17 @@ describe("Linear Epic restore", () => {
                     createdAt: "2026-10-01T09:00:00.000Z",
                 },
             }
-            const document = {
-                id: "document-uuid",
-                url: "https://linear.app/example/document/plan-slug",
-                content: body,
+            const document = (id: string, content: string, title = "Plan") => ({
+                id,
+                title,
+                url: `https://linear.app/example/document/${id === "document-uuid" ? "plan-slug" : id}`,
+                content,
                 archivedAt: null,
                 issue: null,
                 project: { id: "P-ENG-1" },
-            }
-            const pages = [
+            })
+            // Plan documents are fully read; documents with other titles aren't candidates.
+            const plans = (...documents: ReturnType<typeof document>[]) => [
                 project,
                 {
                     tool: "mcp__linear__list_documents",
@@ -730,21 +735,54 @@ describe("Linear Epic restore", () => {
                         limit: 50,
                         includeArchived: true,
                         orderBy: "createdAt",
-                        fields: ["id", "url", "issue", "project"],
+                        fields: ["id", "title", "url", "issue", "project"],
                         projectId: "project-uuid",
                     },
-                    response: { documents: [{ ...document, content: undefined }], hasNextPage: false },
+                    response: {
+                        documents: [document("notes", "Notes", "Notes"), ...documents].map((item) => ({
+                            ...item,
+                            content: undefined,
+                        })),
+                        hasNextPage: false,
+                    },
                 },
-                { tool: "mcp__linear__get_document", arguments: { id: "document-uuid" }, response: document },
+                ...documents.map((item) => ({
+                    tool: "mcp__linear__get_document",
+                    arguments: { id: item.id },
+                    response: item,
+                })),
             ]
+            const pages = plans(document("document-uuid", body))
             fs.rmSync(path.join(root, directory), { recursive: true })
+            assert.throws(
+                () =>
+                    restoreEpic(
+                        root,
+                        {
+                            slug: "rollout",
+                            epic: project,
+                            pages: plans(document("document-uuid", body), document("second", body)),
+                        },
+                        tools,
+                    ),
+                /found 2 published plans/,
+            )
+            // A Plan document without a Full plan fold isn't a published plan.
+            assert.throws(
+                () =>
+                    restoreEpic(
+                        root,
+                        { slug: "rollout", epic: project, pages: plans(document("draft", "Draft only.")) },
+                        tools,
+                    ),
+                /found 0 published plans/,
+            )
             const restored = restoreEpic(root, { slug: "rollout", epic: project, pages }, tools)
             assert.equal(restored.directory, ".project/.local/epics/20261001-rollout")
             const status = readEntityStatus(path.join(root, restored.directory))
             assert.equal(status.branch.name, branch)
             assert.deepEqual(status.tracker.provider === "linear" && status.tracker.planDocument, {
                 state: "published",
-                token,
                 id: "document-uuid",
                 url: "https://linear.app/example/document/plan-slug",
             })

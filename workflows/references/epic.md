@@ -27,7 +27,7 @@ Epic branch: 21-routing
 When a clone has no local directory for an Epic, recreate it before resuming the Epic or starting one of its Tasks:
 
 1. Read the Epic: GitHub `issue_read` `get`, or Linear `get_project`.
-2. Read its published plan with the same reads as [publication recovery](./integrations/recovery.md#pending-plan-publication): every comment page on GitHub; on Linear, the parent read, every document page, and full reads of matching candidates.
+2. Read its published plan with the same reads as [publication recovery](./integrations/recovery.md#pending-plan-publication): every comment page on GitHub; on Linear, the parent read, every document page, and full reads of the Plan documents.
 3. Call `restore_epic` with a slug and that evidence. It requires exactly one published plan, rebuilds `epic.md` from it, and writes the directory, metadata, and brief. It creates no branch.
 
 ## Compare with the published plan
