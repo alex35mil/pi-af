@@ -468,7 +468,7 @@ describe("shared workflow Phase", () => {
                         for (const category of entity === "epic"
                             ? (["plan"] as const)
                             : (["plan", "interim", "final"] as const)) {
-                            const expected = category === "plan" ? "planning" : "selfReview"
+                            const expected = { plan: "planning", interim: "execution", final: "selfReview" }[category]
                             if (phase === expected) assert.doesNotThrow(() => assertReviewPhase(directory, category))
                             else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
                         }

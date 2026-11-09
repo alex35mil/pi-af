@@ -9,7 +9,7 @@ import { Value } from "typebox/value"
 import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
-import { EPIC_ROOT, GIG_ROOT, PROJECT_ROOT, type DeliverableKind } from "../__lib/domain.js"
+import { EPIC_ROOT, GIG_ROOT, PROJECT_ROOT, type DeliverableKind, type Phase } from "../__lib/domain.js"
 import {
     entityLabel,
     LOCAL_DRAFT_FILE,
@@ -518,11 +518,13 @@ function resolveEntityDir(cwd: string, raw: string): string {
 
 export function assertReviewPhase(directory: string, phase: ReviewPhase): void {
     const status = readEntityStatus(directory)
-    const [requiredPhase, label] = ((): ["planning" | "selfReview", string] => {
+    const [requiredPhase, label] = ((): [Phase, string] => {
         switch (phase) {
             case "plan":
                 return ["planning", "Planning"]
+            // A commit step's interim review is part of execution; Self-Review means the work is complete.
             case "interim":
+                return ["execution", "Execution"]
             case "final":
             case "conflict-plan":
             case "conflict-merge":
