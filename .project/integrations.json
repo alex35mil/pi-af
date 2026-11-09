@@ -2,7 +2,7 @@
     "tracker": {
         "provider": "github",
         "mcpServer": "github",
-        "repository": { "owner": "alex35mil", "repo": "pi-af" },
+        "repository": { "owner": "alex35mil", "repo": "piton" },
         "project": {
             "owner": "alex35mil",
             "ownerType": "user",
@@ -150,6 +150,6 @@
     "forge": {
         "provider": "github",
         "mcpServer": "github",
-        "repository": { "owner": "alex35mil", "repo": "pi-af" }
+        "repository": { "owner": "alex35mil", "repo": "piton" }
     }
 }
