@@ -1,15 +1,15 @@
 ---
 paths:
-    - "tests/**"
+    - "pi/tests/**"
 ---
 
-# Testing in this repository
+# Testing the pi package
 
 Test what code does, not what documentation says.
 
 - **Test behavior through code.** Cover tool schemas and registration, domain functions, output that code produces (rendered bodies, reviewer prompts, error messages), and flows that use mocked providers.
 - **Never assert workflow Markdown wording.** Skills, references, and READMEs are reviewed, not regex-pinned. If a test breaks only because wording changed, delete the assertion. Don't update the regex.
-- **Guidance checks are structural only.** They live in `tests/workflow-instructions.test.ts`:
+- **Guidance checks are structural only.** They live in `pi/tests/workflow-instructions.test.ts`:
   - links and heading anchors resolve;
   - skills reach their required references;
   - frontmatter grants match registered tools;

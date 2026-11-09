@@ -1,0 +1,33 @@
+# Project tasks, run from the repository root: `mise run <task>`. `mise tasks` lists them.
+
+# pi package (pi/)
+
+[tasks."pi:install"]
+description = "Install the pi package's dependencies"
+dir = "pi"
+run = "npm ci"
+
+[tasks."pi:test"]
+description = "Test the pi package"
+dir = "pi"
+run = "npm test"
+
+[tasks."pi:typecheck"]
+description = "Typecheck the pi package"
+dir = "pi"
+run = "npm run typecheck"
+
+[tasks."pi:format"]
+description = "Format the given pi package files with oxfmt (paths relative to pi/)"
+dir = "pi"
+run = "npm run fmt --"
+
+# Everything
+
+[tasks.test]
+description = "Run every test suite"
+depends = ["pi:test"]
+
+[tasks.lint]
+description = "Run every static check"
+depends = ["pi:typecheck"]

@@ -1,6 +1,6 @@
 # Live provider checks
 
-Automated tests stay local: `npm test` and everything under `tests/` use fixtures and mocked providers, as `.agents/rules/testing.md` requires. This rule covers only manual checks run outside the test suite against real providers.
+Automated tests stay local: `mise run pi:test` and everything under `pi/tests/` use fixtures and mocked providers, as `.agents/rules/testing.md` requires. This rule covers only manual checks run outside the test suite against real providers.
 
 - Run live checks that write (labels, issues, Projects, pull requests, documents) only against these test targets:
   - GitHub: the repository `alex35mil/__sandbox__`, with the token in `GITHUB_PERSONAL_ACCESS_TOKEN`.
