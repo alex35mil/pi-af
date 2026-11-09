@@ -14,7 +14,7 @@ Settings file: `permissions.json` (3 tiers, each with a runtime-specific file):
 
 ### Runtime
 
-`PI_AF_RUNTIME` says where Pi runs: unset (or empty) means `host`, `sandbox` means a sandboxed worker such as a [nono worker](../../examples/workers/). Any other value is invalid: tools are blocked until it's fixed, like invalid settings.
+`PITON_RUNTIME` says where Pi runs: unset (or empty) means `host`, `sandbox` means a sandboxed worker, such as a nono worker launched by piton. Any other value is invalid: tools are blocked until it's fixed, like invalid settings.
 
 Only the current runtime's files load. They merge in this order, the more specific location winning: global, global runtime, project, project runtime, local, local runtime. `allow`, `ask`, and `deny` lists from every loaded file are combined, and deny or ask beats allow wherever it comes from. Only `defaultMode` and keybindings take the last value set.
 

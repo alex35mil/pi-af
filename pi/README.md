@@ -1,6 +1,6 @@
-# pi-af
+# piton: pi package
 
-My [pi](https://pi.dev) setup for coding agent workflows.
+The [pi](https://pi.dev) package of [piton](../README.md): extensions, skills, and coding agent workflows.
 
 > [!IMPORTANT]
 > This setup is built for [pi.nvim](https://github.com/alex35mil/pi.nvim). Some extensions (notably [permissions](./extensions/permissions/)) rely on the Neovim plugin for UI interactions like edit reviews. Using this package with the pi TUI will most likely require adjustments.
@@ -46,4 +46,4 @@ Every project uses a tracker (GitHub or Linear) and a GitHub forge. The tracker 
 
 ## Parallel workers
 
-Run several Gigs or Tasks at once, each in its own copy-on-write copy of the repository with Pi inside a nono sandbox on the macOS host. Workers share workflow artifacts with the source checkout through symlinks, and `PI_AF_RUNTIME=sandbox` lets them use separate `permissions.sandbox.json` rules. See [parallel sandboxed workers](examples/workers/README.md).
+Run several Gigs or Tasks at once, each in its own copy-on-write copy of the repository with Pi inside a nono sandbox on the macOS host. Workers share workflow artifacts with the source checkout through symlinks, and `PITON_RUNTIME=sandbox` lets them use separate `permissions.sandbox.json` rules. piton creates and deletes workers and launches Pi in them; see the [repository root](../README.md).

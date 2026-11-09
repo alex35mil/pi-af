@@ -2,7 +2,7 @@
 
 Project setup can render `.github/workflows/incoming-pr-project.yml`, which automatically adds open fork PRs to the configured GitHub Project.
 
-- Contributors don't use pi-af or update board fields.
+- Contributors don't use piton or update board fields.
 - The workflow is optional, and setup doesn't deploy it. The setup steps are in [incoming PR intake](../setup/incoming-pr-intake.md).
 
 ## Scope

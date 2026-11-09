@@ -1,6 +1,6 @@
 # MCP Extension
 
-Composes Pi 1.3.0's native MCP support with pi-af's tool metadata and decorators. Pi owns connections, authentication, discovery, resources, execution, result conversion, and shutdown. Registering `/mcp` through this composition replaces the built-in extension; it does not start a second transport.
+Composes Pi 1.3.0's native MCP support with this package's tool metadata and decorators. Pi owns connections, authentication, discovery, resources, execution, result conversion, and shutdown. Registering `/mcp` through this composition replaces the built-in extension; it does not start a second transport.
 
 ## Configuration
 

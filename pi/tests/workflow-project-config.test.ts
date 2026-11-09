@@ -838,18 +838,18 @@ describe("workflow project configuration", () => {
     it("requires a linked project-local folder only in the sandbox runtime", () => {
         const root = repository()
         const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-local-source-"))
-        const previous = process.env.PI_AF_RUNTIME
+        const previous = process.env.PITON_RUNTIME
         try {
             writeConfig(root, config())
             fs.writeFileSync(path.join(root, ".gitignore"), `${PROJECT_LOCAL_IGNORE}\n`)
             const local = path.join(root, ".project", ".local")
 
-            delete process.env.PI_AF_RUNTIME
+            delete process.env.PITON_RUNTIME
             assertSandboxArtifactsLinked(root)
             fs.mkdirSync(local)
             assertSandboxArtifactsLinked(root)
 
-            process.env.PI_AF_RUNTIME = "sandbox"
+            process.env.PITON_RUNTIME = "sandbox"
             assert.throws(() => assertSandboxArtifactsLinked(root), /isn't linked to its source checkout/)
             fs.rmSync(local, { recursive: true })
             assert.throws(() => assertSandboxArtifactsLinked(root), /isn't linked to its source checkout/)
@@ -859,8 +859,8 @@ describe("workflow project configuration", () => {
             fs.symlinkSync(source, local)
             assertSandboxArtifactsLinked(root)
         } finally {
-            if (previous === undefined) delete process.env.PI_AF_RUNTIME
-            else process.env.PI_AF_RUNTIME = previous
+            if (previous === undefined) delete process.env.PITON_RUNTIME
+            else process.env.PITON_RUNTIME = previous
             fs.rmSync(root, { recursive: true, force: true })
             fs.rmSync(source, { recursive: true, force: true })
         }

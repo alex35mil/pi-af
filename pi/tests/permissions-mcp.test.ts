@@ -556,21 +556,21 @@ describe("MCP permission lifecycle", () => {
     it("blocks tools under an invalid runtime and recovers when it is fixed", async () => {
         await suppressErrors(async () => {
             const project = createProjectSettings(JSON.stringify({ defaultMode: "allow" }))
-            const previous = process.env.PI_AF_RUNTIME
+            const previous = process.env.PITON_RUNTIME
             try {
                 const harness = createPermissionHarness()
                 const context = createContext(project.cwd)
-                process.env.PI_AF_RUNTIME = "sandboxed"
+                process.env.PITON_RUNTIME = "sandboxed"
 
                 const blocked = (await harness.handler("tool_call")(
                     { toolName: "read", toolCallId: "call-1", input: { path: "README.md" } },
                     context.ctx,
                 )) as { block: boolean; reason: string }
                 assert.equal(blocked.block, true)
-                assert.match(blocked.reason, /PI_AF_RUNTIME/)
+                assert.match(blocked.reason, /PITON_RUNTIME/)
                 assert.ok(context.widgets.has("permissions:invalid-settings"))
 
-                process.env.PI_AF_RUNTIME = "sandbox"
+                process.env.PITON_RUNTIME = "sandbox"
                 assert.equal(
                     await harness.handler("tool_call")(
                         { toolName: "read", toolCallId: "call-2", input: { path: "README.md" } },
@@ -580,8 +580,8 @@ describe("MCP permission lifecycle", () => {
                 )
                 assert.equal(context.widgets.has("permissions:invalid-settings"), false)
             } finally {
-                if (previous === undefined) delete process.env.PI_AF_RUNTIME
-                else process.env.PI_AF_RUNTIME = previous
+                if (previous === undefined) delete process.env.PITON_RUNTIME
+                else process.env.PITON_RUNTIME = previous
                 project.cleanup()
             }
         })

@@ -29,15 +29,15 @@ function fixture() {
 }
 
 describe("runtime selection", () => {
-    it("reads PI_AF_RUNTIME as host, sandbox, or invalid", () => {
+    it("reads PITON_RUNTIME as host, sandbox, or invalid", () => {
         assert.deepEqual(resolveRuntime({}), { runtime: "host" })
-        assert.deepEqual(resolveRuntime({ PI_AF_RUNTIME: "" }), { runtime: "host" })
-        assert.deepEqual(resolveRuntime({ PI_AF_RUNTIME: "sandbox" }), { runtime: "sandbox" })
-        const invalid = resolveRuntime({ PI_AF_RUNTIME: "sandboxed" })
+        assert.deepEqual(resolveRuntime({ PITON_RUNTIME: "" }), { runtime: "host" })
+        assert.deepEqual(resolveRuntime({ PITON_RUNTIME: "sandbox" }), { runtime: "sandbox" })
+        const invalid = resolveRuntime({ PITON_RUNTIME: "sandboxed" })
         assert.ok("error" in invalid)
-        assert.match(invalid.error.message, /PI_AF_RUNTIME "sandboxed"/)
-        assert.equal(requireRuntime({ PI_AF_RUNTIME: "sandbox" }), "sandbox")
-        assert.throws(() => requireRuntime({ PI_AF_RUNTIME: "Sandbox" }), /invalid PI_AF_RUNTIME/)
+        assert.match(invalid.error.message, /PITON_RUNTIME "sandboxed"/)
+        assert.equal(requireRuntime({ PITON_RUNTIME: "sandbox" }), "sandbox")
+        assert.throws(() => requireRuntime({ PITON_RUNTIME: "Sandbox" }), /invalid PITON_RUNTIME/)
     })
 
     it("runs every test file in the host runtime regardless of the launching runtime", () => {

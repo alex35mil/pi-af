@@ -97,7 +97,7 @@ To report workflow problems from any consuming project, set `workflowProject` in
 
 ```json
 {
-    "workflowProject": "/absolute/path/to/pi-af"
+    "workflowProject": "/absolute/path/to/piton"
 }
 ```
 

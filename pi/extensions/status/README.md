@@ -4,7 +4,7 @@ Publishes Pi status entries (`ctx.ui.setStatus`) that editor integrations such a
 
 ## Status keys
 
-- **`status:runtime`** is `host` or `sandbox`, set on `session_start` from `PI_AF_RUNTIME` (see the [permissions runtime](../permissions/README.md#runtime)). It's cleared when the value is invalid; the permissions extension reports that error.
+- **`status:runtime`** is `host` or `sandbox`, set on `session_start` from `PITON_RUNTIME` (see the [permissions runtime](../permissions/README.md#runtime)). It's cleared when the value is invalid; the permissions extension reports that error.
 - **`status:limits`** is the current model provider's rate-limit usage as flat JSON, for example `{"h5":26,"h5Reset":1793359800,"wk":61,"wkReset":1793588400}`. It's cleared while the current provider has reported nothing.
   - `h5` and `wk` are the 5-hour and weekly usage in whole percent.
   - `h5Reset` and `wkReset` are each window's reset timestamp, exactly as the provider reports it.

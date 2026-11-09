@@ -51,7 +51,7 @@ async function reviewFile(
         if (value.result === "Accepted") {
             throw new ReviewedFile(
                 fileReviewResult(
-                    { kind: "pi-af-file-review", outcome: "accepted", path: target, notes },
+                    { kind: "piton-file-review", outcome: "accepted", path: target, notes },
                     `[accepted] User approved the edit. Changes applied to ${target} as proposed.`,
                 ),
                 "review",
@@ -60,7 +60,7 @@ async function reviewFile(
         if (value.result === "AcceptModified") {
             throw new ReviewedFile(
                 fileReviewResult(
-                    { kind: "pi-af-file-review", outcome: "modified", path: target, notes },
+                    { kind: "piton-file-review", outcome: "modified", path: target, notes },
                     `[accepted] User approved with modifications. ${target} was updated with user's version, which differs from what you proposed. Current content of ${target}:\n\`\`\`\n${value.content}\n\`\`\``,
                 ),
                 "review",
@@ -69,7 +69,7 @@ async function reviewFile(
         if (notes.length) {
             throw new ReviewedFile(
                 fileReviewResult(
-                    { kind: "pi-af-file-review", outcome: "rejected", path: target, notes },
+                    { kind: "piton-file-review", outcome: "rejected", path: target, notes },
                     `[rejected] User rejected the edit to ${target}. File unchanged.`,
                 ),
                 "review",
@@ -79,7 +79,7 @@ async function reviewFile(
     ctx.abort()
     throw new ReviewedFile(
         fileReviewResult(
-            { kind: "pi-af-file-review", outcome: "rejected", path: target, notes: [] },
+            { kind: "piton-file-review", outcome: "rejected", path: target, notes: [] },
             `[rejected] User rejected the edit to ${target}. File unchanged.`,
         ),
         "turn-abort",

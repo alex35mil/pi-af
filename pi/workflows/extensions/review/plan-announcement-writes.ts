@@ -21,7 +21,7 @@ import { type PlanAnnouncement, planFingerprint } from "../integrations/plan-ann
 // A call another `tool_call` handler blocks never reaches `tool_result`, so its state is unchanged;
 // `tool_execution_end` still runs for it and clears the widget.
 
-export const PLAN_ANNOUNCEMENT_WIDGET = "pi-af:plan-announcement"
+export const PLAN_ANNOUNCEMENT_WIDGET = "piton:plan-announcement"
 
 const PLAN_FILES = { epic: "epic.md", task: "plan.md", gig: "plan.md" } as const
 

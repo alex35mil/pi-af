@@ -347,9 +347,9 @@ describe("workflow model-facing contracts", () => {
     for (const layout of ["directory", "linked", "unlinked"] as const)
         it(`keeps discovery, setup, real initialization and Phase transitions working through reload and resume (${layout} local root)`, async () => {
             const source = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-contract-source-"))
-            const previousRuntime = process.env.PI_AF_RUNTIME
-            if (layout === "directory") delete process.env.PI_AF_RUNTIME
-            else process.env.PI_AF_RUNTIME = "sandbox"
+            const previousRuntime = process.env.PITON_RUNTIME
+            if (layout === "directory") delete process.env.PITON_RUNTIME
+            else process.env.PITON_RUNTIME = "sandbox"
             const h = await nativeSessionFixture({
                 extensions: [...codingFactories, memoryMcp("github", ["projects_get"]), ...workflowFactories],
                 tools: ["+codemode"],
@@ -480,8 +480,8 @@ describe("workflow model-facing contracts", () => {
             } finally {
                 await h.cleanup()
                 fs.rmSync(source, { recursive: true, force: true })
-                if (previousRuntime === undefined) delete process.env.PI_AF_RUNTIME
-                else process.env.PI_AF_RUNTIME = previousRuntime
+                if (previousRuntime === undefined) delete process.env.PITON_RUNTIME
+                else process.env.PITON_RUNTIME = previousRuntime
             }
         })
 })

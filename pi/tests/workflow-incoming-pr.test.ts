@@ -382,9 +382,9 @@ describe("incoming PR identity and context", () => {
     it("refuses incoming-PR evidence in a sandboxed worker without a linked local root", () => {
         const f = fixture()
         const source = fs.mkdtempSync(path.join(os.tmpdir(), "incoming-local-source-"))
-        const previous = process.env.PI_AF_RUNTIME
+        const previous = process.env.PITON_RUNTIME
         try {
-            process.env.PI_AF_RUNTIME = "sandbox"
+            process.env.PITON_RUNTIME = "sandbox"
             const local = path.join(f.root, ".project", ".local")
             fs.mkdirSync(local, { recursive: true })
             assert.throws(() => incomingPullRequestContext(f.root, "#12", mcpTools), /isn't linked/)
@@ -393,8 +393,8 @@ describe("incoming PR identity and context", () => {
             fs.symlinkSync(source, local)
             assert.doesNotThrow(() => incomingPullRequestContext(f.root, "#12", mcpTools))
         } finally {
-            if (previous === undefined) delete process.env.PI_AF_RUNTIME
-            else process.env.PI_AF_RUNTIME = previous
+            if (previous === undefined) delete process.env.PITON_RUNTIME
+            else process.env.PITON_RUNTIME = previous
             fs.rmSync(source, { recursive: true, force: true })
             f.close()
         }

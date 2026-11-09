@@ -327,10 +327,10 @@ describe("workflow-source queue context", () => {
 
     it("inspects and queues from a sandboxed worker without guarding artifact-free operations", (t) => {
         const f = workflowFixture(t)
-        const previous = process.env.PI_AF_RUNTIME
+        const previous = process.env.PITON_RUNTIME
         t.after(() => {
-            if (previous === undefined) delete process.env.PI_AF_RUNTIME
-            else process.env.PI_AF_RUNTIME = previous
+            if (previous === undefined) delete process.env.PITON_RUNTIME
+            else process.env.PITON_RUNTIME = previous
         })
         // The source checkout owns a real .project/.local; the worker links to it.
         prepareWorkflowProject(f.source)
@@ -339,7 +339,7 @@ describe("workflow-source queue context", () => {
         fs.writeFileSync(path.join(f.consumer, ".gitignore"), "/.project/.local\n")
         fs.symlinkSync(path.join(f.source, ".project/.local"), path.join(f.consumer, ".project/.local"))
         prepareArtifactPersistence(f.consumer)
-        process.env.PI_AF_RUNTIME = "sandbox"
+        process.env.PITON_RUNTIME = "sandbox"
 
         const before = fileSnapshot(f.source)
         for (const input of [

@@ -49,7 +49,7 @@ export default function (pi: ExtensionAPI) {
 
     pi.on("session_start", (_event, ctx) => {
         const result = resolveRuntime()
-        // An invalid PI_AF_RUNTIME is reported by the permissions extension; here it only clears the entry.
+        // An invalid PITON_RUNTIME is reported by the permissions extension; here it only clears the entry.
         ctx.ui.setStatus(RUNTIME_STATUS, "runtime" in result ? result.runtime : undefined)
         publishLimits(ctx, ctx.model?.provider)
     })

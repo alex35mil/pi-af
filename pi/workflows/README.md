@@ -56,7 +56,7 @@ Say **“Report this workflow issue.”** The Todo skill prepares a minimal sani
 Set the source reference once in private global `workflows.json` in Pi's agent directory (`getAgentDir()`):
 
 ```json
-{ "workflowProject": "/absolute/path/to/pi-af" }
+{ "workflowProject": "/absolute/path/to/piton" }
 ```
 
 - The agent reads that source checkout's `.project/integrations.json` and `.project/config.json`, not the consuming project's tracker or policy.

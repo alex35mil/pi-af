@@ -6,7 +6,7 @@
  *   <repo-root>/.agents/permissions.json       (project, committed)
  *   <repo-root>/.agents/permissions.local.json (project, gitignored)
  * Runtime files insert the runtime before `.json` / `.local.json`, e.g. `permissions.sandbox.json`.
- * PI_AF_RUNTIME selects the runtime: unset = host, `sandbox` = sandboxed worker; other values are invalid.
+ * PITON_RUNTIME selects the runtime: unset = host, `sandbox` = sandboxed worker; other values are invalid.
  *
  * Schema:
  * {

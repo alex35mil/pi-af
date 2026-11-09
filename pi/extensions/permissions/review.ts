@@ -19,7 +19,7 @@ const ReviewNoteSchema = Type.Object({
 export type ReviewNote = Static<typeof ReviewNoteSchema>
 
 const ReviewSchema = Type.Object({
-    kind: Type.Literal("pi-af-file-review"),
+    kind: Type.Literal("piton-file-review"),
     outcome: Type.Union([Type.Literal("accepted"), Type.Literal("modified"), Type.Literal("rejected")]),
     path: Type.String(),
     notes: Type.Array(ReviewNoteSchema),

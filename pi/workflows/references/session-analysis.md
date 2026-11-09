@@ -1,6 +1,6 @@
 # Session analysis
 
-Read this when a finished workflow's `inspect_session_analysis` returns `enabled`: after a Task or Gig ships, an Epic completes, or an incoming PR ships. Look back over the session for workflow problems that pi-af should fix, check whether they're already reported, and present them in chat.
+Read this when a finished workflow's `inspect_session_analysis` returns `enabled`: after a Task or Gig ships, an Epic completes, or an incoming PR ships. Look back over the session for workflow problems that piton should fix, check whether they're already reported, and present them in chat.
 
 ## Scope
 
@@ -20,7 +20,7 @@ Read this when a finished workflow's `inspect_session_analysis` returns `enabled
 
 ## Triage
 
-1. Keep a candidate only when pi-af workflow instructions or tools contributed to it. Exclude user choices, project code, provider outages, and one-off agent mistakes that no instruction or tool invited.
+1. Keep a candidate only when piton's workflow instructions or tools contributed to it. Exclude user choices, project code, provider outages, and one-off agent mistakes that no instruction or tool invited.
 2. When it helps, confirm the cause in the installed workflow files this session loaded, or in the `workflowProject` source. Say when a cause was confirmed only in the source, since that checkout can differ from the installed copy.
 3. Keep only findings that are addressable and worth a tracker item.
 4. Search the workflow tracker's open issues for each finding with a few targeted queries: its most specific text, such as an error message, tool name, file name, or distinctive phrase. Never list or compare every issue.
