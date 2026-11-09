@@ -10,15 +10,17 @@ Phase is the current activity; Status is the lifecycle. Every initialized Epic, 
 | Initialization, investigation, drafting, material replanning | In Progress | Planning | Planning |
 | Plan review, corrections, presentation, waiting for plan approval | In Progress | Planning | Planning |
 | Plan accepted; implementation or implementation corrections | In Progress | Execution | Execution |
-| Interim or final review of delivered work | In Progress | Self-Review | Self-Review |
+| Commit step's interim review, acceptance, and commit | In Progress | Execution | Execution |
+| Final review of completed work | In Progress | Self-Review | Self-Review |
 | User review of delivered work, including waiting for approval | In Progress | Self-Review | Self-Review |
 | PR created, or revisions published, for external human review | In Review | keep last | absent |
 | Corrections on submitted work | In Progress | Execution | Execution |
-| Local review of those corrections | In Progress | Self-Review | Self-Review |
+| Final review and user review of those corrections | In Progress | Self-Review | Self-Review |
 | Confirmed completion or cancellation | Done, Canceled | keep last | absent |
 
 - Use Planning for `review_epic`, `review_task`, or `review_gig` with category `plan`, and for the plan-presentation tool.
-- Enter Self-Review before interim, final, `conflict-plan`, or `conflict-merge` review and before user review of delivered work. Stay there while waiting for feedback.
+- Enter Self-Review only when implementation is complete: before final, `conflict-plan`, or `conflict-merge` review and before user review of delivered work. Stay there while waiting for feedback.
+- Stay in Execution for a commit step's `interim` review, its acceptance, and its commit.
 - After corrections, repeat the required review in the Phase for that activity.
 - The review tool's category is not a workflow Phase.
 - Plan acceptance, completion artifacts, and review approval remain required for the work being done.

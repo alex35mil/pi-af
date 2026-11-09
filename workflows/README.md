@@ -89,7 +89,7 @@ Canceled:    terminal unsuccessful status for queued or initialized work
 
 **Phase and Status:**
 
-- Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Interim and final reviews, and your review of delivered work, use Self-Review.
+- Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Implementation stays in Execution, including each commit step's interim review and commit. Self-Review means the work is complete: it covers the final review and your review of delivered work.
 - Status stays In Progress through all of these local loops.
 - Phase shows as a GitHub Project field or a Linear label group. See [Phase](references/phase.md).
 

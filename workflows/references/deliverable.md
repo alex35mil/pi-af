@@ -88,9 +88,9 @@ Every plan, interim, and final review follows [review](./review.md).
 
 **When the plan defines commit steps:**
 
-- Run steps 1–7 for each step, so each one starts in Execution, with an interim review (`phase: "interim"`) in place of the final review.
-- After a step's interim review approves, summarize the step's changes and the review outcome in chat, and wait for explicit acceptance. Then read [commits](./deliverable/submission.md#commits) and commit it. Accepting a step authorizes only its commit, not a push or PR.
-- After the last step, run the final review over the whole branch, then steps 8–10.
+- Run steps 1–6 for each step, then an interim review (`phase: "interim"`) in Execution in place of step 7.
+- After it approves, summarize the step's changes and the review outcome in chat, and wait for explicit acceptance. Then read [commits](./deliverable/submission.md#commits) and commit it. Accepting a step authorizes only its commit, not a push or PR.
+- After the last step, run step 7 over the whole branch, then steps 8–10.
 
 ## Completion artifact
 

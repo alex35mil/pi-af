@@ -200,7 +200,13 @@ describe("workflow reviewer isolation", () => {
                 const prepareCompletion = tools.find((tool) => tool.name === "prepare_gig_completion_presentation")!
                 const ctx = { cwd: repository } as never
                 const stopBeforeRunner = new Error("Reached the reviewer subprocess boundary")
+                const required = {
+                    plan: ["planning", "Planning"],
+                    interim: ["execution", "Execution"],
+                    final: ["selfReview", "Self-Review"],
+                } as const
                 for (const category of ["plan", "interim", "final"] as const) {
+                    const [requiredPhase, label] = required[category]
                     for (const phase of ["planning", "execution", "selfReview"]) {
                         const before = JSON.stringify({ ...metadata, phase })
                         fs.writeFileSync(metadataPath, before)
@@ -214,11 +220,9 @@ describe("workflow reviewer isolation", () => {
                                 },
                                 ctx,
                             ),
-                            phase === (category === "plan" ? "planning" : "selfReview")
+                            phase === requiredPhase
                                 ? (error: unknown) => error === stopBeforeRunner
-                                : new RegExp(
-                                      `${category} review requires Phase ${category === "plan" ? "Planning" : "Self-Review"}`,
-                                  ),
+                                : new RegExp(`${category} review requires Phase ${label}`),
                         )
                         assert.equal(fs.readFileSync(metadataPath, "utf-8"), before)
                     }

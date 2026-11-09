@@ -36,7 +36,7 @@ Every Deliverable ships through a merged PR.
 
 ## Revisions on an open PR
 
-- Return to In Progress and Execution for corrections, then Self-Review for interim, final, and user review.
+- Return to In Progress and Execution for corrections and any interim review, then Self-Review for final and user review.
 - Accepting a re-presented `result.md` or `report.md` authorizes no commit, push, or PR body update. Resubmit only on an explicit request.
 - When resubmitting after a change to `result.md` or `report.md`, render and publish the complete PR body again.
 - Return to In Review after successful resubmission. Reuse native automation outcomes and skip writes that are already applied.
