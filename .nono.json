@@ -1,0 +1,17 @@
+{
+    "filesystem": {
+        "allow": [
+            "$HOME/Library/Caches/org.swift.swiftpm"
+        ],
+        "read": [
+            "$HOME/Library/org.swift.swiftpm/security",
+            "$HOME/.local/state/piton/logs"
+        ],
+        "read_file": [
+            "$HOME/Library/Preferences/com.apple.dt.Xcode.plist",
+            "$HOME/Library/Developer/Xcode/SDKToSimulatorIndexMapping.plist",
+            "$HOME/.local/state/piton/piton.log",
+            "$HOME/.local/state/piton/launchd.log"
+        ]
+    }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "reply",
+  "id": "c9",
+  "ok": true,
+  "data": {
+    "mime_type": "image/png",
+    "data": "AAAA"
+  }
+}

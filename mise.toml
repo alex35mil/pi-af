@@ -1,5 +1,13 @@
 # Project tasks, run from the repository root: `mise run <task>`. `mise tasks` lists them.
 
+[tools]
+rust = { version = "1.99.0", components = "clippy,rustfmt,rust-analyzer,rust-src" }
+xcodegen = "2.46.0"
+
+# In a sandboxed agent worker (PITON_RUNTIME=sandbox, set by the nono profile), SwiftPM and the Swift compiler can't
+# start their own sandboxes (macOS doesn't nest them), so the Swift tasks turn those off: nono already confines the
+# process. On the host the flags are empty and the tools keep their sandboxes. See docs/development.md.
+
 # pi package (pi/)
 
 [tasks."pi:install"]
@@ -22,12 +30,241 @@ description = "Format the given pi package files with oxfmt (paths relative to p
 dir = "pi"
 run = "npm run fmt --"
 
+# Daemon (Rust)
+
+[tasks."daemon:build"]
+description = "Build the piton daemon and CLI (debug)"
+dir = "daemon"
+run = "cargo build"
+
+[tasks."daemon:test"]
+description = "Unit tests, then the e2e tests against real pi (faux model, host mode)"
+dir = "daemon"
+run = '''
+set -eu
+logs=$(mktemp -d "${TMPDIR:-/tmp}/piton-test-logs.XXXXXX")
+trap 'rm -rf "$logs"' EXIT
+export PITON_LOGS_DIR="$logs"
+cargo test --quiet
+cargo build --quiet
+node tests/e2e/attach.mjs
+node tests/e2e/worker.mjs
+node tests/e2e/view.mjs
+node tests/e2e/websocket.mjs
+node tests/e2e/logging.mjs
+'''
+
+[tasks."daemon:lint"]
+description = "Check formatting and clippy"
+dir = "daemon"
+run = ["cargo fmt --check", "cargo clippy --all-targets --quiet -- -D warnings"]
+
+[tasks."daemon:format"]
+description = "Format Rust sources"
+dir = "daemon"
+run = "cargo fmt"
+
+[tasks."daemon:install"]
+description = "Install the stable piton binary into ~/.cargo/bin and (re)load its launchd agent (host only; ends all sessions)"
+dir = "daemon"
+run = '''
+set -euo pipefail
+[ "${PITON_RUNTIME:-}" != sandbox ] || { echo "error: installing the daemon is host-only" >&2; exit 1; }
+cargo install --path . --locked
+# A stable code identity across rebuilds (the default ad-hoc signature changes every build), so firewall rules
+# (Little Snitch) that match on the signature keep applying. Same team as the apps.
+codesign --force --sign "Apple Development" --identifier com.alex35mil.piton.daemon "$HOME/.cargo/bin/piton"
+piton service install
+'''
+
+# Apps (Swift)
+
+[tasks."apps:generate"]
+description = "Generate Piton.xcodeproj from apps/project.yml"
+dir = "apps"
+run = "xcodegen generate --quiet"
+
+[tasks."apps:build"]
+description = "Build the iOS (simulator) and macOS apps (Debug) into apps/.build/xcode"
+dir = "apps"
+depends = ["apps:generate"]
+run = """
+xcodebuild -project Piton.xcodeproj -scheme 'Piton iOS' -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode -quiet build\
+{% if env.PITON_RUNTIME | default(value='') == 'sandbox' %} 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'{% endif %}
+xcodebuild -project Piton.xcodeproj -scheme 'Piton macOS' -configuration Debug -derivedDataPath .build/xcode -quiet build\
+{% if env.PITON_RUNTIME | default(value='') == 'sandbox' %} 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'{% endif %}
+"""
+
+[tasks."apps:test"]
+description = "Run Swift package tests"
+dir = "apps"
+run = """
+set -eu
+logs=$(mktemp -d "${TMPDIR:-/tmp}/piton-app-test-logs.XXXXXX")
+trap 'rm -rf "$logs"' EXIT
+export PITON_LOGS_DIR="$logs"
+swift test --quiet\
+{% if env.PITON_RUNTIME | default(value='') == 'sandbox' %} --disable-sandbox{% endif %}
+"""
+
+[tasks."apps:e2e"]
+description = "PitonKit against a real daemon and pi (faux model, host mode)"
+dir = "apps"
+depends = ["daemon:build"]
+run = """
+set -eu
+logs=$(mktemp -d "${TMPDIR:-/tmp}/piton-app-e2e-logs.XXXXXX")
+trap 'rm -rf "$logs"' EXIT
+export PITON_LOGS_DIR="$logs"
+PITON_BIN="$MISE_PROJECT_ROOT/daemon/target/debug/piton" swift test --quiet --filter IntegrationTests\
+{% if env.PITON_RUNTIME | default(value='') == 'sandbox' %} --disable-sandbox{% endif %}
+"""
+
+[tasks."logs:install"]
+description = "Install the independent paired-iPhone log collector (host only; does not stop sessions)"
+run = '''
+set -eu
+[ "${PITON_RUNTIME:-}" != sandbox ] || { echo "error: collector installation is host-only" >&2; exit 1; }
+[ -n "${PITON_IPHONE:-}" ] || { echo "error: set PITON_IPHONE in mise.local.toml" >&2; exit 1; }
+piton logging install --device "$PITON_IPHONE"
+'''
+
+# Device and TestFlight (host only: signing needs the login keychain, installs and uploads need the network and
+# LaunchServices, which a sandboxed worker doesn't have). Configure in mise.local.toml, see docs/development.md:
+#   PITON_IPHONE   device name or UDID for `apps:phone` (`xcrun devicectl list devices`)
+#   ASC_KEY_ID     App Store Connect API key id
+#   ASC_ISSUER_ID  its issuer id
+#   ASC_KEY_PATH   the .p8 file, outside the repo (e.g. ~/.appstoreconnect/AuthKey_<id>.p8)
+
+[tasks."apps:phone"]
+description = "Build Piton (Release) and install it on $PITON_IPHONE (host only)"
+dir = "apps"
+depends = ["apps:generate"]
+run = 'bash scripts/install-device.sh "${PITON_IPHONE:-}" PITON_IPHONE'
+
+[tasks."apps:ipad"]
+description = "Build Piton (Release) and install it on $PITON_IPAD (host only)"
+dir = "apps"
+depends = ["apps:generate"]
+run = 'bash scripts/install-device.sh "${PITON_IPAD:-}" PITON_IPAD'
+
+[tasks."apps:crashes"]
+description = "Copy Piton's crash logs from $PITON_IPHONE into apps/.build/crashes (host only)"
+dir = "apps"
+run = '''
+set -euo pipefail
+[ "${PITON_RUNTIME:-}" != sandbox ] || { echo "error: copying from the device is host-only" >&2; exit 1; }
+[ -n "${PITON_IPHONE:-}" ] || { echo "error: set PITON_IPHONE in mise.local.toml (xcrun devicectl list devices)" >&2; exit 1; }
+mkdir -p .build/crashes
+# Piton-<date>.ips files, newest last; skips ones already copied.
+for name in $(xcrun devicectl device info files --device "$PITON_IPHONE" --domain-type systemCrashLogs 2>/dev/null \
+  | awk '$1 ~ /^Piton-.*\.ips$/ { print $1 }'); do
+  [ -e ".build/crashes/$name" ] && continue
+  xcrun devicectl device copy from --device "$PITON_IPHONE" --domain-type systemCrashLogs \
+    --source "$name" --destination ".build/crashes/$name" >/dev/null
+  echo "copied $name"
+done
+ls -1 .build/crashes
+'''
+
+[tasks."apps:mac"]
+description = "Build Piton (Release) and install it in /Applications, replacing the running one (host only)"
+dir = "apps"
+depends = ["apps:generate"]
+run = '''
+set -euo pipefail
+[ "${PITON_RUNTIME:-}" != sandbox ] || { echo "error: installing the app is host-only" >&2; exit 1; }
+xcodebuild -project Piton.xcodeproj -scheme 'Piton macOS' -configuration Release -derivedDataPath .build/xcode \
+  -allowProvisioningUpdates -quiet build
+# Quit the running app first, so the new one starts from the new files.
+osascript -e 'tell application id "com.alex35mil.piton.macos" to quit' 2>/dev/null || true
+for _ in $(seq 50); do pgrep -qx Piton || break; sleep 0.1; done
+rm -rf /Applications/Piton.app
+ditto .build/xcode/Build/Products/Release/Piton.app /Applications/Piton.app
+open /Applications/Piton.app
+'''
+
+[tasks.apps]
+description = "Install Piton on this Mac, $PITON_IPHONE, and $PITON_IPAD when set (host only)"
+# One after another: they all build into apps/.build/xcode. The iPad is optional: skipped when PITON_IPAD isn't set.
+run = [
+  { task = "apps:mac" },
+  { task = "apps:phone" },
+  '[ -z "${PITON_IPAD:-}" ] && echo "apps: PITON_IPAD not set; skipping the iPad" || mise run apps:ipad',
+]
+
+[tasks."apps:testflight"]
+description = "Archive Piton (Release) and upload it to TestFlight; build number = commit count (host only)"
+dir = "apps"
+depends = ["apps:generate"]
+run = '''
+set -euo pipefail
+[ "${PITON_RUNTIME:-}" != sandbox ] || { echo "error: TestFlight uploads are host-only" >&2; exit 1; }
+for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_PATH; do
+  [ -n "${!v:-}" ] || { echo "error: set $v in mise.local.toml (see docs/development.md)" >&2; exit 1; }
+done
+[ -z "$(git status --porcelain)" ] || { echo "error: commit first; the build number comes from the commit count" >&2; exit 1; }
+build=$(git rev-list --count HEAD)
+auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+out=.build/testflight/$build
+rm -rf "$out"
+xcodebuild -project Piton.xcodeproj -scheme 'Piton iOS' -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath "$out/Piton.xcarchive" -allowProvisioningUpdates "${auth[@]}" \
+  CURRENT_PROJECT_VERSION="$build" -quiet archive
+# destination=upload sends it to App Store Connect directly; it appears in TestFlight after processing (~5-15 min).
+cat > "$out/export.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>upload</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+</dict></plist>
+PLIST
+xcodebuild -exportArchive -archivePath "$out/Piton.xcarchive" -exportOptionsPlist "$out/export.plist" \
+  -exportPath "$out/export" -allowProvisioningUpdates "${auth[@]}"
+echo "uploaded build $build ($(git rev-parse --short HEAD)); TestFlight shows it after processing"
+'''
+
+[tasks."apps:format"]
+description = "Format Swift sources (swift-format from the Xcode toolchain, config in .swift-format)"
+dir = "apps"
+run = "swift format --in-place --recursive --parallel Package.swift packages ios macos"
+
+[tasks."apps:lint"]
+description = "Check Swift formatting without changing files"
+dir = "apps"
+run = "swift format lint --strict --recursive --parallel Package.swift packages ios macos"
+
+# Neovim plugin (nvim/): no user configuration or installed plugin dependencies in tests.
+
+[tasks."nvim:test"]
+description = "Load every plugin module and test editor integration in clean headless Neovim"
+run = '''
+set -eu
+# Neovim otherwise falls back to ./nvim.log when the sandbox blocks its default state directory.
+log=$(mktemp "${TMPDIR:-/tmp}/piton-nvim-test.XXXXXX")
+trap 'rm -f "$log"' EXIT
+NVIM_LOG_FILE="$log" nvim --headless -u NONE -i NONE -n -l nvim/tests/run.lua
+'''
+
 # Everything
+
+[tasks.build]
+description = "Build the daemon and the apps"
+depends = ["daemon:build", "apps:build"]
 
 [tasks.test]
 description = "Run every test suite"
-depends = ["pi:test"]
+# One after another: the e2e suites run real pi with timing-sensitive streaming, and flake when they share the CPU.
+run = [{ task = "daemon:test" }, { task = "apps:test" }, { task = "apps:e2e" }, { task = "nvim:test" }, { task = "pi:test" }]
 
 [tasks.lint]
 description = "Run every static check"
-depends = ["pi:typecheck"]
+depends = ["pi:typecheck", "daemon:lint", "apps:lint"]
+
+[tasks.format]
+description = "Format the daemon and the apps (pi package files: `mise run pi:format <files>`)"
+depends = ["daemon:format", "apps:format"]

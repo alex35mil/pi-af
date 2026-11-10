@@ -1,0 +1,115 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : "automatic"
+    },
+    {
+      "appearance" : "dark",
+      "value" : "system-dark"
+    }
+  ],
+  "groups" : [
+    {
+      "hidden-specializations" : [
+        {
+          "idiom" : "watchOS",
+          "value" : true
+        }
+      ],
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "Default.png",
+          "name" : "Default",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ]
+        }
+      ],
+      "name" : "Default",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "hidden-specializations" : [
+        {
+          "idiom" : "watchOS",
+          "value" : true
+        }
+      ],
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "idiom" : "square",
+              "value" : false
+            }
+          ],
+          "image-name" : "Letter.png",
+          "name" : "Letter",
+          "position-specializations" : [
+            {
+              "idiom" : "square",
+              "value" : {
+                "scale" : 0.64,
+                "translation-in-points" : [
+                  27,
+                  -25
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "name" : "Letter",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "hidden-specializations" : [
+        {
+          "idiom" : "square",
+          "value" : true
+        }
+      ],
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "Watch.png",
+          "name" : "Watch"
+        }
+      ],
+      "name" : "Watch",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

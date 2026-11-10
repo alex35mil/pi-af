@@ -1,0 +1,21 @@
+{
+  "type": "sessions",
+  "sessions": [
+    {
+      "key": 7,
+      "id": "01a1-session",
+      "file": "/Users/me/.config/pi/agent/sessions/--app--/s.jsonl",
+      "workspace": "/Users/me/Projects/app--fix-login",
+      "checkout": {
+        "kind": "worker",
+        "source": "/Users/me/Projects/app",
+        "name": "fix-login"
+      },
+      "mode": "sandbox",
+      "status": "working",
+      "clients": 2,
+      "pid": 4242,
+      "title": "run it"
+    }
+  ]
+}

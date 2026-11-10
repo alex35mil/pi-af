@@ -1,0 +1,5 @@
+# piton project settings, read from this (source) checkout only, never from a worker.
+
+[workers]
+# Not copied into new workers: SourceKit-LSP's index of this checkout breaks editor tooling in a clone.
+skip = ["apps/.build/index-build"]

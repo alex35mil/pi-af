@@ -1,0 +1,5 @@
+[
+    { "mode": "info" },
+    { "mode": "debug", "expiration": { "kind": "manual" } },
+    { "mode": "debug", "expiration": { "kind": "until", "unix_ms": 1234 } }
+]

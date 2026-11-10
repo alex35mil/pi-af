@@ -1,0 +1,41 @@
+{
+  "type": "history",
+  "session": 7,
+  "items": [
+    {
+      "type": "user",
+      "id": 1,
+      "timestamp": 2,
+      "content": [
+        {
+          "type": "text",
+          "text": "run it"
+        }
+      ]
+    },
+    {
+      "type": "assistant",
+      "id": 2,
+      "timestamp": 3,
+      "content": [
+        {
+          "type": "text",
+          "text": "Running"
+        },
+        {
+          "type": "toolCall",
+          "id": "c1",
+          "name": "bash",
+          "arguments": {
+            "command": "ls"
+          }
+        }
+      ],
+      "streaming": false,
+      "stop_reason": "toolUse",
+      "error": null,
+      "model": null
+    }
+  ],
+  "has_more": false
+}

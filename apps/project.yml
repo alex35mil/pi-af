@@ -1,0 +1,97 @@
+name: Piton
+
+options:
+  bundleIdPrefix: com.alex35mil.piton
+  deploymentTarget:
+    iOS: "27.0"
+    macOS: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    # Apple Development signing. Not secret: the team ID is embedded in every signed binary.
+    DEVELOPMENT_TEAM: Q62V4YP545
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: Apple Development
+
+packages:
+  Piton:
+    path: .
+
+targets:
+  Piton iOS:
+    type: application
+    platform: iOS
+    sources:
+      - ios/Sources
+      # Icon Composer icon, shared with macOS; the name matches ASSETCATALOG_COMPILER_APPICON_NAME (default AppIcon).
+      - shared/AppIcon.icon
+    dependencies:
+      - package: Piton
+        product: PitonKit
+      - package: Piton
+        product: PitonUI
+    info:
+      path: ios/Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        # All orientations (iPad multitasking requires them unless the app is full screen only).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # piton's WebSocket is plain ws:// inside the tailnet (Tailscale encrypts it). Allowed for MagicDNS names
+        # (*.ts.net); a 100.x address isn't subject to ATS's domain rules.
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            ts.net:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+        NSLocalNetworkUsageDescription: Piton connects to piton on your Mac over Tailscale.
+        # Only Apple's standard encryption (HTTPS/TLS stacks): no export-compliance questions on each TestFlight upload.
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # One app: it has no state of its own beyond the Mac's address, so there's nothing a test build could break.
+        PRODUCT_NAME: Piton
+        PRODUCT_BUNDLE_IDENTIFIER: com.alex35mil.piton.ios
+
+  Piton macOS:
+    type: application
+    platform: macOS
+    sources:
+      - macos/Sources
+      - shared/AppIcon.icon
+    dependencies:
+      - package: Piton
+        product: PitonKit
+      - package: Piton
+        product: PitonUI
+    info:
+      path: macos/Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        LSApplicationCategoryType: public.app-category.developer-tools
+    settings:
+      base:
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        # One app, like iOS. If the app later registers the daemon itself, a test build would replace the real one:
+        # revisit then.
+        PRODUCT_NAME: Piton
+        PRODUCT_BUNDLE_IDENTIFIER: com.alex35mil.piton.macos

@@ -1,0 +1,18 @@
+{"type":"change","session":7,"seq":1,"change":{"op":"append","item":{"type":"user","id":1,"timestamp":2,"content":[{"type":"text","text":"run it"}]}}}
+{"type":"change","session":7,"seq":2,"change":{"op":"append","item":{"type":"assistant","id":2,"timestamp":3,"content":[],"streaming":true,"stop_reason":null,"error":null,"model":"m"}}}
+{"type":"change","session":7,"seq":3,"change":{"op":"replace","item":{"type":"assistant","id":2,"timestamp":3,"content":[{"type":"text","text":""}],"streaming":true,"stop_reason":null,"error":null,"model":"m"}}}
+{"type":"change","session":7,"seq":4,"change":{"op":"delta","item":2,"index":0,"field":"text","text":"Run"}}
+{"type":"change","session":7,"seq":5,"change":{"op":"delta","item":2,"index":0,"field":"text","text":"ning"}}
+{"type":"change","session":7,"seq":6,"change":{"op":"replace","item":{"type":"assistant","id":2,"timestamp":3,"content":[{"type":"text","text":"Running"},{"type":"toolCall","id":"c1","name":"bash","arguments":{}}],"streaming":true,"stop_reason":null,"error":null,"model":"m"}}}
+{"type":"change","session":7,"seq":7,"change":{"op":"replace","item":{"type":"assistant","id":2,"timestamp":3,"content":[{"type":"text","text":"Running"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"streaming":true,"stop_reason":null,"error":null,"model":"m"}}}
+{"type":"change","session":7,"seq":8,"change":{"op":"append","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"pending","preview":null,"truncated":false}}}
+{"type":"change","session":7,"seq":9,"change":{"op":"replace","item":{"type":"assistant","id":2,"timestamp":3,"content":[{"type":"text","text":"Running"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"streaming":false,"stop_reason":"toolUse","error":null,"model":null}}}
+{"type":"change","session":7,"seq":10,"change":{"op":"replace","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"pending","preview":null,"truncated":false}}}
+{"type":"change","session":7,"seq":11,"change":{"op":"replace","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"running","preview":null,"truncated":false}}}
+{"type":"change","session":7,"seq":12,"change":{"op":"replace","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"running","preview":"a","truncated":false}}}
+{"type":"change","session":7,"seq":13,"change":{"op":"replace","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"done","preview":"a\nb","truncated":false}}}
+{"type":"change","session":7,"seq":14,"change":{"op":"replace","item":{"type":"tool","id":3,"call_id":"c1","message":2,"name":"bash","args":{"command":"ls"},"status":"done","preview":"a\nb","truncated":false}}}
+{"type":"change","session":7,"seq":15,"change":{"op":"state","state":{"status":"needs_input","workspace":"/Users/me/Projects/app","mode":"sandbox","session_id":"01a1-session","session_file":"/Users/me/.config/pi/agent/sessions/--app--/s.jsonl","session_name":null,"title":"run it","model":null,"thinking_level":null,"queue":{"steering":[],"follow_up":[]},"dialogs":[{"type":"extension_ui_request","id":"d1","method":"select","title":"Allow?","options":["Allow","Block"],"timeout":30000}]}}}
+{"type":"change","session":7,"seq":16,"change":{"op":"append","item":{"type":"notice","id":4,"level":"warning","text":"Retrying (1/3): 529 overloaded"}}}
+{"type":"change","session":7,"seq":17,"change":{"op":"append","item":{"type":"notice","id":5,"level":"info","text":"Aborted"}}}
+{"type":"change","session":7,"seq":18,"change":{"op":"reset"}}

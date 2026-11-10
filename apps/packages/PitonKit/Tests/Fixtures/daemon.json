@@ -1,0 +1,19 @@
+{
+  "type": "daemon",
+  "state": {
+    "version": "0.1.0 (abc1234567)",
+    "keep_awake": true,
+    "awake": true,
+    "sessions": 2,
+    "logging": {
+      "policy": {
+        "mode": "debug",
+        "expiration": {
+          "kind": "until",
+          "unix_ms": 1234
+        }
+      },
+      "default": "info"
+    }
+  }
+}
