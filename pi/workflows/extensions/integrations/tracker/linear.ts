@@ -1,7 +1,8 @@
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../../extensions/__lib/schema.js"
 
 const LinearApiRecordSchema = Type.Record(Type.String(), Type.Unknown())
+const LinearApiRecordValidator = compile(LinearApiRecordSchema)
 
 const EnvironmentNameSchema = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" })
 
@@ -9,6 +10,7 @@ export const LinearWorkspaceInspectionToolSchema = Type.Object(
     { credentialEnv: EnvironmentNameSchema },
     { additionalProperties: false },
 )
+export const LinearWorkspaceInspectionToolValidator = compile(LinearWorkspaceInspectionToolSchema)
 
 export type LinearWorkspaceInspectionInput = Static<typeof LinearWorkspaceInspectionToolSchema>
 
@@ -122,7 +124,7 @@ export async function inspectLinearWorkspace(
     rawInput: unknown,
     options: LinearWorkspaceInspectionOptions = {},
 ): Promise<LinearWorkspaceInspection> {
-    const input = Value.Parse(LinearWorkspaceInspectionToolSchema, rawInput)
+    const input = parse(LinearWorkspaceInspectionToolValidator, rawInput)
     const client = linearClientFor(input.credentialEnv, options)
     const workspace = await client.getWorkspace()
     const [teams, issueStatuses] = await Promise.all([client.listTeams(), client.listIssueStatuses()])
@@ -440,7 +442,7 @@ export class LinearApiError extends Error {
 }
 
 function isAuthorizationError(error: Record<string, unknown>): boolean {
-    const extensions = Value.Check(LinearApiRecordSchema, error.extensions) ? error.extensions : {}
+    const extensions = LinearApiRecordValidator.check(error.extensions) ? error.extensions : {}
     const code = String(extensions.code ?? "").toUpperCase()
     const type = String(extensions.type ?? "").toLowerCase()
     return (
@@ -455,9 +457,9 @@ function isAuthorizationError(error: Record<string, unknown>): boolean {
 
 function linearHttpError(status: number, value: unknown): LinearApiError {
     const message =
-        Value.Check(LinearApiRecordSchema, value) && typeof value.error === "string"
+        LinearApiRecordValidator.check(value) && typeof value.error === "string"
             ? value.error
-            : Value.Check(LinearApiRecordSchema, value) && typeof value.message === "string"
+            : LinearApiRecordValidator.check(value) && typeof value.message === "string"
               ? value.message
               : `HTTP ${status}`
     return new LinearApiError(
@@ -467,7 +469,7 @@ function linearHttpError(status: number, value: unknown): LinearApiError {
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
-    if (!Value.Check(LinearApiRecordSchema, value)) throw new Error(`invalid ${label}: expected an object`)
+    if (!LinearApiRecordValidator.check(value)) throw new Error(`invalid ${label}: expected an object`)
     return value
 }
 

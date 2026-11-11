@@ -3,7 +3,7 @@ import * as path from "node:path"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
@@ -46,6 +46,7 @@ export const ReviewPullRequestSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const ReviewPullRequestValidator = compile(ReviewPullRequestSchema)
 export const RecordPullRequestResponseSchema = Type.Object(
     {
         ...revisionProperties,
@@ -55,6 +56,7 @@ export const RecordPullRequestResponseSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const RecordPullRequestResponseValidator = compile(RecordPullRequestResponseSchema)
 type ReviewPullRequestInput = Static<typeof ReviewPullRequestSchema>
 
 export const DOSSIER_SECTIONS = [
@@ -226,7 +228,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
             "Privately review one exact incoming PR revision using a complete local evidence dossier and the shared read-only reviewer. Saves an immutable numbered local round; never publishes, executes contributor code, or authorizes a mutation.",
         parameters: ReviewPullRequestSchema,
         async execute(_id, params, signal, onUpdate, ctx) {
-            const input = Value.Parse(ReviewPullRequestSchema, params)
+            const input = parse(ReviewPullRequestValidator, params)
             const prepared = await preparePullRequestReview(ctx.cwd, input, tools)
             const { report } = await executeReviewRound({
                 environment: reviewerEnvironment(pi, ctx.modelRegistry),
@@ -261,7 +263,7 @@ export function registerPullRequestReview(pi: ExtensionAPI): void {
             "Record every adjudicated finding for one incoming PR review round using the canonical renderer. Use that round's original PR-get evidence; this local record does not establish remote freshness or approval.",
         parameters: RecordPullRequestResponseSchema,
         async execute(_id, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(RecordPullRequestResponseSchema, params)
+            const input = parse(RecordPullRequestResponseValidator, params)
             const selected = selectedRevision(ctx.cwd, input, tools)
             const directory = resolveIncomingLocalPath(
                 selected.root,

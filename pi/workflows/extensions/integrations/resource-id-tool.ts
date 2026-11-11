@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -55,6 +55,7 @@ export const ResourceIdsToolSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const ResourceIdsToolValidator = compile(ResourceIdsToolSchema)
 
 export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIdsMemo, tools: McpToolCatalog): void {
     const toolsApi = workflowTools(pi, "integrations")
@@ -69,14 +70,15 @@ export function registerResourceIds(pi: ExtensionAPI, memo: OperationResourceIds
     ] as const
     for (const [name, action, schema] of operations) {
         const parameters = Type.Omit(schema, action === "select" ? ["action", "resource"] : ["action"])
+        const validator = compile(parameters)
         toolsApi.registerTool({
             name,
             label: name,
             description: `${name.replaceAll("_", " ")} for one initialized entity. Never execute or authorize provider calls. Record actual clear-success mutation/read evidence. Missing/stale IDs and uncertain outcomes require agent investigation through configured provider tools. Identity, lifecycle and merge state are not disposable cache values.`,
             parameters,
             async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                const input = Value.Parse(ResourceIdsToolSchema, {
-                    ...Value.Parse(parameters, params),
+                const input = parse(ResourceIdsToolValidator, {
+                    ...parse(validator, params),
                     action,
                     ...(action === "select" ? { resource: "github-pull-request" } : {}),
                 })

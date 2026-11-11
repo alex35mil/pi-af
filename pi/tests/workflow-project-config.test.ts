@@ -8,7 +8,8 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
+
+import { compile } from "../extensions/__lib/schema.ts"
 
 import { inspectProjectMcp, registeredCredentialEnvironment } from "../workflows/extensions/integrations/mcp.ts"
 import { configureProjectMcp, LOCAL_MCP_SETTINGS_EXCLUDE } from "../workflows/extensions/project-setup/mcp.ts"
@@ -93,7 +94,7 @@ describe("workflow project configuration", () => {
                 localSettingsPath,
                 JSON.stringify({ workflowProject: root, branches: { username: "local-user" } }),
             )
-            assert.throws(() => loadProjectConfig(root, options), /must not have additional properties/)
+            assert.throws(() => loadProjectConfig(root, options), /\/workflowProject: unknown field/)
             assert.equal(
                 resolveWorkflowProject(root, options),
                 fs.realpathSync(root),
@@ -398,8 +399,8 @@ describe("workflow project configuration", () => {
                 const tool = tools.get("inspect_project_setup")
                 assert.ok(tool)
                 assert.ok(setup)
-                assert.equal(Value.Check(tool.parameters, {}), true)
-                assert.equal(Value.Check(tool.parameters, { unexpected: true }), false)
+                assert.equal(compile(tool.parameters).check({}), true)
+                assert.equal(compile(tool.parameters).check({ unexpected: true }), false)
                 const inspected = await tool.execute("inspect", {}, undefined, undefined, {
                     cwd: root,
                     isProjectTrusted: () => true,
@@ -591,7 +592,7 @@ describe("workflow project configuration", () => {
                         },
                         { globalSettingsPath },
                     ),
-                (error: Error & { cause?: { source?: string } }) => error.cause?.source === "Parse",
+                /\/registrations\/0\/roles: unknown field/,
             )
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
@@ -671,11 +672,11 @@ describe("workflow project configuration", () => {
                 /missing required \.project\/config\.json/,
             )
             writeConfig(root, { ...config(), extra: true })
-            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
+            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /\/extra: unknown field/)
             writeConfig(root, config({ format: "feature/identifier" }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
             writeConfig(root, config({ format: "identifier-title", username: "alex" }))
-            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
+            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /\/branches\/username: unknown field/)
             writeConfig(root, config({ format: { epic: "identifier", deliverable: "tracker" } }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
 
@@ -730,7 +731,7 @@ describe("workflow project configuration", () => {
             assert.doesNotMatch(fs.readFileSync(path.join(root, ".project", "config.json"), "utf-8"), /alex/)
 
             fs.writeFileSync(localSettingsPath, JSON.stringify({ branches: { username: "alex" }, extra: true }))
-            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /must not have additional properties/)
+            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /\/extra: unknown field/)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

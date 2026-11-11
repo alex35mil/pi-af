@@ -6,7 +6,6 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
-import { Value } from "typebox/value"
 import { phaseValues } from "./workflow-phase-fixtures.ts"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
@@ -17,7 +16,7 @@ import {
     readResourceIdsCache,
     recordResourceIds,
 } from "../workflows/extensions/integrations/resource-ids.ts"
-import { ResourceIdsToolSchema } from "../workflows/extensions/integrations/resource-id-tool.ts"
+import { ResourceIdsToolValidator } from "../workflows/extensions/integrations/resource-id-tool.ts"
 import {
     shippingReadDecision,
     invalidateStaleResourceIds,
@@ -150,7 +149,7 @@ describe("resource ID operations", () => {
             assert.equal("tool" in result, false)
             assert.equal(readResourceIdsCache(f.directory), undefined)
             assert.equal(
-                Value.Check(ResourceIdsToolSchema, {
+                ResourceIdsToolValidator.check({
                     entityDir: f.directory,
                     resource: "github-pull-request",
                     action: "recover",

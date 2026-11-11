@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
-import { GitHubTrackerSchema } from "../integrations/config.js"
+import { compile, describeErrors, parse } from "../../../extensions/__lib/schema.js"
+import { GitHubTrackerValidator } from "../integrations/config.js"
 
 const OneLineSchema = Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })
 const ServerNameSchema = Type.String({ minLength: 1, pattern: "^[A-Za-z0-9_.-]+$" })
@@ -20,6 +20,7 @@ const OptionSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const OptionValidator = compile(OptionSchema)
 
 const PhaseOptionsSchema = Type.Object(
     { planning: OptionSchema, execution: OptionSchema, selfReview: OptionSchema },
@@ -92,6 +93,7 @@ const IssuePrioritySchema = Type.Object(
     { additionalProperties: false },
 )
 const LayoutSchema = Type.Enum(["table", "board", "roadmap"], { type: "string" })
+const LayoutValidator = compile(LayoutSchema)
 const ViewTargetSchema = Type.Union([
     Type.Object({ mode: Type.Enum(["initial"], { type: "string" }) }, { additionalProperties: false }),
     Type.Object(
@@ -149,6 +151,7 @@ export const GitHubProjectSpecificationSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const GitHubProjectSpecificationValidator = compile(GitHubProjectSpecificationSchema)
 export type GitHubProjectSpecification = Static<typeof GitHubProjectSpecificationSchema>
 
 const inspectProperties = {
@@ -190,6 +193,7 @@ export const GitHubProjectSetupToolSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const GitHubProjectSetupToolValidator = compile(GitHubProjectSetupToolSchema)
 export type GitHubProjectSetupToolInput = Static<typeof GitHubProjectSetupToolSchema>
 
 export const GITHUB_PROJECT_DEFAULTS = {
@@ -400,7 +404,7 @@ export async function runGitHubProjectSetup(
     rawInput: unknown,
     options: GitHubProjectSetupOptions = {},
 ): Promise<Record<string, unknown>> {
-    const input = Value.Parse(GitHubProjectSetupToolSchema, rawInput)
+    const input = parse(GitHubProjectSetupToolValidator, rawInput)
     let stage: string = input.operation
     try {
         if (input.operation === "inspectRepository") {
@@ -443,7 +447,7 @@ export async function runGitHubProjectSetup(
             }
         }
 
-        const specification = Value.Parse(GitHubProjectSpecificationSchema, input.specification)
+        const specification = parse(GitHubProjectSpecificationValidator, input.specification)
         const client = clientFor(specification.credentialEnv, options)
         stage = "preview"
         const plan = await previewGitHubProject(specification, client)
@@ -704,8 +708,8 @@ class GitHubClient {
             const value = record(raw, "view field")
             return { id: text(value.id, "view field id"), name: text(value.name, "view field name") }
         }
-        const layout = Value.Parse(
-            LayoutSchema,
+        const layout = parse(
+            LayoutValidator,
             text(view.layout, "view layout")
                 .replace(/_LAYOUT$/, "")
                 .toLowerCase(),
@@ -2111,7 +2115,7 @@ function additiveCanceledStatus(
     const missing = desired.options.filter((option) => !existingNames.has(option.name))
     if (missing.length !== 1 || missing[0].name !== canceled.name) return undefined
     const retained = existingOptions.map((option) =>
-        Value.Parse(OptionSchema, {
+        parse(OptionValidator, {
             name: option.name,
             description: option.description,
             color: option.color.toLowerCase(),
@@ -2178,10 +2182,8 @@ function trackerConfigFor(specification: GitHubProjectSpecification, projectNumb
             },
         },
     }
-    if (!Value.Check(GitHubTrackerSchema, config)) {
-        const details = [...Value.Errors(GitHubTrackerSchema, config)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!GitHubTrackerValidator.check(config)) {
+        const details = describeErrors(GitHubTrackerValidator.errors(config)).join("; ")
         throw new Error(`generated invalid GitHub tracker configuration: ${details}`)
     }
     return config

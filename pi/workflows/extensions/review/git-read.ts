@@ -2,11 +2,10 @@ import * as cp from "node:child_process"
 import * as fs from "node:fs"
 import { promisify } from "node:util"
 
-import { StringEnum } from "@earendil-works/pi-ai"
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { FAILING_PROGRAM, GIT_HELPER_CONFIG_PATTERN, gitHelperOverride, inheritedGitRelocation } from "../__lib/git.js"
 
 // The reviewer subprocess's read-only Git access. Only reviewer launches load this extension
@@ -35,7 +34,10 @@ export type GitReadSubcommand = (typeof GIT_READ_SUBCOMMANDS)[number]
 
 export const GitReadInputSchema = Type.Object(
     {
-        subcommand: StringEnum(GIT_READ_SUBCOMMANDS, { description: "The read-only Git subcommand to run" }),
+        subcommand: Type.Enum(GIT_READ_SUBCOMMANDS, {
+            type: "string",
+            description: "The read-only Git subcommand to run",
+        }),
         args: Type.Array(Type.String(), {
             description:
                 'Arguments after the subcommand, one per element, without shell quoting, e.g. ["--remerge-diff", "HEAD"]',
@@ -43,6 +45,7 @@ export const GitReadInputSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const GitReadInputValidator = compile(GitReadInputSchema)
 export type GitReadInput = Static<typeof GitReadInputSchema>
 
 /** Options refused for one subcommand, by long name (without `--`) and by short letter. */
@@ -305,7 +308,7 @@ export default function (pi: ExtensionAPI) {
         promptSnippet: "Run read-only Git commands (show, diff, log, blame, grep, merge-tree --write-tree, …)",
         parameters: GitReadInputSchema,
         async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-            const input = Value.Parse(GitReadInputSchema, params)
+            const input = parse(GitReadInputValidator, params)
             const text = await runGitRead(ctx.cwd, input, signal)
             return { content: [{ type: "text" as const, text }], details: undefined }
         },

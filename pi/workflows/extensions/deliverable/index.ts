@@ -1,13 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
-import { Value } from "typebox/value"
+import { parse } from "../../../extensions/__lib/schema.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import * as Git from "../__lib/git.js"
 import { workflowTools } from "../__lib/tools.js"
 import { shippingReadDecision, resolveResourceIdsContext } from "../integrations/resource-id-operations.js"
 import { isResourceIdsKind, readCachedResourceIds } from "../integrations/resource-ids.js"
-import { DeliveryCleanupInputSchema, runDeliveryCleanup } from "./cleanup.js"
+import { DeliveryCleanupInputSchema, DeliveryCleanupInputValidator, runDeliveryCleanup } from "./cleanup.js"
 import {
     MergeResolutionCommentInputSchema,
     parseMergeResolutionCommentInput,
@@ -24,7 +24,7 @@ export default function (pi: ExtensionAPI): void {
             "Execute an explicitly approved post-merge Task/Gig branch cleanup in the current clone from the exact configured pull_request_read get evidence for the recorded PR. Validates current state and never deletes a remote branch.",
         parameters: DeliveryCleanupInputSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(DeliveryCleanupInputSchema, params)
+            const input = parse(DeliveryCleanupInputValidator, params)
             const merge = githubMergeProof(ctx.cwd, input, catalog)
             const result = runDeliveryCleanup({ entityDir: input.entityDir, merge }, { cwd: ctx.cwd })
             return {

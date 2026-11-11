@@ -1,8 +1,8 @@
 import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import * as Git from "../__lib/git.js"
@@ -28,6 +28,7 @@ const MergeEvidenceSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const MergeEvidenceValidator = compile(MergeEvidenceSchema)
 type MergeEvidence = Static<typeof MergeEvidenceSchema>
 
 export const DeliveryCleanupInputSchema = Type.Object(
@@ -47,9 +48,10 @@ export const DeliveryCleanupInputSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const DeliveryCleanupInputValidator = compile(DeliveryCleanupInputSchema)
 
 export function runDeliveryCleanup(input: { entityDir: string; merge: MergeEvidence }, options: { cwd: string }) {
-    const merge = Value.Parse(MergeEvidenceSchema, input.merge)
+    const merge = parse(MergeEvidenceValidator, input.merge)
     const root = project.resolveRootDir(options.cwd)
     assertArtifactPersistencePrepared(root)
     const entityDirectory = resolveEntityDirectory(root, root, input.entityDir)

@@ -3,8 +3,8 @@ import * as path from "node:path"
 import { isDeepStrictEqual } from "node:util"
 
 import { Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { getMcpSettingsPaths, mcpServerKey, readMcpSettings, validateMcpName } from "../../../extensions/__lib/mcp.js"
 import { resolveRootDir } from "../../../extensions/__lib/project.js"
 import { ensureLocalSettingsExclusion } from "./local-settings.js"
@@ -49,13 +49,14 @@ export const ProjectMcpConfigurationSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const ProjectMcpConfigurationValidator = compile(ProjectMcpConfigurationSchema)
 
 export type ProjectMcpConfiguration = Type.Static<typeof ProjectMcpConfigurationSchema>
 type Registration = ProjectMcpConfiguration["registrations"][number]
 type SettingsTarget = ProjectMcpConfiguration["target"]
 
 export function configureProjectMcp(cwd: string, input: unknown, options: { globalSettingsPath?: string } = {}) {
-    const parsed = Value.Parse(ProjectMcpConfigurationSchema, input)
+    const parsed = parse(ProjectMcpConfigurationValidator, input)
     const root = resolveRootDir(cwd)
     const resolvedPaths = getMcpSettingsPaths(root)
     const paths = {

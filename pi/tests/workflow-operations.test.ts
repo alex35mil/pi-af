@@ -8,14 +8,14 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
-import { type EntityStatus, EntityStatusSchema, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
+import { parse } from "../extensions/__lib/schema.ts"
+import { type EntityStatus, EntityStatusValidator, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { GitHubTrackerSchema, LinearTrackerSchema } from "../workflows/extensions/integrations/config.ts"
+import { GitHubTrackerValidator, LinearTrackerValidator } from "../workflows/extensions/integrations/config.ts"
 import { registerWorkflowOperations } from "../workflows/extensions/integrations/operations.ts"
 import {
     setWorkflowPhase,
-    SetWorkflowPhaseSchema,
+    SetWorkflowPhaseValidator,
     type NativePhaseFacts,
 } from "../workflows/extensions/integrations/phase.ts"
 import type { WorkflowEnvironment } from "../workflows/extensions/integrations/policy.ts"
@@ -32,7 +32,7 @@ const statuses = {
     canceled: "Canceled",
 }
 const repository = { owner: "example", repo: "repo" }
-const github = Value.Parse(GitHubTrackerSchema, {
+const github = parse(GitHubTrackerValidator, {
     provider: "github",
     mcpServer: "github",
     repository,
@@ -43,7 +43,7 @@ const github = Value.Parse(GitHubTrackerSchema, {
         priority: { scope: "project", field: "Priority", values: ["High"] },
     },
 })
-const linear = Value.Parse(LinearTrackerSchema, {
+const linear = parse(LinearTrackerValidator, {
     provider: "linear",
     mcpServer: "linear",
     team: "Engineering",
@@ -60,7 +60,7 @@ function environment(provider: "github" | "linear"): WorkflowEnvironment {
 }
 
 function entity(provider: "github" | "linear", kind: "epic" | "task" | "gig" = "gig"): EntityStatus {
-    return Value.Parse(EntityStatusSchema, {
+    return parse(EntityStatusValidator, {
         slug: "example",
         title: "Example",
         createdAt: "2026-01-01T00:00:00Z",
@@ -203,7 +203,7 @@ describe("workflow operations", () => {
             /not the configured tracker/,
         )
         assert.equal(
-            Value.Check(SetWorkflowPhaseSchema, {
+            SetWorkflowPhaseValidator.check({
                 entityDir: "example",
                 authority: "workflow",
                 phase: "execution",
@@ -223,7 +223,9 @@ describe("workflow operations", () => {
                 `
             import { registerHooks } from 'node:module';
             registerHooks({ resolve(specifier, context, next) {
-                if (specifier.startsWith('@earendil-works/')) throw new Error('Pi runtime dependency: ' + specifier);
+                // pi-schema is the package's own dependency, not the Pi runtime.
+                if (specifier.startsWith('@earendil-works/') && specifier !== '@earendil-works/pi-schema')
+                    throw new Error('Pi runtime dependency: ' + specifier);
                 return next(specifier, context);
             }});
             await import('./workflows/extensions/integrations/phase.ts');

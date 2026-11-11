@@ -1,5 +1,6 @@
 import { type Static, Type } from "typebox"
 
+import { compile } from "../../../extensions/__lib/schema.js"
 import { mcpResponsePayload, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import type { EntityStatus } from "../__lib/entity.js"
 import type { TrackerConfig } from "./config.js"
@@ -22,6 +23,7 @@ export const GitHubPhaseInputSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const GitHubPhaseInputValidator = compile(GitHubPhaseInputSchema)
 export type GitHubPhaseInput = Static<typeof GitHubPhaseInputSchema>
 
 /** Extracts Phase facts from the actual Project field and item reads of an initialized GitHub entity. */

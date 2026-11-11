@@ -7,8 +7,8 @@ The [pi](https://pi.dev) package of [piton](../README.md): extensions, skills, a
 
 ## Requirements
 
-- Minimum supported Pi: **1.3.0**
-- Last validated Pi: **1.3.0**
+- Minimum supported Pi: **1.5.2**
+- Last validated Pi: **1.5.2**
 
 Upgrading from an older version? See the [upgrade guide](UPGRADING.md).
 

@@ -2,8 +2,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import { resolveRootDir } from "../../../extensions/__lib/project.js"
 import {
@@ -25,14 +25,16 @@ export const PermissionInspectionSchema = Type.Object(
     { rules: Type.Array(PermissionRuleSchema, { minItems: 1, uniqueItems: true }) },
     { additionalProperties: false },
 )
+export const PermissionInspectionValidator = compile(PermissionInspectionSchema)
 
 export const ProjectPermissionConfigurationSchema = Type.Object(
     { target: SettingsTargetSchema, allow: RulesSchema, ask: RulesSchema },
     { additionalProperties: false },
 )
+export const ProjectPermissionConfigurationValidator = compile(ProjectPermissionConfigurationSchema)
 
 export function inspectProjectPermissions(cwd: string, input: unknown, catalog: McpToolCatalog) {
-    const parsed = Value.Parse(PermissionInspectionSchema, input)
+    const parsed = parse(PermissionInspectionValidator, input)
     const { sources } = inspectPersistentPermissions(cwd)
     return {
         scope: "Persistent global, project, and local settings, shared and current-runtime files; excludes session overrides and skill-derived allows.",
@@ -41,7 +43,7 @@ export function inspectProjectPermissions(cwd: string, input: unknown, catalog: 
 }
 
 export function configureProjectPermissions(cwd: string, input: unknown, catalog: McpToolCatalog) {
-    const parsed = Value.Parse(ProjectPermissionConfigurationSchema, input)
+    const parsed = parse(ProjectPermissionConfigurationValidator, input)
     if (parsed.allow.length + parsed.ask.length === 0) throw new Error("request at least one allow or ask rule")
     validatePermissionSettings({ allow: parsed.allow, ask: parsed.ask })
     const root = resolveRootDir(cwd)

@@ -1,8 +1,8 @@
 import * as fs from "node:fs"
 
 import { Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile } from "../../../extensions/__lib/schema.js"
 import { getMcpSettingsPaths, readMcpConfiguration, readMcpSettings } from "../../../extensions/__lib/mcp.js"
 
 export type WorkflowMcpService = "github" | "linear" | "other"
@@ -15,6 +15,7 @@ export function identifyMcpService(config: unknown): WorkflowMcpService {
 }
 
 const ProviderRegistrationSchema = Type.Record(Type.String(), Type.Unknown())
+const ProviderRegistrationValidator = compile(ProviderRegistrationSchema)
 
 export function inspectProjectMcp(cwd: string, projectTrusted: boolean) {
     const paths = getMcpSettingsPaths(cwd)
@@ -85,10 +86,10 @@ function inspectSettingsFile(tier: "global" | "project" | "local", filePath: str
 }
 
 function inspectServer(name: string, value: unknown) {
-    if (!Value.Check(ProviderRegistrationSchema, value)) return { name }
+    if (!ProviderRegistrationValidator.check(value)) return { name }
     const service = identifyMcpService(value)
     const provider = service === "other" ? undefined : service
-    const headers = Value.Check(ProviderRegistrationSchema, value.headers) ? value.headers : undefined
+    const headers = ProviderRegistrationValidator.check(value.headers) ? value.headers : undefined
     const authorization = headers?.Authorization
     const credentialMatch =
         typeof authorization === "string" ? /^Bearer \$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(authorization) : undefined

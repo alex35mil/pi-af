@@ -6,7 +6,6 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
-import { Value } from "typebox/value"
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
@@ -25,7 +24,7 @@ import registerReviewTools, {
     failedReviewGate,
     formatBlockedReviewPause,
     latestApprovedPlanSnapshot,
-    ReviewRequestSchema,
+    ReviewRequestValidator,
     requireApprovedSnapshot,
     snapshotCandidate,
 } from "../workflows/extensions/review/index.ts"
@@ -818,7 +817,7 @@ describe("workflow reviewer isolation", () => {
 
     it("accepts only valid entity/phase review combinations", () => {
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "epic",
                 entityDir: ".project/.local/epics/example",
                 phase: "plan",
@@ -826,7 +825,7 @@ describe("workflow reviewer isolation", () => {
             true,
         )
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "epic",
                 entityDir: ".project/.local/epics/example",
                 phase: "final",
@@ -834,7 +833,7 @@ describe("workflow reviewer isolation", () => {
             false,
         )
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "task",
                 entityDir: ".project/.local/epics/example/tasks/task",
                 phase: "final",
@@ -842,7 +841,7 @@ describe("workflow reviewer isolation", () => {
             true,
         )
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "task",
                 entityDir: ".project/.local/epics/example/tasks/task",
                 phase: "final",
@@ -851,7 +850,7 @@ describe("workflow reviewer isolation", () => {
             false,
         )
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "gig",
                 entityDir: ".project/.local/gigs/example",
                 phase: "plan",
@@ -873,9 +872,9 @@ describe("workflow reviewer isolation", () => {
             [{ phase: "conflict-plan", resolution: "Keep both lines.", subject: "Parser" }, false],
         ]
         for (const [input, valid] of checks)
-            assert.equal(Value.Check(ReviewRequestSchema, { ...gig, ...input }), valid, JSON.stringify(input))
+            assert.equal(ReviewRequestValidator.check({ ...gig, ...input }), valid, JSON.stringify(input))
         assert.equal(
-            Value.Check(ReviewRequestSchema, {
+            ReviewRequestValidator.check({
                 entity: "epic",
                 entityDir: ".project/.local/epics/example",
                 phase: "conflict-plan",

@@ -1,7 +1,6 @@
 import { type Static, Type } from "typebox"
 
-import { Value } from "typebox/value"
-
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { LifecycleStateSchema, PhaseSchema, type LifecycleState, type Phase, projectedPhase } from "../__lib/domain.js"
 import type { EntityType } from "../__lib/domain.js"
 import type { EntityStatus } from "../__lib/entity.js"
@@ -51,6 +50,7 @@ export const NativePhaseFactsSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const NativePhaseFactsValidator = compile(NativePhaseFactsSchema)
 export type NativePhaseFacts = Static<typeof NativePhaseFactsSchema>
 type LinearFacts = Extract<NativePhaseFacts, { provider: "linear" }>
 
@@ -58,6 +58,7 @@ export const SetWorkflowPhaseSchema = Type.Object(
     { entityDir: NameSchema, phase: PhaseSchema, lifecycle: LifecycleStateSchema, native: NativePhaseFactsSchema },
     { additionalProperties: false },
 )
+export const SetWorkflowPhaseValidator = compile(SetWorkflowPhaseSchema)
 export type SetWorkflowPhaseInput = Static<typeof SetWorkflowPhaseSchema>
 
 export const LinearPhaseInputSchema = Type.Object(
@@ -80,6 +81,7 @@ export const LinearPhaseInputSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const LinearPhaseInputValidator = compile(LinearPhaseInputSchema)
 
 /** Absence denotes the observed native empty value, never missing overall read evidence. */
 export function linearPhaseFacts(input: Static<typeof LinearPhaseInputSchema>): NativePhaseFacts {
@@ -97,7 +99,7 @@ export function linearPhaseFacts(input: Static<typeof LinearPhaseInputSchema>): 
 }
 
 export function setWorkflowPhase(status: EntityStatus, environment: WorkflowEnvironment, input: SetWorkflowPhaseInput) {
-    Value.Parse(SetWorkflowPhaseSchema, input)
+    parse(SetWorkflowPhaseValidator, input)
     assertEntityEnvironment(status, environment)
     if (input.lifecycle !== "inProgress") throw new Error("setting workflow Phase requires fresh native In Progress")
     const phaseMutation = planPhaseMutation(

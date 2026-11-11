@@ -2,7 +2,7 @@ import * as path from "node:path"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
@@ -25,11 +25,12 @@ import { LifecycleStateSchema } from "../__lib/domain.js"
 import {
     NativePhaseFactsSchema,
     LinearPhaseInputSchema,
+    LinearPhaseInputValidator,
     linearPhaseFacts,
     phaseProjectionContract,
     planPhaseMutation,
 } from "./phase.js"
-import { GitHubPhaseInputSchema, githubPhaseFacts } from "./github-phase-evidence.js"
+import { GitHubPhaseInputSchema, GitHubPhaseInputValidator, githubPhaseFacts } from "./github-phase-evidence.js"
 import {
     assertArtifactPersistencePrepared,
     assertSandboxArtifactsLinked,
@@ -55,8 +56,10 @@ import { registerWorkflowContext } from "./workflow-context.js"
 import {
     planEpicTaskIssues,
     PlanEpicTaskIssuesSchema,
+    PlanEpicTaskIssuesValidator,
     recordEpicTaskIssue,
     RecordEpicTaskIssueSchema,
+    RecordEpicTaskIssueValidator,
 } from "./epic-task-issues.js"
 import { incomingPullRequestContext } from "./forge/github/incoming-pr-context.js"
 import {
@@ -77,6 +80,7 @@ const ProjectionVerificationSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const ProjectionVerificationValidator = compile(ProjectionVerificationSchema)
 
 export const RenderProviderBodySchema = Type.Object(
     {
@@ -86,6 +90,7 @@ export const RenderProviderBodySchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const RenderProviderBodyValidator = compile(RenderProviderBodySchema)
 
 const ContextEntitySchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
 const ContextTargetSchema = Type.Enum(["current", "workflow"], { type: "string" })
@@ -163,6 +168,7 @@ export const IntegrationContextSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const IntegrationContextValidator = compile(IntegrationContextSchema)
 
 export type IntegrationContextInput = Static<typeof IntegrationContextSchema>
 
@@ -221,7 +227,7 @@ export default function (pi: ExtensionAPI): void {
             "Reconcile an Epic's accepted Tasks with fresh child-issue facts. Returns the next native creates, tags, board repairs, and cancellations in plan order, `complete`, or `blocked` with the failing Task. Keeps no saved progress; rerun after applying steps. Never calls providers.",
         parameters: PlanEpicTaskIssuesSchema,
         async execute(_id, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(PlanEpicTaskIssuesSchema, params)
+            const input = parse(PlanEpicTaskIssuesValidator, params)
             const result = planEpicTaskIssues(ctx.cwd, input, tools)
             return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
         },
@@ -234,7 +240,7 @@ export default function (pi: ExtensionAPI): void {
             "Tag one untagged Epic plan Task with its issue's marker, from clear-success create evidence or a matched existing child. Refuses a marker the plan already carries; repeating the same tag is a no-op.",
         parameters: RecordEpicTaskIssueSchema,
         async execute(_id, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(RecordEpicTaskIssueSchema, params)
+            const input = parse(RecordEpicTaskIssueValidator, params)
             const result = recordEpicTaskIssue(ctx.cwd, input, tools)
             return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
         },
@@ -247,7 +253,7 @@ export default function (pi: ExtensionAPI): void {
             "Render a reviewed ## Overview visibly and collapse the remaining accepted source using GitHub or Linear syntax for the configured destination. Preserves content and adds eligible GitHub PR closing references outside the fold. Reads local configuration and metadata without external mutation.",
         parameters: RenderProviderBodySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input = Value.Parse(RenderProviderBodySchema, params)
+            const input = parse(RenderProviderBodyValidator, params)
             const result = { markdown: renderEntityProviderBody(ctx, input) }
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
@@ -263,7 +269,7 @@ export default function (pi: ExtensionAPI): void {
             "Compare expected and provider-returned Markdown byte-for-byte and explain how to follow up on repeated provider-only formatting differences. Performs no external operation.",
         parameters: ProjectionVerificationSchema,
         async execute(_toolCallId, params) {
-            const input = Value.Parse(ProjectionVerificationSchema, params)
+            const input = parse(ProjectionVerificationValidator, params)
             const result = verifyMarkdownProjection(input.expected, input.actual)
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
@@ -303,13 +309,14 @@ export default function (pi: ExtensionAPI): void {
     ] as const
     for (const [name, operation, schema] of contexts) {
         const parameters = Type.Omit(schema, ["operation"])
+        const validator = compile(parameters)
         toolsApi.registerTool({
             name,
             label: name,
             description: `${name.replaceAll("_", " ")}: read the exact configured tracker/forge context and required evidence. Select current/workflow explicitly when required. Return context or approved-operation arguments only; never execute provider operations or change configuration.`,
             parameters,
             async execute(_id, params, _signal, _onUpdate, ctx) {
-                const input = Value.Parse(IntegrationContextSchema, { ...Value.Parse(parameters, params), operation })
+                const input = parse(IntegrationContextValidator, { ...parse(validator, params), operation })
                 resourceIdsMemo.reset()
                 const result = buildIntegrationContext(ctx, input, tools)
                 return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
@@ -341,11 +348,11 @@ export default function (pi: ExtensionAPI): void {
                               resolveWorkflowEnvironment(loadIntegrationConfig(project.resolveRootDir(ctx.cwd)))
                                   .tracker,
                               entityName(readWorkflowEntity(ctx.cwd, params.entityDir)),
-                              Value.Parse(GitHubPhaseInputSchema, params.native),
+                              parse(GitHubPhaseInputValidator, params.native),
                               tools,
                           )
-                        : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
-                const input = Value.Parse(IntegrationContextSchema, {
+                        : linearPhaseFacts(parse(LinearPhaseInputValidator, params.native))
+                const input = parse(IntegrationContextValidator, {
                     ...params,
                     operation: "trackerMutation",
                     change: "phase",
@@ -366,14 +373,15 @@ export default function (pi: ExtensionAPI): void {
     ] as const
     for (const [name, action, schema] of projects) {
         const parameters = Type.Omit(schema, ["operation", "action"])
+        const validator = compile(parameters)
         toolsApi.registerTool({
             name,
             label: name,
             description: `Plan scoped incoming-PR Project ${action} from complete exact native membership, field, and PR evidence. Return native operation arguments without executing them; preserve maintainer-controlled Status and separate approval requirements.`,
             parameters,
             async execute(_id, params, _signal, _onUpdate, ctx) {
-                const input = Value.Parse(IntegrationContextSchema, {
-                    ...Value.Parse(parameters, params),
+                const input = parse(IntegrationContextValidator, {
+                    ...parse(validator, params),
                     operation: "incomingPullRequestProject",
                     action,
                 })
@@ -421,7 +429,7 @@ export function buildIntegrationContext(
     tools: McpToolCatalog,
 ): IncomingContext | IncomingMergeContext | IncomingProjectContext | WorkflowContext
 export function buildIntegrationContext(ctx: ExtensionContext, input: IntegrationContextInput, tools: McpToolCatalog) {
-    if (!Value.Check(IntegrationContextSchema, input))
+    if (!IntegrationContextValidator.check(input))
         throw new Error("invalid integration context request: select the exact operation and its required inputs")
     if (input.operation === "incomingPullRequest") return incomingPullRequestContext(ctx.cwd, input.reference, tools)
     if (input.operation === "incomingPullRequestMerge") return incomingMergeContext(ctx.cwd, input, tools)

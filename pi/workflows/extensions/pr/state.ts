@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import {
@@ -129,6 +129,7 @@ export const CheckoutStateSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const CheckoutStateValidator = compile(CheckoutStateSchema)
 export type CheckoutState = Static<typeof CheckoutStateSchema>
 export type ActiveRebase = Static<typeof active>
 export type CompletedRebase = Static<typeof completed>
@@ -154,7 +155,7 @@ export function readCheckoutState(
     tools: McpToolCatalog,
 ): CheckoutState {
     const value: unknown = JSON.parse(fs.readFileSync(file, "utf-8"))
-    if (!Value.Check(CheckoutStateSchema, value))
+    if (!CheckoutStateValidator.check(value))
         throw new Error("Invalid managed checkout record; preserve it and investigate")
     const state = value
     const original = incomingRevision(forge, state.revision, state.evidence, tools)
@@ -202,7 +203,7 @@ export function requireProviderRevision(state: CheckoutState, current: IncomingR
 }
 
 export async function saveCheckoutState(file: string, state: CheckoutState): Promise<void> {
-    Value.Parse(CheckoutStateSchema, state)
+    parse(CheckoutStateValidator, state)
     // Caller holds this record's mutation queue for the full operation.
     const temporary = `${file}.tmp`
     await fs.promises.writeFile(temporary, JSON.stringify(state, null, 2) + "\n", { flag: "wx" })

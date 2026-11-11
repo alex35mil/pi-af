@@ -5,7 +5,7 @@ Status: draft. Decisions below were settled in discussion; open questions are li
 ## Problem
 
 A pi RPC process lives exactly as long as the client that started it: Pi 1.3.0 RPC has one client per process, the
-client owns pi's stdin, and closing stdin shuts pi down. Today that client is pi.nvim inside Neovide, so every session
+client owns pi's stdin, and closing stdin shuts pi down (still true on 1.5.2). Today that client is pi.nvim inside Neovide, so every session
 dies with the editor and is unreachable away from the laptop.
 
 piton separates where pi runs from who is looking at it:
@@ -147,10 +147,11 @@ The editor keeps its UI (tabs, picker, tracker queue, dialogs) and calls `piton 
 
 ### pi version
 
-piton targets pi 1.3.0, the version pinned in the user's global mise config; pi is bumped centrally across tools later,
-so this repository doesn't pin pi itself (piton launches whatever `pi` the workspace's environment resolves). The RPC
-protocol docs (`rpc-commands.md`, `json.md`, `rpc-extension-ui.md`) are identical on 1.3.0, 1.5.0, and `main`
-(checked 2026-11-07). Differences that matter to piton:
+piton targets pi 1.5.2. pi is pinned in the user's global mise config and bumped centrally across tools, so this
+repository doesn't pin pi itself (piton launches whatever `pi` the workspace's environment resolves); the pi package's
+minimum is in `pi/README.md`. The RPC protocol docs (`rpc-commands.md`, `json.md`, `rpc-extension-ui.md`) are
+identical on 1.3.0, 1.5.0, 1.5.2, and `main` (checked 2026-11-07, 1.5.2 on 2026-11-11). Differences between
+versions that shaped piton:
 
 - **Stopping pi.** On 1.3.0, a signal that arrives while pi is shutting down after stdin EOF cuts its cleanup short
   (for example a pending OAuth token save). So piton stops a pi by closing its stdin only, waiting the grace period, and
@@ -166,8 +167,7 @@ protocol docs (`rpc-commands.md`, `json.md`, `rpc-extension-ui.md`) are identica
 - **Prompts sent together.** From 1.5, pi drops a `prompt` that arrives while the previous one is still being
   prepared, after answering it `"started"` (docs/pi-findings.md, "Queued prompts"). So the session task writes one
   `prompt` at a time, from every source (rpc clients, the apps, `start --prompt`), and holds the next until pi
-  answered the previous one. Held prompts reach pi even if their client left. This costs one round trip per extra
-  prompt on 1.3.0, which doesn't need it.
+  answered the previous one. Held prompts reach pi even if their client left.
 
 ### Workspace roots
 
@@ -644,7 +644,7 @@ tracked in the tracker, not here.
 
 Upstream pi has been building multi-client support: a "server mode" (badlogic in pi#4737) and PR pi#7409 (merged
 2026-07-31, `packages/client`/`packages/server` with shared/exclusive session leases; those packages are no longer on
-`main`). None of it is in pi 1.3.0. Keep piton's pi-facing side behind one adapter so a future server mode replaces it
+`main`). None of it is in pi 1.5.2. Keep piton's pi-facing side behind one adapter so a future server mode replaces it
 rather than the daemon.
 
 `pi-durable` (experimental, in the same repository) is not an alternative: it's a library for building your own agent

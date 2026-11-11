@@ -6,9 +6,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
-import { Value } from "typebox/value"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
+import { buildIntegrationContext, IntegrationContextValidator } from "../workflows/extensions/integrations/index.ts"
 import {
     shippingReadDecision,
     type ProviderEvidence,
@@ -219,8 +218,8 @@ describe("one repository merge operation", () => {
             reviewedEvidence: evidence(),
             evidence: evidence(),
         }
-        assert.equal(Value.Check(IntegrationContextSchema, input), true)
+        assert.equal(IntegrationContextValidator.check(input), true)
         for (const extra of [{ merge_method: "merge" }, { method: "rebase" }, { entityDir: "fake" }])
-            assert.equal(Value.Check(IntegrationContextSchema, { ...input, ...extra }), false)
+            assert.equal(IntegrationContextValidator.check({ ...input, ...extra }), false)
     })
 })

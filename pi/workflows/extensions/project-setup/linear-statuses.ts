@@ -1,6 +1,6 @@
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { LifecycleStateSchema, type LifecycleState } from "../__lib/domain.js"
 import {
     LINEAR_ISSUE_STATUS_TYPES,
@@ -74,10 +74,12 @@ const statusSetupProperties = {
 }
 
 export const PreviewLinearStatusSetupSchema = Type.Object(statusSetupProperties, { additionalProperties: false })
+export const PreviewLinearStatusSetupValidator = compile(PreviewLinearStatusSetupSchema)
 export const ApplyLinearStatusSetupSchema = Type.Object(
     { ...statusSetupProperties, approvedPlanHash: Type.String({ pattern: "^[a-f0-9]{64}$" }) },
     { additionalProperties: false },
 )
+export const ApplyLinearStatusSetupValidator = compile(ApplyLinearStatusSetupSchema)
 
 type PreviewInput = Static<typeof PreviewLinearStatusSetupSchema>
 type ApplyInput = Static<typeof ApplyLinearStatusSetupSchema>
@@ -220,7 +222,7 @@ async function previewFor(client: LinearClient, input: PreviewInput) {
 }
 
 export async function previewLinearStatusSetup(rawInput: unknown, options: LinearStatusSetupOptions = {}) {
-    const input = Value.Parse(PreviewLinearStatusSetupSchema, rawInput)
+    const input = parse(PreviewLinearStatusSetupValidator, rawInput)
     const { team, plan, planHash } = await previewFor(linearClientFor(input.credentialEnv, options), input)
     const described = { key: team.key, name: team.name }
     switch (plan.state) {
@@ -232,7 +234,7 @@ export async function previewLinearStatusSetup(rawInput: unknown, options: Linea
 }
 
 export async function applyLinearStatusSetup(rawInput: unknown, options: LinearStatusSetupOptions = {}) {
-    const { approvedPlanHash, ...input } = Value.Parse(ApplyLinearStatusSetupSchema, rawInput) as ApplyInput
+    const { approvedPlanHash, ...input } = parse(ApplyLinearStatusSetupValidator, rawInput) as ApplyInput
     const client = linearClientFor(input.credentialEnv, options)
     const { team, plan, planHash } = await previewFor(client, input)
     if (plan.state !== "ready") throw new Error(`Linear status setup is blocked: ${plan.problems.join("; ")}`)

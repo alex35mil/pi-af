@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import * as path from "node:path"
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -59,6 +59,7 @@ export const TrackerPublicationSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const TrackerPublicationValidator = compile(TrackerPublicationSchema)
 export type TrackerPublicationInput = Static<typeof TrackerPublicationSchema>
 
 interface PublicationContext<I, P, Q extends PublicationIdentity<I>> {
@@ -216,7 +217,7 @@ function approvedAnnouncement(
 }
 
 export async function trackerPublication(cwd: string, raw: TrackerPublicationInput, tools: McpToolCatalog) {
-    const input = Value.Parse(TrackerPublicationSchema, raw)
+    const input = parse(TrackerPublicationValidator, raw)
     const root = project.resolveRootDir(cwd)
     const directory = resolveEntityDirectory(root, cwd, input.entityDir)
     return withFileMutationQueue(path.join(directory, ENTITY_METADATA_FILE), async () => {
@@ -266,6 +267,7 @@ export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatal
     ] as const
     for (const [name, action, schema] of operations) {
         const parameters = Type.Omit(schema, ["action"])
+        const validator = compile(parameters)
         toolsApi.registerTool({
             name,
             label: name,
@@ -274,7 +276,7 @@ export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatal
             async execute(_id, input, _signal, _onUpdate, ctx) {
                 const result = await trackerPublication(
                     ctx.cwd,
-                    Value.Parse(TrackerPublicationSchema, { ...Value.Parse(parameters, input), action }),
+                    parse(TrackerPublicationValidator, { ...parse(validator, input), action }),
                     tools,
                 )
                 return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result }

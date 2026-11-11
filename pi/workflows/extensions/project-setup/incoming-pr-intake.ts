@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { GitHubForgeSchema, GitHubTrackerSchema } from "../integrations/config.js"
 import { parseIncomingReference } from "../integrations/forge/github/incoming-pr-context.js"
 
@@ -15,6 +15,7 @@ export const IncomingPrIntakeSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const IncomingPrIntakeValidator = compile(IncomingPrIntakeSchema)
 export type IncomingPrIntakeInput = Static<typeof IncomingPrIntakeSchema>
 
 // Trusted, static metadata code. No PR content is interpolated into this script.
@@ -51,7 +52,7 @@ await github.graphql(
 `.trim()
 
 export function renderIncomingPrIntake(raw: unknown) {
-    const input = Value.Parse(IncomingPrIntakeSchema, raw)
+    const input = parse(IncomingPrIntakeValidator, raw)
     const repository = parseIncomingReference("#1", input.forge.repository).repository
     const project = input.tracker.project
     if (!Number.isSafeInteger(project.number)) throw new Error("Project number must be a safe integer")

@@ -1,4 +1,5 @@
 import { type Static, Type } from "typebox"
+import { compile } from "../../../extensions/__lib/schema.js"
 import { PublicationTokenSchema, publicationStateSchema } from "./plan-publication.js"
 
 // A GitHub plan comment carries a hidden marker with its token, which GitHub doesn't render.
@@ -10,6 +11,7 @@ export const PlanCommentSchema = publicationStateSchema(
         url: Type.String({ minLength: 1 }),
     },
 )
+export const PlanCommentValidator = compile(PlanCommentSchema)
 export type PlanComment = Static<typeof PlanCommentSchema>
 export type PlanCommentPending = { token: string }
 export type PlanCommentPublished = { token: string; id: number; url: string }

@@ -2,8 +2,8 @@ import * as path from "node:path"
 
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { parse } from "../../../extensions/__lib/schema.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { workflowTools } from "../__lib/tools.js"
@@ -16,8 +16,15 @@ import {
 } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "./config.js"
-import { SetWorkflowPhaseSchema, setWorkflowPhase, LinearPhaseInputSchema, linearPhaseFacts } from "./phase.js"
-import { GitHubPhaseInputSchema, githubPhaseFacts } from "./github-phase-evidence.js"
+import {
+    SetWorkflowPhaseSchema,
+    SetWorkflowPhaseValidator,
+    setWorkflowPhase,
+    LinearPhaseInputSchema,
+    LinearPhaseInputValidator,
+    linearPhaseFacts,
+} from "./phase.js"
+import { GitHubPhaseInputSchema, GitHubPhaseInputValidator, githubPhaseFacts } from "./github-phase-evidence.js"
 import { resolveWorkflowEnvironment, type WorkflowEnvironment } from "./policy.js"
 
 async function updateEntity<T extends { status: EntityStatus; changed: boolean }>(
@@ -62,14 +69,14 @@ export function registerWorkflowOperations(pi: ExtensionAPI, mcpTools: McpToolCa
                             ? githubPhaseFacts(
                                   environment.tracker,
                                   { name: path.basename(directory), status },
-                                  Value.Parse(GitHubPhaseInputSchema, params.native),
+                                  parse(GitHubPhaseInputValidator, params.native),
                                   mcpTools,
                               )
-                            : linearPhaseFacts(Value.Parse(LinearPhaseInputSchema, params.native))
+                            : linearPhaseFacts(parse(LinearPhaseInputValidator, params.native))
                     return setWorkflowPhase(
                         status,
                         environment,
-                        Value.Parse(SetWorkflowPhaseSchema, { ...params, native }),
+                        parse(SetWorkflowPhaseValidator, { ...params, native }),
                     )
                 })
                 return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result }

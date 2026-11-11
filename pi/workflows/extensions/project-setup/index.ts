@@ -3,7 +3,7 @@ import * as path from "node:path"
 
 import { withFileMutationQueue, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import { MCP_TOOL_CATALOG_EVENT, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
@@ -19,7 +19,11 @@ import {
 } from "../__lib/project-config.js"
 import { inspectProjectMcp } from "../integrations/mcp.js"
 import { inspectLinearWorkspace, LinearWorkspaceInspectionToolSchema } from "../integrations/tracker/linear.js"
-import { GitHubProjectSetupToolSchema, runGitHubProjectSetup } from "./github-project.js"
+import {
+    GitHubProjectSetupToolSchema,
+    GitHubProjectSetupToolValidator,
+    runGitHubProjectSetup,
+} from "./github-project.js"
 import {
     ApplyLabelSetupSchema,
     InspectLabelSetupSchema,
@@ -40,9 +44,11 @@ import {
     inspectProjectPermissions,
     PermissionInspectionSchema,
     ProjectPermissionConfigurationSchema,
+    ProjectPermissionConfigurationValidator,
 } from "./permissions.js"
 
 const EmptySchema = Type.Object({}, { additionalProperties: false })
+const EmptyValidator = compile(EmptySchema)
 
 export default function (pi: ExtensionAPI): void {
     const tools = workflowTools(pi, "setup")
@@ -71,7 +77,7 @@ export default function (pi: ExtensionAPI): void {
             "Read credential-safe GitHub repository identity, project setup files, Git safety facts, tracker bindings, and credential-redacted MCP registrations without modifying files or requiring valid workflow configuration.",
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            Value.Parse(EmptySchema, params)
+            parse(EmptyValidator, params)
             const snapshot = inspectProjectSetup(ctx.cwd, ctx.isProjectTrusted())
             return {
                 content: [{ type: "text" as const, text: JSON.stringify(snapshot, null, 2) }],
@@ -87,7 +93,7 @@ export default function (pi: ExtensionAPI): void {
             "Validate that .project/.local/ is ignored and untracked, and prepare the local settings exclusion, without changing the Git index.",
         parameters: EmptySchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            Value.Parse(EmptySchema, params)
+            parse(EmptyValidator, params)
             const prepared = prepareArtifactPersistence(ctx.cwd)
             return {
                 content: [
@@ -148,7 +154,7 @@ export default function (pi: ExtensionAPI): void {
             "Merge approved MCP allow and ask rules into project or local permission settings. Skip covered or blocked allows, preserve ask/deny and unrelated settings, and keep local settings outside Git.",
         parameters: ProjectPermissionConfigurationSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const parsed = Value.Parse(ProjectPermissionConfigurationSchema, params)
+            const parsed = parse(ProjectPermissionConfigurationValidator, params)
             const file = getExtensionSettingsPaths(PERMISSIONS_EXTENSION, ctx.cwd)[parsed.target]
             const configured = await withFileMutationQueue(file, async () =>
                 configureProjectPermissions(ctx.cwd, parsed, mcpCatalog),
@@ -272,6 +278,7 @@ export default function (pi: ExtensionAPI): void {
     ] as const
     for (const [name, operation, schema] of operations) {
         const parameters = Type.Omit(schema, ["operation"])
+        const validator = compile(parameters)
         tools.registerTool({
             name,
             label: name,
@@ -279,8 +286,8 @@ export default function (pi: ExtensionAPI): void {
                 "Inspect Projects and views, preview or apply explicitly approved fields, repository association, and view presentation through GitHub's documented APIs. Return guided UI steps for unsupported settings; never claim manual completion or expose credentials.",
             parameters,
             async execute(_toolCallId, params, signal) {
-                const input = Value.Parse(GitHubProjectSetupToolSchema, {
-                    ...Value.Parse(parameters, params),
+                const input = parse(GitHubProjectSetupToolValidator, {
+                    ...parse(validator, params),
                     operation,
                 })
                 const result = await runGitHubProjectSetup(input, { signal })
