@@ -6,9 +6,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
-import { Value } from "typebox/value"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
+import { buildIntegrationContext, IntegrationContextValidator } from "../workflows/extensions/integrations/index.ts"
 import type { IncomingProjectContextInput } from "../workflows/extensions/integrations/forge/github/incoming-pr-project.ts"
 
 import { kindLabels, minimalTracker } from "./workflow-phase-fixtures.ts"
@@ -165,7 +164,7 @@ function fixture() {
     })
     const plan = (extra: object = {}) => {
         const input = request(extra)
-        assert.ok(Value.Check(IntegrationContextSchema, input))
+        assert.ok(IntegrationContextValidator.check(input))
         return buildIntegrationContext({ cwd: root } as never, input as IncomingProjectContextInput, mcpTools)
             .projectAction
     }
@@ -351,17 +350,14 @@ describe("maintainer-controlled incoming PR Project", () => {
         const f = fixture()
         try {
             for (const action of ["review", "shipping", "cancellation"])
-                assert.equal(
-                    Value.Check(IntegrationContextSchema, f.request({ action, membership: reconciled() })),
-                    false,
-                )
+                assert.equal(IntegrationContextValidator.check(f.request({ action, membership: reconciled() })), false)
             assert.equal(
-                Value.Check(IntegrationContextSchema, f.request({ action: "intake", membership: reconciled() })),
+                IntegrationContextValidator.check(f.request({ action: "intake", membership: reconciled() })),
                 false,
             )
             const membership = { ...reconciled(), attempt: { ...reconciled().attempt, response: { id: 99 } } }
             assert.equal(
-                Value.Check(IntegrationContextSchema, f.request({ action: "intake", choice: "todo", membership })),
+                IntegrationContextValidator.check(f.request({ action: "intake", choice: "todo", membership })),
                 false,
             )
         } finally {

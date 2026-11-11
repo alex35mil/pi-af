@@ -7,7 +7,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
+
+import { compile } from "../extensions/__lib/schema.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
 import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
 import type { IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
@@ -145,7 +146,7 @@ function fixture(kind: Kind = "clean") {
     const call = async (operation: IncomingCheckoutInput["operation"], extra: object = {}) => {
         const tool = tools.find((entry) => entry.name === INCOMING_CHECKOUT_TOOLS[operation])!
         const input = { reference: "#12", evidence, ...extra }
-        assert.ok(Value.Check(tool.parameters, input))
+        assert.ok(compile(tool.parameters).check(input))
         const result = await tool.execute(
             "fixture",
             input,

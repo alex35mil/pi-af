@@ -7,12 +7,13 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
+
+import { compile } from "../extensions/__lib/schema.ts"
 
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import registerPr from "../workflows/extensions/pr/index.ts"
 import { INCOMING_CHECKOUT_TOOLS } from "../workflows/extensions/pr/operations.ts"
-import { IncomingCheckoutSchema, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
+import { IncomingCheckoutValidator, type IncomingCheckoutInput } from "../workflows/extensions/pr/checkout.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 import { MCP_TOOL_CATALOG_EVENT } from "../extensions/__lib/mcp.ts"
 import { minimalTracker } from "./workflow-phase-fixtures.ts"
@@ -141,7 +142,7 @@ function fixture(diverged = false) {
         const tool = tools.find((item) => item.name === INCOMING_CHECKOUT_TOOLS[operation])!
         assert.ok(tool, "The actual PR extension must register the selected operation")
         const input = { reference: "#12", evidence: selectedEvidence }
-        assert.ok(Value.Check(tool.parameters, input), "Exercise the real registered schema")
+        assert.ok(compile(tool.parameters).check(input), "Exercise the real registered schema")
         const result = await tool.execute(
             "fixture",
             input,
@@ -417,6 +418,6 @@ describe("registered incoming PR checkout tool", () => {
             { headSha: "a".repeat(40) },
             { approved: true },
         ])
-            assert.equal(Value.Check(IncomingCheckoutSchema, { ...input, ...extra }), false)
+            assert.equal(IncomingCheckoutValidator.check({ ...input, ...extra }), false)
     })
 })

@@ -8,10 +8,9 @@ import {
     type ExtensionToolContext,
     type ToolDefinition,
 } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
 import type { TSchema } from "typebox"
 
-import { EditorChoiceSchema, fileReviewResult, isFileReviewDetails, type FileReviewDetails } from "./review.js"
+import { EditorChoiceValidator, fileReviewResult, isFileReviewDetails, type FileReviewDetails } from "./review.js"
 
 type FileKind = "edit" | "write"
 // A deny carries the reason returned to the model.
@@ -46,7 +45,7 @@ async function reviewFile(
     if (choice === "Accept") return
     if (choice?.startsWith("{")) {
         const value: unknown = JSON.parse(choice)
-        if (!Value.Check(EditorChoiceSchema, value)) throw new Error("Invalid editor file-review response")
+        if (!EditorChoiceValidator.check(value)) throw new Error("Invalid editor file-review response")
         const notes = value.notes ?? []
         if (value.result === "Accepted") {
             throw new ReviewedFile(

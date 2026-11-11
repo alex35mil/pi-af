@@ -1,5 +1,15 @@
 # Upgrading
 
+## Pi 1.5.2
+
+The package now requires Pi 1.5.2. Upgrade Pi before reloading the package; older Pi isn't supported.
+
+- Validation runs on `@earendil-works/pi-schema`, the validator Pi uses for tool arguments, instead of `typebox/value`. The package installs it as its own dependency, pinned to Pi's version. Tool schemas are still built with TypeBox, which Pi supplies.
+- Validation stays strict: unknown properties are rejected and values aren't converted, as before.
+- Error details for invalid configuration and workflow files use pi-schema's wording, for example `invalid .project/config.json: /extra: unknown field` instead of `must not have additional properties`. Update anything that matches the old wording.
+
+No `.project` artifact or settings migration is needed.
+
 ## GitHub MCP registrations get every workflow toolset
 
 `configure_mcp` now gives every GitHub registration `context,issues,projects,pull_requests`, whichever roles it serves. A registration used only for the forge previously got just `pull_requests`, so workflow reports to a GitHub-tracked workflow source couldn't create issues or set Project fields through it.

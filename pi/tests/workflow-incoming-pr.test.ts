@@ -8,11 +8,10 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
 import { MCP_TOOL_CATALOG_EVENT, type McpToolMetadata } from "../extensions/__lib/mcp.ts"
 import { resolveMode, type Mode } from "../extensions/permissions/index.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { buildIntegrationContext, IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
+import { buildIntegrationContext, IntegrationContextValidator } from "../workflows/extensions/integrations/index.ts"
 import {
     parseIncomingReference,
     incomingPullRequestContext,
@@ -26,7 +25,7 @@ import {
     preparePullRequestReview,
     validatePullRequestDossier,
     registerPullRequestReview,
-    ReviewPullRequestSchema,
+    ReviewPullRequestValidator,
 } from "../workflows/extensions/review/pull-request.ts"
 import { executeReviewRound, recordRoundResponse } from "../workflows/extensions/review/round.ts"
 import { buildReviewerArgs } from "../workflows/extensions/review/agent.ts"
@@ -268,7 +267,7 @@ describe("incoming PR identity and context", () => {
                 before,
             )
             assert.equal(
-                Value.Check(IntegrationContextSchema, {
+                IntegrationContextValidator.check({
                     operation: "incomingPullRequest",
                     reference: "#12",
                     entityDir: "fake",
@@ -536,7 +535,7 @@ describe("incoming PR private review", () => {
                 ),
                 /does not match the reviewed/,
             )
-            assert.equal(Value.Check(ReviewPullRequestSchema, { ...input, entityDir: "fake" }), false)
+            assert.equal(ReviewPullRequestValidator.check({ ...input, entityDir: "fake" }), false)
             assert.equal(fs.existsSync(path.join(f.root, ".project/.local/gigs")), false)
         } finally {
             f.close()
@@ -709,7 +708,7 @@ describe("incoming PR private review", () => {
         try {
             const input = inspection(f.root)
             const { sourcePaths, ...missingSources } = input
-            assert.equal(Value.Check(ReviewPullRequestSchema, missingSources), false)
+            assert.equal(ReviewPullRequestValidator.check(missingSources), false)
             await assert.rejects(
                 preparePullRequestReview(f.root, { ...input, sourcePaths: ["README.md"] }, mcpTools),
                 /selected PR/,

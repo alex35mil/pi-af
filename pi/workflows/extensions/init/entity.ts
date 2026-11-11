@@ -2,8 +2,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, describeErrors, parse } from "../../../extensions/__lib/schema.js"
 import * as project from "../../../extensions/__lib/project.js"
 import type { McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import {
@@ -27,7 +27,7 @@ import {
     LOCAL_REVIEWS_DIR,
     LOCAL_SCRATCH_DIR,
     type EntityStatus,
-    EntityStatusSchema,
+    EntityStatusValidator,
     readEntityStatus,
     readEpicTaskDirectories,
     resolveEntityDirectory,
@@ -52,9 +52,13 @@ import {
 } from "../integrations/label-selection.js"
 import {
     GitHubTrackerObjectSchema,
+    GitHubTrackerObjectValidator,
     LinearGigIssueObjectSchema,
+    LinearGigIssueObjectValidator,
     LinearProjectObjectSchema,
+    LinearProjectObjectValidator,
     LinearTaskIssueObjectSchema,
+    LinearTaskIssueObjectValidator,
     type TrackerObject,
     trackerRecordFromObject,
     trackerReference,
@@ -102,6 +106,7 @@ export const GigPreflightSchema = Type.Object(
     { additionalProperties: false },
 )
 export const PreflightSchema = Type.Union([EpicPreflightSchema, GigPreflightSchema])
+export const PreflightValidator = compile(PreflightSchema)
 export type PreflightInput = Static<typeof PreflightSchema>
 
 /** The fields an Epic or Gig's init tool shares with its preflight, without the label selection. */
@@ -139,6 +144,7 @@ export const EntityInitializationSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const EntityInitializationValidator = compile(EntityInitializationSchema)
 export type EntityInitialization = Static<typeof EntityInitializationSchema>
 type TaskInitialization = Extract<EntityInitialization, { entity: "task" }>
 
@@ -179,7 +185,7 @@ function prepare(input: PreflightInput | EntityInitialization, options: Initiali
 // Runs every local check that doesn't need the tracker object, so a failure stops
 // before anything is created on the tracker. Changes nothing.
 export function preflightEntity(input: PreflightInput, options: InitializeEntityOptions) {
-    Value.Parse(PreflightSchema, input)
+    parse(PreflightValidator, input)
     const prepared = prepare(input, options)
     const { environment, projectConfig, slug } = prepared
     const tracker = environment.tracker
@@ -211,10 +217,8 @@ export function preflightEntity(input: PreflightInput, options: InitializeEntity
 }
 
 export function initializeEntity(input: EntityInitialization, options: InitializeEntityOptions): InitializedEntity {
-    if (!Value.Check(EntityInitializationSchema, input)) {
-        const details = [...Value.Errors(EntityInitializationSchema, input)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!EntityInitializationValidator.check(input)) {
+        const details = describeErrors(EntityInitializationValidator.errors(input)).join("; ")
         throw new Error(`invalid entity initialization: ${details}`)
     }
     const prepared = prepare(input, options)
@@ -262,8 +266,8 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
             branch: contract,
             tracker,
         }
-        const status = Value.Parse(
-            EntityStatusSchema,
+        const status = parse(
+            EntityStatusValidator,
             input.entity === "epic"
                 ? { ...common, entity: "epic" }
                 : { ...common, entity: input.entity, kind: input.entity === "task" ? plannedTask!.kind : input.kind },
@@ -284,18 +288,18 @@ export function initializeEntity(input: EntityInitialization, options: Initializ
 function trackerObject(input: EntityInitialization, environment: WorkflowEnvironment): TrackerObject {
     const provider = environment.tracker.provider
     if (provider === "github") {
-        if (!Value.Check(GitHubTrackerObjectSchema, input.object))
+        if (!GitHubTrackerObjectValidator.check(input.object))
             throw new Error("initialization requires a GitHub issue for the configured GitHub tracker")
         return { provider, ...input.object }
     }
     const resource = resourceFor(input.entity)
-    const schema =
+    const validator =
         resource === "project"
-            ? LinearProjectObjectSchema
+            ? LinearProjectObjectValidator
             : resource === "task-issue"
-              ? LinearTaskIssueObjectSchema
-              : LinearGigIssueObjectSchema
-    if (!Value.Check(schema, input.object))
+              ? LinearTaskIssueObjectValidator
+              : LinearGigIssueObjectValidator
+    if (!validator.check(input.object))
         throw new Error(`initialization requires a Linear ${resource} for the configured Linear tracker`)
     return { provider, resource, ...input.object } as TrackerObject
 }

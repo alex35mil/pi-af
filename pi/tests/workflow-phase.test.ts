@@ -6,13 +6,13 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { Value } from "typebox/value"
-import { PhaseSchema, projectedPhase, type LifecycleState } from "../workflows/extensions/__lib/domain.ts"
+import { parse } from "../extensions/__lib/schema.ts"
+import { PhaseValidator, projectedPhase, type LifecycleState } from "../workflows/extensions/__lib/domain.ts"
 import { assertReviewPhase } from "../workflows/extensions/review/index.ts"
-import { GitHubTrackerSchema, LinearTrackerSchema } from "../workflows/extensions/integrations/config.ts"
+import { GitHubTrackerValidator, LinearTrackerValidator } from "../workflows/extensions/integrations/config.ts"
 import { githubPhaseFacts } from "../workflows/extensions/integrations/github-phase-evidence.ts"
 import {
-    NativePhaseFactsSchema,
+    NativePhaseFactsValidator,
     phaseProjectionContract,
     planPhaseMutation,
     resolveLinearPhaseGroup,
@@ -43,7 +43,7 @@ const statuses = {
     done: "Done",
     canceled: "Canceled",
 }
-const github = Value.Parse(GitHubTrackerSchema, {
+const github = parse(GitHubTrackerValidator, {
     provider: "github",
     mcpServer: "github",
     repository: { owner: "example", repo: "example" },
@@ -55,7 +55,7 @@ const github = Value.Parse(GitHubTrackerSchema, {
         priority: { scope: "project", field: "Priority", values: ["High"] },
     },
 })
-const linear = Value.Parse(LinearTrackerSchema, {
+const linear = parse(LinearTrackerValidator, {
     provider: "linear",
     mcpServer: "linear",
     team: "Engineering",
@@ -118,7 +118,7 @@ describe("shared workflow Phase", () => {
     it("projects exactly the active Phase only while In Progress for every entity and provider", () => {
         for (const entity of ["epic", "task", "gig"] as const) {
             for (const phase of ["planning", "execution", "selfReview"] as const) {
-                assert.equal(Value.Check(PhaseSchema, phase), true)
+                assert.equal(PhaseValidator.check(phase), true)
                 for (const lifecycle of lifecycles) {
                     const expected = lifecycle === "inProgress" ? phase : null
                     assert.equal(projectedPhase(lifecycle, phase), expected)
@@ -137,7 +137,7 @@ describe("shared workflow Phase", () => {
                 }
             }
         }
-        assert.equal(Value.Check(PhaseSchema, "paused"), false)
+        assert.equal(PhaseValidator.check("paused"), false)
     })
 
     it("returns a local lifecycle-dependent contract, not an inferred tracker status", () => {
@@ -183,8 +183,8 @@ describe("shared workflow Phase", () => {
                 /Phase/,
             )
         assert.throws(() => planPhaseMutation(github, "gig", "planning", "inProgress", linearFacts()), /provider/)
-        assert.equal(Value.Check(NativePhaseFactsSchema, githubFacts), true)
-        assert.equal(Value.Check(NativePhaseFactsSchema, linearFacts()), true)
+        assert.equal(NativePhaseFactsValidator.check(githubFacts), true)
+        assert.equal(NativePhaseFactsValidator.check(linearFacts()), true)
     })
 
     describe("GitHub Phase evidence", () => {

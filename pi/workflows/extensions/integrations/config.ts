@@ -2,8 +2,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, describeErrors } from "../../../extensions/__lib/schema.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { PRIORITY_NOT_SET } from "../__lib/domain.js"
 import {
@@ -39,6 +39,7 @@ export const PriorityFieldSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const PriorityFieldValidator = compile(PriorityFieldSchema)
 export type PriorityField = Static<typeof PriorityFieldSchema>
 
 export const PhaseValuesSchema = Type.Object(
@@ -107,6 +108,7 @@ export const GitHubTrackerSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const GitHubTrackerValidator = compile(GitHubTrackerSchema)
 export type GitHubTracker = Static<typeof GitHubTrackerSchema>
 
 export const LinearTrackerSchema = Type.Object(
@@ -126,6 +128,7 @@ export const LinearTrackerSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const LinearTrackerValidator = compile(LinearTrackerSchema)
 export type LinearTracker = Static<typeof LinearTrackerSchema>
 
 export const TrackerConfigSchema = Type.Union([GitHubTrackerSchema, LinearTrackerSchema])
@@ -138,6 +141,7 @@ export const IntegrationConfigSchema = Type.Object(
     { tracker: TrackerConfigSchema, forge: GitHubForgeSchema },
     { additionalProperties: false },
 )
+export const IntegrationConfigValidator = compile(IntegrationConfigSchema)
 export type IntegrationConfig = Static<typeof IntegrationConfigSchema>
 
 export function assertConfiguredPriority(config: TrackerConfig, priority: string): void {
@@ -203,10 +207,8 @@ function readIntegrationConfig(configPath: string): unknown {
 }
 
 function validateIntegrationConfig(value: unknown): IntegrationConfig {
-    if (!Value.Check(IntegrationConfigSchema, value)) {
-        const details = [...Value.Errors(IntegrationConfigSchema, value)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!IntegrationConfigValidator.check(value)) {
+        const details = describeErrors(IntegrationConfigValidator.errors(value)).join("; ")
         throw new Error(`invalid ${INTEGRATION_CONFIG_PATH}: ${details}`)
     }
     try {

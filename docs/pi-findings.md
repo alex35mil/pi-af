@@ -1,7 +1,7 @@
 # pi RPC behavior: verified facts
 
-**Verified on pi 1.3.0 (2026-11-07; queued prompts, status, compaction, switch while streaming, and kill on
-2026-11-10).** After a pi upgrade, re-run the probes and update this line.
+**Verified on pi 1.5.2 (every scenario, 2026-11-11).** Earlier: pi 1.3.0 (2026-11-07 to 2026-11-10). After a pi
+upgrade, re-run the probes and update this line.
 
 The probes are `daemon/tests/probe/probe.mjs`: real `pi --mode rpc` with the faux extension in
 `daemon/tests/fixtures/faux-extension.ts`, a scratch workspace and `PI_CODING_AGENT_DIR`. Run a scenario with
@@ -52,11 +52,12 @@ For one prompt, in order: the `prompt` response (`disposition: "started"`), `age
   lets pi decide, instead of choosing from its own (lagging) status.
 - pi marks the run active only after preparing the prompt (input hooks, auth check), and answers only then. On 1.3.0
   a second prompt written right behind the first still finds the run active. From 1.5 (checked on 1.5.2,
-  2026-11-10) it can arrive during that preparation: pi answers `"started"` to both and then drops the second, with
+  2026-11-11) it can arrive during that preparation: pi answers `"started"` to both and then drops the second, with
   no message, no `queue_update`, and no error (pi #10606 was the same bug on 1.0.4). With a gap of 1 ms or more it's
   queued as before. So piton writes a `prompt` only after pi answered the previous one (`daemon/src/prompts.rs`).
   The probe writes its prompts straight to pi, without that queue, so on 1.5 it times out waiting for the dropped
-  ones; `daemon/tests/e2e/attach.mjs` ("prompts sent together all run") checks the queue.
+  ones: every prompt is answered `"started"` and only the first runs. `daemon/tests/e2e/attach.mjs` ("prompts sent
+  together all run") checks the queue and passes on 1.5.2.
 - Follow-ups queued together become user messages with the same `timestamp` as the run's first prompt (one
   millisecond). A message's timestamp doesn't identify it.
 
@@ -100,8 +101,9 @@ For one prompt, in order: the `prompt` response (`disposition: "started"`), `age
 
 ## Stopping (`stop`, `killed`)
 
-- Closing stdin exits pi with code 0 within ~10 ms, idle or mid-stream (faux provider; a real provider with pending
-  work may take longer). Mid-stream, the stream simply stops: no `message_end`, `agent_end`, or `agent_settled`.
+- Closing stdin exits pi with code 0: idle within ~5 ms; mid-stream within ~10 ms on 1.3.0 and ~200–270 ms on 1.5.2
+  (faux provider; a real provider with pending work may take longer). Either is far inside piton's stop grace
+  (`grace_ms`, 15 s). Mid-stream, the stream simply stops: no `message_end`, `agent_end`, or `agent_settled`.
 - SIGKILL mid-stream: the session file has the earlier turns only; the interrupted turn is lost entirely, its user
   message included, although that message's `message_end` had already been emitted. Resuming works, and a new prompt
   continues the branch from the last persisted entry. So a client that saw the user message live won't find it after

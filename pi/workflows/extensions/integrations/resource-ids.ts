@@ -4,8 +4,8 @@ import { isDeepStrictEqual } from "node:util"
 
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent"
 import { type Static, type TSchema, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile } from "../../../extensions/__lib/schema.js"
 import { writeTextAtomically } from "../__lib/files.js"
 
 export const RESOURCE_IDS_CACHE_FILE = "resource-ids.json"
@@ -62,6 +62,7 @@ export const ProviderResourceIdsScopeSchema = Type.Union([
     LinearIssueResourceIdsScopeSchema,
     GitHubPullRequestResourceIdsScopeSchema,
 ])
+export const ProviderResourceIdsScopeValidator = compile(ProviderResourceIdsScopeSchema)
 export type ResourceIdsScope = Static<typeof ProviderResourceIdsScopeSchema>
 
 function entry<S extends TSchema, V extends TSchema>(scope: S, value: V) {
@@ -87,6 +88,7 @@ export const ResourceIdsSchema = Type.Union([
         Type.Object({ number: PositiveInteger, url: OneLine }, { additionalProperties: false }),
     ),
 ])
+export const ResourceIdsValidator = compile(ResourceIdsSchema)
 export type ResourceIds = Static<typeof ResourceIdsSchema>
 
 export function isResourceIdsKind<K extends ResourceIdsScope["kind"]>(
@@ -100,15 +102,16 @@ export const ResourceIdsCacheSchema = Type.Object(
     { entity: OneLine, resourceIds: Type.Array(ResourceIdsSchema) },
     { additionalProperties: false },
 )
+export const ResourceIdsCacheValidator = compile(ResourceIdsCacheSchema)
 export type ResourceIdsCache = Static<typeof ResourceIdsCacheSchema>
 
 export function parseResourceIdsScope(raw: unknown): ResourceIdsScope {
-    if (!Value.Check(ProviderResourceIdsScopeSchema, raw)) throw new Error("invalid resource IDs scope")
+    if (!ProviderResourceIdsScopeValidator.check(raw)) throw new Error("invalid resource IDs scope")
     return normalizeScope(raw)
 }
 
 export function parseResourceIds(raw: unknown): ResourceIds {
-    if (!Value.Check(ResourceIdsSchema, raw)) throw new Error("invalid resource IDs")
+    if (!ResourceIdsValidator.check(raw)) throw new Error("invalid resource IDs")
     const result = { ...structuredClone(raw), scope: normalizeScope(raw.scope) } as ResourceIds
     if (isResourceIdsKind(result, "github-issue")) {
         assertGitHubResourceUrl(result.value.url, result.scope.repository, "issues", result.scope.issueNumber)
@@ -184,7 +187,7 @@ export function readResourceIdsCache(entityDirectory: string): ResourceIdsCache 
     if (!fs.existsSync(file)) return undefined
     try {
         const raw: unknown = JSON.parse(fs.readFileSync(file, "utf-8"))
-        if (!Value.Check(ResourceIdsCacheSchema, raw)) throw new Error("cache schema does not match")
+        if (!ResourceIdsCacheValidator.check(raw)) throw new Error("cache schema does not match")
         const kinds = new Set<ResourceIdsScope["kind"]>()
         const resourceIds = raw.resourceIds.map((ids) => {
             const parsed = parseResourceIds(ids)

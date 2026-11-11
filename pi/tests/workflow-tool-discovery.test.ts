@@ -7,7 +7,8 @@ import { describe, it } from "node:test"
 import { getCurrentTools } from "@earendil-works/pi-ai"
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type TSchema } from "typebox"
-import { Value } from "typebox/value"
+
+import { compile } from "../extensions/__lib/schema.ts"
 
 import permissions from "../extensions/permissions/index.ts"
 import initialize from "../workflows/extensions/init/index.ts"
@@ -15,7 +16,7 @@ import { activateWorkflowDiscovery } from "../workflows/extensions/__lib/tools.t
 import { answer, call, nativeSessionFixture } from "./native-session-fixture.ts"
 
 function accepts(schema: TSchema, input: unknown): boolean {
-    return Value.Check(schema, input)
+    return compile(schema).check(input)
 }
 
 function activation(options: { defaults?: string[]; registered?: boolean; active?: string[] } = {}) {

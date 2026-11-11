@@ -8,13 +8,12 @@ import * as path from "node:path"
 import { describe, it } from "node:test"
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
 import { planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
-import { PlanCommentSchema } from "../workflows/extensions/integrations/plan-comment.ts"
+import { PlanCommentValidator } from "../workflows/extensions/integrations/plan-comment.ts"
 import { planPublicationMarker } from "../workflows/extensions/integrations/plan-publication.ts"
 import { signPublication } from "../workflows/extensions/integrations/publication.ts"
 import { verifyMarkdownProjection } from "../workflows/extensions/integrations/projection.ts"
@@ -161,7 +160,7 @@ describe("managed GitHub plan comments", () => {
             { state: "pending", token },
             { state: "published", token, id: 1, url: "https://github.com/example/project/issues/42#issuecomment-1" },
         ])
-            assert.equal(Value.Check(PlanCommentSchema, state), true)
+            assert.equal(PlanCommentValidator.check(state), true)
         for (const state of [
             {},
             { state: "pending" },
@@ -169,7 +168,7 @@ describe("managed GitHub plan comments", () => {
             { state: "published", token, id: 1 },
             { state: "unpublished", token },
         ])
-            assert.equal(Value.Check(PlanCommentSchema, state), false)
+            assert.equal(PlanCommentValidator.check(state), false)
     })
 
     for (const mode of ["raw", "text", "structured"] as const)

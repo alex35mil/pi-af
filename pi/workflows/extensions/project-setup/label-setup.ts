@@ -2,10 +2,10 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { type Static, type TSchema, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, describeErrors } from "../../../extensions/__lib/schema.js"
 import * as project from "../../../extensions/__lib/project.js"
-import { INTEGRATION_CONFIG_PATH, type IntegrationConfig, IntegrationConfigSchema } from "../integrations/config.js"
+import { INTEGRATION_CONFIG_PATH, type IntegrationConfig, IntegrationConfigValidator } from "../integrations/config.js"
 import {
     assertGitHubLabels,
     assertLinearLabels,
@@ -114,6 +114,17 @@ const providerSchemas = {
         linear: object({ ...LinearDesired, approvedPlanHash }),
     },
 } as const
+const providerValidators = {
+    inspect: {
+        github: compile(providerSchemas.inspect.github),
+        linear: compile(providerSchemas.inspect.linear),
+    },
+    preview: {
+        github: compile(providerSchemas.preview.github),
+        linear: compile(providerSchemas.preview.linear),
+    },
+    apply: { github: compile(providerSchemas.apply.github), linear: compile(providerSchemas.apply.linear) },
+}
 
 type GitHubPreviewInput = Static<typeof providerSchemas.preview.github>
 type LinearPreviewInput = Static<typeof providerSchemas.preview.linear>
@@ -161,13 +172,9 @@ export function parseLabelSetupInput(operation: LabelSetupOperation, raw: unknow
     const provider = (raw as { target?: { provider?: unknown } } | null)?.target?.provider
     if (provider !== "github" && provider !== "linear")
         throw new Error('label setup input is invalid: target.provider must be "github" or "linear"')
-    const schema = providerSchemas[operation][provider]
-    if (!Value.Check(schema, raw)) {
-        const errors = [
-            ...new Set(
-                [...Value.Errors(schema, raw)].map((error) => `  - ${error.instancePath || "/"}: ${error.message}`),
-            ),
-        ]
+    const validator = providerValidators[operation][provider]
+    if (!validator.check(raw)) {
+        const errors = [...new Set(describeErrors(validator.errors(raw)))].map((line) => `  - ${line}`)
         throw new Error(`label setup input for ${provider} is invalid:\n${errors.join("\n")}`)
     }
     return { operation, ...(raw as object) } as LabelSetupToolInput
@@ -344,7 +351,7 @@ async function readPrevious(cwd: string, adapter: ProviderAdapter) {
     } catch {
         return null
     }
-    if (!Value.Check(IntegrationConfigSchema, value)) return null
+    if (!IntegrationConfigValidator.check(value)) return null
     const tracker = value.tracker
     if (!(await adapter.sameTarget(tracker))) return null
     return tracker.provider === "github"

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
 
-import { StringEnum } from "@earendil-works/pi-ai"
 import { type Static, Type } from "typebox"
 
 import { foldedDiff, MAX_COMMENT_BODY } from "./comment-diff.js"
@@ -27,7 +26,7 @@ const fingerprint = Type.String({ pattern: "^[0-9a-f]{64}$" })
 // An Epic update made from one of its Tasks names that Task. Every other update has no origin.
 export const AnnouncementOriginSchema = Type.Object(
     {
-        kind: StringEnum(["task"] as const),
+        kind: Type.Enum(["task"], { type: "string" }),
         entityDir: Type.String({ minLength: 1, description: "The Task's directory under this Epic" }),
     },
     { additionalProperties: false },

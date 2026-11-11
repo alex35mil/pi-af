@@ -6,7 +6,7 @@ import {
     type ToolDefinition,
 } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { compile } from "../__lib/schema.js"
 
 const ReviewNoteSchema = Type.Object({
     path: Type.String(),
@@ -24,6 +24,7 @@ const ReviewSchema = Type.Object({
     path: Type.String(),
     notes: Type.Array(ReviewNoteSchema),
 })
+const ReviewValidator = compile(ReviewSchema)
 export type FileReview = Static<typeof ReviewSchema>
 export interface FileReviewDetails {
     review: FileReview
@@ -38,6 +39,7 @@ export const EditorChoiceSchema = Type.Union([
     }),
     Type.Object({ result: Type.Literal("Rejected"), notes: Type.Optional(Type.Array(ReviewNoteSchema)) }),
 ])
+export const EditorChoiceValidator = compile(EditorChoiceSchema)
 
 export function formatReviewNotes(notes?: ReviewNote[]): string {
     if (!notes?.length) return ""
@@ -66,7 +68,7 @@ export function fileReviewResult(review: FileReview, text: string): AgentToolRes
 }
 
 export function isFileReviewDetails(details: unknown): details is FileReviewDetails {
-    return !!details && typeof details === "object" && "review" in details && Value.Check(ReviewSchema, details.review)
+    return !!details && typeof details === "object" && "review" in details && ReviewValidator.check(details.review)
 }
 
 function readReview(details: unknown): FileReview | undefined {

@@ -3,10 +3,9 @@ import * as path from "node:path"
 import { createHash } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 
-import { StringEnum } from "@earendil-works/pi-ai"
 import { withFileMutationQueue, truncateHead, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import { EvidenceSchema } from "../integrations/resource-id-tool.js"
@@ -52,15 +51,10 @@ export const IncomingCheckoutSchema = Type.Union([
     Type.Object(
         {
             ...common,
-            operation: StringEnum([
-                "prepare",
-                "checkout",
-                "inspect",
-                "beginFixes",
-                "observeTarget",
-                "publishRebase",
-                "publishFixes",
-            ] as const),
+            operation: Type.Enum(
+                ["prepare", "checkout", "inspect", "beginFixes", "observeTarget", "publishRebase", "publishFixes"],
+                { type: "string" },
+            ),
         },
         { additionalProperties: false },
     ),
@@ -94,6 +88,7 @@ export const IncomingCheckoutSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const IncomingCheckoutValidator = compile(IncomingCheckoutSchema)
 export type IncomingCheckoutInput = Static<typeof IncomingCheckoutSchema>
 
 function fingerprint(file: string): string | null {
@@ -170,13 +165,14 @@ export function registerIncomingCheckout(pi: ExtensionAPI, tools: McpToolCatalog
     for (const [operation, schema] of operations) {
         const name = INCOMING_CHECKOUT_TOOLS[operation]
         const parameters = Type.Omit(schema, ["operation"])
+        const validator = compile(parameters)
         toolsApi.registerTool({
             name,
             label: name,
             description: `${name.replaceAll("_", " ")} for the selected incoming PR under its exact operation approval. Rebase/continuation may create replacement commits and push on success; obtain approval for that exact set and contributor consent/access first. Conflict outcomes preserve work for approved resolution. Rebase publication reconciles/retries only the recorded result/lease. GitHub fetch/observation/push use SSH with existing authentication; no HTTPS credential setup or parent/global configuration changes. Fix commits are additive and separately approved; fixes publication separately publishes that recorded result without force. Checkout cleanup is included in an exact request to ship and merge and requires confirmed merge/Project Done plus no extra/unpublished work; it removes only the managed checkout, retaining private evidence, parent state and contributor branches. No contributor-code execution, unapproved commits, GitHub publication/merge, arbitrary Git commands or plain force push. Output is limited to 2000 lines/50KB with complete private evidence paths.`,
             parameters,
             async execute(_id, params, signal, _update, ctx) {
-                const input = Value.Parse(IncomingCheckoutSchema, { ...Value.Parse(parameters, params), operation })
+                const input = parse(IncomingCheckoutValidator, { ...parse(validator, params), operation })
                 assertGitEnvironment()
                 const root = (await parentGit(ctx.cwd, ["rev-parse", "--show-toplevel"], signal)).trim()
                 const context = incomingPullRequestContext(root, input.reference, tools)

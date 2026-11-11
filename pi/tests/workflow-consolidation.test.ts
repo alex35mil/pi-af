@@ -6,12 +6,14 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { Value } from "typebox/value"
-
-import { EntityStatusSchema, resolveEntityDirectory, resolveEntityPath } from "../workflows/extensions/__lib/entity.ts"
-import { TrackerRecordSchema } from "../workflows/extensions/integrations/records.ts"
+import {
+    EntityStatusValidator,
+    resolveEntityDirectory,
+    resolveEntityPath,
+} from "../workflows/extensions/__lib/entity.ts"
+import { TrackerRecordValidator } from "../workflows/extensions/integrations/records.ts"
 import { parseReviewReport } from "../workflows/extensions/review/findings.ts"
-import { RecordReviewResponseSchema } from "../workflows/extensions/review/index.ts"
+import { RecordReviewResponseValidator } from "../workflows/extensions/review/index.ts"
 
 const commonMetadata = {
     slug: "example",
@@ -51,7 +53,7 @@ describe("workflow consolidation contracts", () => {
                 entity,
                 ...(entity === "epic" ? {} : { kind: "feature" }),
             }
-            assert.equal(Value.Check(EntityStatusSchema, metadata), true)
+            assert.equal(EntityStatusValidator.check(metadata), true)
             for (const extra of [
                 { state: "inProgress" },
                 { id: "GIG-01KDVDNA00" },
@@ -60,9 +62,9 @@ describe("workflow consolidation contracts", () => {
                 { parentEpic: "example" },
                 { extra: true },
             ])
-                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, ...extra }), false)
+                assert.equal(EntityStatusValidator.check({ ...metadata, ...extra }), false)
             assert.equal(
-                Value.Check(EntityStatusSchema, {
+                EntityStatusValidator.check({
                     ...metadata,
                     ...(entity === "epic" ? { kind: "feature" } : {}),
                     taskTarget: "epic",
@@ -70,12 +72,12 @@ describe("workflow consolidation contracts", () => {
                 false,
             )
             const { tracker: _tracker, ...untracked } = metadata
-            assert.equal(Value.Check(EntityStatusSchema, untracked), false)
+            assert.equal(EntityStatusValidator.check(untracked), false)
             for (const phase of ["planning", "execution", "selfReview"])
-                assert.equal(Value.Check(EntityStatusSchema, { ...metadata, phase }), true)
-            assert.equal(Value.Check(EntityStatusSchema, { ...metadata, phase: "paused" }), false)
+                assert.equal(EntityStatusValidator.check({ ...metadata, phase }), true)
+            assert.equal(EntityStatusValidator.check({ ...metadata, phase: "paused" }), false)
             assert.equal(
-                Value.Check(EntityStatusSchema, {
+                EntityStatusValidator.check({
                     ...metadata,
                     branch: { ...metadata.branch, state: "tracker-pending" },
                 }),
@@ -116,20 +118,20 @@ describe("workflow consolidation contracts", () => {
             },
         ]
         for (const record of cases) {
-            assert.equal(Value.Check(TrackerRecordSchema, record), true)
-            assert.equal(Value.Check(TrackerRecordSchema, { ...record, state: "bound" }), false)
+            assert.equal(TrackerRecordValidator.check(record), true)
+            assert.equal(TrackerRecordValidator.check({ ...record, state: "bound" }), false)
             assert.equal(
-                Value.Check(TrackerRecordSchema, {
+                TrackerRecordValidator.check({
                     ...record,
                     operations: ["confirm"],
                 }),
                 false,
             )
             const { external: _external, ...unidentified } = record
-            assert.equal(Value.Check(TrackerRecordSchema, unidentified), false)
+            assert.equal(TrackerRecordValidator.check(unidentified), false)
         }
         assert.equal(
-            Value.Check(TrackerRecordSchema, {
+            TrackerRecordValidator.check({
                 ...cases[2],
                 external: { issueId: "issue", identifier: "eng-2" },
             }),
@@ -164,9 +166,9 @@ describe("workflow consolidation contracts", () => {
             findings: [{ ...inputFinding, title: " " }],
             status: "Corrected",
         }
-        assert.equal(Value.Check(RecordReviewResponseSchema, response), true)
+        assert.equal(RecordReviewResponseValidator.check(response), true)
         assert.equal(
-            Value.Check(RecordReviewResponseSchema, {
+            RecordReviewResponseValidator.check({
                 ...response,
                 findings: [{ ...finding, severity: "warning" }],
             }),

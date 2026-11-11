@@ -2,10 +2,9 @@ import * as cp from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { StringEnum } from "@earendil-works/pi-ai"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
@@ -90,6 +89,7 @@ const ConflictRecordSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const ConflictRecordValidator = compile(ConflictRecordSchema)
 
 const ReviewOutcomeSchema = Type.Object(
     {
@@ -98,6 +98,7 @@ const ReviewOutcomeSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+const ReviewOutcomeValidator = compile(ReviewOutcomeSchema)
 const optionalReviewerProperties = {
     instructions: Type.Optional(Type.String({ description: "Extra review instructions for this run" })),
     model: Type.Optional(Type.String({ description: "Optional pi model pattern for the reviewer" })),
@@ -156,6 +157,7 @@ export const ReviewRequestSchema = Type.Union([
     ...deliverableRequests("task", TASK_DIRECTORY),
     ...deliverableRequests("gig", GIG_DIRECTORY),
 ])
+export const ReviewRequestValidator = compile(ReviewRequestSchema)
 type ReviewAgentParams = Static<typeof ReviewRequestSchema>
 
 // Tool roots must be plain objects, so each tool declares every input flat; parsing into
@@ -164,7 +166,7 @@ function deliverableToolParameters(directory: string) {
     return Type.Object(
         {
             entityDir: Type.String({ description: directory }),
-            phase: StringEnum(REVIEW_PHASES),
+            phase: Type.Enum(REVIEW_PHASES, { type: "string" }),
             subject: Type.Optional(subjectProperty),
             resolution: Type.Optional(resolutionProperty),
             ...optionalReviewerProperties,
@@ -176,13 +178,14 @@ function deliverableToolParameters(directory: string) {
 export const RecordReviewResponseSchema = Type.Object(
     {
         entityDir: Type.String({ description: "Epic, Task, or Gig directory" }),
-        phase: StringEnum(REVIEW_PHASES),
+        phase: Type.Enum(REVIEW_PHASES, { type: "string" }),
         round: Type.Integer({ minimum: 1 }),
         findings: Type.Array(ReviewResponseFindingInputSchema),
         status: Type.String({ minLength: 1, description: "Plain-language correction and review status" }),
     },
     { additionalProperties: false },
 )
+export const RecordReviewResponseValidator = compile(RecordReviewResponseSchema)
 type RecordReviewResponseParams = Static<typeof RecordReviewResponseSchema>
 
 const optionalPresentationProperties = {
@@ -224,6 +227,7 @@ export const PreparePlanPresentationSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const PreparePlanPresentationValidator = compile(PreparePlanPresentationSchema)
 type PreparePlanPresentationParams = Static<typeof PreparePlanPresentationSchema>
 
 const completionPresentationProperties = {
@@ -253,6 +257,7 @@ export const PrepareCompletionPresentationSchema = Type.Union([
         { additionalProperties: false },
     ),
 ])
+export const PrepareCompletionPresentationValidator = compile(PrepareCompletionPresentationSchema)
 type PrepareCompletionPresentationParams = Static<typeof PrepareCompletionPresentationSchema>
 
 interface ParentEpicContext {
@@ -270,6 +275,7 @@ export default function (pi: ExtensionAPI) {
         ["gig", deliverableToolParameters(GIG_DIRECTORY)],
     ] as const
     for (const [entity, parameters] of reviews) {
+        const validator = compile(parameters)
         tools.registerTool({
             name: `review_${entity}`,
             label: `review_${entity}`,
@@ -280,8 +286,8 @@ export default function (pi: ExtensionAPI) {
             parameters,
 
             async execute(_toolCallId, params, signal, onUpdate, ctx) {
-                const input: ReviewAgentParams = Value.Parse(ReviewRequestSchema, {
-                    ...Value.Parse(parameters, params),
+                const input: ReviewAgentParams = parse(ReviewRequestValidator, {
+                    ...parse(validator, params),
                     entity,
                 })
                 const projectConfig = assertArtifactPersistencePrepared(ctx.cwd)
@@ -367,7 +373,7 @@ export default function (pi: ExtensionAPI) {
         parameters: RecordReviewResponseSchema,
 
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const input: RecordReviewResponseParams = Value.Parse(RecordReviewResponseSchema, params)
+            const input: RecordReviewResponseParams = parse(RecordReviewResponseValidator, params)
             assertArtifactPersistencePrepared(ctx.cwd)
             const entityDir = resolveEntityDir(ctx.cwd, input.entityDir)
             const status = readEntityStatus(entityDir)
@@ -396,6 +402,7 @@ export default function (pi: ExtensionAPI) {
     ] as const
     for (const [entity, schema] of presentations) {
         const parameters = Type.Omit(schema, ["entity"])
+        const validator = compile(parameters)
         tools.registerTool({
             name: `prepare_${entity}_plan_presentation`,
             label: `prepare_${entity}_plan_presentation`,
@@ -404,8 +411,8 @@ export default function (pi: ExtensionAPI) {
             parameters,
 
             async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                const input: PreparePlanPresentationParams = Value.Parse(PreparePlanPresentationSchema, {
-                    ...Value.Parse(parameters, params),
+                const input: PreparePlanPresentationParams = parse(PreparePlanPresentationValidator, {
+                    ...parse(validator, params),
                     entity,
                 })
                 assertArtifactPersistencePrepared(ctx.cwd)
@@ -473,6 +480,7 @@ export default function (pi: ExtensionAPI) {
     ] as const
     for (const [entity, schema] of completionPresentations) {
         const parameters = Type.Omit(schema, ["entity"])
+        const validator = compile(parameters)
         tools.registerTool({
             name: `prepare_${entity}_completion_presentation`,
             label: `prepare_${entity}_completion_presentation`,
@@ -481,8 +489,8 @@ export default function (pi: ExtensionAPI) {
             parameters,
 
             async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                const input: PrepareCompletionPresentationParams = Value.Parse(PrepareCompletionPresentationSchema, {
-                    ...Value.Parse(parameters, params),
+                const input: PrepareCompletionPresentationParams = parse(PrepareCompletionPresentationValidator, {
+                    ...parse(validator, params),
                     entity,
                 })
                 assertArtifactPersistencePrepared(ctx.cwd)
@@ -638,8 +646,8 @@ async function readReviewRounds(entityDir: string, phase: ReviewPhase) {
 }
 
 async function readReviewOutcome(roundDir: string) {
-    return Value.Parse(
-        ReviewOutcomeSchema,
+    return parse(
+        ReviewOutcomeValidator,
         JSON.parse(await fs.promises.readFile(path.join(roundDir, REVIEW_OUTCOME_FILE), "utf-8")),
     )
 }
@@ -993,8 +1001,8 @@ export async function conflictForMerge(root: string, entityDir: string) {
     const outcome = fs.existsSync(outcomePath) ? await readReviewOutcome(newest.directory) : undefined
     if (outcome?.exitCode !== 0 || outcome.signoff !== "approved")
         throw new Error(`conflict-merge review requires the newest conflict-plan round to be approved: ${newest.entry}`)
-    const conflict: ConflictRecord = Value.Parse(
-        ConflictRecordSchema,
+    const conflict: ConflictRecord = parse(
+        ConflictRecordValidator,
         JSON.parse(await fs.promises.readFile(path.join(newest.directory, CONFLICT_RECORD_FILE), "utf-8")),
     )
     const { branch } = deliverableStatus(entityDir)

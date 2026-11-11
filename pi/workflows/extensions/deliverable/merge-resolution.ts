@@ -1,8 +1,8 @@
 import * as cp from "node:child_process"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { getMcpToolName, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import * as Git from "../__lib/git.js"
@@ -24,6 +24,7 @@ export const MergeResolutionCommentInputSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const MergeResolutionCommentInputValidator = compile(MergeResolutionCommentInputSchema)
 export type MergeResolutionCommentInput = Static<typeof MergeResolutionCommentInputSchema>
 
 export function mergeResolutionMarker(merge: string): string {
@@ -123,5 +124,5 @@ export function prepareMergeResolutionComment(
 }
 
 export function parseMergeResolutionCommentInput(params: unknown): MergeResolutionCommentInput {
-    return Value.Parse(MergeResolutionCommentInputSchema, params)
+    return parse(MergeResolutionCommentInputValidator, params)
 }

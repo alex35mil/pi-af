@@ -1,5 +1,5 @@
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
+import { compile } from "../../../extensions/__lib/schema.js"
 
 export const PROJECT_ROOT = ".project"
 // Everything under the local root is machine-local and never committed.
@@ -21,6 +21,7 @@ export type GeneratedBranchFormat = Exclude<BranchFormat, "tracker">
 export const DeliverableKindSchema = Type.Enum(["feature", "bugfix", "research", "refactor", "audit", "chore"], {
     type: "string",
 })
+export const DeliverableKindValidator = compile(DeliverableKindSchema)
 export type DeliverableKind = Static<typeof DeliverableKindSchema>
 
 export const QueueStateSchema = Type.Enum(["backlog", "todo"], {
@@ -47,6 +48,7 @@ export type LifecycleState = Static<typeof LifecycleStateSchema>
 export const PhaseSchema = Type.Enum(["planning", "execution", "selfReview"], {
     type: "string",
 })
+export const PhaseValidator = compile(PhaseSchema)
 export type Phase = Static<typeof PhaseSchema>
 
 export function projectedPhase(lifecycle: LifecycleState, phase: Phase): Phase | null {
@@ -58,6 +60,7 @@ export const PrioritySchema = Type.String({
     minLength: 1,
     pattern: "^[^\\r\\n]+$",
 })
+export const PriorityValidator = compile(PrioritySchema)
 export type Priority = Static<typeof PrioritySchema>
 
 // The tracker object is the entity's identity. Its reference names the directory and
@@ -113,14 +116,14 @@ export function slugify(value: string): string {
 
 export function normalizePriority(value: string): Priority {
     const priority = value.trim()
-    if (!Value.Check(PrioritySchema, priority)) {
+    if (!PriorityValidator.check(priority)) {
         throw new Error(`priority must be one explicit configured value or ${JSON.stringify(PRIORITY_NOT_SET)}`)
     }
     return priority
 }
 
 export function validateDeliverableKind(value: string): DeliverableKind {
-    if (!Value.Check(DeliverableKindSchema, value)) {
+    if (!DeliverableKindValidator.check(value)) {
         throw new Error(`invalid Deliverable kind ${JSON.stringify(value)}`)
     }
     return value

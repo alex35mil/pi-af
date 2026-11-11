@@ -7,14 +7,13 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
 
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
 import { type AnnouncementInput, planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
-import { PlanDocumentSchema } from "../workflows/extensions/integrations/plan-document.ts"
+import { PlanDocumentValidator } from "../workflows/extensions/integrations/plan-document.ts"
 import { trackerPublication } from "../workflows/extensions/integrations/tracker-publication.ts"
 import type { ProviderEvidence } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
@@ -212,7 +211,7 @@ describe("managed Linear plan documents", () => {
             { state: "pending", fingerprint },
             { state: "published", id: documentId, url },
         ])
-            assert.equal(Value.Check(PlanDocumentSchema, state), true)
+            assert.equal(PlanDocumentValidator.check(state), true)
         for (const state of [
             { state: "published", id: 42, url },
             { state: "pending" },
@@ -221,7 +220,7 @@ describe("managed Linear plan documents", () => {
             { state: "published", token, id: documentId, url },
             { state: "unpublished", fingerprint },
         ])
-            assert.equal(Value.Check(PlanDocumentSchema, state), false)
+            assert.equal(PlanDocumentValidator.check(state), false)
     })
     for (const kind of ["epic", "task", "gig"] as const)
         it(`publishes and updates ${kind}`, async () => {

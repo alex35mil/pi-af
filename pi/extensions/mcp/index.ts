@@ -69,7 +69,7 @@ export function registerNativeMcp(pi: ExtensionAPI, options: Omit<McpExtensionOp
             pi.registerTool(native)
             return
         }
-        // Pi 1.3.0 supplies the original server/tool in its label. Never split its
+        // Pi 1.5.2 supplies the original server/tool in its label. Never split its
         // model-facing name: that name may be normalized, truncated, or hashed.
         const separator = native.label.indexOf("/")
         if (separator < 1) throw new Error("Native MCP registration is missing its original server/tool label")

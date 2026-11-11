@@ -7,13 +7,19 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { Value } from "typebox/value"
+import { Type } from "typebox"
+
 import { kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 
+import { compile, parse, SchemaValidationError } from "../extensions/__lib/schema.ts"
 import { entityName, formatBranchName, readyBranch, slugify } from "../workflows/extensions/__lib/domain.ts"
 import { readEntityStatus, readEpicTaskProgress, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
-import { EntityInitializationSchema, initializeEntity, preflightEntity } from "../workflows/extensions/init/entity.ts"
+import {
+    EntityInitializationValidator,
+    initializeEntity,
+    preflightEntity,
+} from "../workflows/extensions/init/entity.ts"
 import { formatInitializedEntity } from "../workflows/extensions/init/index.ts"
 
 const repository = { owner: "example", repo: "project" }
@@ -127,7 +133,7 @@ const epicPlan = (branch: string, target: "epic" | "default", ...tasks: string[]
     `# Epic\n\n## Overview\n\nPlan.\n\n## Task delivery strategy\n\nTask target: ${target}\nEpic branch: ${branch}\n\nWhy.\n\n## Tasks\n\n${tasks.join("\n")}`
 
 function init(cwd: string, input: unknown) {
-    return initializeEntity(Value.Parse(EntityInitializationSchema, input), {
+    return initializeEntity(parse(EntityInitializationValidator, input), {
         cwd,
     })
 }
@@ -137,6 +143,25 @@ function writeMetadata(cwd: string, directory: string, status: unknown): void {
 }
 
 describe("workflow domain", () => {
+    it("parses strictly: never strips, converts, or defaults", () => {
+        const validator = compile(
+            Type.Object({ name: Type.String(), count: Type.Integer() }, { additionalProperties: false }),
+        )
+        const value = { name: "a", count: 3 }
+        assert.equal(parse(validator, value), value)
+        assert.throws(
+            () => parse(validator, { ...value, extra: true }),
+            (error) => error instanceof SchemaValidationError && /\/extra: unknown field/.test(error.message),
+        )
+        assert.throws(
+            () => parse(validator, { ...value, count: "3" }),
+            (error) =>
+                error instanceof SchemaValidationError &&
+                /\/count:/.test(error.message) &&
+                error.cause.some((cause) => cause.path === "/count"),
+        )
+    })
+
     it("names entities and branches from the tracker reference", () => {
         assert.equal(slugify("Café workflow!"), "cafe-workflow")
         assert.equal(entityName({ provider: "github", issueNumber: 12 }, "cafe-workflow"), "12-cafe-workflow")
@@ -162,7 +187,7 @@ describe("workflow domain", () => {
     })
 
     it("accepts only the tracker object that matches each entity", () => {
-        const check = (input: unknown) => Value.Check(EntityInitializationSchema, input)
+        const check = (input: unknown) => EntityInitializationValidator.check(input)
         assert.equal(check(gig("Work", issue(1))), true)
         assert.equal(check(gig("Work", linearIssue("ENG-1"))), true)
         assert.equal(
@@ -369,11 +394,11 @@ describe("workflow domain", () => {
                 /entity directory already exists/,
             )
             assert.equal(
-                Value.Check(EntityInitializationSchema, epic("Later", { ...project, createdAt: "yesterday" })),
+                EntityInitializationValidator.check(epic("Later", { ...project, createdAt: "yesterday" })),
                 false,
             )
             const { createdAt: _, ...undated } = project
-            assert.equal(Value.Check(EntityInitializationSchema, epic("Later", undated)), false)
+            assert.equal(EntityInitializationValidator.check(epic("Later", undated)), false)
             git(cwd, ["branch", "20261003-other-epic"])
             assert.throws(
                 () =>

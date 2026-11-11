@@ -85,7 +85,7 @@ export async function nativeSessionFixture(options: {
     setup?: (root: string) => void
     review?: (root: string, title: string, signal?: AbortSignal) => Promise<string | undefined>
 }) {
-    assert.equal(VERSION, "1.3.0")
+    assert.equal(VERSION, "1.5.2")
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-session-"))
     const agentDir = path.join(root, "agent")
     const oldAgentDir = process.env.PI_CODING_AGENT_DIR

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import {
-    EntityInitializationSchema,
+    EntityInitializationValidator,
     EpicInitializationPropertiesSchema,
     EpicPreflightSchema,
     GigInitializationPropertiesSchema,
@@ -11,10 +11,17 @@ import {
     initializeEntity,
     type InitializedEntity,
     preflightEntity,
-    PreflightSchema,
+    PreflightValidator,
     TaskInitializationPropertiesSchema,
 } from "./entity.js"
-import { restoreEpic, restoreEpicPlanSource, RestoreEpicPlanSourceSchema, RestoreEpicSchema } from "./restore.js"
+import {
+    restoreEpic,
+    restoreEpicPlanSource,
+    RestoreEpicPlanSourceSchema,
+    RestoreEpicPlanSourceValidator,
+    RestoreEpicSchema,
+    RestoreEpicValidator,
+} from "./restore.js"
 import { workflowTools } from "../__lib/tools.js"
 import { observeMcpTools } from "../../../extensions/__lib/mcp.js"
 import {
@@ -58,15 +65,16 @@ export default function (pi: ExtensionAPI): void {
         const preflight = variant.preflight
         // A Task never creates its tracker issue: it starts from the queued issue its
         // parent Epic's issue processing created, so it has no preflight.
-        if (preflight)
+        const preflightValidator = preflight ? compile(preflight) : undefined
+        if (preflight && preflightValidator)
             tools.registerTool({
                 name: `preflight_${variant.entity}`,
                 label: `preflight_${variant.entity}`,
                 description: `Run every local check for an approved new ${variant.entity} before its tracker object is created, and return the labels to create it with. Changes nothing; a failure means nothing should be created on the tracker.`,
                 parameters: preflight,
                 async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                    const input = Value.Parse(PreflightSchema, {
-                        ...Value.Parse(preflight, params),
+                    const input = parse(PreflightValidator, {
+                        ...parse(preflightValidator, params),
                         entity: variant.entity,
                     })
                     const result = preflightEntity(input, { cwd: ctx.cwd, tools: mcpTools })
@@ -82,6 +90,7 @@ export default function (pi: ExtensionAPI): void {
         ] as const) {
             const name = `init_${provider}_${variant.entity}`
             const parameters = Type.Object({ ...common.properties, object }, { additionalProperties: false })
+            const validator = compile(parameters)
             tools.registerTool({
                 name,
                 label: name,
@@ -91,8 +100,8 @@ export default function (pi: ExtensionAPI): void {
                         : `Initialize an approved ${variant.entity} from its existing ${provider === "github" ? "GitHub issue" : "Linear object"}, newly created or explicitly selected. Names the directory and branch from the tracker object and records its Resource IDs.`,
                 parameters,
                 async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-                    const input = Value.Parse(EntityInitializationSchema, {
-                        ...Value.Parse(parameters, params),
+                    const input = parse(EntityInitializationValidator, {
+                        ...parse(validator, params),
                         entity: variant.entity,
                     })
                     const initialized = initializeEntity(input, { cwd: ctx.cwd, tools: mcpTools })
@@ -113,7 +122,7 @@ export default function (pi: ExtensionAPI): void {
             "Recreate a missing local Epic from its tracker read and its single published plan: directory, metadata, brief, and epic.md. Never runs over an existing local Epic for the same tracker item, and creates no branch.",
         parameters: RestoreEpicSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const result = restoreEpic(ctx.cwd, Value.Parse(RestoreEpicSchema, params), mcpTools)
+            const result = restoreEpic(ctx.cwd, parse(RestoreEpicValidator, params), mcpTools)
             return {
                 content: [{ type: "text" as const, text: `Restored ${result.directory}.` }],
                 details: result,
@@ -128,7 +137,7 @@ export default function (pi: ExtensionAPI): void {
             "Return an existing local Epic's published plan as epic.md source, for comparing with the local copy. Writes nothing.",
         parameters: RestoreEpicPlanSourceSchema,
         async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-            const result = restoreEpicPlanSource(ctx.cwd, Value.Parse(RestoreEpicPlanSourceSchema, params), mcpTools)
+            const result = restoreEpicPlanSource(ctx.cwd, parse(RestoreEpicPlanSourceValidator, params), mcpTools)
             return { content: [{ type: "text" as const, text: result.source }], details: result }
         },
     })

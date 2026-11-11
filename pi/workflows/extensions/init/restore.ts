@@ -2,13 +2,13 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 import { mcpResponsePayload, requireMcpTool, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { EPIC_ROOT, entityName, readyBranch, slugify } from "../__lib/domain.js"
 import {
-    EntityStatusSchema,
+    EntityStatusValidator,
     LOCAL_NOTES_FILE,
     LOCAL_REVIEWS_DIR,
     LOCAL_SCRATCH_DIR,
@@ -45,12 +45,14 @@ export const RestoreEpicSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const RestoreEpicValidator = compile(RestoreEpicSchema)
 export type RestoreEpicInput = Static<typeof RestoreEpicSchema>
 
 export const RestoreEpicPlanSourceSchema = Type.Object(
     { entityDir: Type.String({ minLength: 1 }), pages: planPages },
     { additionalProperties: false },
 )
+export const RestoreEpicPlanSourceValidator = compile(RestoreEpicPlanSourceSchema)
 export type RestoreEpicPlanSourceInput = Static<typeof RestoreEpicPlanSourceSchema>
 
 interface EpicFacts {
@@ -199,7 +201,7 @@ export function restoreEpic(cwd: string, input: RestoreEpicInput, tools: McpTool
 
     const tracker = plan.tracker
     const defaultBranch = resolveDefaultBranch(root)
-    const status = Value.Parse(EntityStatusSchema, {
+    const status = parse(EntityStatusValidator, {
         entity: "epic",
         slug,
         title: facts.title.trim(),

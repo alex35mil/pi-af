@@ -11,13 +11,12 @@ import { stream as streamCompletions } from "@earendil-works/pi-ai/api/openai-co
 import { Type } from "typebox"
 import { createInMemoryTransportPair } from "@earendil-works/pi-mcp/testing"
 import { registerNativeMcp } from "../extensions/mcp/index.ts"
-import { Value } from "typebox/value"
 
 import { EntityInitializationSchema } from "../workflows/extensions/init/entity.ts"
 import { IntegrationContextSchema } from "../workflows/extensions/integrations/index.ts"
 import { ReviewRequestSchema } from "../workflows/extensions/review/index.ts"
-import { LinearPhaseInputSchema, linearPhaseFacts } from "../workflows/extensions/integrations/phase.ts"
-import { GitHubPhaseInputSchema } from "../workflows/extensions/integrations/github-phase-evidence.ts"
+import { LinearPhaseInputValidator, linearPhaseFacts } from "../workflows/extensions/integrations/phase.ts"
+import { GitHubPhaseInputValidator } from "../workflows/extensions/integrations/github-phase-evidence.ts"
 import { claudeCodeSchema } from "./claude-code-schema-fixture.ts"
 import { githubPhaseReads } from "./workflow-phase-fixtures.ts"
 import {
@@ -162,23 +161,23 @@ describe("workflow model-facing contracts", () => {
             repository: { owner: "o", repo: "r" },
             issueNumber: 1,
         })
-        assert.ok(Value.Check(GitHubPhaseInputSchema, github))
-        assert.equal(Value.Check(GitHubPhaseInputSchema, { field: github.field }), false)
+        assert.ok(GitHubPhaseInputValidator.check(github))
+        assert.equal(GitHubPhaseInputValidator.check({ field: github.field }), false)
         assert.equal(
-            Value.Check(GitHubPhaseInputSchema, {
+            GitHubPhaseInputValidator.check({
                 field: { name: "Phase", dataType: "SINGLE_SELECT", options: ["Planning"] },
                 current: "Planning",
             }),
             false,
         )
         const linear = { catalog: [{ id: "group", name: "Phase", isGroup: true }], applied: [] }
-        assert.ok(Value.Check(LinearPhaseInputSchema, linear))
+        assert.ok(LinearPhaseInputValidator.check(linear))
         assert.deepEqual(linearPhaseFacts(linear), {
             provider: "linear",
             catalog: [{ ...linear.catalog[0], team: null, parentId: null, groupType: null, retiredAt: null }],
             applied: [],
         })
-        assert.equal(Value.Check(LinearPhaseInputSchema, { applied: [] }), false)
+        assert.equal(LinearPhaseInputValidator.check({ applied: [] }), false)
     })
 
     it("keeps actual native default declarations within the context and GLM-count budgets", async () => {

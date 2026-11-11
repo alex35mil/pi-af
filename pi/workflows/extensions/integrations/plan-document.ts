@@ -1,4 +1,5 @@
 import { type Static, Type } from "typebox"
+import { compile } from "../../../extensions/__lib/schema.js"
 import { publicationStateSchema } from "./plan-publication.js"
 
 // Linear renders any marker as visible text, so a plan document carries none. A pending creation
@@ -7,6 +8,7 @@ export const PlanDocumentSchema = publicationStateSchema(
     { fingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }) },
     { id: Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" }), url: Type.String({ minLength: 1 }) },
 )
+export const PlanDocumentValidator = compile(PlanDocumentSchema)
 export type PlanDocument = Static<typeof PlanDocumentSchema>
 export type PlanDocumentPending = { fingerprint: string }
 export type PlanDocumentPublished = { id: string; url: string }

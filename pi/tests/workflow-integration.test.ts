@@ -8,19 +8,18 @@ import * as path from "node:path"
 import { describe, it, type TestContext } from "node:test"
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { Value } from "typebox/value"
 import { githubPhaseReads, kindLabelNames, kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
 import { withToolExecution } from "./extension-context-fixture.ts"
 
 import {
     assertConfiguredPriority,
     loadIntegrationConfig,
-    PriorityFieldSchema,
+    PriorityFieldValidator,
 } from "../workflows/extensions/integrations/config.ts"
 import { getWorkflowSettingsPaths, prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import registerIntegrations, {
     buildIntegrationContext,
-    IntegrationContextSchema,
+    IntegrationContextValidator,
     renderEntityProviderBody,
 } from "../workflows/extensions/integrations/index.ts"
 
@@ -208,10 +207,10 @@ function fileSnapshot(root: string): [string, string][] {
 describe("workflow-source queue context", () => {
     it("requires an explicit target only on project inspection and queue intake", () => {
         for (const target of ["current", "workflow"]) {
-            assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect", target }), true)
-            assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, target }), true)
+            assert.equal(IntegrationContextValidator.check({ operation: "inspect", target }), true)
+            assert.equal(IntegrationContextValidator.check({ ...queueSelection, target }), true)
             assert.equal(
-                Value.Check(IntegrationContextSchema, {
+                IntegrationContextValidator.check({
                     operation: "resume",
                     entityDir: "gig",
                     target,
@@ -219,7 +218,7 @@ describe("workflow-source queue context", () => {
                 false,
             )
             assert.equal(
-                Value.Check(IntegrationContextSchema, {
+                IntegrationContextValidator.check({
                     operation: "adopt",
                     entity: "gig",
                     target,
@@ -227,26 +226,26 @@ describe("workflow-source queue context", () => {
                 false,
             )
         }
-        assert.equal(Value.Check(IntegrationContextSchema, { operation: "inspect" }), false)
+        assert.equal(IntegrationContextValidator.check({ operation: "inspect" }), false)
         const { target, ...withoutTarget } = queueSelection
-        assert.equal(Value.Check(IntegrationContextSchema, withoutTarget), false)
+        assert.equal(IntegrationContextValidator.check(withoutTarget), false)
         assert.equal(
-            Value.Check(IntegrationContextSchema, {
+            IntegrationContextValidator.check({
                 ...queueSelection,
                 target: "other",
             }),
             false,
         )
         assert.equal(
-            Value.Check(IntegrationContextSchema, {
+            IntegrationContextValidator.check({
                 ...queueSelection,
                 kind: "review",
             }),
             false,
         )
         // Accepted Epic plans create every Task issue; Tasks are never queued directly.
-        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, entity: "task" }), false)
-        assert.equal(Value.Check(IntegrationContextSchema, { ...queueSelection, entity: "epic" }), true)
+        assert.equal(IntegrationContextValidator.check({ ...queueSelection, entity: "task" }), false)
+        assert.equal(IntegrationContextValidator.check({ ...queueSelection, entity: "epic" }), true)
     })
 
     for (const provider of ["github", "linear"] as const) {
@@ -685,7 +684,7 @@ describe("workflow integration configuration", () => {
         assert.doesNotThrow(() => assertConfiguredPriority(config("project"), "not set"))
         assert.throws(() => assertConfiguredPriority(config("project"), "Critical"), /not configured/)
         assert.equal(
-            Value.Check(PriorityFieldSchema, {
+            PriorityFieldValidator.check({
                 scope: "project",
                 field: "Priority",
                 values: ["High", "not set"],

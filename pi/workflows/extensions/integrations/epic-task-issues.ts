@@ -3,6 +3,7 @@ import * as path from "node:path"
 
 import { type Static, Type } from "typebox"
 
+import { compile } from "../../../extensions/__lib/schema.js"
 import {
     getMcpToolName,
     mcpResponsePayload,
@@ -72,6 +73,7 @@ export const PlanEpicTaskIssuesSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const PlanEpicTaskIssuesValidator = compile(PlanEpicTaskIssuesSchema)
 export type PlanEpicTaskIssuesInput = Static<typeof PlanEpicTaskIssuesSchema>
 
 export const RecordEpicTaskIssueSchema = Type.Object(
@@ -84,6 +86,7 @@ export const RecordEpicTaskIssueSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const RecordEpicTaskIssueValidator = compile(RecordEpicTaskIssueSchema)
 export type RecordEpicTaskIssueInput = Static<typeof RecordEpicTaskIssueSchema>
 
 type Mutation = { tool: string; arguments: Record<string, unknown> }

@@ -2,9 +2,9 @@ import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { type Static, type TSchema, Type } from "typebox"
-import { Value } from "typebox/value"
+import { type Static, Type } from "typebox"
 
+import { compile, describeErrors, type Validator } from "../../../extensions/__lib/schema.js"
 import * as project from "../../../extensions/__lib/project.js"
 import { requireRuntime } from "../../../extensions/__lib/runtime.js"
 import { type BranchFormat, BranchFormatSchema, PROJECT_LOCAL_ROOT, PROJECT_ROOT } from "./domain.js"
@@ -36,6 +36,7 @@ export const ProjectConfigSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const ProjectConfigValidator = compile(ProjectConfigSchema)
 
 type PersistedProjectConfig = Static<typeof ProjectConfigSchema>
 export type ProjectConfig = PersistedProjectConfig & {
@@ -46,14 +47,18 @@ const BranchSettingsSchema = Type.Object(
     { username: Type.String({ minLength: 1, pattern: "^[^/\\r\\n]+$" }) },
     { additionalProperties: false },
 )
-const LocalWorkflowSettingsSchema = Type.Object({ branches: BranchSettingsSchema }, { additionalProperties: false })
-const WorkflowSettingsSchema = Type.Object(
-    {
-        branches: Type.Optional(BranchSettingsSchema),
-        workflowProject: Type.Optional(Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })),
-        sessionAnalysis: Type.Optional(Type.Boolean()),
-    },
-    { additionalProperties: false, minProperties: 1 },
+const LocalWorkflowSettingsValidator = compile(
+    Type.Object({ branches: BranchSettingsSchema }, { additionalProperties: false }),
+)
+const WorkflowSettingsValidator = compile(
+    Type.Object(
+        {
+            branches: Type.Optional(BranchSettingsSchema),
+            workflowProject: Type.Optional(Type.String({ minLength: 1, pattern: "^[^\\r\\n]+$" })),
+            sessionAnalysis: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false, minProperties: 1 },
+    ),
 )
 
 /** Whether a fully shipped Deliverable ends with an in-chat analysis of the session for workflow problems. */
@@ -73,18 +78,16 @@ export function loadProjectConfig(cwd: string, options: { globalSettingsPath?: s
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`invalid ${PROJECT_CONFIG_PATH}: ${message}`)
     }
-    if (!Value.Check(ProjectConfigSchema, input)) {
-        const details = [...Value.Errors(ProjectConfigSchema, input)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!ProjectConfigValidator.check(input)) {
+        const details = describeErrors(ProjectConfigValidator.errors(input)).join("; ")
         throw new Error(`invalid ${PROJECT_CONFIG_PATH}: ${details}`)
     }
 
     if (!formatUsesUsername(input.branches.format)) return input
 
     const settingsPaths = getWorkflowSettingsPaths(root, options)
-    const globalSettings = loadWorkflowSettings(settingsPaths.global, WorkflowSettingsSchema)
-    const localSettings = loadWorkflowSettings(settingsPaths.local, LocalWorkflowSettingsSchema)
+    const globalSettings = loadWorkflowSettings(settingsPaths.global, WorkflowSettingsValidator)
+    const localSettings = loadWorkflowSettings(settingsPaths.local, LocalWorkflowSettingsValidator)
     const username = localSettings?.branches.username ?? globalSettings?.branches?.username
     if (!username) {
         throw new Error(
@@ -110,12 +113,14 @@ export function getWorkflowSettingsPaths(cwd: string, options: { globalSettingsP
 /** Reads the global opt-in; it is machine-wide, so project configuration can't set it. Absent means disabled. */
 export function loadSessionAnalysis(cwd: string, options: { globalSettingsPath?: string } = {}): SessionAnalysis {
     const settingsPath = getWorkflowSettingsPaths(cwd, options).global
-    return loadWorkflowSettings(settingsPath, WorkflowSettingsSchema)?.sessionAnalysis === true ? "enabled" : "disabled"
+    return loadWorkflowSettings(settingsPath, WorkflowSettingsValidator)?.sessionAnalysis === true
+        ? "enabled"
+        : "disabled"
 }
 
 export function resolveWorkflowProject(cwd: string, options: { globalSettingsPath?: string } = {}): string {
     const settingsPath = getWorkflowSettingsPaths(cwd, options).global
-    const configured = loadWorkflowSettings(settingsPath, WorkflowSettingsSchema)?.workflowProject
+    const configured = loadWorkflowSettings(settingsPath, WorkflowSettingsValidator)?.workflowProject
     const instruction = `Set workflowProject to the absolute workflow source repository root in ${settingsPath}.`
     if (!configured) throw new Error(instruction)
     if (!path.isAbsolute(configured)) throw new Error(instruction)
@@ -254,7 +259,7 @@ function fileFingerprint(file: string): string | null {
     }
 }
 
-function loadWorkflowSettings<S extends TSchema>(filePath: string, schema: S): Static<S> | undefined {
+function loadWorkflowSettings<T>(filePath: string, validator: Validator<T>): T | undefined {
     if (!fs.existsSync(filePath)) return undefined
     let input: unknown
     try {
@@ -263,10 +268,8 @@ function loadWorkflowSettings<S extends TSchema>(filePath: string, schema: S): S
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`invalid ${filePath}: ${message}`)
     }
-    if (!Value.Check(schema, input)) {
-        const details = [...Value.Errors(schema, input)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!validator.check(input)) {
+        const details = describeErrors(validator.errors(input)).join("; ")
         throw new Error(`invalid ${filePath}: ${details}`)
     }
     return input

@@ -7,15 +7,13 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { describe, it } from "node:test"
 
-import { Value } from "typebox/value"
-
 import {
     gitHubResourceNumber,
     invalidateResourceIds,
     OperationResourceIdsMemo,
     parseResourceIds,
     RESOURCE_IDS_CACHE_FILE,
-    ResourceIdsCacheSchema,
+    ResourceIdsCacheValidator,
     readResourceIdsCache,
     recordResourceIds,
     resolveCachedResourceIds,
@@ -92,7 +90,7 @@ describe("local resource IDs storage", () => {
         try {
             const resourceIds = [issue, projectItem, pullRequest, linearProject, linearIssue]
             await recordResourceIds(directory, resourceIds)
-            assert.equal(Value.Check(ResourceIdsCacheSchema, readResourceIdsCache(directory)), true)
+            assert.equal(ResourceIdsCacheValidator.check(readResourceIdsCache(directory)), true)
             for (const ids of resourceIds) {
                 assert.deepEqual(await resolveCachedResourceIds(directory, ids.scope), ids)
             }

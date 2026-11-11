@@ -2,8 +2,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { type Static, type TProperties, Type } from "typebox"
-import { Value } from "typebox/value"
 
+import { compile, describeErrors } from "../../../extensions/__lib/schema.js"
 import {
     DeliverableKindSchema,
     ReadyBranchContractSchema,
@@ -96,6 +96,7 @@ export const EntityStatusSchema = Type.Union([
     entitySchema(gigProperties),
     entitySchema(taskProperties),
 ])
+export const EntityStatusValidator = compile(EntityStatusSchema)
 export type EntityStatus = Static<typeof EntityStatusSchema>
 
 // Display reference for messages: `#12`, `ENG-7`, or the slug for a Linear Project.
@@ -162,15 +163,14 @@ export const EpicTaskProgressSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const EpicTaskProgressValidator = compile(EpicTaskProgressSchema)
 export type EpicTaskProgress = Static<typeof EpicTaskProgressSchema>
 
 export function readEntityStatus(entityDirectory: string): EntityStatus {
     const metadataPath = path.join(entityDirectory, ENTITY_METADATA_FILE)
     const metadata = readJson(metadataPath, "entity metadata")
-    if (!Value.Check(EntityStatusSchema, metadata)) {
-        const details = [...Value.Errors(EntityStatusSchema, metadata)]
-            .map((error) => `${error.instancePath || "/"}: ${error.message}`)
-            .join("; ")
+    if (!EntityStatusValidator.check(metadata)) {
+        const details = describeErrors(EntityStatusValidator.errors(metadata)).join("; ")
         throw new Error(`invalid entity metadata in ${metadataPath}: ${details}`)
     }
     assertEntityStatusInvariants(metadata, entityDirectory)
@@ -273,7 +273,7 @@ export function readEpicTaskProgress(
             }
         }),
     }
-    if (!Value.Check(EpicTaskProgressSchema, progress)) {
+    if (!EpicTaskProgressValidator.check(progress)) {
         throw new Error(`generated invalid Task progress for ${epicDirectory}`)
     }
     return progress
@@ -301,7 +301,7 @@ export function readEpicTaskDirectories(epicDirectory: string): Map<string, stri
 }
 
 export function writeEntityStatus(entityDirectory: string, status: EntityStatus): void {
-    if (!Value.Check(EntityStatusSchema, status))
+    if (!EntityStatusValidator.check(status))
         throw new Error(`cannot write invalid entity metadata: ${entityDirectory}`)
     writeTextAtomically(path.join(entityDirectory, ENTITY_METADATA_FILE), `${JSON.stringify(status, null, 2)}\n`)
 }

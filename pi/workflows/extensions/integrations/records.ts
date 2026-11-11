@@ -1,5 +1,6 @@
 import { type Static, Type } from "typebox"
 
+import { compile } from "../../../extensions/__lib/schema.js"
 import {
     LINEAR_IDENTIFIER_PATTERN,
     PRIORITY_NOT_SET,
@@ -50,6 +51,7 @@ export const GitHubTrackerObjectSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const GitHubTrackerObjectValidator = compile(GitHubTrackerObjectSchema)
 export const LinearProjectObjectSchema = Type.Object(
     {
         projectId: OneLineSchema,
@@ -61,6 +63,7 @@ export const LinearProjectObjectSchema = Type.Object(
     },
     { additionalProperties: false },
 )
+export const LinearProjectObjectValidator = compile(LinearProjectObjectSchema)
 const linearIssueObject = {
     issueId: OneLineSchema,
     identifier: LinearIdentifierSchema,
@@ -71,9 +74,11 @@ export const LinearTaskIssueObjectSchema = Type.Object(
     { ...linearIssueObject, projectId: OneLineSchema },
     { additionalProperties: false },
 )
+export const LinearTaskIssueObjectValidator = compile(LinearTaskIssueObjectSchema)
 export const LinearGigIssueObjectSchema = Type.Object(linearIssueObject, {
     additionalProperties: false,
 })
+export const LinearGigIssueObjectValidator = compile(LinearGigIssueObjectSchema)
 export type GitHubTrackerObject = Static<typeof GitHubTrackerObjectSchema>
 export type LinearProjectObject = Static<typeof LinearProjectObjectSchema>
 export type LinearTaskIssueObject = Static<typeof LinearTaskIssueObjectSchema>
@@ -145,6 +150,7 @@ export const TrackerRecordSchema = Type.Union([
     LinearTaskIssueRecordSchema,
     LinearGigIssueRecordSchema,
 ])
+export const TrackerRecordValidator = compile(TrackerRecordSchema)
 export type TrackerRecord = Static<typeof TrackerRecordSchema>
 export type GitHubTrackerRecord = Static<typeof GitHubTrackerRecordSchema>
 export type LinearTrackerRecord = Exclude<TrackerRecord, GitHubTrackerRecord>
