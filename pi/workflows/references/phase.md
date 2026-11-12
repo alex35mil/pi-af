@@ -18,7 +18,7 @@ Phase is for visibility: it shows team members and observers where the work is. 
 | Confirmed completion or cancellation | Done, Canceled | keep last | absent |
 
 - A direct-path Deliverable goes from Planning straight to Execution once it chose the path.
-- An Epic stays in Planning until the user accepts it, then moves to Execution.
+- An Epic stays in Planning until the user accepts it, then moves to Execution. A Task or Gig whose plan [waits for approval](./planning.md#plan-approval) does the same.
 - **A failed Phase read or write** is reported in one line, and work continues. The next Phase change or resume reconciles it.
 
 **In Review** starts only after real submission for external human review: a successfully created or recovered reviewable PR, or successful publication of approved revisions.

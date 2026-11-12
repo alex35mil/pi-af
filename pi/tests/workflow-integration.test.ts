@@ -1090,6 +1090,62 @@ describe("workflow integration configuration", () => {
         }
     })
 
+    it("decides plan approval for a Task or Gig from its labels, and refuses an Epic", async () => {
+        const cwd = temporaryProject()
+        try {
+            const gate = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrMore",
+                values: { plan: { name: "Gate: Plan", color: "#1D76DB", description: "" } },
+            }
+            const tracker = config()
+            prepareWorkflowProject(cwd, {
+                ...tracker,
+                labels: { groups: { ...tracker.labels!.groups, gate } },
+            })
+            prepareArtifactPersistence(cwd)
+            const gig = writeGitHubGigEntity(cwd)
+            const epic = writeEntity(
+                cwd,
+                "epic",
+                "7-epic",
+                {
+                    provider: "github",
+                    repository: { owner: "alex", repo: "example" },
+                    external: { issueNumber: 7 },
+                    planComment: { state: "unpublished" },
+                },
+                "epic",
+            )
+            type Tool = Parameters<ExtensionAPI["registerTool"]>[0]
+            const tools = new Map<string, Tool>()
+            registerIntegrations({
+                events: { on: () => () => {} },
+                on: () => {},
+                registerCommand: () => {},
+                registerTool: (tool: Tool) => tools.set(tool.name, tool),
+            } as unknown as ExtensionAPI)
+            const inspect = (entityDir: string, names: string[]) =>
+                tools
+                    .get("inspect_gate")!
+                    .execute(
+                        "gate",
+                        { entityDir, gate: "plan", current: { provider: "github", names } },
+                        undefined,
+                        undefined,
+                        withToolExecution({ cwd } as ExtensionContext),
+                    )
+            assert.deepEqual((await inspect(gig, ["Kind: Feature", "Gate: Plan"])).details, {
+                gate: "awaitApproval",
+                label: "Gate: Plan",
+            })
+            assert.equal(((await inspect(gig, ["Kind: Feature"])).details as { gate: string }).gate, "continue")
+            await assert.rejects(inspect(epic, ["Gate: Plan"]), /Epic plan always waits/)
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true })
+        }
+    })
+
     it("calculates Linear whole-label updates through runtime context", () => {
         const cwd = temporaryProject()
         try {
@@ -1202,6 +1258,21 @@ describe("workflow integration configuration", () => {
             rejects(
                 github({ groups: { kind: { ...kindLabels().groups.kind, cardinality: "zeroOrOne" } } }),
                 /must be `exactlyOne`/,
+            )
+            const gate = {
+                appliesTo: ["deliverable"],
+                cardinality: "zeroOrMore",
+                values: { plan: label("Gate: Plan") },
+            }
+            assert.ok(loads(github({ groups: { gate } })))
+            rejects(
+                github({ groups: { gate: { ...gate, appliesTo: ["epic", "deliverable"] } } }),
+                /must apply only to "deliverable"/,
+            )
+            rejects(github({ groups: { gate: { ...gate, cardinality: "zeroOrOne" } } }), /must be `zeroOrMore`/)
+            rejects(
+                github({ groups: { gate: { ...gate, values: { ...gate.values, review: label("Gate: Review") } } } }),
+                /unknown gate "review"; known gates: "plan"/,
             )
             rejects(github({ groups: { Area: area } }), /invalid \.project\/integrations\.json/)
             rejects(github({ groups: { area: { ...area, appliesTo: [] } } }), /invalid \.project\/integrations\.json/)

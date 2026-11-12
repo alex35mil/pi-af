@@ -133,6 +133,17 @@ export type LinearPhaseGroups = Static<typeof LinearPhaseGroupsSchema>
 /** The reserved group whose value comes from the item's workflow Kind. */
 export const KIND_GROUP_KEY = "kind"
 
+/**
+ * The reserved group whose values mark a Task or Gig with gates: points where the workflow stops for
+ * the user's approval. The user sets them on the tracker item; the workflow only reads them.
+ */
+export const GATE_GROUP_KEY = "gate"
+
+/** The gates the workflow knows how to honor; config may name only these. */
+export const GateSchema = Type.Enum(["plan"], { type: "string" })
+export type Gate = Static<typeof GateSchema>
+const GATES: readonly Gate[] = GateSchema.enum
+
 export type WorkflowKind = "epic" | DeliverableKind
 
 const DELIVERABLE_KINDS: readonly DeliverableKind[] = DeliverableKindSchema.enum
@@ -187,6 +198,26 @@ function assertKindGroup(group: GitHubLabelGroup | LinearLabelGroup): void {
     }
 }
 
+function assertGateGroup(group: GitHubLabelGroup | LinearLabelGroup): void {
+    if (group.appliesTo.length !== 1 || group.appliesTo[0] !== "deliverable")
+        throw new Error('the `gate` label group must apply only to "deliverable"')
+    if (group.cardinality !== "zeroOrMore") throw new Error("the `gate` label group must be `zeroOrMore`")
+    for (const value of Object.keys(group.values)) {
+        if (!(GATES as readonly string[]).includes(value))
+            throw new Error(
+                `the \`gate\` label group has unknown gate ${JSON.stringify(value)}; known gates: ${GATES.map((gate) => JSON.stringify(gate)).join(", ")}`,
+            )
+    }
+}
+
+/** Checks the shape of the groups whose keys the workflow reserves; other groups are free-form. */
+function assertReservedGroups(groups: [string, GitHubLabelGroup | LinearLabelGroup][]): void {
+    for (const [key, group] of groups) {
+        if (key === KIND_GROUP_KEY) assertKindGroup(group)
+        if (key === GATE_GROUP_KEY) assertGateGroup(group)
+    }
+}
+
 function assertDistinctNames(domain: string, names: readonly string[]): Set<string> {
     const seen = new Set<string>()
     for (const name of names) {
@@ -223,7 +254,7 @@ function assertEntries<T extends { name: string }>(
 
 export function assertGitHubLabels(labels: GitHubLabels | undefined): void {
     const groups = Object.entries(labels?.groups ?? {})
-    for (const [key, group] of groups) if (key === KIND_GROUP_KEY) assertKindGroup(group)
+    assertReservedGroups(groups)
     const definitions = groups.flatMap(([, group]) => Object.values(group.values))
     for (const definition of definitions) {
         if (definition.description.length > GITHUB_DESCRIPTION_LIMIT)
@@ -258,7 +289,7 @@ function linearCatalogItemType(catalog: LinearLabelCatalog): LabelItemType {
  */
 export function assertLinearLabels(labels: LinearLabels | undefined, phase: LinearPhaseGroups): void {
     const groups = Object.entries(labels?.groups ?? {})
-    for (const [key, group] of groups) if (key === KIND_GROUP_KEY) assertKindGroup(group)
+    assertReservedGroups(groups)
     const managedByCatalog = new Map<LinearLabelCatalog, Set<string>>()
     for (const catalog of LinearLabelCatalogSchema.enum) {
         const itemType = linearCatalogItemType(catalog)

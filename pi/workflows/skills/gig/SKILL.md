@@ -27,6 +27,7 @@ allowed-tools:
     - "prepare_integration_merge"
     - "prepare_tracker_mutation"
     - "prepare_label_mutation"
+    - "inspect_gate"
     - "prepare_github_phase_mutation"
     - "prepare_linear_phase_mutation"
     - "begin_resource_creation"

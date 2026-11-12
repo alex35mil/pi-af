@@ -44,6 +44,7 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 | Prepare shipping; validate PR merge evidence | `prepare_integration_shipping`, `prepare_integration_merge` |
 | Prepare a lifecycle, Priority, or hierarchy change | `prepare_tracker_mutation` |
 | Prepare an item's label change | `prepare_label_mutation` |
+| Decide whether a Task or Gig waits for approval at a gate | `inspect_gate` |
 | Check whether a finished workflow ends with session analysis | `inspect_session_analysis` |
 | Calculate native Phase without changing metadata | `prepare_github_phase_mutation`, `prepare_linear_phase_mutation` |
 | Set metadata Phase and calculate native Phase | `set_github_workflow_phase`, `set_linear_workflow_phase` |

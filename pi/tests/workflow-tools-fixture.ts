@@ -66,6 +66,7 @@ export const expectedWorkflowTools = [
     "prepare_integration_merge",
     "prepare_tracker_mutation",
     "prepare_label_mutation",
+    "inspect_gate",
     "prepare_github_phase_mutation",
     "prepare_linear_phase_mutation",
     "inspect_incoming_pr_context",

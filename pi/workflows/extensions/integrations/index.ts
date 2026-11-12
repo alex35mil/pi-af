@@ -10,7 +10,7 @@ import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/
 import { acceptEpicTasks } from "../__lib/epic-acceptance.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
-import { type WorkflowKind } from "./labels.js"
+import { GateSchema, type WorkflowKind } from "./labels.js"
 import {
     LabelFactsSchema,
     LabelSelectionFailure,
@@ -18,6 +18,7 @@ import {
     type LabelFacts,
     type LabelSelection,
     completeSelection,
+    linearLabelFacts,
     planGitHubLabelUpdate,
     planLinearLabelUpdate,
     selectedLabelNames,
@@ -32,6 +33,7 @@ import {
     planPhaseMutation,
 } from "./phase.js"
 import { GitHubPhaseInputSchema, GitHubPhaseInputValidator, githubPhaseFacts } from "./github-phase-evidence.js"
+import { gateOutcome } from "./gate.js"
 import {
     assertArtifactPersistencePrepared,
     assertSandboxArtifactsLinked,
@@ -98,6 +100,16 @@ export const AcceptEpicTasksSchema = Type.Object(
     { additionalProperties: false },
 )
 const AcceptEpicTasksValidator = compile(AcceptEpicTasksSchema)
+
+export const InspectGateSchema = Type.Object(
+    {
+        entityDir: Type.String({ minLength: 1, description: "The Task or Gig directory" }),
+        gate: Type.Union([GateSchema], { description: "The stop point to check" }),
+        current: LabelFactsSchema,
+    },
+    { additionalProperties: false },
+)
+const InspectGateValidator = compile(InspectGateSchema)
 
 const ContextEntitySchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
 const ContextTargetSchema = Type.Enum(["current", "workflow"], { type: "string" })
@@ -308,6 +320,25 @@ export default function (pi: ExtensionAPI): void {
         parameters: Type.Object({}, { additionalProperties: false }),
         async execute(_id, _params, _signal, _onUpdate, ctx) {
             const result = { sessionAnalysis: loadSessionAnalysis(ctx.cwd) }
+            return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+        },
+    })
+
+    toolsApi.registerTool({
+        name: "inspect_gate",
+        label: "inspect_gate",
+        description:
+            "Decide whether a Task or Gig waits for the user's approval at one gate, from the item's fresh labels: `awaitApproval` when it carries that gate's configured `gate` label, otherwise `continue`. Reads local configuration only; never calls providers or changes labels.",
+        parameters: InspectGateSchema,
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+            const input = parse(InspectGateValidator, params)
+            assertArtifactPersistencePrepared(ctx.cwd)
+            const environment = resolveWorkflowEnvironment(loadIntegrationConfig(ctx.cwd))
+            const entity = readWorkflowEntity(ctx.cwd, input.entityDir)
+            assertEntityEnvironment(entity.status, environment)
+            if (entity.status.entity === "epic")
+                throw new Error("gates apply to a Task or Gig; an Epic plan always waits for acceptance")
+            const result = gateOutcome(environment.tracker, input.gate, input.current)
             return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
         },
     })
@@ -662,17 +693,7 @@ function planLabelMutation(
         itemType,
         kind,
         selection,
-        {
-            catalog: current.catalog.map((label) => ({
-                id: label.id,
-                name: label.name,
-                team: label.team ?? null,
-                parentId: label.parentId ?? null,
-                isGroup: label.isGroup,
-                retiredAt: label.retiredAt ?? null,
-            })),
-            applied: current.applied,
-        },
+        linearLabelFacts(current),
     )
     return { provider: "linear" as const, ...update }
 }
