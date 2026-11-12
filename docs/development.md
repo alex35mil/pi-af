@@ -62,6 +62,8 @@ docs/              confirmed documentation
   helper need an active Apple Developer Program membership.
 - If the macOS app later registers the daemon itself, a test build would replace the daemon your sessions run on;
   revisit a dev variant for macOS then.
+- Apple-side conventions (project setup, signing, app structure, theming) follow the author's Kiddo app (private):
+  align with its patterns, but don't copy its code or internals into this public repository.
 
 ## Getting the app on the iPhone and iPad
 
