@@ -46,6 +46,11 @@ docs/              confirmed documentation
 | `mise run logs:install` | Install the independent paired-iPhone log collector (host only) |
 | `mise run build` / `test` / `lint` / `format` | Aggregate project tasks |
 
+- `mise run test` runs the suites one after another: the e2e suites stream real pi and flake when they share the CPU.
+- Protocol fixtures (`apps/packages/PitonKit/Tests/Fixtures`) are written by the daemon test `fixtures`
+  (`daemon/src/view.rs`), which fails when they're stale. After a protocol change, run
+  `PITON_WRITE_FIXTURES=1 cargo test fixtures` in `daemon/`, then fix PitonKit until `mise run apps:test` passes.
+
 ## Apps
 
 - Minimum OS: iOS 27, macOS 27.

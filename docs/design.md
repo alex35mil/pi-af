@@ -414,7 +414,8 @@ text frame per message, plain `ws://` (Tailscale encrypts the traffic). `daemon/
   when it belongs to the same Tailscale user as this Mac, isn't tagged, isn't shared in from another tailnet, and
   isn't this Mac itself. Refusals are logged with the reason; the peer sees the connection close.
 - **Why not this Mac:** sandboxed agents can open network connections, and through the tailnet address they'd look
-  like the owner. Local clients use the Unix socket (`0600`, outside the `piton` sandbox).
+  like the owner. Local clients use the Unix socket (`0600`, outside the `piton` sandbox). Never add a localhost or
+  token path to the WebSocket: the identity check is the only way in.
 - **Only `view`:** an `rpc` or `control` hello over the WebSocket is closed (no remote `piton attach`).
 - **Dead connections:** a phone that loses its network sends no close, and its TCP connection would linger for many
   minutes. The daemon pings every client (`[tailnet] heartbeat_ms`, default 10 s) and drops one that answers none of
