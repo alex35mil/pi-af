@@ -55,50 +55,85 @@
                     "appliesTo": ["epic", "deliverable"],
                     "cardinality": "oneOrMore",
                     "values": {
-                        "workflows": {
-                            "name": "Area: Workflows",
+                        "pi-workflows": {
+                            "name": "Area: Pi/Workflows",
                             "color": "#006B75",
                             "description": "Epic, Task, Gig, and PR workflows: skills, references, and workflow extensions."
                         },
-                        "context": {
-                            "name": "Area: Extension - Context",
-                            "color": "#DDF4FF",
+                        "pi-context": {
+                            "name": "Area: Pi/Ext/Context",
+                            "color": "#B2E0E6",
                             "description": "The context extension: /context session introspection."
                         },
-                        "fetch": {
-                            "name": "Area: Extension - Fetch",
-                            "color": "#DDF4FF",
+                        "pi-fetch": {
+                            "name": "Area: Pi/Ext/Fetch",
+                            "color": "#B2E0E6",
                             "description": "The fetch extension: URL retrieval as Markdown."
                         },
-                        "mcp": {
-                            "name": "Area: Extension - MCP",
-                            "color": "#DDF4FF",
+                        "pi-mcp": {
+                            "name": "Area: Pi/Ext/MCP",
+                            "color": "#B2E0E6",
                             "description": "The mcp extension: MCP server integration."
                         },
-                        "permissions": {
-                            "name": "Area: Extension - Permissions",
-                            "color": "#DDF4FF",
+                        "pi-permissions": {
+                            "name": "Area: Pi/Ext/Permissions",
+                            "color": "#B2E0E6",
                             "description": "The permissions extension: allow, deny, and ask rules."
                         },
-                        "rules": {
-                            "name": "Area: Extension - Rules",
-                            "color": "#DDF4FF",
+                        "pi-rules": {
+                            "name": "Area: Pi/Ext/Rules",
+                            "color": "#B2E0E6",
                             "description": "The rules extension: rule files injected into the system prompt."
                         },
-                        "status": {
-                            "name": "Area: Extension - Status",
-                            "color": "#DDF4FF",
+                        "pi-status": {
+                            "name": "Area: Pi/Ext/Status",
+                            "color": "#B2E0E6",
                             "description": "The status extension: runtime and rate-limit status entries."
                         },
-                        "web-search": {
-                            "name": "Area: Extension - Web Search",
-                            "color": "#DDF4FF",
+                        "pi-web-search": {
+                            "name": "Area: Pi/Ext/WebSearch",
+                            "color": "#B2E0E6",
                             "description": "The web-search extension: Brave Search tool."
+                        },
+                        "pi-package": {
+                            "name": "Area: Pi/Package",
+                            "color": "#4FB3BF",
+                            "description": "Pi package plumbing: dependencies, Pi upgrades, shared extension lib, test harness, commit skill."
+                        },
+                        "daemon": {
+                            "name": "Area: Daemon",
+                            "color": "#DEA584",
+                            "description": "The Rust daemon and CLI: pi RPC processes, worker clones, attach, and app serving."
+                        },
+                        "apps-kit": {
+                            "name": "Area: Apps/Kit",
+                            "color": "#F05138",
+                            "description": "PitonKit: daemon protocol, transport, session store, and app logging."
+                        },
+                        "apps-ui": {
+                            "name": "Area: Apps/UI",
+                            "color": "#F47D5E",
+                            "description": "PitonUI: shared SwiftUI views for sessions, session list, and settings."
+                        },
+                        "apps-ios": {
+                            "name": "Area: Apps/iOS",
+                            "color": "#FBB8A4",
+                            "description": "The iOS and iPadOS app target and iOS-specific behavior."
+                        },
+                        "apps-macos": {
+                            "name": "Area: Apps/macOS",
+                            "color": "#FBB8A4",
+                            "description": "The macOS app target and macOS-specific behavior."
+                        },
+                        "nvim": {
+                            "name": "Area: Neovim",
+                            "color": "#57A143",
+                            "description": "The Neovim plugin over piton worker: pickers, tabs, and the tracker queue."
                         },
                         "tooling": {
                             "name": "Area: Tooling",
                             "color": "#EDEDED",
-                            "description": "Tests, dependencies, Pi upgrades, repository configuration, and the bundled commit skill."
+                            "description": "Repo-wide tooling: mise tasks, sandbox, signing, log collector, agent config, cross-area migrations."
                         }
                     }
                 },
