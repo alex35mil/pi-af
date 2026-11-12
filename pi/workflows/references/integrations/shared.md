@@ -169,7 +169,7 @@ Adding work to Backlog or Todo creates no workflow artifact or saved recovery st
 ## Labels
 
 - Label groups live in `labels.groups`. Each value maps to one tracker label, and the group's cardinality limits how many an item carries. Read the configuration with `inspect_integrations`.
-- The `kind` value always comes from the item's Kind. Values for other groups come from Project Policies and the work; ask the user only when one can't be derived.
+- The `kind` value always comes from the item's Kind. `gate` values are the user's: keep them as the item has them, and set one at intake only when the user asks. Values for other groups come from Project Policies and the work; ask the user only when one can't be derived.
 - For new work, report the chosen labels with the other intake values.
 - New work gets its labels from preflight or queue intake. Existing work changes them only through `prepare_label_mutation`, which returns the complete label set; apply it only when `changed`.
 - On a Kind change, call `prepare_label_mutation` without a selection, so only the `kind` label changes. A correction passes a value for every group.

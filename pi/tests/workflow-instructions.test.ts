@@ -241,6 +241,7 @@ describe("workflow guidance structure", () => {
                 "render_provider_body",
                 "inspect_session_analysis",
                 "inspect_integrations",
+                "inspect_gate",
             ],
             gig: [
                 "review_gig",
@@ -248,6 +249,7 @@ describe("workflow guidance structure", () => {
                 "render_provider_body",
                 "inspect_session_analysis",
                 "inspect_integrations",
+                "inspect_gate",
             ],
             pr: ["inspect_session_analysis", "inspect_integrations"],
             "project-setup": ["inspect_permissions", "inspect_project_setup"],

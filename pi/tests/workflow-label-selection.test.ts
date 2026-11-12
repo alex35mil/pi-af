@@ -3,7 +3,7 @@ import "./host-runtime.ts"
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import type { GitHubLabels, LinearLabels } from "../workflows/extensions/integrations/labels.ts"
+import type { GitHubLabelGroup, GitHubLabels, LinearLabels } from "../workflows/extensions/integrations/labels.ts"
 import {
     completeSelection,
     LabelSelectionFailure,
@@ -12,6 +12,8 @@ import {
     selectedLabelNames,
 } from "../workflows/extensions/integrations/label-selection.ts"
 import { parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
+import type { TrackerConfig } from "../workflows/extensions/integrations/config.ts"
+import { gateOutcome } from "../workflows/extensions/integrations/gate.ts"
 import { kindLabels, linearPhaseGroup } from "./workflow-phase-fixtures.ts"
 
 const def = (name: string) => ({ name, color: "#1D76DB", description: "" })
@@ -259,6 +261,71 @@ describe("Linear label update", () => {
             ),
             { kind: "missingLabel", name: "Kind: Bugfix" },
         )
+    })
+})
+
+describe("gates", () => {
+    const gates = group("zeroOrMore", { plan: "Gate: Plan" }) as GitHubLabelGroup
+    const github = (groups: GitHubLabels["groups"]) =>
+        ({ provider: "github", labels: { groups } }) as unknown as TrackerConfig
+    const linear = (scope: "workspace" | "team") =>
+        ({
+            provider: "linear",
+            team: "Engineering",
+            labels: { groups: { gate: { ...gates, scope } } },
+        }) as unknown as TrackerConfig
+    const names = (...names: string[]) => ({ provider: "github" as const, names })
+
+    it("waits at a gate only when a GitHub item carries its configured label", () => {
+        const tracker = github({ ...labels.groups, gate: gates })
+        assert.deepEqual(gateOutcome(tracker, "plan", names("Kind: Feature", "gate: plan")), {
+            gate: "awaitApproval",
+            label: "Gate: Plan",
+        })
+        assert.deepEqual(gateOutcome(tracker, "plan", names("Kind: Feature")), {
+            gate: "continue",
+            reason: "unmarked",
+            label: "Gate: Plan",
+        })
+        assert.deepEqual(gateOutcome(github(labels.groups), "plan", names("Gate: Plan")), {
+            gate: "continue",
+            reason: "unconfigured",
+        })
+    })
+
+    it("counts only the Linear label in the group's scope", () => {
+        const catalog = [
+            { id: "team", name: "Gate: Plan", team: "Engineering", isGroup: false },
+            { id: "ws", name: "Gate: Plan", isGroup: false },
+        ]
+        const facts = (...applied: string[]) => ({ provider: "linear" as const, catalog, applied })
+        assert.equal(gateOutcome(linear("team"), "plan", facts("team")).gate, "awaitApproval")
+        assert.deepEqual(gateOutcome(linear("team"), "plan", facts("ws")), {
+            gate: "continue",
+            reason: "unmarked",
+            label: "Gate: Plan",
+        })
+        assert.equal(gateOutcome(linear("workspace"), "plan", facts("ws")).gate, "awaitApproval")
+    })
+
+    it("rejects label facts from the other provider", () => {
+        assert.throws(() => gateOutcome(linear("team"), "plan", names("Gate: Plan")), /configured Linear tracker/)
+    })
+
+    it("keeps the marker through a Kind change and removes it with an empty selection", () => {
+        const configured = { groups: { ...labels.groups, gate: gates } } as GitHubLabels
+        const current = ["Kind: Feature", "Size: S", "Team: Core", "Gate: Plan"]
+        const kindChange = planGitHubLabelUpdate(configured, "deliverable", "bugfix", undefined, current)
+        assert.ok(kindChange.labels.includes("Gate: Plan"))
+        assert.ok(kindChange.labels.includes("Kind: Bugfix"))
+        const cleared = planGitHubLabelUpdate(
+            configured,
+            "deliverable",
+            "feature",
+            { area: [], perf: [], size: ["s"], team: ["core"], gate: [] },
+            current,
+        )
+        assert.ok(!cleared.labels.includes("Gate: Plan"))
     })
 })
 

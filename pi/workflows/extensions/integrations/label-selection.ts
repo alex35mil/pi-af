@@ -61,6 +61,35 @@ export const LabelFactsSchema = Type.Union([
 ])
 export type LabelFacts = Static<typeof LabelFactsSchema>
 
+/** The Linear label facts as the planners read them, with absent optional fields as null. */
+export function linearLabelFacts(facts: Extract<LabelFacts, { provider: "linear" }>): {
+    catalog: LinearCatalogLabel[]
+    applied: string[]
+} {
+    return {
+        catalog: facts.catalog.map((label) => ({
+            id: label.id,
+            name: label.name,
+            team: label.team ?? null,
+            parentId: label.parentId ?? null,
+            isGroup: label.isGroup,
+            retiredAt: label.retiredAt ?? null,
+        })),
+        applied: facts.applied,
+    }
+}
+
+/** Active, non-group catalog labels with this name in a group's workspace or team scope. */
+export function linearLabelsNamed(
+    catalog: readonly LinearCatalogLabel[],
+    name: string,
+    scope: "workspace" | "team",
+    team: string,
+): LinearCatalogLabel[] {
+    const scopeTeam = scope === "workspace" ? null : team
+    return catalog.filter((label) => !label.isGroup && label.name === name && label.team === scopeTeam)
+}
+
 export type LabelSelectionError =
     | { kind: "kindInSelection" }
     | { kind: "unknownGroup"; group: string; groups: string[] }
@@ -293,8 +322,7 @@ export function planLinearLabelUpdate(
         selection ?? selectionFromNames(labels, itemType, appliedNames),
     )
     const scopeTeam = (scope: "workspace" | "team") => (scope === "workspace" ? null : team)
-    const find = (name: string, scope: "workspace" | "team") =>
-        facts.catalog.filter((label) => !label.isGroup && label.name === name && label.team === scopeTeam(scope))
+    const find = (name: string, scope: "workspace" | "team") => linearLabelsNamed(facts.catalog, name, scope, team)
     const managedIds = new Set<string>()
     const nameScope = new Map<string, "workspace" | "team">()
     for (const [key, group] of Object.entries(labels?.groups ?? {})) {
