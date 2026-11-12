@@ -152,6 +152,17 @@
                             "description": "Specific to the Linear tracker."
                         }
                     }
+                },
+                "gate": {
+                    "appliesTo": ["deliverable"],
+                    "cardinality": "zeroOrMore",
+                    "values": {
+                        "plan": {
+                            "name": "Gate: Plan",
+                            "color": "#FBCA04",
+                            "description": "Wait for the user's plan approval before implementing."
+                        }
+                    }
                 }
             }
         },
