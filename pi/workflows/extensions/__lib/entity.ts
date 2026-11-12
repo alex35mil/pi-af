@@ -16,7 +16,7 @@ import {
     PhaseSchema,
     trackerReferenceLabel,
 } from "./domain.js"
-import { readEpicTasks } from "./epic-tasks.js"
+import { AcceptedTaskSchema, readEpicTasks } from "./epic-tasks.js"
 import { writeTextAtomically } from "./files.js"
 import {
     assertTrackerRecordInvariants,
@@ -49,7 +49,6 @@ export function resolveEntityDirectory(root: string, cwd: string, raw: string): 
 // Entity directories live under the never-committed local root, so their files are flat:
 // no inner .local/ directory.
 export const ENTITY_METADATA_FILE = "metadata.json"
-export const LOCAL_DRAFT_FILE = "draft.md"
 export const LOCAL_NOTES_FILE = "notes.md"
 export const LOCAL_PENDING_FILE = "pending.md"
 export const LOCAL_REVIEWS_DIR = "reviews"
@@ -82,8 +81,12 @@ const baseMetadataProperties = {
     tracker: TrackerRecordSchema,
     forge: Type.Optional(ForgeRecordSchema),
 }
-// Routing lives in the published plan (`Task target:` and `Epic branch:` in epic.md).
-const epicProperties = { entity: Type.Literal("epic") }
+// Routing lives in the published plan (`Task target:` and `Epic branch:` in epic.md). The accepted
+// Task list is absent until the user first accepts the Epic plan.
+const epicProperties = {
+    entity: Type.Literal("epic"),
+    acceptedTasks: Type.Optional(Type.Array(AcceptedTaskSchema)),
+}
 const gigProperties = { entity: Type.Literal("gig"), kind: DeliverableKindSchema }
 const taskProperties = { entity: Type.Literal("task"), kind: DeliverableKindSchema }
 

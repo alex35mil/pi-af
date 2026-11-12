@@ -680,20 +680,9 @@ describe("workflow project configuration", () => {
             writeConfig(root, config({ format: { epic: "identifier", deliverable: "tracker" } }))
             assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
 
-            writeConfig(root, config())
-            assert.equal(loadProjectConfig(root, { globalSettingsPath }).reviews, undefined)
+            // The removed blocked-review setting is an unknown field like any other.
             writeConfig(root, { ...config(), reviews: { userConfirmationAfter: 3 } })
-            assert.deepEqual(loadProjectConfig(root, { globalSettingsPath }).reviews, { userConfirmationAfter: 3 })
-            for (const reviews of [
-                {},
-                false,
-                { userConfirmationAfter: 0 },
-                { userConfirmationAfter: 1.5 },
-                { userConfirmationAfter: 3, extra: true },
-            ]) {
-                writeConfig(root, { ...config(), reviews })
-                assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /invalid \.project\/config\.json/)
-            }
+            assert.throws(() => loadProjectConfig(root, { globalSettingsPath }), /\/reviews: unknown field/)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }

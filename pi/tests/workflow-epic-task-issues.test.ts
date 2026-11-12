@@ -9,12 +9,12 @@ import { describe, it } from "node:test"
 
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
 import { kindLabels, linearPhases, phaseValues } from "./workflow-phase-fixtures.ts"
-import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
-import { parseEpicRouting, parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
+import { acceptEpicTasks } from "../workflows/extensions/__lib/epic-acceptance.ts"
+import { readEntityStatus, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
+import { epicTaskList, parseEpicRouting, parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { restoreEpic, restoreEpicPlanSource } from "../workflows/extensions/init/restore.ts"
-import { planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
 import { renderProviderBody, restoreProviderSource } from "../workflows/extensions/integrations/projection.ts"
 import {
     type EpicChildIssue,
@@ -97,7 +97,16 @@ function repo(tracker: "github" | "linear", labels?: unknown) {
         { cwd: root },
     )
     const epicPath = path.join(root, epic.directory, "epic.md")
-    return { root, directory: epic.directory, epicPath, branch: epic.status.branch.name }
+    // Writes epic.md with its Task list accepted, as accept_epic_tasks leaves it.
+    const write = (content: string) => {
+        fs.writeFileSync(epicPath, content)
+        const status = readEntityStatus(path.join(root, epic.directory))
+        writeEntityStatus(path.join(root, epic.directory), {
+            ...status,
+            acceptedTasks: epicTaskList(parseEpicTasks(content)),
+        } as typeof status)
+    }
+    return { root, directory: epic.directory, epicPath, branch: epic.status.branch.name, write }
 }
 
 const section = (title: string, marker?: string, extra = "") =>
@@ -179,9 +188,9 @@ describe("Epic Task format", () => {
 
 describe("Epic Task issue processing", () => {
     it("creates untagged Tasks, tags them, and finishes on a rerun", () => {
-        const { root, directory, epicPath } = repo("github")
+        const { root, directory, epicPath, write } = repo("github")
         try {
-            fs.writeFileSync(epicPath, plan(section("Parser"), section("CLI")))
+            write(plan(section("Parser"), section("CLI")))
             const first = planEpicTaskIssues(root, { entityDir: directory, epicPriority: "High", children: [] }, tools)
             assert.equal(first.state, "steps-needed")
             const steps = first.state === "steps-needed" ? first.steps : []
@@ -206,30 +215,6 @@ describe("Epic Task issue processing", () => {
                 arguments: create!.arguments,
                 response: { id: "5", url: "https://github.com/example/app/issues/11" },
             }
-            // A summary accepted with this plan survives the code-owned tag.
-            const metadataPath = path.join(root, directory, "metadata.json")
-            const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"))
-            const accepted = {
-                state: "accepted",
-                summary: "Added the parser.",
-                after: planFingerprint(fs.readFileSync(epicPath, "utf-8")),
-            }
-            fs.writeFileSync(
-                metadataPath,
-                JSON.stringify({
-                    ...metadata,
-                    tracker: {
-                        ...metadata.tracker,
-                        planComment: {
-                            state: "published",
-                            token: "ab345678-1234-4567-8901-123456789abc",
-                            id: 9,
-                            url: "https://github.com/example/app/issues/10#issuecomment-9",
-                        },
-                        planAnnouncement: accepted,
-                    },
-                }),
-            )
             assert.deepEqual(
                 recordEpicTaskIssue(root, { entityDir: directory, title: "Parser", marker: "#11", evidence }, tools),
                 {
@@ -238,11 +223,6 @@ describe("Epic Task issue processing", () => {
                     marker: "#11",
                 },
             )
-            assert.deepEqual(readEntityStatus(path.join(root, directory)).tracker.planAnnouncement, {
-                ...accepted,
-                after: planFingerprint(fs.readFileSync(epicPath, "utf-8")),
-            })
-            assert.notEqual(accepted.after, planFingerprint(fs.readFileSync(epicPath, "utf-8")))
             assert.throws(
                 () => recordEpicTaskIssue(root, { entityDir: directory, title: "CLI", marker: "#12", evidence }, tools),
                 /another Task title/,
@@ -282,10 +262,10 @@ describe("Epic Task issue processing", () => {
     })
 
     it("skips children already tagged in the plan and stops on ambiguous titles", () => {
-        const { root, directory, epicPath } = repo("github")
+        const { root, directory, write } = repo("github")
         try {
             // #11 was renamed in the plan but kept its original issue title.
-            fs.writeFileSync(epicPath, plan(section("Parser core", "#11"), section("Parser")))
+            write(plan(section("Parser core", "#11"), section("Parser")))
             const result = planEpicTaskIssues(
                 root,
                 { entityDir: directory, epicPriority: "High", children: [child("#11", "Parser")] },
@@ -309,9 +289,9 @@ describe("Epic Task issue processing", () => {
     })
 
     it("repairs partial board setup and checks the lifecycle of a title match", () => {
-        const { root, directory, epicPath } = repo("github")
+        const { root, directory, write } = repo("github")
         try {
-            fs.writeFileSync(epicPath, plan(section("Parser", "#11"), section("CLI")))
+            write(plan(section("Parser", "#11"), section("CLI")))
             const repair = planEpicTaskIssues(
                 root,
                 {
@@ -396,10 +376,10 @@ describe("Epic Task issue processing", () => {
         }
     })
 
-    it("cancels only queued Tasks and finishes an interrupted cancel", () => {
-        const { root, directory, epicPath } = repo("github")
+    it("cancels queued and started Tasks, never a Done one, and finishes an interrupted cancel", () => {
+        const { root, directory, write } = repo("github")
         try {
-            fs.writeFileSync(epicPath, plan(section("Dropped", "#14", "Status: canceled\n")))
+            write(plan(section("Dropped", "#14", "Status: canceled\n")))
             const run = (facts: Partial<EpicChildIssue>) =>
                 planEpicTaskIssues(
                     root,
@@ -416,18 +396,25 @@ describe("Epic Task issue processing", () => {
                 "close",
             ])
             assert.deepEqual(run({ status: "Canceled", closed: true }), { state: "complete" })
-            const active = run({ status: "In Progress" })
-            assert.equal(active.state, "blocked")
-            assert.match(active.state === "blocked" ? active.reason : "", /only a queued Task can be canceled/)
+            for (const status of ["In Progress", "In Review"]) {
+                const started = run({ status })
+                assert.deepEqual(started.state === "steps-needed" ? started.steps.map((step) => step.effect) : [], [
+                    "cancel",
+                    "close",
+                ])
+            }
+            const done = run({ status: "Done", closed: true })
+            assert.equal(done.state, "blocked")
+            assert.match(done.state === "blocked" ? done.reason : "", /Done Task can't be canceled/)
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
     })
 
     it("moves a Linear queued Task from Backlog to Todo and fills a missing Priority", () => {
-        const { root, directory, epicPath } = repo("linear")
+        const { root, directory, write } = repo("linear")
         try {
-            fs.writeFileSync(epicPath, plan(section("Parser", "ENG-4")))
+            write(plan(section("Parser", "ENG-4")))
             const run = (facts: Partial<EpicChildIssue>) =>
                 planEpicTaskIssues(
                     root,
@@ -466,9 +453,9 @@ describe("Epic Task issue processing", () => {
                 kind: { ...kindLabels().groups.kind, ...(provider === "linear" ? { scope: "workspace" } : {}) },
                 area: { ...area, ...(provider === "linear" ? { scope: "workspace" } : {}) },
             }
-            const { root, directory, epicPath } = repo(provider, { groups })
+            const { root, directory, write } = repo(provider, { groups })
             try {
-                fs.writeFileSync(epicPath, plan(section("Parser", undefined, "Labels: area=fe\n")))
+                write(plan(section("Parser", undefined, "Labels: area=fe\n")))
                 const result = planEpicTaskIssues(
                     root,
                     { entityDir: directory, epicPriority: "High", children: [] },
@@ -478,7 +465,7 @@ describe("Epic Task issue processing", () => {
                     result.state === "steps-needed" && result.steps[0].effect === "create" ? result.steps[0] : undefined
                 assert.deepEqual(create?.mutation.arguments.labels, ["Area: FE", "Kind: Feature"], provider)
 
-                fs.writeFileSync(epicPath, plan(section("Parser")))
+                write(plan(section("Parser")))
                 const blocked = planEpicTaskIssues(
                     root,
                     { entityDir: directory, epicPriority: "High", children: [] },
@@ -493,9 +480,9 @@ describe("Epic Task issue processing", () => {
     })
 
     it("creates Linear issues in the Epic's Project with Todo and Priority", () => {
-        const { root, directory, epicPath } = repo("linear")
+        const { root, directory, epicPath, write } = repo("linear")
         try {
-            fs.writeFileSync(epicPath, plan(section("Parser"), section("Dropped", "ENG-3", "Status: canceled\n")))
+            write(plan(section("Parser"), section("Dropped", "ENG-3", "Status: canceled\n")))
             const result = planEpicTaskIssues(
                 root,
                 { entityDir: directory, epicPriority: "High", children: [child("ENG-3", "Dropped")] },
@@ -530,6 +517,61 @@ describe("Epic Task issue processing", () => {
                 "tagged",
             )
             assert.match(fs.readFileSync(epicPath, "utf-8"), /^### \[ENG-4\] Parser$/m)
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true })
+        }
+    })
+
+    it("accepts only a reviewed Task list, and processes issues only for the accepted one", () => {
+        const { root, directory, epicPath } = repo("github")
+        const epicDir = path.join(root, directory)
+        const reviewed = plan(section("Parser"), section("CLI"))
+        // A saved plan round as review_epic leaves it, with the text it reviewed.
+        const planRound = (
+            round: number,
+            signoff: "approved" | "blocked",
+            candidate: string,
+            pass: Record<string, unknown> = { kind: "review" },
+        ) => {
+            const roundDir = path.join(epicDir, "reviews", `plan-${round.toString().padStart(3, "0")}`)
+            fs.mkdirSync(roundDir, { recursive: true })
+            fs.writeFileSync(path.join(roundDir, "pass.json"), JSON.stringify(pass))
+            fs.writeFileSync(path.join(roundDir, "outcome.json"), JSON.stringify({ exitCode: 0, signoff }))
+            fs.writeFileSync(path.join(roundDir, "candidate.md"), candidate)
+        }
+        const processIssues = () =>
+            planEpicTaskIssues(root, { entityDir: directory, epicPriority: "High", children: [] }, tools)
+        try {
+            fs.writeFileSync(epicPath, reviewed)
+            assert.throws(() => acceptEpicTasks(epicDir), /no plan review has run/)
+            // An Epic never accepted can't create issues.
+            assert.throws(processIssues, /isn't accepted yet/)
+            planRound(1, "blocked", reviewed)
+            assert.throws(() => acceptEpicTasks(epicDir), /plan-001 blocked/)
+            planRound(2, "approved", reviewed, { kind: "verification", of: 1 })
+            // A Task added after the review isn't accepted.
+            fs.writeFileSync(epicPath, plan(section("Parser"), section("CLI"), section("Docs")))
+            assert.throws(() => acceptEpicTasks(epicDir), /changed after plan-002[\s\S]*Task 3: added "Docs"/)
+            // Rewording an outcome keeps the reviewed list.
+            fs.writeFileSync(epicPath, reviewed.replace("CLI outcome.", "CLI outcome, reworded."))
+            assert.equal(acceptEpicTasks(epicDir).state, "accepted")
+            assert.equal(processIssues().state, "steps-needed")
+
+            // After acceptance, a reorder or a Kind change refuses until it is reviewed and accepted.
+            fs.writeFileSync(epicPath, plan(section("CLI"), section("Parser")))
+            assert.throws(processIssues, /differs from the accepted one[\s\S]*Task 1: "Parser"/)
+            fs.writeFileSync(epicPath, reviewed.replace("### CLI\n\nKind: feature", "### CLI\n\nKind: chore"))
+            assert.throws(processIssues, /Task 2: "CLI" · feature · planned → "CLI" · chore · planned/)
+            // Tagging a Task with its issue marker and editing outcome text need no acceptance.
+            fs.writeFileSync(epicPath, plan(section("Parser", "#11"), section("CLI", undefined, "\nMore detail.\n")))
+            assert.equal(
+                planEpicTaskIssues(
+                    root,
+                    { entityDir: directory, epicPriority: "High", children: [child("#11", "Parser")] },
+                    tools,
+                ).state,
+                "steps-needed",
+            )
         } finally {
             fs.rmSync(root, { recursive: true, force: true })
         }
@@ -682,6 +724,11 @@ describe("Epic routing and restore", () => {
                 url: "https://github.com/example/app/issues/10#issuecomment-8",
             })
             assert.equal(fs.readFileSync(path.join(root, restored.directory, "epic.md"), "utf-8"), source)
+            // The published plan's Task list was accepted before it was published.
+            assert.deepEqual(status.entity === "epic" && status.acceptedTasks, [
+                { title: "Parser", kind: "feature", labels: {}, status: "planned" },
+                { title: "CLI", kind: "chore", labels: {}, status: "planned" },
+            ])
 
             // A restored clone has no Task directories; started Tasks come from the tracker.
             const children = [

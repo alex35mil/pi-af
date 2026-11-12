@@ -11,7 +11,7 @@ export const REVIEW_GIT_INSTRUCTIONS =
     "Use the git_read tool for history, diffs, blame, and merges in the repository; it runs read-only Git subcommands without a shell."
 
 export const REVIEW_DOCUMENT_INSTRUCTIONS =
-    "For current plan/result/report documents, check that the nonempty ## Overview accurately represents the full supporting sections and keeps material limitations visible. Tracker overviews explain the brief with ### Plan highlights; completion overviews explain the delivered outcome or report conclusion and material uncertainty. Both portions are reviewed together; summaries never replace required contract or evidence."
+    "For plan, result, and report documents, a statement of behavior or verification that the supporting sections, the diff, or the evidence don't support is a blocking finding, and so is an ## Overview that hides a material limitation. Wording, style, and consistency between sections of one document are out of scope: do not report them, even as notes."
 
 export async function readOptional(filePath: string): Promise<string> {
     try {

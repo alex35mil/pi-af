@@ -7,6 +7,7 @@ import { workflowTools } from "../__lib/tools.js"
 
 import * as project from "../../../extensions/__lib/project.js"
 import { observeMcpTools, type McpToolCatalog } from "../../../extensions/__lib/mcp.js"
+import { acceptEpicTasks } from "../__lib/epic-acceptance.js"
 import { readEntityStatus, resolveEntityDirectory } from "../__lib/entity.js"
 import { loadIntegrationConfig } from "./config.js"
 import { type WorkflowKind } from "./labels.js"
@@ -91,6 +92,12 @@ export const RenderProviderBodySchema = Type.Object(
     { additionalProperties: false },
 )
 export const RenderProviderBodyValidator = compile(RenderProviderBodySchema)
+
+export const AcceptEpicTasksSchema = Type.Object(
+    { entityDir: Type.String({ minLength: 1, description: "The Epic directory" }) },
+    { additionalProperties: false },
+)
+const AcceptEpicTasksValidator = compile(AcceptEpicTasksSchema)
 
 const ContextEntitySchema = Type.Enum(["epic", "task", "gig"], { type: "string" })
 const ContextTargetSchema = Type.Enum(["current", "workflow"], { type: "string" })
@@ -219,6 +226,21 @@ export default function (pi: ExtensionAPI): void {
             },
         })
     }
+
+    toolsApi.registerTool({
+        name: "accept_epic_tasks",
+        label: "accept_epic_tasks",
+        description:
+            "Call after the user accepts the Epic plan or a change to its Task list. Saves epic.md's Task list (titles, Kind, labels, status, order) as accepted. Refuses unless the newest plan review cycle finished and reviewed this exact list. Task issue processing and Epic plan publication refuse while the list differs from the accepted one. Never calls providers.",
+        parameters: AcceptEpicTasksSchema,
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+            const input = parse(AcceptEpicTasksValidator, params)
+            const root = project.resolveRootDir(ctx.cwd)
+            assertArtifactPersistencePrepared(root)
+            const result = acceptEpicTasks(resolveEntityDirectory(root, ctx.cwd, input.entityDir))
+            return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result }
+        },
+    })
 
     toolsApi.registerTool({
         name: "plan_epic_task_issues",
@@ -498,26 +520,22 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
     let shipping: GitHubMergeDecision | undefined
     if (input.operation === "shippingMerge") {
         const status = entity!.status
-        if (status.phase !== "selfReview") {
-            shipping = { state: "blocked", reason: "shipping requires completed Self-Review" }
-        } else {
-            const context = resolveResourceIdsContext(cwd, input.entityDir, "github-pull-request")
-            if (context.scope.kind !== "github-pull-request") throw new Error("shipping requires PR addressing")
-            const saved = readCachedResourceIds(context.directory, context.scope)
-            shipping =
-                saved && isResourceIdsKind(saved, "github-pull-request")
-                    ? shippingReadDecision(
-                          context.scope,
-                          input.evidence,
-                          Git.run(cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
-                          saved.value.number,
-                          tools,
-                      )
-                    : {
-                          state: "blocked",
-                          reason: "shipping requires locally recorded PR resource IDs; investigate and record the exact PR first",
-                      }
-        }
+        const context = resolveResourceIdsContext(cwd, input.entityDir, "github-pull-request")
+        if (context.scope.kind !== "github-pull-request") throw new Error("shipping requires PR addressing")
+        const saved = readCachedResourceIds(context.directory, context.scope)
+        shipping =
+            saved && isResourceIdsKind(saved, "github-pull-request")
+                ? shippingReadDecision(
+                      context.scope,
+                      input.evidence,
+                      Git.run(cwd, ["rev-parse", `refs/heads/${status.branch.name}`]),
+                      saved.value.number,
+                      tools,
+                  )
+                : {
+                      state: "blocked",
+                      reason: "shipping requires locally recorded PR resource IDs; investigate and record the exact PR first",
+                  }
     }
     const tracker = forgeOnly
         ? undefined
@@ -573,12 +591,12 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
         ...(queueLabels ? { labels: queueLabels } : {}),
         ...(labelMutation ? { labelMutation } : {}),
         projection: {
-            source: "exact accepted epic.md or plan.md",
+            source: "the current epic.md or plan.md",
             contentPolicy:
-                "lossless: preserve the complete accepted source wording, sections, technical detail, and ordinary repository paths; keep its reviewed overview prose visible and collapse all remaining sections; never summarize or condense during publication",
+                "lossless: preserve the complete source wording, sections, technical detail, and ordinary repository paths; keep its reviewed overview prose visible and collapse all remaining sections; never summarize or condense during publication",
             rendering: github
-                ? "Call prepare_tracker_publication with the complete approved source; execute its exact registered comment mutation and save first-creation evidence with record_tracker_publication. A published plan returns reads-required: pass those comment reads to prepare_tracker_publication_update with the approved announcement, record the plan update, then post and record the returned announcement comment. Preserve issue title/description. Workflow publication code applies communication attribution; keep source artifacts signature-free."
-                : "Call prepare_tracker_publication with the complete approved source; execute its exact registered document mutation and save first-creation evidence with record_tracker_publication. Published documents require prepare_tracker_publication_update with exact get_document and parent reads and the approved announcement; record the plan update, then post and record the returned Project or issue comment. Preserve issue/Project title/name and description. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
+                ? "Call prepare_tracker_publication with the complete source; execute its exact registered comment mutation and save first-creation evidence with record_tracker_publication. A published plan returns reads-required: pass those comment reads to prepare_tracker_publication_update with a one-line summary of the change, record the plan update, then post and record the returned plan-update note. None of these need user approval. Preserve issue title/description. Workflow publication code applies communication attribution; keep source artifacts signature-free."
+                : "Call prepare_tracker_publication with the complete source; execute its exact registered document mutation and save first-creation evidence with record_tracker_publication. Published documents require prepare_tracker_publication_update with exact get_document and parent reads and a one-line summary of the change; record the plan update, then post and record the returned Project or issue comment. None of these need user approval. Preserve issue/Project title/name and description. Workflow publication code applies communication attribution; keep source artifacts signature-free.",
             ...(entity
                 ? entity.status.tracker.provider === "github"
                     ? { planComment: entity.status.tracker.planComment }
@@ -586,16 +604,13 @@ function readProjectIntegrationContext(cwd: string, input: WorkflowContextInput,
                 : {}),
             attribution:
                 "AI-assisted text is signed by workflow publication code using current runtime identity. Automatically select local __pi_authorship: user-verbatim for complete unchanged user-written messages, without special user opt-out wording; generated or reworded content remains ai-assisted. Code strips the local mode before sending. Use complete text, not patches or template-only content.",
-            changedCandidateGate:
-                "deterministic renderer output needs no second approval; code-owned communication attribution also needs no second approval; any substantive omission, rewrite, addition, or new summary requires the complete candidate or exact diff, reasons for every change, and explicit user approval",
-            authority: "local accepted artifact" as const,
+            authority: "local artifact" as const,
             outcomeProof:
-                "publish the complete rendered approved body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
+                "publish the complete rendered body directly; trust established clear provider success without requiring a full echo or a routine confirmation read",
             recovery: github
-                ? "for a pending creation, pass the approved source and complete registered comment pages to recover_tracker_publication. One marked comment is recorded; no marked comment returns the same create with the saved token, which you run; several stop for the maintainer. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
-                : "for a pending creation, pass the approved source, an exact parent UUID/identifier read, complete list_documents cursor pages, and the full get_document reads requested for the parent's Plan documents to recover_tracker_publication. Listings truncate content. Documents carry no marker: one Plan document matching the pending fingerprint is recorded; no Plan document returns a create for the source, which you run; any other Plan document, several, or incomplete evidence stop. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
-            discussion:
-                "keep discussion in comments; requirements and agreed decisions belong in the accepted source artifact",
+                ? "for a pending creation, pass the source and complete registered comment pages to recover_tracker_publication. One marked comment is recorded; no marked comment returns the same create with the saved token, which you run; several stop for the maintainer. For uncertain updates, read the exact saved comment body and retry only confirmed non-application."
+                : "for a pending creation, pass the source, an exact parent UUID/identifier read, complete list_documents cursor pages, and the full get_document reads requested for the parent's Plan documents to recover_tracker_publication. Listings truncate content. Documents carry no marker: one Plan document matching the pending fingerprint is recorded; no Plan document returns a create for the source, which you run; any other Plan document, several, or incomplete evidence stop. After uncertain or partial updates, read the exact saved document and reconcile before retrying only confirmed non-application.",
+            discussion: "keep discussion in comments; requirements and agreed decisions belong in the source artifact",
         },
         roles: {
             ...(tracker ? { tracker } : {}),

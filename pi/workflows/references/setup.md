@@ -6,7 +6,9 @@ Step files, read when the step is reached:
 
 - When provisioning or adopting a GitHub Project, read [GitHub Project setup](./setup/github-project.md).
 - When offering fork-only incoming PR intake, read [incoming PR intake](./setup/incoming-pr-intake.md).
-- When offering permissions or artifact diff gates, read [setup permissions](./setup/permissions.md).
+- When offering convenience permissions, read [setup permissions](./setup/permissions.md).
+- When the tracker is Linear, read [Linear tracker configuration](./setup/linear-tracker.md).
+- When configuring where workflow problems are reported, read [workflow reporting source](./setup/reporting-source.md).
 
 ## General rules
 
@@ -77,56 +79,6 @@ It works before configuration exists or while it's invalid, and touches no files
 - A username is non-empty and can't contain `/`, carriage return, or newline.
 - Never put it in committed `.project/config.json` or infer it from Git or provider identity.
 
-### Blocked-review confirmation
-
-To pause for confirmation after consecutive blocked reviews, add this optional strict object:
-
-```json
-{
-    "reviews": { "userConfirmationAfter": 3 }
-}
-```
-
-- `userConfirmationAfter` is a positive integer, counted separately per entity and review category.
-- The checkpoint pauses right after the blocking result, before its findings are corrected or verified.
-- Omit the whole `reviews` object to disable it. Reviews still continue until approved.
-
-## Workflow reporting source
-
-To report workflow problems from any consuming project, set `workflowProject` in the private global `workflows.json`, in Pi's resolved `getAgentDir()` directory:
-
-```json
-{
-    "workflowProject": "/absolute/path/to/piton"
-}
-```
-
-**The reference:**
-
-- It points to the workflow source repository root. It can sit alongside a global `branches.username`, and either can appear alone.
-- The file stays outside Git, holds no credentials, and isn't a consuming-project setting. `.project/config.local.json` holds branch settings only and can't override it.
-
-**Session analysis:**
-
-- `"sessionAnalysis": true` in the same file ends every shipped Task or Gig, completed Epic, and shipped incoming PR with an in-chat analysis of the session for workflow problems ([session analysis](./session-analysis.md)).
-- It's off when absent or `false`, and it costs tokens. It's global only; no project configuration can set it.
-- It needs `workflowProject`: it searches that project's tracker for findings that are already reported. Without it, the analysis reports the error and ends.
-
-**Targets:**
-
-- `inspect_integrations` and `inspect_queue_intake` take `target: "current" | "workflow"`.
-- `current` inspects the current repository and doesn't need the reference.
-- `workflow` reads the source's `.project/integrations.json` and `.project/config.json` with the same tracker schema, validation, and read-only readiness checks, and returns `target` and `projectRoot`.
-- The path must be the repository root; filesystem aliases resolve consistently. Consuming-project setup isn't a prerequisite.
-
-**Errors:**
-
-- A missing reference errors with: `Set workflowProject to the absolute workflow source repository root in <resolved-agent-dir>/workflows.json.`
-- Invalid references or source configuration name where to fix them.
-- Stop without setup questions, automatic repair, artifact preparation, or a fallback destination; the user leads any fix.
-
-Use only the source tracker's MCP tools already registered in the reporting session, under normal permissions. A tracker configuration doesn't prove access. Never load or run the source project's MCP settings or credentials. The Todo intake, privacy, and approval rules are in [queue](./queue.md#prepare-a-workflow-report).
-
 ## Integration configuration
 
 `.project/integrations.json` is required and holds both roles: `tracker` (GitHub or Linear) and `forge` (GitHub).
@@ -136,85 +88,7 @@ Use only the source tracker's MCP tools already registered in the reporting sess
 
 ### Linear tracker
 
-```json
-{
-    "tracker": {
-        "provider": "linear",
-        "mcpServer": "linear",
-        "team": "Engineering",
-        "phase": {
-            "issues": {
-                "scope": "workspace",
-                "group": { "name": "Phase", "color": "#8250DF", "description": "" },
-                "values": {
-                    "planning": { "name": "Planning", "color": "#8250DF", "description": "" },
-                    "execution": { "name": "Execution", "color": "#8250DF", "description": "" },
-                    "selfReview": { "name": "Self-Review", "color": "#8250DF", "description": "" }
-                }
-            },
-            "projects": {
-                "scope": "workspace",
-                "group": { "name": "Phase", "color": "#8250DF", "description": "" },
-                "values": {
-                    "planning": { "name": "Planning", "color": "#8250DF", "description": "" },
-                    "execution": { "name": "Execution", "color": "#8250DF", "description": "" },
-                    "selfReview": { "name": "Self-Review", "color": "#8250DF", "description": "" }
-                }
-            }
-        },
-        "statuses": {
-            "issues": {
-                "backlog": "Backlog",
-                "todo": "Todo",
-                "inProgress": "In Progress",
-                "inReview": "In Review",
-                "done": "Done",
-                "canceled": "Canceled"
-            },
-            "projects": {
-                "backlog": "Backlog",
-                "todo": "Todo",
-                "inProgress": "In Progress",
-                "inReview": "In Review",
-                "done": "Completed",
-                "canceled": "Canceled"
-            }
-        }
-    }
-}
-```
-
-**Statuses and team:**
-
-- The issue and Project Status mappings each need all six keys, with six distinct, non-empty provider option names.
-- `team` is non-empty.
-- Linear Priority is native and isn't configured here.
-
-**Phase groups:**
-
-- Both mappings are required. Each has `scope: workspace | team`, the group's label definition, and distinct child definitions for `planning`, `execution`, and `selfReview`. Team scope means the configured team; workspace scope means no team.
-- Phase groups are single-select, for issues and Projects. The label setup tools create and check them with the other label groups ([label groups](#label-groups)). Runtime reconciliation is in [Phase](./phase.md).
-
-**Workspace inspection:**
-
-- During guided setup, `inspect_linear_workspace` reads the workspace, the authenticated viewer, accessible teams, team issue statuses, and Project statuses, through Linear's public GraphQL API, without mutating anything. It also returns `statusDefaults`, the suggested definition for each lifecycle key.
-- `viewer.name` is the Full Name; `viewer.displayName` is the workspace-unique Username and is returned as `viewer.username`.
-- Setup saves only the team, status names, Phase groups, and label groups the user selects. Provider IDs, viewer identity, and credentials stay out of configuration.
-- A recognized official MCP registration supplies its credential environment-variable name, never its value.
-
-**Status setup:**
-
-- For each lifecycle key, the user picks an existing status or a new one, starting from `statusDefaults`. Setup never matches defaults to existing statuses on its own.
-- `preview_linear_status_setup` plans the creates: issue statuses in the team, Project statuses at workspace level, each placed after the status of the previous lifecycle key. It blocks on an ambiguous or unknown existing name, a new name that already exists, or repeated names. Nothing is written.
-- `apply_linear_status_setup` takes the approved `planHash`, creates Project statuses first, verifies every mapping, and returns `statuses`. Save that as `tracker.statuses`.
-- Existing statuses are never renamed, reordered, archived, or deleted. A created status can't be deleted through the API, only archived.
-- Creating statuses needs an API key with write access (full access or the Admin permission) that isn't limited to other teams. Project statuses also need a workspace admin or a role the workspace allows; the preview warns when the viewer isn't an admin.
-
-**Branch names with `tracker`:**
-
-- A Task or Gig uses the exact provider-generated issue branch (`gitBranchName`).
-- An Epic, a Linear Project with no branch of its own, uses its dated name, `<YYYYMMDD>-<slug>`.
-- Linear `tracker` never uses local or global workflow username settings.
+The `tracker` object, status setup, and `tracker` branch names are in [Linear tracker configuration](./setup/linear-tracker.md).
 
 ### GitHub tracker
 

@@ -117,12 +117,27 @@ function fixture() {
     }
     const file = path.join(directory, "metadata.json")
     fs.writeFileSync(file, JSON.stringify(metadata))
+    // A saved final review round as the review tool leaves it.
+    const finalRound = (
+        round: number,
+        signoff: "approved" | "blocked" | null,
+        pass: Record<string, unknown> = { kind: "review" },
+    ) => {
+        const roundDir = path.join(directory, "reviews", `final-${round.toString().padStart(3, "0")}`)
+        fs.mkdirSync(roundDir, { recursive: true })
+        fs.writeFileSync(path.join(roundDir, "pass.json"), JSON.stringify(pass))
+        fs.writeFileSync(
+            path.join(roundDir, "outcome.json"),
+            JSON.stringify({ exitCode: signoff === null ? 1 : 0, signoff }),
+        )
+    }
     return {
         root,
         directory,
         file,
         git,
         metadata,
+        finalRound,
         context: () => resolveResourceIdsContext(root, directory, "github-pull-request"),
         cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
     }
@@ -451,6 +466,18 @@ describe("resource ID operations", () => {
             )
             if (context.state !== "enabled") assert.fail("enabled shipping expected")
             assert.deepEqual(context.roles.forge?.shipping, decision)
+            // Phase is visibility only; merge preparation works in any Phase.
+            for (const phase of ["planning", "execution"]) {
+                fs.writeFileSync(f.file, JSON.stringify({ ...f.metadata, phase }))
+                const other = buildIntegrationContext(
+                    { cwd: f.root } as never,
+                    { operation: "shippingMerge", entityDir: f.directory, evidence: read },
+                    mcpTools,
+                )
+                if (other.state !== "enabled") assert.fail("enabled shipping expected")
+                assert.deepEqual(other.roles.forge?.shipping, decision)
+            }
+            fs.writeFileSync(f.file, JSON.stringify(f.metadata))
             const merged = { ...actual, merged: true, merged_at: "2026-10-01T08:10:44Z" }
             assert.equal(shippingReadDecision(prScope, { ...read, response: merged }, sha, 7, mcpTools).state, "merged")
             for (const response of [
@@ -519,11 +546,40 @@ describe("resource ID operations", () => {
         }
     })
 
+    it("creates a new PR only after the newest final review cycle finished", async () => {
+        const f = fixture()
+        try {
+            delete f.metadata.forge
+            const reset = () => fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+            const begin = () => beginPullRequestCreation(f.root, f.directory, mcpTools)
+            reset()
+            await assert.rejects(begin(), /no final review has run/)
+            f.finalRound(1, "blocked")
+            await assert.rejects(begin(), /final-001 blocked/)
+            // A failed round isn't a pass.
+            f.finalRound(2, null)
+            await assert.rejects(begin(), /final-001 blocked/)
+            // A blocked verification pass finishes the cycle; its open concerns went to the user.
+            f.finalRound(3, "blocked", { kind: "verification", of: 1 })
+            assert.equal((await begin()).state, "intent")
+            // A newer blocked review without its verification refuses, though an older cycle finished.
+            reset()
+            f.finalRound(4, "blocked", { kind: "review", newReview: "Behavior changed." })
+            await assert.rejects(begin(), /final-004 blocked/)
+            assert.equal("forge" in JSON.parse(fs.readFileSync(f.file, "utf8")), false)
+            f.finalRound(5, "approved", { kind: "verification", of: 4 })
+            assert.equal((await begin()).state, "intent")
+        } finally {
+            f.cleanup()
+        }
+    })
+
     it("saves no PR intent when the configured create tool is unavailable", async () => {
         const f = fixture()
         try {
             delete f.metadata.forge
             fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+            f.finalRound(1, "approved")
             const before = fs.readFileSync(f.file, "utf8")
             await assert.rejects(beginPullRequestCreation(f.root, f.directory, new Map()), /create_pull_request/)
             assert.equal(fs.readFileSync(f.file, "utf8"), before)
@@ -538,6 +594,7 @@ describe("resource ID operations", () => {
             try {
                 delete f.metadata.forge
                 fs.writeFileSync(f.file, JSON.stringify(f.metadata))
+                f.finalRound(1, "approved")
                 f.git(["add", "."])
                 f.git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "Submission"])
                 const begun = await beginPullRequestCreation(f.root, f.directory, mcpTools)
@@ -596,7 +653,7 @@ describe("resource ID operations", () => {
                 assert.deepEqual(readResourceIdsCache(f.directory), recorded)
                 await selectPullRequestResourceIds(f.context(), evidence, new OperationResourceIdsMemo(), mcpTools)
                 assert.equal(fs.readFileSync(f.file, "utf8"), intent)
-                assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json"])
+                assert.deepEqual(fs.readdirSync(f.directory).sort(), ["metadata.json", "resource-ids.json", "reviews"])
                 assert.equal(f.git(["rev-list", "--count", "HEAD"]), "1")
                 assert.equal(f.git(["status", "--porcelain"]), "")
                 assert.equal(f.git(["ls-files", "--", ".project/.local"]), "")

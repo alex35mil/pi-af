@@ -11,6 +11,7 @@ import {
 import * as project from "../../../extensions/__lib/project.js"
 import { ENTITY_METADATA_FILE, readEntityStatus, resolveEntityDirectory, writeEntityStatus } from "../__lib/entity.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
+import { readReviewCycle, unfinishedCycleReason } from "../__lib/review-rounds.js"
 import { loadIntegrationConfig } from "./config.js"
 import { gitHubResourceNumber, parseResourceIds, recordResourceIds } from "./resource-ids.js"
 import { resolveResourceIdsContext, type ProviderEvidence } from "./resource-id-operations.js"
@@ -29,7 +30,8 @@ function pullRequestCreateArguments(
 
 // PR creation: save the immutable repository, head, and target intent and return the exact
 // create call, then record the created PR's number and URL. Tracker objects are created
-// before the entity exists.
+// before the entity exists. A new PR needs the newest final review cycle finished; an existing
+// PR needs no local review state, so a fresh clone can still update and merge it.
 export async function beginPullRequestCreation(cwd: string, entityDir: string, tools: McpToolCatalog) {
     const root = project.resolveRootDir(cwd)
     assertArtifactPersistencePrepared(root)
@@ -39,6 +41,14 @@ export async function beginPullRequestCreation(cwd: string, entityDir: string, t
         const status = readEntityStatus(directory)
         if (status.entity === "epic") throw new Error("Epics never create pull requests")
         if (status.forge) throw new Error("PR intent already exists; reconcile it instead of creating a replacement")
+        const cycle = readReviewCycle(directory, "final")
+        switch (cycle.state) {
+            case "none":
+            case "awaitingVerification":
+                throw new Error(`a new PR requires a finished final review: ${unfinishedCycleReason(cycle, "final")}`)
+            case "finished":
+                break
+        }
         const tool = getMcpToolName(forge.mcpServer, CREATE_OPERATION, tools)
         writeEntityStatus(directory, {
             ...status,

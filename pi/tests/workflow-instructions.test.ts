@@ -205,16 +205,16 @@ describe("workflow guidance structure", () => {
     })
 
     it("keeps each skill's up-front instructions within its size budget", () => {
-        // Measured after the #84 restructure plus ~10% headroom. Lower these as text
-        // shrinks; raising one is a deliberate change that needs a stated reason.
+        // Measured plus ~10% headroom, never above the previous budget (last lowered in #194).
+        // Lower these as text shrinks; raising one is a deliberate change that needs a stated reason.
         const budgets: Record<string, number> = {
             backlog: 12_200,
             todo: 12_500,
             gig: 33_400,
             task: 38_000,
-            epic: 39_300,
+            epic: 39_200,
             pr: 29_700,
-            "project-setup": 46_400,
+            "project-setup": 46_300,
         }
         assert.deepEqual(Object.keys(budgets).sort(), fs.readdirSync("workflows/skills").sort())
         for (const [skill, budget] of Object.entries(budgets)) {
@@ -229,23 +229,21 @@ describe("workflow guidance structure", () => {
         // inventory only rejects unknown names, so missing grants are checked here.
         const required: Record<string, string[]> = {
             epic: [
-                "prepare_epic_plan_presentation",
+                "review_epic",
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
                 "inspect_integrations",
             ],
             task: [
-                "prepare_task_plan_presentation",
-                "prepare_task_completion_presentation",
+                "review_task",
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
                 "inspect_integrations",
             ],
             gig: [
-                "prepare_gig_plan_presentation",
-                "prepare_gig_completion_presentation",
+                "review_gig",
                 "prepare_tracker_publication",
                 "render_provider_body",
                 "inspect_session_analysis",
@@ -262,11 +260,15 @@ describe("workflow guidance structure", () => {
     })
 
     it("keeps setup configuration examples valid JSON", () => {
-        const setup = fs.readFileSync("workflows/references/setup.md", "utf-8")
-        const blocks = [...setup.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => match[1])
-        assert.ok(blocks.length > 0)
-        for (const [index, block] of blocks.entries())
-            assert.doesNotThrow(() => JSON.parse(block), `setup.md JSON example ${index + 1} must parse`)
+        const files = ["workflows/references/setup.md", ...markdownFiles("workflows/references/setup")]
+        let examples = 0
+        for (const file of files) {
+            const blocks = [...fs.readFileSync(file, "utf-8").matchAll(/```json\n([\s\S]*?)```/g)]
+            examples += blocks.length
+            for (const [index, block] of blocks.entries())
+                assert.doesNotThrow(() => JSON.parse(block[1]), `${file} JSON example ${index + 1} must parse`)
+        }
+        assert.ok(examples > 0)
     })
 
     it("keeps Deliverable cleanup inputs to the one-shot tool schema", () => {

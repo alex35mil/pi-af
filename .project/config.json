@@ -1,4 +1,3 @@
 {
-    "branches": { "format": "identifier-title" },
-    "reviews": { "userConfirmationAfter": 3 }
+    "branches": { "format": "identifier-title" }
 }

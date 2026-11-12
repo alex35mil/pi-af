@@ -14,6 +14,7 @@ import {
     resolveEntityDirectory,
     writeEntityStatus,
 } from "../__lib/entity.js"
+import { assertAcceptedTaskList } from "../__lib/epic-acceptance.js"
 import { resolveAnnouncementOrigin, withPlanAnnouncement } from "./announcement-state.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "./config.js"
@@ -46,7 +47,7 @@ export const TrackerPublicationSchema = Type.Union([
                 minItems: 1,
                 description: "The exact reads that prepare returned in `lookups`, with their actual responses",
             }),
-            announcement: Type.Optional(AnnouncementInputSchema),
+            announcement: AnnouncementInputSchema,
         },
         { additionalProperties: false },
     ),
@@ -93,6 +94,7 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
                 lookups: adapter.recoveryLookups(),
             }
         if (announcement?.state === "announcing") return announcementPending(announcement)
+        assertAcceptedTaskList(status, input.source)
         if (saved.state === "unpublished") {
             // Resolve the native tool before consuming the first-publication state.
             const { mutation, pending } = adapter.create(input.source)
@@ -106,6 +108,7 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
     if (input.action === "prepareUpdate") {
         if (saved.state !== "published") throw new Error("prepareUpdate requires a published plan")
         if (announcement?.state === "announcing") return announcementPending(announcement)
+        assertAcceptedTaskList(status, input.source)
         const current = adapter.currentBody(input.reads, saved)
         const update = adapter.update(saved, input.source)
         const published = adapter.restore(current, status.title)
@@ -120,11 +123,10 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
             if (announcement) context.saveAnnouncement(undefined)
             return { state: "unchanged" as const }
         }
-        const approved = approvedAnnouncement(input.announcement, announcement, input.source)
         const token = randomUUID()
         const body = renderAnnouncement({
-            fromTask: context.resolveOrigin(approved.origin),
-            summary: approved.summary,
+            fromTask: context.resolveOrigin(input.announcement.origin),
+            summary: input.announcement.summary,
             plan: adapter.announcementPlan(saved),
             diff,
             token,
@@ -155,8 +157,6 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
         if (saved.state !== "pending") throw new Error("record requires a pending first-publication creation")
         const published = adapter.record(input.evidence, saved)
         adapter.save(published)
-        // A first publication is never announced, so a summary saved for it no longer applies.
-        if (announcement) context.saveAnnouncement(undefined)
         return { state: "published" as const, id: published.id, url: published.url }
     }
 
@@ -187,6 +187,7 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
                 }
             // A complete read without the pending publication proves its create never landed, so a
             // create is safe to send. The provider decides what it keeps from the pending state.
+            assertAcceptedTaskList(status, input.source)
             const { mutation, pending } = adapter.create(input.source, saved)
             adapter.save(pending)
             return { state: "mutation-needed" as const, mutation }
@@ -197,23 +198,6 @@ function runPublication<I, P, Q extends PublicationIdentity<I>>(
             return { state: "identified" as const, id: published.id, url: published.url, body }
         }
     }
-}
-
-// The summary for an update: an explicit input always wins, covering editorial edits made outside
-// presentation and stale saved state; otherwise the summary accepted with this exact plan.
-function approvedAnnouncement(
-    input: AnnouncementInput | undefined,
-    saved: PlanAnnouncement | undefined,
-    source: string,
-): AnnouncementInput {
-    if (input) return input
-    if (saved?.state === "accepted" && saved.after === planFingerprint(source)) {
-        const { summary, origin } = saved
-        return origin ? { summary, origin } : { summary }
-    }
-    throw new Error(
-        "an update to a published plan needs an announcement: present the plan with its summary through the plan presentation tool, or pass the approved summary as announcement",
-    )
 }
 
 export async function trackerPublication(cwd: string, raw: TrackerPublicationInput, tools: McpToolCatalog) {
@@ -271,7 +255,7 @@ export function registerTrackerPublication(pi: ExtensionAPI, tools: McpToolCatal
         toolsApi.registerTool({
             name,
             label: name,
-            description: `${name.replaceAll("_", " ")} using approved complete plan content and exact provider evidence. The first prepare for an unpublished plan saves pending state before returning its create; run that create immediately. When prepare returns reads-required, run those reads and call prepare_tracker_publication_update with them. An update to any published plan requires the approved announcement; record the plan update's clear success with record_tracker_publication, run the returned announcement comment, and record it too. Recovery takes the approved source and complete comment pages, or the Linear parent read, complete document listing pages, and full document reads; for a pending announcement, complete comment pages. One match identifies it; no match returns the same create; several matches stop. Saves local authoritative state only; never calls providers or authorizes publication.`,
+            description: `${name.replaceAll("_", " ")} using the complete current plan content and exact provider evidence. Workflow plan publications need no user approval of their text. The first prepare for an unpublished plan saves pending state before returning its create; run that create immediately. When prepare returns reads-required, run those reads and call prepare_tracker_publication_update with them and a one-line summary of what changed; it is posted as the plan-update note without asking. Record the plan update's clear success with record_tracker_publication, run the returned announcement comment, and record it too. Recovery takes the approved source and complete comment pages, or the Linear parent read, complete document listing pages, and full document reads; for a pending announcement, complete comment pages. One match identifies it; no match returns the same create; several matches stop. Saves local authoritative state only; never calls providers or authorizes publication.`,
             parameters,
             async execute(_id, input, _signal, _onUpdate, ctx) {
                 const result = await trackerPublication(

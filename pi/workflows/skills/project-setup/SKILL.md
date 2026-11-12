@@ -88,8 +88,7 @@ For example:
 3. For Linear, the workspace inspection and status setup.
 4. Branch naming, filtered by tracker.
 5. Provider configuration for the selected roles. Once GitHub forge and Project are both known, offer fork-only incoming PR intake.
-6. Blocked-review confirmation.
-7. Project Policies, then convenience permissions and artifact diff gates.
+6. Project Policies, then convenience permissions.
 
 Workflow work always stays local under `.project/.local/`; there's no persistence choice. When applying the ignore rule, read [artifacts](../../references/artifacts.md#persistence-and-authority). Removing files from Git needs separate approval and is outside setup.
 
@@ -140,12 +139,12 @@ Workflow work always stays local under `.project/.local/`; there's no persistenc
    - Show teams as numbered choices. For the selected team, show its issue statuses and the workspace or team Project statuses, with native type and scope.
    - For each of `backlog`, `todo`, `inProgress`, `inReview`, `done`, and `canceled`, the user picks an existing issue status and Project status, or a new one. Offer `statusDefaults` as editable definitions for new ones.
    - Never infer lifecycle meaning from names or types. Each saved name must identify one status unambiguously. Native Priority needs no configuration.
-4. **Creating statuses:** read [status setup](../../references/setup.md#linear-tracker).
+4. **Creating statuses:** read [status setup](../../references/setup/linear-tracker.md#status-setup).
    - Call `preview_linear_status_setup`. A blocked preview changes nothing; resolve its problems with the user.
    - Present every create (scope, name, type, color, position), the mappings, and any `permissionWarning`. Say created statuses can only be archived, never deleted.
    - Require approval of that exact `planHash`, call `apply_linear_status_setup`, and save only its returned `statuses`.
    - With nothing to create, save the picked names without applying.
-5. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup.md#linear-tracker). The user picks the group and child names, scope, and colors for Projects and for issues. The label step creates or checks them.
+5. **Phase groups:** read [Phase](../../references/phase.md#setup) and the [Linear tracker shape](../../references/setup/linear-tracker.md). The user picks the group and child names, scope, and colors for Projects and for issues. The label step creates or checks them.
 
 ### 4. Branch naming
 
@@ -255,16 +254,7 @@ Reuse the known repository and selected server; the forge is always configured a
 
 When GitHub forge and Project configuration are both known, read [incoming PR intake](../../references/setup/incoming-pr-intake.md) and offer it as a numbered enable or decline choice.
 
-### 6. Blocked-review confirmation
-
-| Choice | Configuration |
-| --- | --- |
-| Disabled | Omit `reviews`; never write `false`, zero, or an empty object |
-| Enabled after N blocks | `reviews.userConfirmationAfter` is a positive integer N |
-
-Counting is per entity and review category. The checkpoint stops right after the threshold result, before that round is corrected. Reviews continue until approved either way.
-
-### 7. Project Policies and permissions
+### 6. Project Policies and permissions
 
 **Project Policies:**
 
@@ -277,9 +267,9 @@ Counting is per entity and review category. The checkpoint stops right after the
 - Offer convenience permissions only for selected active integration providers, deduplicating shared servers.
 - Call `inspect_permissions` before presenting choices, and follow its result table.
 - Never remove or weaken existing `ask` and `deny` rules, and never revoke existing allows. Never recommend whole-server write wildcards, PR merge allows, or unrelated writes.
-- Present numbered, independently selectable options, including decline-all. Explain each grant: a write-tool allow covers the entire tool across the credential's resources, and workflow content, submission, and shipping approvals still apply.
+- Present numbered, independently selectable options, including decline-all. Explain each grant: a write-tool allow covers the entire tool across the credential's resources, and the submit and ship requests still apply.
 - Declining everything changes no permission file or exclusion.
-- Once rules are selected, ask once where to store them, `local` (`.agents/permissions.local.json`) or `project` (`.agents/permissions.json`). Never infer this from the artifact or MCP choice.
+- Once rules are selected, ask once where to store them, `local` (`.agents/permissions.local.json`) or `project` (`.agents/permissions.json`). Never infer this from the MCP choice.
 - `configure_permissions` does the merging; never edit permission settings by hand.
 
 ## Preview and approval

@@ -9,11 +9,8 @@ import { assertNoLinearFoldLines } from "./projection.js"
 // Announcing an update to a published plan, for any entity, so the change reaches the people
 // watching the issue instead of silently editing the plan in place.
 //
-// - `presented`: the plan presentation saved the approved-with-the-diff summary; the target isn't
-//   written yet. `after` fingerprints the presented snapshot.
-// - `accepted`: the first write of the target after presentation succeeded. `after` fingerprints
-//   the file as written, including user edits made on acceptance; publication uses this summary
-//   when the source matches.
+// The summary is passed with each update; only an update in flight is saved.
+//
 // - `plan-update`: the announcement is drafted and the plan update isn't confirmed. `after`
 //   fingerprints the updated plan: a published plan matching it proves the update landed;
 //   otherwise it didn't, and a new preparation replaces the draft.
@@ -33,7 +30,7 @@ export const AnnouncementOriginSchema = Type.Object(
 )
 const summary = Type.String({
     minLength: 1,
-    description: "The approved Markdown summary of what changed and why, including when the change is only editorial",
+    description: "Markdown summary of what changed and why, including when the change is only editorial",
 })
 export const AnnouncementInputSchema = Type.Object(
     { origin: Type.Optional(AnnouncementOriginSchema), summary },
@@ -42,24 +39,6 @@ export const AnnouncementInputSchema = Type.Object(
 export type AnnouncementInput = Static<typeof AnnouncementInputSchema>
 
 export const PlanAnnouncementSchema = Type.Union([
-    Type.Object(
-        {
-            state: Type.Literal("presented"),
-            summary,
-            origin: Type.Optional(AnnouncementOriginSchema),
-            after: fingerprint,
-        },
-        { additionalProperties: false },
-    ),
-    Type.Object(
-        {
-            state: Type.Literal("accepted"),
-            summary,
-            origin: Type.Optional(AnnouncementOriginSchema),
-            after: fingerprint,
-        },
-        { additionalProperties: false },
-    ),
     Type.Object(
         { state: Type.Literal("plan-update"), token, body, after: fingerprint },
         { additionalProperties: false },

@@ -11,7 +11,7 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 
 - `/backlog`, `/todo`, and natural-language queue requests use `target: "current"`.
 - An explicit request to report a workflow defect or recurring friction ("Report this workflow issue" is enough) uses the Todo skill, destination `todo`, and `target: "workflow"`.
-- The workflow target reads the global `workflowProject` source reference, plus that project's tracker configuration ([setup](./setup.md#workflow-reporting-source)).
+- The workflow target reads the global `workflowProject` source reference, plus that project's tracker configuration ([reporting source](./setup/reporting-source.md)).
   - Use only the returned tracker and MCP server, never the consuming project's tracker.
   - The returned `projectRoot` is local context, not report content.
 - Missing or invalid configuration ends the attempt with the tool's short corrective error. Don't start setup or repair configuration.
@@ -22,22 +22,21 @@ Both hold work that hasn't started. Adding work creates no `.project` entity, ar
 2. **Read the guides.** Read [communication](./communication.md) and the provider guide: [GitHub tracker](./integrations/tracker/github.md) or [Linear tracker](./integrations/tracker/linear.md). When it refers to shared rules, read [integration roles](./integrations/shared.md).
 3. **Draft the intake:** the title, the description, the tracker destination, Backlog or Todo, and a configured Priority or `not set`.
 4. **Entity type.** Require `epic` or `gig` before checking mutation capability.
-   - Never queue a Task. To add one, replan its Epic; acceptance creates the Task's issue ([Epic Tasks](./epic-tasks.md#progress-and-replanning)).
+   - Never queue a Task. To add one, change its Epic's Task list; acceptance creates the Task's issue ([Epic Tasks](./epic-tasks.md#progress-and-replanning)).
    - Recommend a standalone Gig for independent workflow reports.
 5. **Kind and labels** (when `inspect_integrations` shows `labels.groups`):
    - Reuse the Kind the request states (Epic, or a Deliverable kind); otherwise recommend the best fit, or `not set`.
    - Pick a value for each other group from Project Policies and the request, and ask only when one can't be derived.
-   - Present both with the other fields.
-6. **Approve and create.** Get explicit approval of the complete title and body, the destination, and the provider-specific choices.
-   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, `kind`, and the label selection. Create the item with the returned `labels`; an `invalid` result names the group to fix. Reconcile any difference from the approved destination; changed content or destination needs approval again.
+6. **Create.** For `target: "current"`, create the item from the user's words without an approval step, then report it in one line with its URL, Kind, labels, and Priority. A workflow report keeps its approval of the sanitized text and destination ([below](#prepare-a-workflow-report)).
+   - Call `inspect_queue_intake` with the same `target`, the `entity`, `priority`, `kind`, and the label selection. Create the item with the returned `labels`; an `invalid` result names the group to fix.
    - Use only its selected registered tools, under normal permissions. Let native mutations validate their own inputs; don't preflight labels, options, workspaces, or statuses.
    - Never load the source project's credentials or run its MCP settings.
 
-**Attribution:** submit the approved complete text and let publication code sign AI-assisted content ([attribution](./integrations/shared.md#attribution)). Use user-verbatim authorship only for complete, unchanged user-written messages. Never add a footer yourself. This applies to cross-project reports too.
+**Attribution:** submit the complete text and let publication code sign AI-assisted content ([attribution](./integrations/shared.md#attribution)). Use user-verbatim authorship only for complete, unchanged user-written messages. Never add a footer yourself. This applies to cross-project reports too.
 
 **Creating:**
 
-- An approved intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
+- Intake is a direct create. Don't search for duplicates first. Search only when the user asks to adopt something or a create result is uncertain.
 - **GitHub:** create an ordinary issue. Add it to the configured Project, then set Status and Priority with named writes addressed by issue. When an item ID is needed, follow the [Project item ID rule](./integrations/tracker/github.md#project-item-ids).
 - **Linear:** create only the selected Project or projectless Gig, with team, state, Priority, and labels together.
 - Reuse returned identities and outcome proof; read only missing required facts. No cache or recovery state is kept.
@@ -46,7 +45,7 @@ Apart from those labels, adding work assigns no native issue Type, native Phase,
 
 ## Prepare a workflow report
 
-Before the normal approval step, prepare a minimal, standalone description.
+Before asking for approval, prepare a minimal, standalone description.
 
 **Include:**
 
@@ -73,7 +72,7 @@ Distinguish observed friction, or an unconfirmed cause, from a verified defect.
 
 **Approve and submit:**
 
-- Show the complete sanitized candidate and the destination, explain omissions and missing evidence, and use the normal intake approval above. Suggesting a report, or approving its preparation, is not approval to send it.
+- Show the complete sanitized candidate and the destination, explain omissions and missing evidence, and get explicit approval before creating it. Suggesting a report, or approving its preparation, is not approval to send it.
 - Keep remote mutation tools outside skill-derived allow rules; configured permissions still apply.
 - Submit it as ordinary Todo work through the provider procedure, and return its URL and any incomplete update. Maintainers handle it through the usual Todo, Gig, and Task process.
 - Leave both projects' lifecycle, branches, installed workflows, and files unchanged. Don't initialize maintenance work or create report stores or recovery records.
@@ -89,5 +88,5 @@ When the user starts a Backlog or Todo object through `/epic`, `/task`, or `/gig
 
 - Reuse that object and its Priority, create the workflow entity and branch contract, and move straight to In Progress with `phase: planning`. Todo is never required between Backlog and In Progress.
 - Both providers keep the request's title or name and description.
-- The first accepted plan publishes as one managed GitHub comment or one Linear document attached to the issue or Project, and later updates reuse it. This is the same for workflow-created and externally submitted items; no ownership question is needed. Queue intake itself publishes no plan.
+- The first plan publishes as one managed GitHub comment or one Linear document attached to the issue or Project, and later updates reuse it. This is the same for workflow-created and externally submitted items; no ownership question is needed. Queue intake itself publishes no plan.
 - **Phase** ([Phase](./phase.md)): GitHub uses the Project Phase field, Linear the configured label group. Other system metadata stays private.

@@ -17,7 +17,7 @@ This procedure extends [integration roles](../shared.md).
 **Workspace:**
 
 - During `/project-setup`, `inspect_linear_workspace` reads the workspace identity, the viewer's name and username, teams, and issue and Project statuses through Linear's public GraphQL API. It's read-only and never replaces MCP tracker operations.
-- Select exact team and status names; don't infer meaning from them. Setup creates a missing status only through the approved status setup. For status setup and branch naming, read [setup](../../setup.md#linear-tracker).
+- Select exact team and status names; don't infer meaning from them. Setup creates a missing status only through the approved status setup. For status setup and branch naming, read [Linear tracker configuration](../../setup/linear-tracker.md).
 
 **Labels:** setup creates and checks Phase groups and every configured label group through the label setup tools ([setup](../../setup.md#label-groups)).
 
@@ -29,7 +29,7 @@ This procedure extends [integration roles](../shared.md).
 
 ## Queue intake and explicit adoption
 
-New queue work needs the approved entity type and destination (`backlog` or `todo`). Create it directly, without searching first.
+New queue work needs the entity type and destination (`backlog` or `todo`). Create it directly, without searching first.
 
 **Adoption.** Read the selected object and require:
 
@@ -54,7 +54,7 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 
 **Create new work** (after preflight): one registered `save_project` (Epic) or `save_issue` (Task, Gig). Don't search or discover first. Include:
 
-- the approved title and Request;
+- the intake title and Request;
 - native In Progress and Priority, the configured team, and the Task's parent Epic Project;
 - the Planning label from the configured Phase group, and the labels preflight returned;
 - the authenticated user (`me`) as the issue assignee, or as the Project lead for an Epic.
@@ -95,13 +95,13 @@ Queue intake follows [queue](../../queue.md). Require the entity type and the se
 
 ## Artifact projection
 
-1. **Prepare.** After an accepted `epic.md` or `plan.md` change, call `prepare_integration_projection`, then `prepare_tracker_publication` with the full source. The Project or issue keeps its original title or name and description.
+1. **Prepare.** After an `epic.md` or `plan.md` change, call `prepare_integration_projection`, then `prepare_tracker_publication` with the full source. The Project or issue keeps its original title or name and description.
 2. **First publication** creates one document titled Plan, attached by Project UUID for an Epic or issue UUID for a Task or Gig.
    - Run only the returned `save_document`, immediately, and record clear success with `record_tracker_publication`.
    - A pending creation needs recovery, never a create of your own.
 3. **Updates to a published document:**
    - Run the returned `get_document` and parent reads, then call `prepare_tracker_publication_update` with the full source and those reads. The parent read must prove that its display identifier maps to the stored UUID.
-   - Every update also posts an [announcement](../shared.md#plan-update-announcements) with `save_comment`: a Project comment for an Epic, an issue comment for a Task or Gig.
+   - Every update also posts a [plan-update note](../shared.md#plan-update-notes) with `save_comment`: a Project comment for an Epic, an issue comment for a Task or Gig.
    - Run the resulting full-content update by document ID only, without title or parent arguments, so publication never renames or reparents it.
    - A missing, moved, archived, or conflicting document stops for maintainer direction.
 4. **Recovery.** When creation is pending or an update is uncertain, read [recovery](../recovery.md#linear-document). An issue has no listing filter, so recovery scans every accessible document. Trust clear success after updates, without routine confirmation reads.

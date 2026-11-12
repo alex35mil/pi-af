@@ -6,7 +6,7 @@ Deliverables and incoming PRs share one merge policy: **squash merge, pinned to 
 
 Use the configured `pull_request_read` `get` evidence for the PR. Confirm the expected base and head repository and ref, and the full expected head SHA. Each workflow adds its own checks:
 
-- **Deliverable shipping:** the recorded PR, the immutable branch contract, the local head, and the required Phase.
+- **Deliverable shipping:** the recorded PR, the immutable branch contract, and the local head.
 - **Incoming shipping:** the selected PR or fork and the final reviewed and published revision, with no entity. Call `plan_incoming_pr_merge` with `reference`, the actual `reviewedEvidence`, and fresh `evidence`.
 
 Before merging, complete required verification and reviews and get the shipping approval.
@@ -25,7 +25,7 @@ Before merging, complete required verification and reviews and get the shipping 
 **Merging:**
 
 - Pass the returned arguments unchanged to the configured `merge_pull_request`: `merge_method: squash` and the pinned `expectedHeadSha`.
-- Prepare `commit_title` with the `commit` skill's message rules, using the Deliverable's approved title or the incoming PR's existing title. Keep the PR title and body.
+- Prepare `commit_title` with the `commit` skill's message rules, using the Deliverable's title or the incoming PR's existing title. Keep the PR title and body.
 - No per-flow method setting, alternative strategy, protection bypass or change, or automatic history update after a rejection.
 
 **Confirming:**

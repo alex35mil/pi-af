@@ -8,10 +8,9 @@ allowed-tools:
     - "restore_epic_plan_source"
     - "init_linear_task"
     - "review_task"
-    - "prepare_task_plan_presentation"
-    - "prepare_task_completion_presentation"
     - "review_epic"
-    - "prepare_epic_plan_presentation"
+    - "record_review_response"
+    - "accept_epic_tasks"
     - "plan_epic_task_issues"
     - "record_epic_task_issue"
     - "prepare_artifacts"
@@ -64,21 +63,19 @@ The Deliverable lifecycle owns the shared flow. This file owns choosing the pare
 
 Follow the Deliverable resume steps for a Task under its Epic's `tasks/` directory, then:
 
-1. **Find the parent** from the directory the Task lives in. Read its `brief.md`, `metadata.json`, `notes.md` when present, its native tracker lifecycle, and `epic.md`.
-2. **Published plan:** [compare](../../references/epic.md#compare-with-the-published-plan) the parent's `epic.md` with it. The Task's stored start and target never change.
-3. **Parent issues:** run the parent's [Task issue processing](../../references/epic-tasks.md#task-issue-processing), staying on the Task branch, to finish any interrupted parent change.
-4. **Continue** through the Deliverable lifecycle.
+1. **Find the parent** from the directory the Task lives in. Read its `brief.md`, `metadata.json`, `notes.md` when present, and `epic.md`. The Task's stored start and target never change.
+2. **Continue** through the Deliverable lifecycle.
 
 ## Initialize
 
 A Task always starts from the queued issue its parent Epic's [Task issue processing](../../references/epic-tasks.md#task-issue-processing) created or linked. It never creates a tracker issue.
 
-1. **Choose the parent and Task:** the user names the parent Epic and one tagged Task in its accepted plan, by marker or exact title. Never infer the selection.
-   - When this clone has no local directory for the Epic, [restore it](../../references/epic.md#restore-an-epic). Otherwise [compare](../../references/epic.md#compare-with-the-published-plan) its `epic.md` with the published plan.
+1. **Choose the parent and Task:** the user names the parent Epic and one tagged Task in its plan, by marker or exact title. Never infer the selection.
+   - When this clone has no local directory for the Epic, [restore it](../../references/epic.md#restore-an-epic).
    - An untagged Task means issue processing hasn't finished: resume the Epic first.
    - A `Status: canceled` Task can't start.
 2. **Adopt the issue:** read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies). Complete its Task adoption preflight, including the parent check, then follow the adopted intake in [artifacts](../../references/artifacts.md#initialization-inputs). The Kind comes from the plan's `Kind:` line; a conflicting `kind` label stops for a user choice.
-3. **Routing:** the parent's `Task target:` line decides the target ([Epic routing](../../references/epic.md#routing)). When it's missing or conflicts with the intended target, resolve it through Epic replanning first. An `epic` target needs the Epic branch locally.
+3. **Routing:** the parent's `Task target:` line decides the target ([Epic routing](../../references/epic.md#routing)). When it's missing or conflicts with the intended target, ask the user before starting. An `epic` target needs the Epic branch locally.
 4. **Initialize:** call `init_github_task` or `init_linear_task` with the repo-relative `parentEpicDir`, the title, Request, and slug, and the issue as `object`.
    - The issue's marker selects the plan Task, which supplies the Kind. The plan is never rewritten.
    - The tool names the directory and branch from the issue. The `tracker` format uses the Linear issue's `gitBranchName`.
@@ -88,32 +85,18 @@ Finish board setup before planning.
 
 ## Parent synchronization
 
-Stay on the Task's stored branch for every parent Epic change made as part of this Task: its `notes.md`, `draft.md`, review files, and `epic.md`. Never switch to or edit on the Epic branch or the default branch. The Task's immutable target, Epic or default, keeps the contract change together with the implementation that needed it.
-
-At every material Task decision, and before final review, compare the outcome with the Epic contract:
+The parent's `epic.md` is the current state of the initiative, so a Task keeps it true. Stay on the Task's stored branch; Epic files live outside Git, so no branch switch is needed.
 
 | Situation | Action |
 | --- | --- |
-| The Epic contract is still accurate | Keep implementation details in Task artifacts. Don't rewrite the Epic's Task section; progress comes from the Task's lifecycle. |
-| A mismatch or domain decision is unresolved | Explain it and ask before changing any Epic artifact. |
-| The user approves an Epic contract change | Update the Epic's notes, revise its `draft.md`, run `review_epic` with `phase: "plan"`, then present the approved snapshot through the `epic.md` diff gate, with the [announcement](../../references/integrations/shared.md#plan-update-announcements) summary and this Task as its origin. |
+| The Epic is still accurate | Keep implementation detail in Task artifacts. Progress comes from the Task's lifecycle. |
+| A Task decision makes part of `epic.md` wrong, and the user decided it or it follows from their decision | Rewrite that text in place, then republish the Epic plan with a [plan-update note](../../references/integrations/shared.md#plan-update-notes) that names this Task as its `origin`. Don't ask. |
+| A mismatch the user hasn't decided on | Explain it and ask before touching the Epic. |
+| The change adds, removes, cancels, retitles, or reorders a Task | Ask. It needs the Epic's [Task list acceptance](../../references/epic-tasks.md#accepted-task-list). |
 
-**After an accepted `epic.md` change:**
-
-- Run the parent's [Task issue processing](../../references/epic-tasks.md#task-issue-processing) first, on the Task branch.
-- Publish that parent's accepted source by calling `prepare_tracker_publication` with the parent's `entityDir`. Never update the published Epic plan silently.
-- The Task's own document belongs to its issue, not the parent Project. Stay on the Task branch.
-- A change to the Task's own published `plan.md` is announced on the Task's issue, with no origin. When one replan changes both plans, each issue gets its own announcement.
-
-**Unsynchronized changes:**
-
-- Don't request the Task's final review while an approved parent change is unsynchronized.
-- When the user rejects or defers a needed Epic change, keep the divergence current in both the Task's and the parent's notes.
-- Don't request final review or mark the Task `done` unless the user explicitly accepts completing with that divergence.
-
-**Markers and completion:**
-
-- Keep every Task marker (`[#N]` or `[ENG-N]`) through approved Epic title or order edits.
+- Name each Epic edit in the Task's result message, in one line, so the user can object.
+- A change to the Task's own published `plan.md` posts its note on the Task's issue, with no origin.
+- Keep every Task marker (`[#N]` or `[ENG-N]`) through Epic edits.
 - Follow the shared delivery and cleanup. The Task's `done` lifecycle completes its plan Task without another commit.
 
 A Task can never lose or change its parent and cannot be converted into a Gig.

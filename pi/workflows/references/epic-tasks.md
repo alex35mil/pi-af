@@ -1,10 +1,10 @@
 # Epic Tasks
 
-An accepted Epic owns one tracker issue for every planned Task, so the tracker's Epic progress reflects the whole plan. This file owns the Task format, Task issue processing, progress, and removing Tasks.
+An accepted Epic owns one tracker issue for every planned Task, so the tracker's Epic progress reflects the whole plan. This file owns the Task format, the accepted Task list, Task issue processing, progress, and removing Tasks.
 
 ## Epic Task format
 
-Accepted `epic.md` lists Tasks as `### ` sections under one `## Tasks` section. Section order is Task order.
+`epic.md` lists Tasks as `### ` sections under one `## Tasks` section. Section order is Task order.
 
 ```markdown
 ## Tasks
@@ -14,7 +14,7 @@ Accepted `epic.md` lists Tasks as `### ` sections under one `## Tasks` section. 
 Kind: feature
 Labels: area=backend, perf=perf
 
-Owned outcome, settled contract, and stopping boundary. Any Markdown: paragraphs, lists, code blocks.
+The Task's outcome and where it stops. Any Markdown: paragraphs, lists, code blocks.
 
 ### Wire the CLI
 
@@ -27,13 +27,23 @@ Kind: chore
 - **Kind:** the first body line, one of `feature`, `bugfix`, `refactor`, `research`, `audit`, or `chore`. A Task starts with this Kind.
 - **Labels:** an optional `Labels: group=value, …` line right after `Kind:`, with values for the label groups that apply to Deliverables, never `kind`. A group that needs a value and has none blocks the Task's issue processing.
 - **Status:** an optional `Status: canceled` line after `Kind:` and `Labels:`, only on a tagged Task. It removes the Task from the plan.
-- **Description:** the rest of the section. It must not be empty, and becomes the issue's description.
+- **Description:** the rest of the section: the Task's outcome. It must not be empty, and becomes the issue's description.
 
 Code rejects anything else, including a Task section outside `## Tasks`.
 
+## Accepted Task list
+
+The Task list is each Task's title, Kind, labels, and status, in order. Markers and outcome text aren't part of it.
+
+- `accept_epic_tasks` saves it in the Epic's metadata after the user accepts. It refuses unless the newest plan review cycle finished and reviewed this exact list.
+- Task issue processing and Epic plan publication refuse while `epic.md`'s list differs from the accepted one, and say what differs.
+- So adding, removing, canceling, retitling, or reordering a Task needs `review_epic` with `newReview`, the user's acceptance, then `accept_epic_tasks`.
+- Any other `epic.md` edit, such as rewording an outcome or the Overview, needs neither.
+- [Restoring](./epic.md#restore-an-epic) an Epic records the published plan's list as accepted.
+
 ## Task issue processing
 
-Run it after every accepted `epic.md` revision and on every Epic or Task resume, before any publication of the parent:
+Run it after `accept_epic_tasks` and on every Epic resume, before any publication of the Epic:
 
 1. Read the Epic's Priority fresh, and every child issue with complete pagination: GitHub sub-issues with their configured Project Status and Priority, or Linear issues in the Epic's Project.
 2. Call `plan_epic_task_issues`. It reconciles the whole plan against those facts and keeps no saved progress.
@@ -45,12 +55,12 @@ Run it after every accepted `epic.md` revision and on every Epic or Task resume,
 
 **Rules:**
 
-- Plan acceptance approves these creates, cancellations, and board updates, with no second confirmation. Rerunning after an interruption needs no new approval.
+- Accepting the Task list approves these creates, cancellations, and board updates, with no second confirmation. Rerunning after an interruption needs no new approval.
 - Created issues are sub-issues on GitHub, or Project issues on Linear, with the Task's `kind` label and its `Labels:` values.
 - A tagged Task whose issue is In Progress, In Review, or Done has started, with or without a local Task directory; it may have started in another clone.
 - A tagged Task that hasn't started must be a child of this Epic in Backlog, Todo, or Canceled. A local Task directory on a queued issue is an error.
 - Processing ensures every queued Task's board state itself, whatever Project automations did first: on the Project, Status Todo (Backlog or empty becomes Todo), and the Epic's Priority when the Task has none. A Priority already set on the Task is kept, and a Canceled issue is left alone. To defer a Task, mark it `Status: canceled` or replan; a manual Backlog move is reverted.
-- A Task that has already started is never canceled.
+- A started Task (In Progress or In Review) marked `Status: canceled` is set to Canceled and closed. Its branch, PR, and local directory stay as they are. A Done Task can't be canceled.
 - An uncertain create needs no separate recovery: the next run's title lookup finds the issue or confirms it's absent.
 - Creating issues never initializes a Task. Task issues stay unassigned until the Task starts.
 
@@ -69,7 +79,7 @@ Progress comes from the plan and each tagged Task's lifecycle, read fresh from t
 **Replanning:**
 
 - New Tasks get issues through issue processing.
-- To remove a queued Task, keep its section and marker and add `Status: canceled`. Never delete a tagged section.
-- A started, complete, or canceled Task can't be removed.
+- To remove a queued or started Task, keep its section and marker and add `Status: canceled`. Never delete a tagged section.
+- A complete or canceled Task can't be removed.
 - To link an existing queued child issue of this Epic, add its section already tagged with that issue's marker.
 - Editing a queued Task's title, description, or Kind doesn't rewrite its issue.

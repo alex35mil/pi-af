@@ -134,6 +134,8 @@ describe("workflow model-facing contracts", () => {
             "provision_github_project",
             "incoming_pull_request_checkout",
             "prepare_plan_presentation",
+            "prepare_gig_plan_presentation",
+            "prepare_gig_completion_presentation",
         ])
             assert.ok(!registeredWorkflowTools().some((t) => t.name === old), old)
     })
@@ -458,7 +460,7 @@ describe("workflow model-facing contracts", () => {
                 )
                 await h.reopen()
                 await invoke(
-                    `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("prepare_gig_plan_presentation"));`,
+                    `text(await tools.resume_integration({entityDir:${JSON.stringify(directory)}})); text(await describeTool("record_review_response"));`,
                 )
                 const names = new Set(expectedWorkflowTools)
                 for (const request of h.requests) {

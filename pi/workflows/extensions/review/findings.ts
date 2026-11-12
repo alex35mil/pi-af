@@ -1,6 +1,8 @@
 import { type Static, Type } from "typebox"
 
-const REVIEW_SEVERITIES = ["critical", "warning", "suggestion", "question"] as const
+// `blocking`: shipping the work as it is would ship a defect, break a stated requirement, or needs a
+// decision only the user can make. `note`: everything else; it never blocks or causes another round.
+const REVIEW_SEVERITIES = ["blocking", "note"] as const
 export type ReviewSeverity = (typeof REVIEW_SEVERITIES)[number]
 export type ReviewSignoff = "approved" | "blocked"
 
@@ -41,6 +43,24 @@ export function reviewResponseFindings(findings: Static<typeof ReviewResponseFin
     return findings.map((finding) => ({ ...finding, userDecision: finding.userDecision ?? null }))
 }
 
+// An entity review records only the findings the agent doesn't simply fix.
+export const ReviewResponseSchema = Type.Object(
+    {
+        id: Type.String({ pattern: "^F[1-9][0-9]*$", description: "Finding label from the review" }),
+        outcome: Type.Enum(["rejected", "needs-decision"], {
+            type: "string",
+            description:
+                "rejected: the finding is wrong or not worth acting on. needs-decision: only the user can settle it.",
+        }),
+        explanation: Type.String({
+            minLength: 1,
+            description: "Plain words: why the finding is rejected, or the decision the user must make",
+        }),
+    },
+    { additionalProperties: false },
+)
+export type ReviewResponse = Static<typeof ReviewResponseSchema>
+
 export type ReviewFinding = Static<typeof ReviewResponseFindingSchema> & { severity: ReviewSeverity }
 
 export interface ReviewReport {
@@ -57,13 +77,24 @@ export function reviewAgentOutputInstructions(): string {
         "Return only one JSON object. Do not wrap it in Markdown or add commentary.",
         "Your whole response must be that JSON object: put no summary, explanation, or other text before or after it.",
         "Use this exact shape:",
-        '{"findings":[{"id":"F1","title":"Short direct title","severity":"critical|warning|suggestion|question","problem":"What is wrong","useCase":"One simple supported scenario that demonstrates it","impact":"What concretely happens","resolution":"The direct correction","userDecision":null}],"signoff":"blocked"}',
+        '{"findings":[{"id":"F1","title":"Short direct title","severity":"blocking|note","problem":"What is wrong","useCase":"One simple supported scenario that demonstrates it","impact":"What concretely happens","resolution":"The direct correction","userDecision":null}],"signoff":"blocked"}',
         "Number finding IDs consecutively from F1. Use an empty findings array when there are no findings.",
         `Every finding must contain exactly these ${FINDING_KEYS.length} keys: ${FINDING_KEYS.join(", ")}. Never leave out severity.`,
         "Write short, direct, concrete sentences. Explain necessary technical terms. Do not use review-process jargon or list corrections without explaining the problem.",
         "Set userDecision to null when established requirements determine the correction. Otherwise state the exact decision the user must make.",
-        "Use blocked when any critical, warning, or question finding remains. Suggestions may appear with either signoff. Use approved only when no blocking-severity finding remains.",
+        "A finding is blocking only when the work, shipped as it is, would contain a defect (wrong behavior, a regression, data loss, a security problem), would break a stated requirement (the brief, the plan, a user decision, an active rule, or Project Policies), or can't proceed without a decision only the user can make.",
+        "Everything else is a note: improvements, style, extra tests, clearer wording. A note never blocks and never causes another review, so raise only notes worth the reader's time.",
+        "Use blocked exactly when at least one finding is blocking, and approved otherwise.",
     ].join("\n")
+}
+
+function isBlocking(finding: ReviewFinding): boolean {
+    switch (finding.severity) {
+        case "blocking":
+            return true
+        case "note":
+            return false
+    }
 }
 
 export function parseReviewReport(output: string): ReviewReport {
@@ -76,11 +107,14 @@ export function parseReviewReport(output: string): ReviewReport {
     }
 
     const findings = value.findings.map((finding, index) => parseFinding(finding, index))
-    if (value.signoff === "approved" && findings.some((finding) => finding.severity !== "suggestion")) {
-        throw new Error("approved review report may contain only suggestion findings")
-    }
-    if (value.signoff === "blocked" && findings.length === 0) {
-        throw new Error("blocked review report must contain at least one finding")
+    const blocking = findings.some(isBlocking)
+    switch (value.signoff) {
+        case "approved":
+            if (blocking) throw new Error("approved review report must not contain a blocking finding")
+            break
+        case "blocked":
+            if (!blocking) throw new Error("blocked review report must contain at least one blocking finding")
+            break
     }
     return { findings, signoff: value.signoff }
 }

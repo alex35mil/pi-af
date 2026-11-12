@@ -34,7 +34,7 @@ The example must make the concern easy to judge. Don't rely on a theoretical sce
 - Keep only useful structure. Omit empty or irrelevant sections and template filler.
 - Be concise by removing repetition and boilerplate, never by dropping meaning or writing cryptically.
 - Record conclusions and useful evidence, not transcripts. Explain implementation only to the depth the reader needs.
-- Tighten wording while drafting and reviewing. Once the user accepts text, keep its meaning and content unless they approve a change that the text's workflow requires.
+- Tighten wording while drafting and reviewing. Once the user accepts text, keep its meaning and content unless they ask for a change.
 
 ## Sending messages
 
@@ -47,7 +47,7 @@ A message is any text sent to people through a provider: issue and PR bodies and
 Skip the text review only when:
 
 - the user explicitly says to send without review, for that message or as a standing instruction for the session. Never infer it from urgency or earlier approvals.
-- the content comes from an artifact or workflow step the user already approved, such as an accepted plan, a plan diff with its announcement, a completion artifact for a PR body, a merge-conflict resolution summary approved with its push, an intake, or an incoming PR review package. Code-rendered bodies from it need no second approval; anything beyond that rendering does.
+- the text is a workflow publication ([approvals](./core.md#approvals)): the intake item, the plan and its plan-update notes, the PR body rendered from the result, or a merge-conflict resolution summary approved with its push. An incoming PR review package the user approved also counts.
 - the user supplied the complete message and you relay it unchanged. The destination must still be clear; ask when it isn't.
 
 ## Offering a workflow report

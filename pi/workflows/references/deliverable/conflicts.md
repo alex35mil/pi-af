@@ -8,11 +8,11 @@ The branch takes one ordinary merge commit of the target. History isn't rewritte
 
 1. **Stop shipping.** Fetch the target and list the conflicts without changing the branch: `git merge-tree --write-tree --name-only --messages <branch> origin/<target>`.
 2. **Learn why the target changed.** List the target commits that touch a conflicting file: `git log <branch>..origin/<target> -- <files>`. For each, read its PR, the linked issues, the published plan, and any merge-resolution comments, following the [MCP boundary](../core.md#mcp-boundary).
-3. **Check scope.** When resolving would change accepted behavior or wording, use [material replanning](../planning.md#material-replanning) instead.
+3. **Check scope.** When resolving would change planned behavior, ask the user first; their answer is a [chat decision](../planning.md#changing-a-plan).
 4. **Plan** in Execution, returning native Status to In Progress as for any correction on submitted work. Write a plain-words resolution plan:
    - each conflicting file, what each side changed, and how each conflict is kept or combined;
    - a **Target changes to keep** section: for each of those commits, its SHA and PR, the fix or behavior that must survive, and how the resolution keeps it. A commit without a PR is described from its diff and message.
-5. **Review the plan.** Set Self-Review, then call `review_task` or `review_gig` with `phase: "conflict-plan"` and the plan as `resolution`. Follow [review](../review.md) until it approves.
+5. **Review the plan.** Set Self-Review, then call `review_task` or `review_gig` with `phase: "conflict-plan"` and the plan as `resolution`. Follow [review](../review.md) until it approves; the merge review requires an approved resolution plan.
 6. **Present** the reviewed plan in chat; no file is written. Accepting it authorizes only the local merge commit.
 
 ## Resolve

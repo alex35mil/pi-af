@@ -4,49 +4,60 @@ The shared planning protocol for Epic, Task, and Gig. Entity and kind skills def
 
 ## Research and inquiry
 
-1. **Inspect first.** Check relevant repository files, the parent Epic for a Task, and Project Policies before asking anything they can answer. Search or fetch external sources when they materially inform the plan, and record the evidence.
+1. **Inspect first.** Check relevant repository files, the parent Epic for a Task, and Project Policies before asking anything they can answer. Search or fetch external sources when they materially inform the work, and record the evidence.
 2. **Keep things in their place.**
    - The approved Request stays unchanged in `brief.md`.
    - Transient understanding, findings, and open questions go in `notes.md`.
-   - Settled decisions go in `draft.md`, then the accepted artifact.
+   - Settled decisions go in the plan.
 
    Never leave required context only in chat.
-3. **Ask only what matters.** Ask only questions whose answers can change behavior, outcome, scope, constraints, architecture, verification, or decomposition. For Bugfix, that includes reproduction and causal evidence. Ask one small coherent batch at a time, not a fixed questionnaire.
-4. **Record answers before relying on them.** Update notes or the draft after each answer. Repeat until no material question remains. Bugfix inquiry may continue during investigation when new evidence raises a material question.
-5. **Then proceed.** Bugfix starts investigating; every other kind, and Epic, writes the draft. The next user approval is accepting the reviewed plan's diff.
+3. **Ask only what matters.** Ask only questions whose answers can change behavior, outcome, scope, constraints, architecture, verification, or decomposition. For Bugfix, that includes reproduction and causal evidence. Ask them in one batch, not a fixed questionnaire.
+4. **Record answers before relying on them.** Update notes or the plan after each answer. Bugfix inquiry may continue during investigation when new evidence raises a material question.
 
-## Drafts
+## Choose the path
 
-| Entity | Draft | Accepted artifact |
+A Task or Gig takes one of two paths. Say which in one line before continuing. "plan it" and "just do it" override the choice.
+
+| Path | When | What it skips |
 | --- | --- | --- |
-| Epic | `draft.md` | `epic.md` |
-| Task, Gig | `draft.md` | `plan.md` |
+| Direct | The request already determines the change and leaves no design decision: documentation edits, version bumps, configuration changes, fixes whose cause is evident | `plan.md`, plan review, and plan publication |
+| Planned | Everything else | Nothing |
 
-- Write the smallest self-contained draft that carries every settled decision. Entity skills define its content and review criteria.
-- Use the [reviewed document shape](./artifacts.md#reviewed-document-shape): `## Overview` explains the brief and why it matters, then a few scope and behavior bullets under `### Plan highlights`, then the supporting sections.
-- The Overview is reviewed and accepted with the details, not generated at publication. Keep the highlights in sync with plan changes.
+- A direct-path Deliverable goes straight to [implementation](./deliverable.md#implementation-and-verification). Its final review takes the brief as the requirement.
+- A Bugfix takes the direct path only when the report makes the cause evident. Otherwise it investigates and plans with the root cause.
+- An Epic always plans.
 
-## Plan review and acceptance
+## Writing the plan
 
-Lifecycle stays `inProgress` and Phase stays Planning throughout: drafting, review, corrections, presentation, and waiting for approval.
+| Entity | Plan |
+| --- | --- |
+| Epic | `epic.md` |
+| Task, Gig | `plan.md` |
 
-1. Set Planning with the Phase tool for the configured tracker. Then call `review_epic`, `review_task`, or `review_gig` with `entityDir` and `phase: "plan"`. The tool snapshots the draft and numbers the round.
-2. Adjudicate every finding as described in [review](./review.md). Repeat until review approves with no unresolved user decision.
-3. When review approves, call `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, or `prepare_gig_plan_presentation` with `entityDir`. It returns the approved snapshot path and the target path. Read the snapshot and write its exact content to the target with the write tool, which shows the user the approval diff. Don't print the candidate first. When the plan is already published, the tool requires the [announcement](./integrations/shared.md#plan-update-announcements) summary.
-4. A rejection or an unresolved user note blocks progress. Discuss notes before changing the draft or rerunning review.
-5. When the user edits the target directly, compare it with the reviewed snapshot. Editorial edits may proceed. A material change to behavior, strategy, or decomposition goes back into the draft and through review again.
-6. Before acceptance, record every material user note in the accepted artifact or `notes.md`, whichever owns it. The root `epic.md` or `plan.md` is the only accepted plan.
-7. On acceptance, set Execution. Lifecycle stays `inProgress`.
+- Write the plan directly. It's the only plan file; there is no separate draft.
+- Write the smallest self-contained plan that carries every settled decision. Entity skills define its content and review criteria.
+- Use the [reviewed document shape](./artifacts.md#reviewed-document-shape): `## Overview` explains the brief and why it matters, then a few scope and behavior bullets under `### Plan highlights`, then the supporting sections. Keep the highlights in sync with plan changes.
 
-Review criteria and what happens after acceptance are entity-specific. Round numbering, adjudication, signoff parsing, and diff presentation are shared.
+## Task and Gig plans
 
-## Material replanning
+The plan informs the user; it doesn't wait for approval.
 
-When accepted behavior, strategy, scope, or decomposition must change after execution began:
+1. Set Planning with the Phase tool for the configured tracker, then call `review_task` or `review_gig` with `phase: "plan"`. Handle the cycle as described in [review](./review.md).
+2. Publish the plan, as described in [provider bodies](./integrations/shared.md#provider-bodies), and set Execution.
+3. Send one message: about five highlights, any open concerns from the review, and any questions.
+4. With no question, continue into implementation in the same turn. The user can interrupt at any time.
 
-1. Refuse when lifecycle is `done`; separately initialized work owns later changes.
-2. When lifecycle is `inReview`, restore `inProgress`: update and re-read native Status.
-3. Set Planning with the Phase tool and apply any returned native assignment.
-4. Copy the accepted artifact into `draft.md`, make the change there, and repeat plan review and acceptance, with the [announcement](./integrations/shared.md#plan-update-announcements) summary.
+## Epic plans
 
-Editorial changes that don't alter behavior, strategy, scope, or decomposition skip replanning. A published plan's editorial change is still announced; its summary says it's editorial.
+Accepting an Epic plan creates tracker issues, so it waits for the user.
+
+1. Set Planning, then call `review_epic` with `phase: "plan"` and handle the cycle as described in [review](./review.md).
+2. Summarize the plan and its Task list in chat, with any open concerns, and wait for the user's acceptance.
+3. On acceptance, call `accept_epic_tasks`, then continue as the Epic skill describes.
+
+## Changing a plan
+
+- **A decision the user makes in chat is final.** Edit the plan, republish it with a one-line [plan-update note](./integrations/shared.md#plan-update-notes), and continue. Phase stays where it is, and nothing is re-reviewed.
+- **When behavior or scope must differ from the plan,** ask. The answer is a chat decision. Implementation detail never changes the plan.
+- **Done work** refuses changes; separately initialized work owns them. Submitted work returns to In Progress for corrections.
+- **An Epic's Task list** changes only through review and acceptance: adding, removing, canceling, retitling, or reordering Tasks needs `review_epic` with `newReview`, the user's acceptance, and `accept_epic_tasks`. Any other `epic.md` edit needs neither.

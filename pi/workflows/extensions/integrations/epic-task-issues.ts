@@ -18,9 +18,9 @@ import {
     resolveEntityDirectory,
     type EntityStatus,
 } from "../__lib/entity.js"
+import { assertAcceptedTaskList } from "../__lib/epic-acceptance.js"
 import { type EpicTask, readEpicTasks, tagEpicTask } from "../__lib/epic-tasks.js"
 import { assertArtifactPersistencePrepared } from "../__lib/project-config.js"
-import { refreshAcceptedAnnouncement } from "./announcement-state.js"
 import { assertConfiguredPriority, loadIntegrationConfig, type TrackerConfig } from "./config.js"
 import { assertEntityEnvironment, resolveWorkflowEnvironment } from "./policy.js"
 import { linearPriorityNumber } from "./records.js"
@@ -120,7 +120,10 @@ function context(cwd: string, entityDir: string, tools: McpToolCatalog): Context
     const status = readEntityStatus(directory)
     if (status.entity !== "epic") throw new Error("Task issue processing requires an Epic")
     assertEntityEnvironment(status, environment)
-    if (!fs.existsSync(path.join(directory, "epic.md"))) throw new Error("Epic has no accepted epic.md")
+    const epicPath = path.join(directory, "epic.md")
+    if (!fs.existsSync(epicPath)) throw new Error("Epic has no epic.md")
+    // Only an accepted Task list creates, links, or cancels issues.
+    assertAcceptedTaskList(status, fs.readFileSync(epicPath, "utf-8"))
     return { root, directory, status, tracker: environment.tracker, tools }
 }
 
@@ -182,10 +185,20 @@ function reconcileTask(task: EpicTask, r: Reconciliation): EpicTaskIssueStep[] {
     if (task.canceled) {
         const child = requireChild(marker, r)
         const lifecycle = r.lifecycle(child.status)
-        if (lifecycle === "canceled") return r.native.closeIfOpen(task.title, child)
-        if (lifecycle !== "backlog" && lifecycle !== "todo")
-            throw new Error(`${marker} is ${child.status ?? "off the board"}; only a queued Task can be canceled`)
-        return r.native.cancel(task.title, marker)
+        // A started Task can be canceled too; its branch, PR, and local directory stay as they are.
+        switch (lifecycle) {
+            case "canceled":
+                return r.native.closeIfOpen(task.title, child)
+            case "backlog":
+            case "todo":
+            case "inProgress":
+            case "inReview":
+                return r.native.cancel(task.title, marker)
+            case "done":
+                throw new Error(`${marker} is ${child.status}; a Done Task can't be canceled`)
+            case undefined:
+                throw new Error(`${marker} is off the board; add it to the board before canceling it`)
+        }
     }
     const child = requireChild(marker, r)
     // The tracker decides whether a Task has started; it may have started in another clone.
@@ -401,7 +414,6 @@ export function recordEpicTaskIssue(cwd: string, input: RecordEpicTaskIssueInput
         if (created !== input.marker) throw new Error(`create evidence returned ${created}, not ${input.marker}`)
     }
     const result = tagEpicTask(epicPath, input.title, input.marker)
-    if (result === "tagged") refreshAcceptedAnnouncement(ctx.directory, fs.readFileSync(epicPath, "utf-8"))
     return { state: result, title: input.title, marker: input.marker }
 }
 

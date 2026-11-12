@@ -2,7 +2,7 @@
 
 Every project configures both integration roles:
 
-- **tracker** (GitHub or Linear): external work items, Backlog and Todo queues, lifecycle, Priority, hierarchy, and publication of accepted plans. Its object is the entity's identity.
+- **tracker** (GitHub or Linear): external work items, Backlog and Todo queues, lifecycle, Priority, hierarchy, and plan publication. Its object is the entity's identity.
 - **forge** (GitHub): pull requests.
 
 The local entity artifacts stay authoritative for everything else.
@@ -25,7 +25,7 @@ These tools read local configuration, authority, and entity state. They never ca
 | Queue intake (choose entity, Priority, and Kind first) | `inspect_queue_intake`, with `target` |
 | Adopt explicitly selected work | `inspect_adoption` |
 | Set up the board for a new entity, or resume one | `initialize_integration`, `resume_integration` |
-| Publish an accepted plan (tracker only) | `prepare_integration_projection` |
+| Publish a plan (tracker only) | `prepare_integration_projection` |
 | Submit a PR (forge only) | `prepare_integration_pull_request` |
 | Correct lifecycle, Priority, or Task hierarchy (tracker only) | `prepare_tracker_mutation` |
 | Set an item's labels from a selection, or follow a Kind change (tracker only) | `prepare_label_mutation` |
@@ -38,7 +38,7 @@ These tools read local configuration, authority, and entity state. They never ca
 
 **Evidence and validation:**
 
-- Provider references own the call procedures. Use approved content, configured names, recorded IDs, and required live responses directly.
+- Provider references own the call procedures. Use the artifact content, configured names, recorded IDs, and required live responses directly.
 - Evidence is the actual decoded provider object or the complete native MCP result. The MCP layer extracts structured content or one JSON text block and rejects errors or ambiguous results.
 - The harness validates its own inputs, configuration, and delivery evidence, not provider tool schemas.
 
@@ -89,41 +89,42 @@ The tracker object comes first; the local entity is named from it. New work and 
 
 **Sources:**
 
-- `prepare_integration_projection` needs only the tracker role. It publishes the accepted `epic.md` or `plan.md`.
+- `prepare_integration_projection` needs only the tracker role. It publishes the current `epic.md` or `plan.md`.
 - PR bodies use the synchronized `result.md` or `report.md`.
 - The tracker item keeps its original request in its title or name and description. GitHub publishes the plan as one managed issue comment, the same for new and adopted issues. Linear publishes it as one document attached to the issue or Project.
 
 **Ownership and discussion:**
 
-- The accepted artifact owns the content; the publication layer owns the attribution footer.
-- Discussion, feedback, screenshots, logs, and supporting links go in separate comments. Requirements and agreed decisions go in the accepted artifact.
+- The artifact owns the content; the publication layer owns the attribution footer.
+- Discussion, feedback, screenshots, logs, and supporting links go in separate comments. Requirements and agreed decisions go in the artifact.
 - Before adopting queued work, and whenever reconciling requirements, read the object's full discussion through registered tools, with complete pagination. Resolve material questions with the maintainer before initialization or a plan change. Contributor comments don't authorize scope changes on their own.
 
 ### Attribution
 
 - Code signs AI-assisted communication sent through the official GitHub and Linear MCP registrations: GitHub gets a final `<sub>` paragraph, Linear gets italics, with no added divider. This covers initialization, queues, publication, and comments.
-- Never add signatures yourself, and keep them out of repository artifacts. The signature is the only change made to approved content.
+- Never add signatures yourself, and keep them out of repository artifacts. The signature is the only change made to the content.
 - Set `__pi_authorship: "user-verbatim"` automatically when you relay a complete user-written message unchanged; no opt-out wording is needed. Code keeps that text byte-for-byte and strips the field before sending.
 - Use the default `ai-assisted` for anything you compose, reword, expand, or wrap around a quote. The mode applies per call. Metadata-only operations are unchanged.
 - Edits need the complete text. Patch-only or template-only writes need explicit registered reads and a full-text write; signing never makes hidden provider calls.
 
 ### Publishing
 
-1. **Start from the full approved source** in the [reviewed document shape](../artifacts.md#reviewed-document-shape). Never summarize or condense during publication.
+Workflow publications need no approval of their text ([approvals](../core.md#approvals)).
+
+1. **Start from the full source** in the [reviewed document shape](../artifacts.md#reviewed-document-shape). Never summarize or condense during publication.
 2. **Local references:** published text never points readers at ignored files under `.project/.local/` ([communication](../communication.md)).
-3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full approved source.
+3. **Tracker plans:** call `prepare_tracker_publication` with `entityDir` and the full source.
    - Run its returned mutation immediately, in the same step. The first call for an unpublished plan already saves pending state before it returns. Never call it again just to look at the output; a second call returns `recovery-required` and needs recovery reads.
    - Record a first creation with `record_tracker_publication`, passing the actual call as `evidence`.
-   - `reads-required`: run the returned reads, then call `prepare_tracker_publication_update` with the source and those reads. Linear documents always need them; the parent read maps the display identifier to the bound UUID. Run a Linear update by document ID only, never with parent or title arguments.
+   - `reads-required`: run the returned reads, then call `prepare_tracker_publication_update` with the source, those reads, and a [plan-update note](#plan-update-notes). Linear documents always need them; the parent read maps the display identifier to the bound UUID. Run a Linear update by document ID only, never with parent or title arguments.
    - A missing, moved, archived, or conflicting document stops for maintainer direction, never reattachment or replacement.
-   - Updates to a published plan are [announced](#plan-update-announcements).
 4. **PR bodies:** call `render_provider_body` with `destination: pullRequest` and publish its returned Markdown unchanged.
 5. **Rendering:** `projection.ts` owns presentation and closing references.
    - GitHub plans render `# Plan`, the overview prose, `## Highlights`, and a folded Full plan.
    - Linear's native document title is Plan; the content is the overview prose, `## Highlights`, and a native `>>>` folded Full plan, with no repeated H1 and no marker.
-   - Linear reads any line starting with `>>>` as a fold boundary, so a Linear plan or announcement summary with one fails locally.
+   - Linear reads any line starting with `>>>` as a fold boundary, so a Linear plan or plan-update note with one fails locally.
    - Source headings and PR presentation are unchanged.
-6. **No second approval** is needed for deterministic renderer output, the opaque publication marker, or code-owned attribution. Any substantive omission, rewrite, addition, or new summary needs the full-candidate or exact-diff approval again. An incompatible source fails locally; fix and re-approve the source first.
+6. **Fix the source, not the output.** An incompatible source fails locally; fix the source and publish again. Never hand-edit rendered output.
 7. **Publish** the complete body only to its destination: the managed GitHub comment, the attached Linear document, or the PR body.
    - Trust a clear provider success without an echo, comparison, or confirmation read. Linear's pre-update parent check is a separate scope check.
    - Provider Markdown normalization never justifies rewriting the source.
@@ -131,15 +132,14 @@ The tracker object comes first; the local entity is named from it. New work and 
 
 The same contract applies when an open PR's synchronized `result.md` or `report.md` changes.
 
-### Plan update announcements
+### Plan-update notes
 
-Editing a published plan notifies nobody, so every update to a published Epic, Task, or Gig plan also posts one discussion comment on that entity's own tracker item: a GitHub issue comment, or a Linear Project or issue comment. That covers material replanning and editorial edits alike. The first publication isn't announced.
+Editing a published plan notifies nobody, so every update to a published Epic, Task, or Gig plan also posts one discussion comment on that entity's own tracker item: a GitHub issue comment, or a Linear Project or issue comment. The first publication has no note. Post it without asking.
 
-1. **Draft** a short summary of what changed and why, and say when the change is only editorial. Pass it as `announcement` to the plan-presentation tool, plus an `origin` only for an Epic update made from one of its Tasks. Code shows it while the target is written; accepting the diff approves both.
-2. **Prepare.** `prepare_tracker_publication` returns `reads-required` for every published plan. Pass the reads to `prepare_tracker_publication_update`; it uses the accepted summary. Pass `announcement` only for an editorial edit made without presentation.
-3. **Rendering** is code-owned: `**Plan updated**`, `from Task <marker>` when an Epic update came from a Task, the summary, a link to the plan, and a folded diff of the published plan against the new one. An oversized diff is left out.
-4. **Run** the returned plan update, then record its clear success with `record_tracker_publication`. That returns the announcement comment; run it and record it the same way.
-5. **Until it's recorded**, every publication of that entity returns the pending announcement. When the outcome is uncertain, read [recovery](./recovery.md#pending-announcement).
+1. **Write** a one-line summary of what changed and why; say when the change is only editorial. Pass it as `announcement` to `prepare_tracker_publication_update`, with an `origin` only for an Epic update made from one of its Tasks.
+2. **Rendering** is code-owned: `**Plan updated**`, `from Task <marker>` when an Epic update came from a Task, the summary, a link to the plan, and a folded diff of the published plan against the new one. An oversized diff is left out.
+3. **Run** the returned plan update, then record its clear success with `record_tracker_publication`. That returns the note; run it and record it the same way.
+4. **Until it's recorded**, every publication of that entity returns the pending note. When the outcome is uncertain, read [recovery](./recovery.md#pending-plan-update-note).
 
 Identical source returns `unchanged`; nothing is published or announced.
 
@@ -147,9 +147,9 @@ Identical source returns `unchanged`; nothing is published or announced.
 
 - GitHub keeps plan-comment identity in `planComment`; Linear keeps plan-document identity in `planDocument`. They're not disposable Resource IDs.
 - Each is `unpublished` before the first attempt, `pending` before creation, then `published` with the confirmed native ID and URL.
-- GitHub comments keep a hidden token marker. Linear shows HTML comments, so its documents have none, and announcements carry the token in the plan link.
+- GitHub comments keep a hidden token marker. Linear shows HTML comments, so its documents have none, and plan-update notes carry the token in the plan link.
 - Markers and signatures stay out of source artifacts.
-- New issues use the approved title and Request; later publication leaves those fields alone. Resume reuses saved state and never republishes on its own.
+- New issues use the intake title and Request; later publication leaves those fields alone. Resume reuses saved state and never republishes on its own.
 
 ## Branch contract
 
@@ -170,7 +170,7 @@ Adding work to Backlog or Todo creates no workflow artifact or saved recovery st
 
 - Label groups live in `labels.groups`. Each value maps to one tracker label, and the group's cardinality limits how many an item carries. Read the configuration with `inspect_integrations`.
 - The `kind` value always comes from the item's Kind. Values for other groups come from Project Policies and the work; ask the user only when one can't be derived.
-- For new work, present the chosen labels with the other intake values, so they're approved together.
+- For new work, report the chosen labels with the other intake values.
 - New work gets its labels from preflight or queue intake. Existing work changes them only through `prepare_label_mutation`, which returns the complete label set; apply it only when `changed`.
 - On a Kind change, call `prepare_label_mutation` without a selection, so only the `kind` label changes. A correction passes a value for every group.
 - An `invalid` result names the group and the problem. Report it and ask; never fix a value on your own.

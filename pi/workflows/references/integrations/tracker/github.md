@@ -35,7 +35,7 @@ Follow [initialize from the tracker object](../shared.md#initialize-from-the-tra
 **Create new work** (after preflight):
 
 - Call registered `get_me` once and use its `login` as the authenticated user for this operation.
-- One registered `issue_write` create with the approved title and Request, the labels preflight returned, issue-scoped Priority, and that login as the only assignee. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing), with no assignee.
+- One registered `issue_write` create with the intake title and Request, the labels preflight returned, issue-scoped Priority, and that login as the only assignee. Task issues come only from [Task issue processing](../../epic-tasks.md#task-issue-processing), with no assignee.
 - No duplicate, label, or option preflight. Pass the returned numeric ID, number, and URL to `init_github_<entity>` as `object`. A minimal ID-and-URL success isn't automatically uncertain.
 
 **Board setup** (after initialization, for new and adopted work):
@@ -84,11 +84,11 @@ When a create result is uncertain, read [recovery](../recovery.md#uncertain-trac
 
 **Plan publication:**
 
-- The issue keeps its original title and description. New work creates them from the approved Request; adopted work keeps the existing text.
-- For an accepted `epic.md` or `plan.md`, call `prepare_integration_projection`, then `prepare_tracker_publication` with `entityDir` and the full source. Approval follows [provider bodies](../shared.md#provider-bodies).
+- The issue keeps its original title and description. New work creates them from the Request; adopted work keeps the existing text.
+- For `epic.md` or `plan.md`, call `prepare_integration_projection`, then `prepare_tracker_publication` with `entityDir` and the full source ([provider bodies](../shared.md#provider-bodies)).
 - Run the returned comment call, never an issue body or title update.
 - The first publication saves `planComment: pending`, then returns one `add_issue_comment`. Run it immediately, then record it with `record_tracker_publication`.
-- Once published, updates first read the issue's comments, then use `update_issue_comment` on that same comment. Every update also posts an [announcement](../shared.md#plan-update-announcements) as a new issue comment.
+- Once published, updates first read the issue's comments, then use `update_issue_comment` on that same comment. Every update also posts a [plan-update note](../shared.md#plan-update-notes) as a new issue comment.
 - A pending attempt returns `recovery-required`; read [recovery](../recovery.md#github-comment).
 - Don't read just to confirm a successful update. Plan-comment state lives in authoritative metadata, and Resource IDs and Phase are unaffected.
 - Resume reuses saved state and never republishes on its own.
