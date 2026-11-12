@@ -1,6 +1,13 @@
 import * as fs from "node:fs"
 
-import { type DeliverableKind, LINEAR_IDENTIFIER_PATTERN, validateDeliverableKind } from "./domain.js"
+import { type Static, Type } from "typebox"
+
+import {
+    type DeliverableKind,
+    DeliverableKindSchema,
+    LINEAR_IDENTIFIER_PATTERN,
+    validateDeliverableKind,
+} from "./domain.js"
 import { writeTextAtomically } from "./files.js"
 
 // One planned Task in accepted epic.md: a `### ` section under `## Tasks`.
@@ -175,6 +182,58 @@ export function parseEpicTasks(content: string): EpicTask[] {
 
 export function readEpicTasks(epicPath: string): EpicTask[] {
     return parseEpicTasks(fs.readFileSync(epicPath, "utf-8"))
+}
+
+// The Task list the user accepted: each Task's title, Kind, labels, and status, in order. Issue
+// markers and outcome text aren't part of it, so tagging a Task or rewording its outcome keeps
+// the list accepted.
+export const AcceptedTaskSchema = Type.Object(
+    {
+        title: Type.String({ minLength: 1 }),
+        kind: DeliverableKindSchema,
+        labels: Type.Record(Type.String(), Type.Array(Type.String())),
+        status: Type.Enum(["planned", "canceled"], { type: "string" }),
+    },
+    { additionalProperties: false },
+)
+export type AcceptedTask = Static<typeof AcceptedTaskSchema>
+
+export function epicTaskList(tasks: readonly EpicTask[]): AcceptedTask[] {
+    return tasks.map((task) => ({
+        title: task.title,
+        kind: task.kind,
+        // Groups and values sorted, so the list compares by content only.
+        labels: Object.fromEntries(
+            Object.keys(task.labels)
+                .sort()
+                .map((group) => [group, [...task.labels[group]].sort()]),
+        ),
+        status: task.canceled ? "canceled" : "planned",
+    }))
+}
+
+function describeTask(task: AcceptedTask): string {
+    const labels = Object.entries(task.labels).flatMap(([group, values]) => values.map((value) => `${group}=${value}`))
+    return [`"${task.title}"`, task.kind, ...(labels.length ? [labels.join(", ")] : []), task.status].join(" · ")
+}
+
+/** How `current` differs from `accepted`, one line per difference, or undefined when they are equal. */
+export function taskListDifference(
+    accepted: readonly AcceptedTask[],
+    current: readonly AcceptedTask[],
+): string | undefined {
+    const lines: string[] = []
+    const length = Math.max(accepted.length, current.length)
+    for (let index = 0; index < length; index++) {
+        const before = accepted[index]
+        const after = current[index]
+        if (before && after && JSON.stringify(before) === JSON.stringify(after)) continue
+        const position = `Task ${index + 1}`
+        if (!after) lines.push(`${position}: removed ${describeTask(before!)}`)
+        else if (!before) lines.push(`${position}: added ${describeTask(after)}`)
+        else lines.push(`${position}: ${describeTask(before)} → ${describeTask(after)}`)
+    }
+    return lines.length ? lines.join("\n") : undefined
 }
 
 // The accepted routing for Tasks started from now on, published with the plan.

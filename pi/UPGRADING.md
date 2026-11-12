@@ -1,5 +1,27 @@
 # Upgrading
 
+## Simpler workflows: fewer gates, bounded reviews
+
+Workflows now stop for you only for clarifications, decisions, and once at the end. Task and Gig plans are reviewed once, published, and summarized instead of waiting for approval; small changes can skip the plan; reviews block only on real defects, with one verification pass; the result stops once before "submit" or "ship it"; intake and plan-update notes no longer ask; and Phase is visibility only. Epic plans keep their acceptance, now recorded by the new `accept_epic_tasks` tool. See the [workflows guide](workflows/README.md#working-lifecycle).
+
+**Before upgrading,** finish every Epic, Task, Gig, and incoming-PR review that's in flight. Nothing migrates: drafts (`draft.md`, `result-draft.md`, `report-draft.md`), saved plan-update summaries, review rounds without `pass.json`, and Epics accepted without a saved Task list aren't read by the new code.
+
+**Then, in each project:**
+
+- Remove `reviews` from `.project/config.json`. The file is strict, so a leftover `reviews.userConfirmationAfter` fails validation and stops every workflow command.
+- Remove the artifact `ask` rules for `epic.md`, `plan.md`, `result.md`, and `report.md` from your permission settings (for example `write(.project/*/plan.md)` and `edit(.project/*/plan.md)` in `.agents/permissions.json`). Those files are now written without a gate, so the rules would only add prompts.
+
+**Tool changes:**
+
+- Removed: `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, `prepare_gig_plan_presentation`, `prepare_task_completion_presentation`, and `prepare_gig_completion_presentation`.
+- `record_review_response` takes only the findings you reject or that need the user's decision.
+- Review severities are `blocking` and `note`, for entity and incoming-PR reviews alike.
+- `prepare_tracker_publication_update` always needs the plan-update summary as `announcement`.
+- `begin_resource_creation` refuses a new PR until the newest final review cycle finished.
+- `plan_epic_task_issues` and Epic plan publication refuse while the Task list differs from the accepted one, and can now cancel a started Task.
+
+Update custom scripts and permission selectors that name removed tools.
+
 ## Pi 1.5.2
 
 The package now requires Pi 1.5.2. Upgrade Pi before reloading the package; older Pi isn't supported.

@@ -16,7 +16,7 @@ import {
     resolveEntityDirectory,
     writeEntityStatus,
 } from "../__lib/entity.js"
-import { hasEpicTasksSection, parseEpicRouting, parseEpicTasks } from "../__lib/epic-tasks.js"
+import { epicTaskList, hasEpicTasksSection, parseEpicRouting, parseEpicTasks } from "../__lib/epic-tasks.js"
 import { writeTextAtomically } from "../__lib/files.js"
 import { assertArtifactPersistencePrepared, assertSandboxArtifactsLinked } from "../__lib/project-config.js"
 import { loadIntegrationConfig } from "../integrations/config.js"
@@ -151,9 +151,9 @@ function publishedPlan(
     }
     // The restored plan must be usable before anything relies on it.
     if (!hasEpicTasksSection(restored.source)) throw new Error("published plan has no `## Tasks` section")
-    parseEpicTasks(restored.source)
+    const tasks = epicTaskList(parseEpicTasks(restored.source))
     const routing = parseEpicRouting(restored.source)
-    return { ...restored, routing }
+    return { ...restored, routing, tasks }
 }
 
 function unpublishedRecord(object: TrackerObject, environment: WorkflowEnvironment): TrackerRecord {
@@ -209,6 +209,8 @@ export function restoreEpic(cwd: string, input: RestoreEpicInput, tools: McpTool
         phase: "execution",
         branch: readyBranch(plan.routing.epicBranch, defaultBranch, "generated"),
         tracker,
+        // The published plan's Task list was accepted before it was published.
+        acceptedTasks: plan.tasks,
     })
     fs.mkdirSync(epicsRoot, { recursive: true })
     // Non-recursive, so a directory created concurrently fails here instead of being reused.

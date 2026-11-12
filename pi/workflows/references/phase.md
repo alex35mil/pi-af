@@ -2,28 +2,24 @@
 
 Phase is the current activity; Status is the lifecycle. Every initialized Epic, Task, and Gig stores `phase: planning | execution | selfReview` in `metadata.json`. Status and Priority stay with the tracker.
 
+Phase is for visibility: it shows team members and observers where the work is. Nothing waits on it, and no tool requires a Phase.
+
 ## Transitions
 
 | Activity or event | Status | Metadata Phase | Native Phase |
 | --- | --- | --- | --- |
 | Backlog or Todo queue | Backlog, Todo | no entity yet | absent |
-| Initialization, investigation, drafting, material replanning | In Progress | Planning | Planning |
-| Plan review, corrections, presentation, waiting for plan approval | In Progress | Planning | Planning |
-| Plan accepted; implementation or implementation corrections | In Progress | Execution | Execution |
-| Commit step's interim review, acceptance, and commit | In Progress | Execution | Execution |
-| Final review of completed work | In Progress | Self-Review | Self-Review |
-| User review of delivered work, including waiting for approval | In Progress | Self-Review | Self-Review |
+| Initialization, investigation, planning, plan review | In Progress | Planning | Planning |
+| Implementation and its corrections, including commit steps | In Progress | Execution | Execution |
+| Final review, and the stop with the result | In Progress | Self-Review | Self-Review |
 | PR created, or revisions published, for external human review | In Review | keep last | absent |
 | Corrections on submitted work | In Progress | Execution | Execution |
-| Final review and user review of those corrections | In Progress | Self-Review | Self-Review |
+| Final review of those corrections | In Progress | Self-Review | Self-Review |
 | Confirmed completion or cancellation | Done, Canceled | keep last | absent |
 
-- Use Planning for `review_epic`, `review_task`, or `review_gig` with category `plan`, and for the plan-presentation tool.
-- Enter Self-Review only when implementation is complete: before final, `conflict-plan`, or `conflict-merge` review and before user review of delivered work. Stay there while waiting for feedback.
-- Stay in Execution for a commit step's `interim` review, its acceptance, and its commit.
-- After corrections, repeat the required review in the Phase for that activity.
-- The review tool's category is not a workflow Phase.
-- Plan acceptance, completion artifacts, and review approval remain required for the work being done.
+- A direct-path Deliverable goes from Planning straight to Execution once it chose the path.
+- An Epic stays in Planning until the user accepts it, then moves to Execution.
+- **A failed Phase read or write** is reported in one line, and work continues. The next Phase change or resume reconciles it.
 
 **In Review** starts only after real submission for external human review: a successfully created or recovered reviewable PR, or successful publication of approved revisions.
 
@@ -47,7 +43,7 @@ During In Progress, native Phase equals the metadata Phase. Outside In Progress,
    - The tool validates before changing metadata and returns any native assignment. A matching Phase is a metadata no-op, not a reason to skip native reconciliation.
 3. **Projection only:** when clearing native Phase outside In Progress, keep metadata Phase. Call `prepare_github_phase_mutation` or `prepare_linear_phase_mutation` with `entityDir`, fresh `lifecycle`, and `native` facts.
 4. **Apply a changed `phaseMutation`** through the configured MCP tool. On GitHub, write its `value`. On Linear, write its entire `labels` set; never replace the full set with only the Phase label. Skip unchanged assignments.
-5. Neither local tool calls providers or grants approval. Outcomes follow [core outcome rules](./core.md#outcomes-and-recovery). A provider failure keeps metadata Phase and creates no local lifecycle substitute.
+5. Neither local tool calls providers or grants approval. A provider failure keeps metadata Phase and creates no local lifecycle substitute; report it in one line and continue.
 
 **New work:** the tracker object exists before the local entity. Board setup after initialization moves it to In Progress and applies Planning from fresh native facts. A Linear create may already carry the Planning label; GitHub Phase is assigned after Project membership exists.
 

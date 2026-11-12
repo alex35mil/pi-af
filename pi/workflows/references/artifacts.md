@@ -24,13 +24,14 @@ Before initialization, settle:
 - the title and a standalone Request;
 - Priority: a configured value or `not set`;
 - new tracker work, or adoption of one explicitly selected Backlog or Todo object;
-- for Task and Gig, the Deliverable kind; for Task, also the parent and accepted plan item its skill requires.
+- for Task and Gig, the Deliverable kind; for Task, also the parent and Epic Task its skill requires.
 
 **New work:**
 
 1. Build the Request from the user's input and agreed clarifications. The `/epic`, `/task`, and `/gig` commands wrap their argument in a generated label (`Epic:`, `Task:`, `Gig:`) and a routing line such as `Use the gig skill.`. Only the argument is user input.
-2. Clean the title and Request (below) and present them together. The user may accept, edit, or reject.
-3. Run preflight and create the tracker item only after the wording and the other intake values are approved ([initialize from the tracker object](./integrations/shared.md#initialize-from-the-tracker-object)).
+2. Clean the title and Request (below). Pick the entity type, Kind, labels, and Priority from the request and Project Policies.
+3. Ask only when the entity type, Kind, or a required label value can't be derived. Otherwise run preflight and create the tracker item without an approval step ([initialize from the tracker object](./integrations/shared.md#initialize-from-the-tracker-object)).
+4. Report the created item in one line: its reference, URL, Kind, labels, and Priority. The user can correct any of them afterward.
 
 **Adopted work:**
 
@@ -47,12 +48,12 @@ Before initialization, settle:
 - Don't add requirements, facts, rationale, acceptance criteria, or technical decisions.
 - When a correction could change meaning, keep the original and ask.
 
-The initialization tool stores the title in `metadata.json` and the Request in `brief.md`. A new tracker item is created with the same approved title and Request.
+The initialization tool stores the title in `metadata.json` and the Request in `brief.md`. A new tracker item is created with the same title and Request.
 
 ### Tracker items and plan publication
 
-- Every tracker item keeps its original request title or name and description. New items use the approved title and Request; adopted items keep their existing content.
-- Accepted `epic.md` or `plan.md` publishes separately, as described in [provider bodies](./integrations/shared.md#provider-bodies): one issue comment on GitHub, one document attached to the issue or Project on Linear.
+- Every tracker item keeps its original request title or name and description. New items use the intake title and Request; adopted items keep their existing content.
+- `epic.md` or `plan.md` publishes separately, as described in [provider bodies](./integrations/shared.md#provider-bodies): one issue comment on GitHub, one document attached to the issue or Project on Linear.
 - GitHub records hold `planComment`: `unpublished`, `pending` with a token, or `published` with it plus native ID and URL. Linear `planDocument` keeps a plan fingerprint when pending, and ID and URL when published. Both are authoritative identity, not Resource IDs.
 
 ### Slugs
@@ -61,7 +62,7 @@ Use concise lowercase kebab-case, with a soft cap around 48 characters; shorten 
 
 ## Reviewed document shape
 
-New or revised accepted `epic.md`, `plan.md`, `result.md`, and `report.md` use plain, provider-neutral Markdown:
+`epic.md`, `plan.md`, `result.md`, and `report.md` use plain, provider-neutral Markdown:
 
 1. a root H1 title;
 2. a nonempty `## Overview` as the first section;
@@ -73,9 +74,8 @@ New or revised accepted `epic.md`, `plan.md`, `result.md`, and `report.md` use p
 | `result.md` | delivered behavior and material limitations |
 | `report.md` | the question or scope, the key conclusion, and material uncertainty |
 
-- Overview and details are one document, reviewed and accepted together. Keep them in sync when the source changes. `brief.md` stays unchanged.
+- Overview and details are one document, reviewed together. Keep them in sync when the source changes. `brief.md` stays unchanged.
 - Sources contain no provider-specific folding. The [renderer](./integrations/shared.md#provider-bodies) keeps Overview visible and folds the rest without summarizing or dropping text.
-- An older source is brought into this shape through its normal review and acceptance before its next publication. Reads never rewrite it, completed historical artifacts stay untouched, and no entity metadata migrates.
 
 ## Names and initial branches
 
@@ -90,15 +90,13 @@ New or revised accepted `epic.md`, `plan.md`, `result.md`, and `report.md` use p
 
 Entity files sit directly in the entity directory.
 
-- **`brief.md`:** only `# Brief`, a blank line, and the approved Request. Change the Request only with explicit user approval. Never add decisions, findings, questions, paths, provider data, checkpoints, or history.
-- **`notes.md`:** free-form agent notes for transient context that doesn't belong in metadata, the draft, the accepted artifact, or a review round. Keep resume context here, and refresh it before compaction when possible. No lifecycle or completion gate.
+- **`brief.md`:** only `# Brief`, a blank line, and the Request. Change the Request only with explicit user approval. Never add decisions, findings, questions, paths, provider data, checkpoints, or history.
+- **`notes.md`:** free-form agent notes for transient context that doesn't belong in metadata, the plan, or a review round. Keep resume context here, and refresh it before compaction when possible. No lifecycle or completion gate.
 - **`pending.md`** (Task and Gig): Markdown task-list entries for current-scope work found during execution.
   - An unchecked entry is active; checked entries may stay.
-  - Independently schedulable or out-of-scope work needs separate approved intake.
+  - Independently schedulable or out-of-scope work goes to the queue as separate work.
   - Final review requires zero active entries.
   - A missing file, for example after a fresh checkout, counts as empty.
-- **`draft.md`:** the mutable candidate. It never substitutes for accepted `epic.md` or `plan.md`.
-- **`result-draft.md`** or **`report-draft.md`** (Task and Gig): the completion artifact's working draft. Final review reviews it; it never substitutes for accepted `result.md` or `report.md`.
 - **`scratch/`:** temporary research, probes, scripts, and data.
 - **`designs/`:** design sketches and iterations.
 - Initialization creates the entity directory, `brief.md`, `metadata.json`, `notes.md`, `reviews/`, and `scratch/`. Task and Gig also get `pending.md` and `designs/`. Later gates create the rest.
@@ -107,7 +105,7 @@ Entity files sit directly in the entity directory.
 
 ```text
 .project/
-  config.json          # Required: branch format and review settings; committed.
+  config.json          # Required: branch format; committed.
   config.local.json    # Optional username for static username formats; always local.
   policies.md          # Optional repository-specific workflow additions or overrides; committed.
   integrations.json    # Required tracker and forge configuration, non-secret; committed; never entity state.
@@ -125,7 +123,7 @@ Entity files sit directly in the entity directory.
 
 Precedence is in [core approvals](./core.md#approvals).
 
-- Apply Project Policies unless the user explicitly overrides one in chat. Keep an active override for this work in `notes.md` until the accepted artifact or metadata reflects it.
+- Apply Project Policies unless the user explicitly overrides one in chat. Keep an active override for this work in `notes.md` until the plan or metadata reflects it.
 - Change `.project/policies.md` only with the user's approval, when they want a permanent change for this repository.
 - Use Project Policies to adapt the workflow for this repository, never by editing the reusable workflow files.
 
@@ -136,20 +134,19 @@ Precedence is in [core approvals](./core.md#approvals).
 ```text
 .project/.local/epics/<reference>-<slug>/   # <YYYYMMDD>-<slug> for a Linear Project
   brief.md             # Approved Request.
-  metadata.json        # Tracker identity, Phase, branch contract, Task target.
-  epic.md              # Accepted initiative contract and its `## Tasks` sections.
+  metadata.json        # Tracker identity, Phase, branch contract, accepted Task list.
+  epic.md              # The initiative's current state and its `## Tasks` sections.
   resource-ids.json    # Scoped Resource IDs; disposable, never lifecycle authority.
   notes.md
-  draft.md
   scratch/
   reviews/plan-NNN/    # Review round files, below.
   tasks/
     <reference>-<slug>/
 ```
 
-- `epic.md`, drafts, and review rounds appear only when their gates create them.
-- Each Task is a `### ` section in accepted `epic.md`. Task issue processing tags it with its issue's stable marker, `[#N]` or `[ENG-N]`; starting the Task adds its child directory ([Epic Tasks](./epic-tasks.md)).
-- Metadata holds the immutable branch identity. Routing lives in reviewed `epic.md` as `Task target:` and `Epic branch:` lines, published with the plan ([Epic routing](./epic.md#routing)).
+- `epic.md` and review rounds appear only when their steps create them.
+- Each Task is a `### ` section in `epic.md`. Metadata keeps the Task list the user last accepted ([Epic Tasks](./epic-tasks.md#accepted-task-list)). Task issue processing tags it with its issue's stable marker, `[#N]` or `[ENG-N]`; starting the Task adds its child directory ([Epic Tasks](./epic-tasks.md)).
+- Metadata holds the immutable branch identity. Routing lives in `epic.md` as `Task target:` and `Epic branch:` lines, published with the plan ([Epic routing](./epic.md#routing)).
 - Every Epic file here is a per-checkout copy, shared only when a worker links `.project/.local` to its source checkout. A checkout without it [restores](./epic.md#restore-an-epic) the Epic from the tracker.
 
 ### Task and Gig (Deliverables)
@@ -159,14 +156,12 @@ Precedence is in [core approvals](./core.md#approvals).
 .project/.local/gigs/<reference>-<slug>/
   brief.md             # Approved Request.
   metadata.json        # Kind, tracker identity, Phase, branch contract, PR intent. A Task's parent comes from its directory.
-  plan.md              # Accepted work plan.
+  plan.md              # Work plan; absent on the direct path.
   result.md            # Feature, Bugfix, Refactor, Chore: delivered outcome and actual verification.
   report.md            # Research, Audit: the result; kept when the work continues into implementation.
   resource-ids.json    # Scoped Resource IDs; disposable.
   notes.md
   pending.md
-  draft.md
-  result-draft.md      # Or report-draft.md: the completion artifact's working draft.
   designs/
   scratch/
   reviews/<phase>-NNN/ # Review round files, below.
@@ -176,7 +171,7 @@ Precedence is in [core approvals](./core.md#approvals).
 - `metadata.branch` records the branch name, start, target, and whether the name was generated or tracker-provided.
 - A Task's stored start and target never change when its Epic's routing later changes.
 - `metadata.json` is authoritative for kind and `phase: planning | execution | selfReview`.
-- Completion artifacts follow the [Deliverable lifecycle](./deliverable.md#completion-artifact). Kind-only updates leave accepted plans, results, and reports unchanged.
+- Completion artifacts follow the [Deliverable lifecycle](./deliverable.md#completion-artifact). Kind-only updates leave plans, results, and reports unchanged.
 
 ### Review round files
 
@@ -184,14 +179,15 @@ Each `reviews/<phase>-NNN/` directory holds:
 
 | File | Contents |
 | --- | --- |
-| `candidate.md` | Plan and final rounds only: the exact draft reviewed. |
+| `candidate.md` | Plan and final rounds only: a copy of the plan, result, or report as reviewed. |
+| `pass.json` | Whether the round was a review or the verification of an earlier round. |
 | `review.md` | Rendered reviewer findings and signoff. |
 | `report.json` | Validated structured report used by the renderer. |
-| `response.md` | Rendered adjudication, written by `record_review_response`. |
+| `response.json` | Rejected findings and ones needing a decision, written by `record_review_response`. |
 | `request.md` | Exact context sent to the reviewer, followed by any report-correction message. |
 | `transcript.md` | Readable reviewer activity. |
 | `agent.jsonl` | Raw Pi event stream. |
-| `outcome.json` | Exit code and validated signoff, used by the blocked-review checkpoint and the failed-review pause. |
+| `outcome.json` | Exit code and validated signoff, used for pass choice and the failed-review pause. |
 | `stderr.txt` | Present only when non-empty. |
 | `invalid-report.md` | Failed rounds only: the reviewer's unvalidated final output. |
 
@@ -215,12 +211,12 @@ The shared guard validates `.project/config.json` and persistence safety, reusin
 
 **Authority:**
 
-- Artifacts, tracker identity, relationships, branch contracts, Phase, and review gates are authoritative. Every entity stores `phase` in `metadata.json`. When changing Phase, read [Phase](./phase.md).
+- Artifacts, tracker identity, relationships, branch contracts, Phase, and review rounds are authoritative. Every entity stores `phase` in `metadata.json`. When changing Phase, read [Phase](./phase.md).
 - Lifecycle and Priority are native tracker Status and Priority, read fresh; nothing local stores them.
 - Keep machine data valid and transient context in `notes.md`. Never store credentials in `.project/integrations.json`.
 
 **Ownership:**
 
-- The review tool writes each round's report, `review.md`, and diagnostics. `record_review_response` writes `response.md`. The main agent owns adjudication and approved source changes.
-- Reflect every accepted change directly in the current authoritative artifact.
+- The review tool writes each round's report, `review.md`, and diagnostics. `record_review_response` writes `response.json`. The main agent owns adjudication and source changes.
+- Reflect every change directly in the current artifact.
 - Don't add unrelated files to entity roots.

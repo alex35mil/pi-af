@@ -28,7 +28,8 @@ Workflow operations are native deferred tools. In Codemode, find one with `searc
 
 - Preflight runs the local checks and changes nothing. The init tools take the tracker object, newly created or selected for adoption, in `object`.
 - `restore_epic` recreates a missing local Epic from its tracker read and published plan; `restore_epic_plan_source` returns an existing Epic's published plan as source without writing ([Epic restore](./epic.md#restore-an-epic)).
-- `plan_epic_task_issues` reconciles an accepted Epic's Tasks with fresh child-issue facts into native steps, and `record_epic_task_issue` tags a Task with its issue's marker ([Epic Tasks](./epic-tasks.md#task-issue-processing)).
+- `accept_epic_tasks` saves an Epic's reviewed Task list as accepted after the user accepts it ([accepted Task list](./epic-tasks.md#accepted-task-list)).
+- `plan_epic_task_issues` reconciles an Epic's accepted Tasks with fresh child-issue facts into native steps, and `record_epic_task_issue` tags a Task with its issue's marker ([Epic Tasks](./epic-tasks.md#task-issue-processing)).
 
 ## Integration context and state
 
@@ -55,8 +56,8 @@ Context tools return configuration, addressing, evidence requirements, or native
 - **Resource IDs:** `resolve_resource_ids`, `record_resource_ids`, `invalidate_resource_ids`, and `select_pull_request_resource` for an approved choice of existing PR.
 - **Plans:**
   - `prepare_tracker_publication`, and `prepare_tracker_publication_update` when it returns `reads-required`: always for a published plan, any entity and provider;
-  - `record_tracker_publication` for a first creation, a plan update, and its announcement ([plan update announcements](./integrations/shared.md#plan-update-announcements));
-  - `recover_tracker_publication` for pending or uncertain identity, or a pending announcement ([recovery](./integrations/recovery.md)).
+  - `record_tracker_publication` for a first creation, a plan update, and its note ([plan-update notes](./integrations/shared.md#plan-update-notes));
+  - `recover_tracker_publication` for pending or uncertain identity, or a pending note ([recovery](./integrations/recovery.md)).
 - **Bodies:** `render_provider_body`, `verify_artifact_projection`.
 
 None of these call providers or turn identity, lifecycle, or merge facts into cache.
@@ -67,11 +68,9 @@ None of these call providers or turn identity, lifecycle, or merge facts into ca
 - **GitHub provisioning:** `inspect_github_repository_setup`, `inspect_github_project_setup`, `inspect_github_project`, `preview_github_project_setup`, `apply_github_project_setup`. Preview and apply keep the full specification, approval hash, and credential isolation.
 - **Linear statuses:** `preview_linear_status_setup`, `apply_linear_status_setup`. Apply takes the approved `planHash` and only creates statuses.
 - **Label catalog:** `inspect_label_setup`, `preview_label_setup`, `apply_label_setup`, for both trackers.
-- **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. Omit a finding's `userDecision` only when none is needed. The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
+- **Reviews:** `review_epic`, `review_task`, `review_gig`, and `record_review_response`. The review tool chooses between a review and a verification pass ([review](./review.md)). The reviewer uses an explicit model override or the configured startup default, not the current session's model, and loads only the selected Claude Code extension with rules and permissions.
   - Task and Gig reviews also have `conflict-plan` and `conflict-merge` categories for [conflict resolution](./deliverable/conflicts.md).
   - Epic, Task, and Gig reviewers read files with `read`, `grep`, `find`, and `ls`, and Git with the read-only `git_read`. They run headless under your permission settings, so with `defaultMode: "ask"` those tools must be allowed. Incoming-PR reviewers get file reads only.
-- **Plan presentation:** `prepare_epic_plan_presentation`, `prepare_task_plan_presentation`, `prepare_gig_plan_presentation`.
-- **Completion presentation:** `prepare_task_completion_presentation`, `prepare_gig_completion_presentation`. They present only the newest final round, and only when it approved.
 - **Delivery cleanup:** `cleanup_delivery_branch` takes the merged PR read as `evidence`. It doesn't establish Done or authorize cleanup outside the shipping gates.
 - **Conflict resolution comment:** `prepare_merge_resolution_comment` returns the PR comment call that records a pushed conflict resolution.
 

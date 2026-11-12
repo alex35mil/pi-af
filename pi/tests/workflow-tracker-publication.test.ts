@@ -23,7 +23,7 @@ import {
 } from "../workflows/extensions/integrations/tracker-publication.ts"
 import type { ProviderEvidence } from "../workflows/extensions/integrations/resource-id-operations.ts"
 import { workflowMcpCatalog } from "./mcp-catalog-fixture.ts"
-import { kindLabels } from "./workflow-phase-fixtures.ts"
+import { acceptTaskList, kindLabels } from "./workflow-phase-fixtures.ts"
 
 const tools = workflowMcpCatalog("github")
 const repository = { owner: "example", repo: "project" }
@@ -106,6 +106,9 @@ function fixture(kind: "epic" | "task" | "gig" = "gig", adopted = false) {
               : { ...common, entity: kind, parentEpicDir: parent!.directory }
     const initialized = initializeEntity(input, { cwd: root })
     const directory = initialized.directory
+    // Every Epic here publishes `source`, whose accepted Task list is empty.
+    for (const epic of [kind === "epic" ? directory : parent?.directory])
+        if (epic) acceptTaskList(path.join(root, epic), source)
     const file = path.join(root, directory, "metadata.json")
     const original = JSON.parse(fs.readFileSync(file, "utf8"))
     assert.deepEqual(original.tracker.planComment, { state: "unpublished" })
@@ -480,7 +483,7 @@ describe("managed GitHub plan comments", () => {
                     } as TrackerPublicationInput,
                     tools,
                 )
-            await assert.rejects(update(), /needs an announcement/)
+            await assert.rejects(update(), /announcement/)
             await assert.rejects(
                 update({ origin: { kind: "task", entityDir: f.directory }, summary: "Revised." }),
                 /gig plan update has no Task origin/,
@@ -491,65 +494,30 @@ describe("managed GitHub plan comments", () => {
         }
     })
 
-    it("publishes a plan update with the summary accepted at presentation", async () => {
+    it("refuses to publish an Epic plan whose Task list isn't the accepted one", async () => {
+        const f = fixture("epic")
+        try {
+            const withTask = `${source}\n## Tasks\n\n### Parser\n\nKind: feature\n\nParse.\n`
+            await assert.rejects(f.prepare(withTask), /differs from the accepted one[\s\S]*Task 1: added "Parser"/)
+            assert.deepEqual(f.saved().tracker.planComment, { state: "unpublished" })
+            acceptTaskList(path.join(f.root, f.directory), withTask)
+            assert.equal((await f.prepare(withTask)).state, "mutation-needed")
+        } finally {
+            f.dispose()
+        }
+    })
+
+    it("rejects a saved presented or accepted summary in the tracker record", () => {
         const f = fixture("gig")
         try {
-            const prepared = await f.prepare()
-            assert.ok(prepared.state === "mutation-needed" && typeof prepared.mutation.arguments.body === "string")
-            // A summary presented before the first creation lands doesn't apply to it.
-            const presentedFirst = { state: "presented", summary: "Early.", after: planFingerprint(source) }
-            const setAnnouncement = (planAnnouncement?: unknown) => {
-                const { planAnnouncement: _, ...tracker } = f.saved().tracker
+            for (const state of ["presented", "accepted"]) {
+                const planAnnouncement = { state, summary: "Early.", after: planFingerprint(source) }
                 fs.writeFileSync(
                     f.file,
-                    JSON.stringify({
-                        ...f.saved(),
-                        tracker: planAnnouncement ? { ...tracker, planAnnouncement } : tracker,
-                    }),
+                    JSON.stringify({ ...f.saved(), tracker: { ...f.saved().tracker, planAnnouncement } }),
                 )
+                assert.throws(() => f.read(), /planAnnouncement/)
             }
-            setAnnouncement(presentedFirst)
-            await f.record({ ...prepared.mutation, response: f.remote(prepared.mutation.arguments.body) })
-            assert.equal("planAnnouncement" in f.saved().tracker, false)
-
-            const revised = source.replace("Update the plan.", "Revised.")
-            const reads = [f.page([f.remote(prepared.mutation.arguments.body)])]
-            const update = (announcement?: Record<string, unknown>, content = revised) =>
-                trackerPublication(
-                    f.root,
-                    {
-                        action: "prepareUpdate",
-                        entityDir: f.directory,
-                        source: content,
-                        reads,
-                        ...(announcement ? { announcement } : {}),
-                    } as TrackerPublicationInput,
-                    tools,
-                )
-            const summary = "Moved retries into the adapter."
-            // Presented but never written: not approved, so it isn't used.
-            setAnnouncement({ state: "presented", summary, after: planFingerprint(revised) })
-            await assert.rejects(update(), /needs an announcement/)
-            // Accepted for a different plan: not used either.
-            setAnnouncement({ state: "accepted", summary, after: planFingerprint(`${revised}\nOther.\n`) })
-            await assert.rejects(update(), /needs an announcement/)
-            // An explicit summary wins over stale state.
-            const explicit = await update({ summary: "Editorial fix." })
-            assert.ok(explicit.state === "mutation-needed" && "announcement" in explicit)
-            assert.match(explicit.announcement as string, /Editorial fix\./)
-            assert.equal(f.saved().tracker.planAnnouncement.state, "plan-update")
-
-            // Accepted with this exact plan: used without passing it again.
-            setAnnouncement({ state: "accepted", summary, after: planFingerprint(revised) })
-            const accepted = await update()
-            assert.ok(accepted.state === "mutation-needed" && "announcement" in accepted)
-            assert.match(accepted.announcement as string, /^\*\*Plan updated\*\*\n\nMoved retries into the adapter\./)
-            assert.equal(f.saved().tracker.planAnnouncement.state, "plan-update")
-
-            // An unchanged plan clears an accepted summary.
-            setAnnouncement({ state: "accepted", summary, after: planFingerprint(source) })
-            assert.equal((await update(undefined, source)).state, "unchanged")
-            assert.equal("planAnnouncement" in f.saved().tracker, false)
         } finally {
             f.dispose()
         }
@@ -579,6 +547,7 @@ describe("managed GitHub plan comments", () => {
                     action: "prepareUpdate",
                     source: revised,
                     reads: [f.page([f.remote(updated.mutation.arguments.body)])],
+                    announcement,
                 })
                 assert.ok(resumed.state === "mutation-needed")
                 assert.equal(resumed.mutation.tool, "mcp__github__add_issue_comment")

@@ -1,3 +1,13 @@
+import { readEntityStatus, writeEntityStatus } from "../workflows/extensions/__lib/entity.ts"
+import { epicTaskList, parseEpicTasks } from "../workflows/extensions/__lib/epic-tasks.ts"
+
+/** Records an Epic's Task list in `source` as accepted, as accept_epic_tasks leaves it. */
+export function acceptTaskList(epicDirectory: string, source: string): void {
+    const status = readEntityStatus(epicDirectory)
+    if (status.entity !== "epic") throw new Error(`not an Epic: ${epicDirectory}`)
+    writeEntityStatus(epicDirectory, { ...status, acceptedTasks: epicTaskList(parseEpicTasks(source)) })
+}
+
 export const phaseValues = {
     planning: "Planning",
     execution: "Execution",

@@ -256,8 +256,7 @@ export function assertTrackerRecordInvariants(
     assertPlanAnnouncementState(tracker.planAnnouncement, tracker.planDocument.state, fail)
 }
 
-// A presented or accepted summary waits for a plan that is published or whose first publication
-// may have landed; an update in flight needs a published plan.
+// An update in flight needs a published plan.
 function assertPlanAnnouncementState(
     announcement: PlanAnnouncement | undefined,
     publication: (PlanComment | PlanDocument)["state"],
@@ -265,10 +264,6 @@ function assertPlanAnnouncementState(
 ): void {
     if (!announcement) return
     switch (announcement.state) {
-        case "presented":
-        case "accepted":
-            if (publication === "unpublished") fail("a presented plan announcement requires a published plan")
-            return
         case "plan-update":
         case "announcing":
             if (publication !== "published") fail("a plan announcement requires a published plan")

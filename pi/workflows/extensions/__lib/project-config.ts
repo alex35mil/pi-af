@@ -24,18 +24,8 @@ export const PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}`
 export const LEGACY_PROJECT_LOCAL_IGNORE = `/${PROJECT_LOCAL_ROOT}/`
 
 const BranchConfigurationSchema = Type.Object({ format: BranchFormatSchema }, { additionalProperties: false })
-const ReviewConfigurationSchema = Type.Object(
-    { userConfirmationAfter: Type.Integer({ minimum: 1 }) },
-    { additionalProperties: false },
-)
 
-export const ProjectConfigSchema = Type.Object(
-    {
-        branches: BranchConfigurationSchema,
-        reviews: Type.Optional(ReviewConfigurationSchema),
-    },
-    { additionalProperties: false },
-)
+export const ProjectConfigSchema = Type.Object({ branches: BranchConfigurationSchema }, { additionalProperties: false })
 export const ProjectConfigValidator = compile(ProjectConfigSchema)
 
 type PersistedProjectConfig = Static<typeof ProjectConfigSchema>

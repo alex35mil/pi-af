@@ -6,10 +6,10 @@ Read this only when a provider outcome is uncertain or partial, or a tool return
 
 The first `prepare_tracker_publication` call for an unpublished plan saves pending state before returning its non-idempotent create: a token on GitHub, the sent plan's fingerprint on Linear. Any later call returns `recovery-required` instead of another create. Recovery then reads the provider and decides from what it finds; never create a replacement on your own.
 
-Call `recover_tracker_publication` with the approved `source` and the complete reads below:
+Call `recover_tracker_publication` with the `source` and the complete reads below:
 
 - **One matching publication:** the create landed. The tool records it as published.
-- **None, after a complete read:** the create never landed. The tool returns a create for the given source, which the source's approval covers. Run it and record it as usual. GitHub keeps the saved token, so a late copy of the earlier create shows up as a second match.
+- **None, after a complete read:** the create never landed. The tool returns a create for the given source. Run it and record it as usual. GitHub keeps the saved token, so a late copy of the earlier create shows up as a second match.
 - **Anything else:** stop for maintainer direction.
 
 Still run every prepared mutation in the same step and never call prepare just to look at its output; recovery costs extra reads.
@@ -35,19 +35,19 @@ Still run every prepared mutation in the same step and never call prepare just t
 
 For a published comment, document, or PR body, read the exact saved body and compare it with the complete intended content. Retry only confirmed non-application.
 
-## Pending announcement
+## Pending plan-update note
 
-A [plan update announcement](./shared.md#plan-update-announcements) carries an opaque token: a hidden marker on GitHub, the plan link's query on Linear. Its saved state decides recovery:
+A [plan-update note](./shared.md#plan-update-notes) carries an opaque token: a hidden marker on GitHub, the plan link's query on Linear. Its saved state decides recovery:
 
-- **Uncertain plan update:** call `prepare_tracker_publication`, run its reads, and pass them to `prepare_tracker_publication_update` with the same source. When the update landed, it returns the saved announcement to post. Otherwise it prepares the update again with the same announcement.
-- **Uncertain announcement:** `prepare_tracker_publication` returns `recovery-required` with the comment reads. Read every page, GitHub `issue_read` `get_comments` or Linear `list_comments` with cursors until `hasNextPage: false`, and pass them to `recover_tracker_publication`. One match is recorded; none returns the same comment to post; several stop for the maintainer.
+- **Uncertain plan update:** call `prepare_tracker_publication`, run its reads, and pass them to `prepare_tracker_publication_update` with the same source and note. When the update landed, it returns the saved note to post. Otherwise it prepares the update again.
+- **Uncertain note:** `prepare_tracker_publication` returns `recovery-required` with the comment reads. Read every page, GitHub `issue_read` `get_comments` or Linear `list_comments` with cursors until `hasNextPage: false`, and pass them to `recover_tracker_publication`. One match is recorded; none returns the same comment to post; several stop for the maintainer.
 
 ## Uncertain tracker creation
 
-A returned error can follow creation or partial application. Nothing local exists yet, so the approved intake is the only record.
+A returned error can follow creation or partial application. Nothing local exists yet, so the intake is the only record.
 
-- **GitHub:** search by the exact approved title, repository, and required relationship. Complete pagination and require exactly one match.
-- **Linear:** search the exact approved title or name, configured team, and exact Task Project or projectless Gig relationship.
+- **GitHub:** search by the exact intake title, repository, and required relationship. Complete pagination and require exactly one match.
+- **Linear:** search the exact intake title or name, configured team, and exact Task Project or projectless Gig relationship.
 
 Initialize from the object when exactly one is confirmed. Retry the create only after confirmed absence. Never add markers, choose the first result, or create a replacement on ambiguous or denied evidence.
 

@@ -1,6 +1,6 @@
 # Setup permissions
 
-Read this when offering integration convenience permissions or accepted-artifact diff gates during project setup.
+Read this when offering integration convenience permissions during project setup.
 
 ## Integration convenience permissions
 
@@ -15,12 +15,12 @@ Offer these only for selected, active integration providers, replacing `<server>
 | Any active integration server | `mcp(<server>, hint: readOnly)` | All tools that server advertises with explicit `readOnlyHint: true`; useful for repeated tracker and PR reads. Trusts the server's annotation; missing or false hints don't match. |
 | GitHub tracker | `mcp(<server>, projects_write)` | The entire Project mutation tool, including item and field updates for Status, Phase, and Priority, and its other mutations. |
 | GitHub tracker | `mcp(<server>, issue_write)` | The entire issue create and update tool, including body, labels, fields, and state; useful for intake and metadata. |
-| GitHub tracker | `mcp(<server>, add_issue_comment)` | The entire comment create and reaction tool; used for the first plan publication, plan update announcements, and discussion. |
+| GitHub tracker | `mcp(<server>, add_issue_comment)` | The entire comment create and reaction tool; used for the first plan publication, plan update notes, and discussion. |
 | GitHub tracker | `mcp(<server>, update_issue_comment)` | The entire comment update tool; used to update the managed plan comment. |
 | Linear tracker | `mcp(<server>, save_issue)` | The entire issue save tool, including creation, descriptions, labels, lifecycle, Priority, and relationships. |
 | Linear tracker | `mcp(<server>, save_project)` | The entire Project save tool for Epics, including creation, description, labels, lifecycle, Priority, and other updates. |
 | Linear tracker | `mcp(<server>, save_document)` | The entire document create and update tool, including attachment and reparenting; used for plan documents. Workflow updates omit parent arguments. |
-| Linear tracker | `mcp(<server>, save_comment)` | The entire comment create and update tool on any reachable object; used for plan update announcements. |
+| Linear tracker | `mcp(<server>, save_comment)` | The entire comment create and update tool on any reachable object; used for plan update notes. |
 
 **Limits:**
 
@@ -31,7 +31,7 @@ Offer these only for selected, active integration providers, replacing `<server>
 **What an allow grants:**
 
 - These rules aren't restricted by tool arguments, repository, or Project. They cover everything the server's credential can reach.
-- They remove prompts, not workflow content, submission, or shipping approval gates.
+- They remove prompts. Submitting and shipping still wait for the user's request.
 
 ### Inspect first
 
@@ -69,7 +69,7 @@ Results reflect persistent settings only; session overrides and skill-derived al
 
 ### Persist the selection
 
-1. After the user selects rules, ask once whether permissions go in local or project settings, independently of the artifact and MCP choices.
+1. After the user selects rules, ask once whether permissions go in local or project settings, independently of the MCP choice.
 2. Preview the exact `allow` and `ask` additions, skipped rules, conflicts, target, and any local exclusion before approval.
 3. Call `configure_permissions` with strict `{ target: "project" | "local", allow: string[], ask: string[] }`:
    - both lists are explicit, and at least one rule is required;
@@ -85,33 +85,12 @@ Results reflect persistent settings only; session overrides and skill-derived al
 - Invalid settings or rules fail before any change. A no-op leaves files and exclusions untouched.
 - Read-back validates the result. A skipped rule is not a new grant.
 
-## Accepted-artifact permission gates
-
-Workflow skills allow routine `.project/` bookkeeping. Offer explicit artifact diff gates independently of integration allows. When accepted, merge them through the same `configure_permissions` call, using repository-relative paths so they match consistently. This ask-only example uses an empty allow list:
-
-```json
-{
-    "target": "local",
-    "allow": [],
-    "ask": [
-        "write(.project/*/epic.md)",
-        "edit(.project/*/epic.md)",
-        "write(.project/*/plan.md)",
-        "edit(.project/*/plan.md)",
-        "write(.project/*/result.md)",
-        "edit(.project/*/result.md)",
-        "write(.project/*/report.md)",
-        "edit(.project/*/report.md)"
-    ]
-}
-```
-
 **Targets:**
 
 - The target is committed `.agents/permissions.json` (`project`) or local `.agents/permissions.local.json` (`local`).
 - Before changing local settings, the tool checks the file is outside Git and ensures exact `/.agents/permissions.local.json` in `.git/info/exclude`. It never changes the index, and a no-op adds no exclusion.
 
-Artifact persistence and permission-settings persistence are separate user decisions.
+Workflow skills allow routine `.project/` bookkeeping, including `epic.md`, `plan.md`, `result.md`, and `report.md`. Setup offers no `ask` gate for those files; the workflow stops for the user where it needs to.
 
 ## Reviewer tools
 

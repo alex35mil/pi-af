@@ -10,6 +10,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 
 import { initializeEntity } from "../workflows/extensions/init/entity.ts"
 import { readEntityStatus } from "../workflows/extensions/__lib/entity.ts"
+import { acceptTaskList } from "./workflow-phase-fixtures.ts"
 import { prepareArtifactPersistence } from "../workflows/extensions/__lib/project-config.ts"
 import { buildIntegrationContext } from "../workflows/extensions/integrations/index.ts"
 import { type AnnouncementInput, planFingerprint } from "../workflows/extensions/integrations/plan-announcement.ts"
@@ -104,6 +105,9 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
                 }
     const initialized = initializeEntity(initialization, { cwd: root })
     const directory = initialized.directory
+    // Every Epic here publishes `source`, whose accepted Task list is empty.
+    for (const epic of [kind === "epic" ? directory : parentDirectory])
+        if (epic) acceptTaskList(path.join(root, epic), source)
     const file = path.join(root, directory, "metadata.json")
     assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).tracker.planDocument, { state: "unpublished" })
     const saved = () => JSON.parse(fs.readFileSync(file, "utf8"))
@@ -157,7 +161,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
         document: ProviderEvidence,
         parentEvidence = parent(),
         content = source,
-        announcement?: AnnouncementInput,
+        announcement: AnnouncementInput = { summary: "Details revised." },
     ) =>
         trackerPublication(
             root,
@@ -166,7 +170,7 @@ function fixture(kind: "epic" | "task" | "gig" = "gig") {
                 action: "prepareUpdate",
                 source: content,
                 reads: [document, parentEvidence],
-                ...(announcement ? { announcement } : {}),
+                announcement,
             },
             tools,
         )
@@ -544,22 +548,6 @@ describe("managed Linear plan documents", () => {
                 // Linear normalizes bullets on save; that alone isn't a change.
                 const stored = linearStored(prepared.mutation.arguments.content)
                 const revised = source.replace("All supporting details.", "All supporting details, revised.")
-                // The summary accepted at presentation is used without passing it again.
-                const metadata = f.saved()
-                fs.writeFileSync(
-                    f.file,
-                    JSON.stringify({
-                        ...metadata,
-                        tracker: {
-                            ...metadata.tracker,
-                            planAnnouncement: {
-                                state: "accepted",
-                                summary: "Details revised.",
-                                after: planFingerprint(revised),
-                            },
-                        },
-                    }),
-                )
                 const updated = await f.update(f.read(stored), f.parent(), revised)
                 assert.ok(updated.state === "mutation-needed" && "announcement" in updated)
                 const body = updated.announcement as string
@@ -642,22 +630,6 @@ describe("managed Linear plan documents", () => {
             assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
             write({ state: "published", id: documentId, url })
             assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, pending)
-            // A presented summary may wait on a first publication that may have landed, but not on none.
-            const presented = { state: "presented", summary: "Revised.", after: planFingerprint(source) }
-            const present = (planDocument: Record<string, unknown>) => {
-                const metadata = f.saved()
-                fs.writeFileSync(
-                    f.file,
-                    JSON.stringify({
-                        ...metadata,
-                        tracker: { ...metadata.tracker, planDocument, planAnnouncement: presented },
-                    }),
-                )
-            }
-            present({ state: "unpublished" })
-            assert.throws(() => readEntityStatus(path.join(f.root, f.directory)), /requires a published plan/)
-            present({ state: "pending", fingerprint })
-            assert.deepEqual(readEntityStatus(path.join(f.root, f.directory)).tracker.planAnnouncement, presented)
         } finally {
             f.dispose()
         }

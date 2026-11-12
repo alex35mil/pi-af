@@ -12,15 +12,5 @@
         "mcp(github, issue_write)",
         "mcp(github, add_issue_comment)",
         "mcp(github, update_issue_comment)"
-    ],
-    "ask": [
-        "write(.project/*/epic.md)",
-        "edit(.project/*/epic.md)",
-        "write(.project/*/plan.md)",
-        "edit(.project/*/plan.md)",
-        "write(.project/*/result.md)",
-        "edit(.project/*/result.md)",
-        "write(.project/*/report.md)",
-        "edit(.project/*/report.md)"
     ]
 }

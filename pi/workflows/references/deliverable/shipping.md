@@ -6,12 +6,12 @@ Read this when the user explicitly asks to ship a Task or Gig: "ship it", "ship 
 
 A request to ship authorizes the whole remaining sequence without another merge or cleanup question:
 
-commit approved work → push the stored branch → create or update the PR → merge → set Done → clean up the local branch.
+commit the work → push the stored branch → create or update the PR → merge → set Done → clean up the local branch.
 
 - Carry shipping intent through [submission](./submission.md) even when no PR exists yet.
-- A ship request covers the approved work and the head that shipping builds from it. Any head produced afterward, such as by resolving a conflict, needs new approval.
+- A ship request covers the current work and the head that shipping builds from it. Any head produced afterward, such as by resolving a conflict, needs new approval.
 - Complete every required verification, review, and merge-protection gate first.
-- Accepting the final completion artifact authorizes neither submission nor shipping. An ordinary resume or an externally changed tracker status is not a request to ship.
+- An ordinary resume or an externally changed tracker status is not a request to ship.
 - Shipping never authorizes merging an Epic, choosing a different target or merge method, or deleting remote or Epic branches.
 
 ## Merge and clean up

@@ -139,10 +139,10 @@ describe("workflow consolidation contracts", () => {
         )
     })
 
-    it("keeps report semantics separate from adjudication input validation", () => {
+    it("keeps report semantics separate from response input validation", () => {
         const report = (overrides = {}) =>
             JSON.stringify({
-                findings: [{ ...finding, severity: "warning", ...overrides }],
+                findings: [{ ...finding, severity: "blocking", ...overrides }],
                 signoff: "blocked",
             })
         assert.doesNotThrow(() => parseReviewReport(report()))
@@ -153,27 +153,24 @@ describe("workflow consolidation contracts", () => {
         assert.throws(() =>
             parseReviewReport(
                 JSON.stringify({
-                    findings: [{ ...finding, severity: "warning" }],
+                    findings: [{ ...finding, severity: "blocking" }],
                     signoff: "approved",
                 }),
             ),
         )
-        const { userDecision: _userDecision, ...inputFinding } = finding
-        const response = {
-            entityDir: "example",
-            phase: "plan",
-            round: 1,
-            findings: [{ ...inputFinding, title: " " }],
-            status: "Corrected",
-        }
+        // An entity response names only what the agent doesn't simply fix.
+        const response = { entityDir: "example", phase: "plan", round: 1, responses: [] as unknown[] }
         assert.equal(RecordReviewResponseValidator.check(response), true)
-        assert.equal(
-            RecordReviewResponseValidator.check({
-                ...response,
-                findings: [{ ...finding, severity: "warning" }],
-            }),
-            false,
-        )
+        const rejected = { id: "F1", outcome: "rejected", explanation: "Not a defect." }
+        for (const [entry, valid] of [
+            [rejected, true],
+            [{ ...rejected, outcome: "needs-decision" }, true],
+            [{ ...rejected, outcome: "accepted" }, false],
+            [{ ...rejected, explanation: "" }, false],
+            [{ ...rejected, severity: "blocking" }, false],
+            [finding, false],
+        ] as const)
+            assert.equal(RecordReviewResponseValidator.check({ ...response, responses: [entry] }), valid)
     })
 
     it("preserves caller-relative bases and rejects paths outside workflow roots", () => {

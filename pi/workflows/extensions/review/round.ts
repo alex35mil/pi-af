@@ -2,6 +2,9 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent"
+import { Type } from "typebox"
+
+import { compile, parse } from "../../../extensions/__lib/schema.js"
 
 import {
     runReviewAgent,
@@ -17,9 +20,16 @@ import {
     reviewAgentOutputInstructions,
     type ReviewFinding,
     type ReviewReport,
+    type ReviewResponse,
+    ReviewResponseSchema,
 } from "./findings.js"
 
 export const INVALID_REPORT_FILE = "invalid-report.md"
+export const REVIEW_REPORT_FILE = "report.json"
+const ENTITY_RESPONSE_FILE = "response.json"
+const EntityResponsesValidator = compile(
+    Type.Object({ responses: Type.Array(ReviewResponseSchema) }, { additionalProperties: false }),
+)
 
 export interface ReviewRoundOptions extends Omit<ReviewAgentRunOptions, "jsonlPath" | "session"> {
     directory: string
@@ -47,7 +57,7 @@ export function reviewCorrectionPrompt(error: string, previousOutput: string): s
 
 /**
  * The model-facing result of a successful review round. The signoff stays the final line; a notice, such as
- * the blocked-review pause, goes first. Round file paths appear only in failed-round errors.
+ * what the pass expects next, goes first. Round file paths appear only in failed-round errors.
  */
 export function renderReviewRoundResult(report: ReviewReport, round: number, notice?: string): string {
     return [notice, `**Review round:** ${round}`, renderReviewDocument(report).trimEnd()]
@@ -95,7 +105,7 @@ export async function executeReviewRound(
         : ([correction?.result.finalOutput, first.result.finalOutput].find((text) => text?.trim()) ?? "")
     if (report) {
         await fs.promises.writeFile(file("review.md"), renderReviewDocument(report), "utf-8")
-        await fs.promises.writeFile(file("report.json"), `${JSON.stringify(report, null, 4)}\n`, "utf-8")
+        await fs.promises.writeFile(file(REVIEW_REPORT_FILE), `${JSON.stringify(report, null, 4)}\n`, "utf-8")
     }
     await fs.promises.writeFile(file("transcript.md"), renderReviewTranscript(result.events), "utf-8")
     if (result.stderr.trim()) await fs.promises.writeFile(file("stderr.txt"), result.stderr, "utf-8")
@@ -153,13 +163,42 @@ async function runParsed(runner: ReviewRunner, options: ReviewAgentRunOptions): 
     }
 }
 
+export async function readRoundReport(directory: string): Promise<ReviewReport> {
+    return parseReviewReport(await fs.promises.readFile(path.join(directory, REVIEW_REPORT_FILE), "utf-8"))
+}
+
+/**
+ * An entity round's record: only the findings the agent rejects or leaves for the user's decision.
+ * A finding without a record was accepted. Recording again replaces the round's earlier record.
+ */
+export async function recordEntityResponses(directory: string, responses: ReviewResponse[]): Promise<void> {
+    const report = await readRoundReport(directory)
+    const known = new Set(report.findings.map((finding) => finding.id))
+    const seen = new Set<string>()
+    for (const { id } of responses) {
+        if (!known.has(id)) throw new Error(`the review has no finding ${id}`)
+        if (seen.has(id)) throw new Error(`finding ${id} has more than one response`)
+        seen.add(id)
+    }
+    const responsePath = path.join(directory, ENTITY_RESPONSE_FILE)
+    await withFileMutationQueue(responsePath, () =>
+        fs.promises.writeFile(responsePath, `${JSON.stringify({ responses }, null, 4)}\n`, "utf-8"),
+    )
+}
+
+export async function readEntityResponses(directory: string): Promise<ReviewResponse[]> {
+    const responsePath = path.join(directory, ENTITY_RESPONSE_FILE)
+    if (!fs.existsSync(responsePath)) return []
+    return parse(EntityResponsesValidator, JSON.parse(await fs.promises.readFile(responsePath, "utf-8"))).responses
+}
+
+/** An incoming-PR round's record: every finding, adjudicated, rendered for the user. */
 export async function recordRoundResponse(
     directory: string,
     findings: Omit<ReviewFinding, "severity">[],
     status: string,
 ): Promise<string> {
-    const reportPath = path.join(directory, "report.json")
-    const report = parseReviewReport(await fs.promises.readFile(reportPath, "utf-8"))
+    const report = await readRoundReport(directory)
     if (findings.length !== report.findings.length)
         throw new Error(`response must contain all ${report.findings.length} review findings`)
     const complete = findings.map((finding, index) => {

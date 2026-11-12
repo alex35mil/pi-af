@@ -45,7 +45,7 @@ Run `/project-setup`, invoke `/skill:project-setup`, or ask the agent to help se
 - read-only Linear workspace discovery, plus separately approved creation of missing Linear statuses;
 - separately approved label catalog setup for both trackers, including Linear Phase groups;
 - separately approved GitHub Project/field provisioning and recovery;
-- optional Project Policies and accepted-artifact diff gates.
+- optional Project Policies.
 
 See the [configuration reference](references/setup.md) for exact schemas, examples, credential handling, and manual setup. The [artifact reference](references/artifacts.md) owns directory layout, identity, persistence, and authority.
 
@@ -64,7 +64,7 @@ Set the source reference once in private global `workflows.json` in Pi's agent d
 - The source tracker's MCP tools must be registered in the current session.
 - Nothing is sent without your approval, and unsafe project details stay local.
 
- See [source configuration](references/setup.md#workflow-reporting-source) and [report preparation](references/queue.md#prepare-a-workflow-report).
+ See [source configuration](references/setup/reporting-source.md) and [report preparation](references/queue.md#prepare-a-workflow-report).
 
 To catch problems agents recover from quietly, add `"sessionAnalysis": true` to the same global `workflows.json`. After a Task or Gig ships, an Epic completes, or an incoming PR ships, the agent reviews the session in chat, searches the workflow tracker for findings that are already reported, and lists the rest of the workflow errors and friction worth reporting; you choose which to report. It needs `workflowProject`. It's off by default because it costs tokens. See [session analysis](references/session-analysis.md).
 
@@ -72,36 +72,44 @@ To catch problems agents recover from quietly, add `"sessionAnalysis": true` to 
 
 ```text
 Queue:       backlog | todo
-Local work:  inProgress/planning → inProgress/execution
-Plan loop:   inProgress/planning (draft, review, correct, present, await approval)
-Review loop: inProgress/execution ↔ inProgress/selfReview
+Local work:  inProgress/planning → inProgress/execution → inProgress/selfReview
 Submitted:   inReview (external human review; native Phase cleared)
 Completed:   done (native Phase cleared)
 Canceled:    terminal unsuccessful status for queued or initialized work
 ```
 
+The workflow asks you only for clarifications and decisions. It reports everything else in a line and keeps going.
+
+**Intake:** new tracker items are created from your words. The agent picks the Kind, labels, and Priority and reports the created item; it asks only when it can't tell.
+
 **Planning:**
 
 - Backlog and Todo are independent queues of unstarted work; either can move straight to In Progress.
-- Work is clarified, independently reviewed, and accepted through the plan diff before execution.
-- Bugfix investigates its cause before the plan is accepted. Research and Audit produce reports without changing product behavior.
+- The agent says which path it takes. A request that already decides the change (docs, version bumps, configuration, a fix with an evident cause) takes the direct path with no plan. Anything else gets a plan, reviewed once, published, and summarized in one message; work continues unless there's a question. "plan it" and "just do it" override the choice.
+- A decision you make in chat is final: the plan is updated and republished with a short note, without asking again.
+- Bugfix investigates its cause before planning the fix. Research and Audit produce reports without changing product behavior.
 - Kind can change at any time without restarting.
+
+**Reviews:** an independent reviewer blocks only on a defect that would ship or a broken stated requirement; everything else is a note. Each stage gets one review and, when it blocked, one pass that verifies the fixes. Anything still open comes to you as a one-line concern, not another round.
 
 **Phase and Status:**
 
-- Drafting, review, corrections, presentation, and waiting for plan approval stay in Planning. Implementation stays in Execution, including each commit step's interim review and commit. Self-Review means the work is complete: it covers the final review and your review of delivered work.
-- Status stays In Progress through all of these local loops.
+- Planning, Execution, and Self-Review show where the work is. Phase is for visibility only; nothing waits on it.
+- Status stays In Progress through all of these.
 - Phase shows as a GitHub Project field or a Linear label group. See [Phase](references/phase.md).
 
 **Submitting and shipping:**
 
-- After final review passes, you review the work and decide whether to submit it. Accepting the result, an earlier draft, or a file write isn't submission approval; ask for submission explicitly.
-- A Deliverable may have several commits within its accepted scope. When the plan defines commit steps, each step is reviewed and then committed before the next.
-- Submitting and shipping are separate. Submission commits the work and opens or updates a PR; work with no repository changes gets one empty commit so the PR can open. An explicit request to ship merges, marks the work Done, and cleans up the local branch.
+- After the final review, the agent stops once: it shows the result's overview and any open concerns, with nothing pushed.
+- Say "submit" to commit, push, open the PR for team review, and stop. Say "ship it" to do the same, then merge, mark the work Done, and clean up the local branch.
+- A Deliverable may have several commits within its scope. When the plan defines commit steps, each is committed locally once its checks pass; nothing is pushed before you ask.
+- Work with no repository changes gets one empty commit so the PR can open.
 
 See [Deliverable guidance](references/deliverable.md) for the full flow and [Epic guidance](skills/epic/SKILL.md) for Epic completion.
 
 ## Epic Task delivery strategy
+
+An Epic's `epic.md` is the initiative's current state: its goal and its Task list, each Task with a one-paragraph outcome. Accepting the Task list creates the Task issues; adding, removing, or reordering Tasks needs another review and your acceptance. When a Task's decision makes part of the Epic wrong, the Task rewrites it in place, republishes it with a note, and mentions the edit in its result.
 
 Epic planning recommends a Task delivery strategy and asks for approval before the first Task starts. Independently shippable Tasks can deliver directly to the repository default branch; intermediate work can integrate on the Epic branch. The accepted Epic records the choice and rationale.
 
@@ -117,11 +125,11 @@ See [Epic routing and restore](references/epic.md).
 **Plan publication:**
 
 - Tracker items keep their original request title and description.
-- On GitHub, new and adopted issues publish the accepted plan as one managed comment, updated in place afterward.
+- On GitHub, new and adopted issues publish the plan as one managed comment, updated in place afterward. Each update posts a short plan-update note with the diff folded.
 - On Linear, the plan is one document attached to the issue or Project.
-- Local accepted artifacts stay authoritative.
+- Local artifacts stay authoritative.
 
-Accepted plans and completion artifacts start with a concise `## Overview`, followed by the full supporting sections in the same reviewed document.
+Plans and completion artifacts start with a concise `## Overview`, followed by the full supporting sections in the same reviewed document.
 
 | Destination | Shown |
 | --- | --- |
@@ -132,7 +140,6 @@ Accepted plans and completion artifacts start with a concise `## Overview`, foll
 GitHub folds use `<details>`; Linear uses native `>>>` sections, so a Linear plan can't have a line starting with `>>>`. Nothing is summarized or dropped.
 
 - Published text never points at files under `.project/.local/`, since readers can't open them.
-- Older documents are brought into this shape through normal review before publication; reads never rewrite completed artifacts.
 - Local tests check the generated Markdown, not live Linear rendering.
 
  See the [document shape](references/artifacts.md#reviewed-document-shape) and [provider-body contract](references/integrations/shared.md#provider-bodies).
@@ -146,9 +153,9 @@ Skills own entry routing, workflow sequence, and entity-specific decisions. Refe
 | Shared rules: tools, MCP boundary, recovery, approvals       | [Core](references/core.md)                                                                                                                                                        |
 | Artifacts, intake, persistence, authority, policy precedence  | [Artifacts](references/artifacts.md)                                                                                                                                              |
 | Workflow activity and native Phase projection                 | [Phase](references/phase.md)                                                                                                                                                      |
-| Configuration files and permission gates                      | [Setup](references/setup.md)                                                                                                                                                      |
-| Inquiry and plan acceptance                                   | [Planning](references/planning.md)                                                                                                                                                |
-| Finding adjudication and optional blocked-review confirmation | [Review](references/review.md)                                                                                                                                                    |
+| Configuration files and permissions                           | [Setup](references/setup.md)                                                                                                                                                      |
+| Inquiry, direct path, and plans                               | [Planning](references/planning.md)                                                                                                                                                |
+| Review passes and finding adjudication                        | [Review](references/review.md)                                                                                                                                                    |
 | Task/Gig execution, delivery, cleanup                         | [Deliverable](references/deliverable.md), [submission](references/deliverable/submission.md), [shipping](references/deliverable/shipping.md)                                      |
 | Backlog and Todo                                              | [Queue](references/queue.md)                                                                                                                                                      |
 | Provider-body and integration rules                           | [Integration roles](references/integrations/shared.md)                                                                                                                            |

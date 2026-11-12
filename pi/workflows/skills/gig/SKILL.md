@@ -7,8 +7,7 @@ allowed-tools:
     - "init_github_gig"
     - "init_linear_gig"
     - "review_gig"
-    - "prepare_gig_plan_presentation"
-    - "prepare_gig_completion_presentation"
+    - "record_review_response"
     - "prepare_artifacts"
     - "set_github_workflow_phase"
     - "set_linear_workflow_phase"
@@ -53,7 +52,7 @@ A Gig is a standalone Deliverable with no parent Epic.
 - [Deliverable lifecycle](../../references/deliverable.md)
 - [Artifacts](../../references/artifacts.md)
 
-The Deliverable lifecycle owns planning, root cause, review, implementation, verification, integration, and final approval. This file owns only Gig identification and initialization.
+The Deliverable lifecycle owns planning, root cause, review, implementation, verification, and integration. This file owns only Gig identification and initialization.
 
 ## Resume
 
@@ -61,11 +60,11 @@ Follow the Deliverable resume steps for a Gig under `.project/.local/gigs/`. Ver
 
 ## Initialize
 
-Follow the approved intake in [artifacts](../../references/artifacts.md#initialization-inputs), then [initialize from the tracker object](../../references/integrations/shared.md#initialize-from-the-tracker-object):
+Follow the intake in [artifacts](../../references/artifacts.md#initialization-inputs), then [initialize from the tracker object](../../references/integrations/shared.md#initialize-from-the-tracker-object):
 
 1. **New work:** call `preflight_gig`, then create the issue as the tracker reference describes.
 2. **Adoption:** read the tracker reference ([GitHub](../../references/integrations/tracker/github.md#adopt-selected-queued-work) or [Linear](../../references/integrations/tracker/linear.md#queue-intake-and-explicit-adoption)) and the [discussion rules](../../references/integrations/shared.md#provider-bodies), and complete its Gig preflight; on Linear, the issue must have no Project.
-3. **Initialize:** call `init_github_gig` or `init_linear_gig` with the approved values, the Request as `request`, the slug, and the issue as `object`. The Gig starts from and targets the repository default.
+3. **Initialize:** call `init_github_gig` or `init_linear_gig` with the intake values, the Request as `request`, the slug, and the issue as `object`. The Gig starts from and targets the repository default.
 4. **Before planning,** finish board setup.
 
 A Gig must never contain parent Epic fields or be converted into a Task.

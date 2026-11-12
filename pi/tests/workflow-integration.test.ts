@@ -961,17 +961,9 @@ describe("workflow integration configuration", () => {
                 { operation: "artifactProjection", entityDir },
                 mcpTools,
             )
-            assert.equal(projection.projection.source, "exact accepted epic.md or plan.md")
             assert.match(projection.projection.contentPolicy, /lossless.*never summarize or condense/)
-            assert.match(
-                projection.projection.rendering,
-                /tracker_publication.*complete approved source.*exact registered document mutation/,
-            )
-            assert.match(
-                projection.projection.changedCandidateGate,
-                /deterministic renderer output.*no second approval.*substantive omission.*exact diff.*explicit user approval/,
-            )
-            assert.equal(projection.projection.authority, "local accepted artifact")
+            assert.match(projection.projection.rendering, /tracker_publication.*exact registered document mutation/)
+            assert.equal(projection.projection.authority, "local artifact")
             assert.ok("planDocument" in projection.projection)
             assert.deepEqual(projection.projection.planDocument, {
                 state: "unpublished",

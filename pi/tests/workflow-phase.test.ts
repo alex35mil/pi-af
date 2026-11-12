@@ -8,7 +8,7 @@ import { describe, it } from "node:test"
 
 import { parse } from "../extensions/__lib/schema.ts"
 import { PhaseValidator, projectedPhase, type LifecycleState } from "../workflows/extensions/__lib/domain.ts"
-import { assertReviewPhase } from "../workflows/extensions/review/index.ts"
+import { assertReviewPreconditions } from "../workflows/extensions/review/index.ts"
 import { GitHubTrackerValidator, LinearTrackerValidator } from "../workflows/extensions/integrations/config.ts"
 import { githubPhaseFacts } from "../workflows/extensions/integrations/github-phase-evidence.ts"
 import {
@@ -396,7 +396,7 @@ describe("shared workflow Phase", () => {
         assert.throws(() => resolveLinearPhaseGroup(tracker, "gig", facts.catalog), /Phase/)
     })
 
-    it("requires the category-specific Phase for every entity on both trackers", () => {
+    it("lets every review category run in any Phase for every entity on both trackers", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "phase-review-"))
         const branch = {
             state: "ready",
@@ -458,20 +458,23 @@ describe("shared workflow Phase", () => {
                         tracker: tracker(entity),
                         ...(entity === "epic" ? {} : { kind: "feature" }),
                     }
-                    if (entity === "epic")
+                    if (entity === "epic") {
+                        fs.writeFileSync(path.join(directory, "brief.md"), "# Brief\n")
                         fs.writeFileSync(
                             path.join(directory, "epic.md"),
                             `## Tasks\n\n### [${provider === "github" ? "#2" : "ENG-2"}] Example\n\nKind: feature\n\nExample.\n`,
                         )
+                    } else {
+                        fs.writeFileSync(path.join(directory, "plan.md"), "# Plan\n")
+                        fs.writeFileSync(path.join(directory, "result.md"), "# Result\n\nDone.\n")
+                    }
+                    // Phase is visibility only: it never decides whether a review may run.
                     for (const phase of ["planning", "execution", "selfReview"]) {
                         fs.writeFileSync(path.join(directory, "metadata.json"), JSON.stringify({ ...metadata, phase }))
                         for (const category of entity === "epic"
                             ? (["plan"] as const)
-                            : (["plan", "interim", "final"] as const)) {
-                            const expected = { plan: "planning", interim: "execution", final: "selfReview" }[category]
-                            if (phase === expected) assert.doesNotThrow(() => assertReviewPhase(directory, category))
-                            else assert.throws(() => assertReviewPhase(directory, category), /review requires/)
-                        }
+                            : (["plan", "interim", "final"] as const))
+                            assert.doesNotThrow(() => assertReviewPreconditions(directory, category))
                     }
                     if (entity === "epic")
                         fs.writeFileSync(
