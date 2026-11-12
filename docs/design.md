@@ -195,8 +195,8 @@ piton keeps one record per live pi: workspace, pi process, session id and file (
 `switch_session`, `new_session`, `fork`, `clone`), status, connected clients, writer, pending dialogs, and the session
 view (below).
 
-Saved sessions that aren't running are listed from the session folder pi reports. For a workspace with no live pi,
-piton uses the folder recorded the last time it ran pi there (open question 4).
+Saved sessions that aren't running are listed from the session folder pi reports. Finding that folder for a workspace
+with no live pi is part of the session creation redesign (#208).
 
 ### Attaching from pi.nvim
 
@@ -263,8 +263,8 @@ Nothing from the old pi is delivered after step 2. pi.nvim runs its restore afte
 and `new_session`, so it rebuilds the chat from whatever pi it now talks to. Limitation: the old pi's
 `session_before_switch` hook doesn't run on a move, because that pi isn't switching.
 
-Not interceptable: an extension's `switch_session` or pi's own `/new` and `/resume` handled inside pi. piton detects a
-resulting collision afterwards from `get_state` and reports it (open question 5).
+Not interceptable: an extension's `switch_session` or pi's own `/new` and `/resume` handled inside pi. piton doesn't
+detect a resulting collision today; whether it can is open question 1 (#210).
 
 #### Ending connections
 
@@ -460,7 +460,9 @@ Every connection starts with a hello declaring its protocol:
 
   Commands map to pi RPC commands, so pi sees the same thing whichever client sent it.
 
-Versioned from the start; exact schemas are defined in Rust and mirrored in Swift (codegen decided later).
+Versioned from the start; schemas are defined in Rust and mirrored by hand in Swift. The daemon test `fixtures` writes
+real protocol messages that PitonKit must decode, and fails when they're stale, so drift between the two shows up in
+tests (see `docs/development.md`).
 
 ### Notifications
 
@@ -639,7 +641,6 @@ tracked in the tracker, not here.
 - A "dialog resolved" record so other clients close a dialog answered elsewhere.
 - Diff review on the phone (needs workspace file access, cf. pi.nvim #29).
 - Choosing host mode from pi.nvim.
-- Telegram channel.
 
 ## Upstream watch
 
@@ -655,11 +656,5 @@ plus changes) has the session view's shape.
 
 ## Open questions
 
-1. Item granularity: are tool calls separate items or nested in their assistant message?
-2. Window size and history paging.
-3. Large tool output: truncated preview with fetch on demand?
-4. Saved sessions for a workspace with no live pi: use the folder recorded at the last launch, or briefly start pi to
-   ask?
-5. A collision caused by a `switch_session` piton can't see (extension, pi's `/resume`): report only, or also stop one
-   side?
-6. Schema sharing between Rust and Swift: hand-written, or generated.
+1. A collision caused by a `switch_session` piton can't see (extension, pi's `/resume`): can piton detect it, and
+   should it report only or also stop one side? Researched in #210.
